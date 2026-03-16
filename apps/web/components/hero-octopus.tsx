@@ -309,7 +309,7 @@ function Scene() {
 /* Exported component                                                  */
 /* ------------------------------------------------------------------ */
 
-export function HeroOctopus() {
+export function HeroOctopus({ className }: { className?: string }) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -319,7 +319,7 @@ export function HeroOctopus() {
   if (!mounted) return null;
 
   return (
-    <div className="pointer-events-auto absolute inset-0 z-0 opacity-30 dark:opacity-20">
+    <div className={className ?? "pointer-events-auto absolute inset-0 z-0 opacity-30 dark:opacity-20"}>
       <Canvas
         camera={{ position: [0, 0.5, 6], fov: 40 }}
         dpr={[1, 1.5]}

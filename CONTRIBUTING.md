@@ -28,6 +28,18 @@ Thank you for your interest in contributing to Octopus! We welcome contributions
 - Reference any related issues
 - Make sure linting and type checks pass
 
+## Testing Your Changes
+
+Before submitting a PR, make sure everything passes:
+
+```bash
+bun run lint          # ESLint
+bun run typecheck     # TypeScript type checking
+bun run build         # Full build
+```
+
+The CI pipeline runs these checks automatically on every pull request.
+
 ## Code Style
 
 - We use TypeScript throughout the project

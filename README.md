@@ -1,3 +1,13 @@
+<p align="center">
+  <img src="apps/web/public/branding-banner.png" alt="Octopus — Your AI code reviewer that never sleeps" width="600" />
+</p>
+
+<p align="center">
+  <a href="https://github.com/octopus-review/octopus/actions/workflows/ci.yml"><img src="https://github.com/octopus-review/octopus/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
+  <a href="https://github.com/octopus-review/octopus/discussions"><img src="https://img.shields.io/github/discussions/octopus-review/octopus" alt="GitHub Discussions" /></a>
+</p>
+
 # Octopus
 
 AI-powered PR review tool. Multi-armed code analysis — no bug escapes.
@@ -90,6 +100,26 @@ bun run db:migrate       # Run migrations (dev)
 bun run db:push          # Push schema to DB (no migration)
 bun run db:studio        # Open Prisma Studio
 ```
+
+## Self-Hosting with Docker
+
+```bash
+# Clone and configure
+git clone https://github.com/octopus-review/octopus.git
+cd octopus
+cp .env.example .env
+# Edit .env with your API keys and configuration
+
+# Start all services (PostgreSQL, Qdrant, Web)
+docker compose up -d
+
+# Run database migrations
+docker compose exec web bunx prisma migrate deploy
+```
+
+Octopus will be available at `http://localhost:43300`.
+
+See [docker-compose.yml](docker-compose.yml) for service configuration.
 
 ## How It Works
 

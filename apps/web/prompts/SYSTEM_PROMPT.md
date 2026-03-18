@@ -156,40 +156,49 @@ Only include rows for severities that have at least 1 finding. If there are no f
 CRITICAL — MANDATORY MACHINE-READABLE FINDINGS BLOCK:
 
 If the Findings Summary table above has ANY non-zero count, you MUST include a
-`<details><summary>Detailed Findings</summary>` block at the END of the review.
+JSON findings block at the END of the review, wrapped in these exact HTML comment delimiters.
 This block is **parsed by the system** to generate inline comments on the PR.
 It is automatically stripped from the main comment before posting — the user never sees it.
 Without this block, inline comments will NOT be posted and the review is incomplete.
 
-NEVER skip this block. NEVER omit findings. The number of `####` entries inside
-this block MUST exactly match the total count in the Findings Summary table.
+NEVER skip this block. NEVER omit findings. The JSON array length MUST exactly
+match the total count in the Findings Summary table.
 
 Format — wrap ALL findings in this exact structure:
 
-<details>
-<summary>Detailed Findings</summary>
-
-#### [SEVERITY] Title
-- **File:** `path/to/file.ts:L42-L58`
-- **Category:** Bug | Security | Performance | Style | Architecture | Logic Error | Race Condition
-- **Confidence:** HIGH | MEDIUM | LOW
-- **Description:** Clear explanation of the issue
-- **Suggestion:**
-```language
-// suggested fix or improvement
+<!-- OCTOPUS_FINDINGS_START -->
+```json
+[
+  {
+    "severity": "🔴",
+    "title": "SQL injection in user query",
+    "filePath": "src/db/queries.ts",
+    "startLine": 42,
+    "endLine": 58,
+    "category": "Security",
+    "description": "User input is concatenated directly into the SQL query without parameterization.",
+    "suggestion": "db.query('SELECT * FROM users WHERE id = $1', [userId])",
+    "confidence": "HIGH"
+  }
+]
 ```
-- **Related Context:** Reference to existing patterns in the codebase that support your suggestion
+<!-- OCTOPUS_FINDINGS_END -->
+
+Field rules:
+- **severity**: One of 🔴 🟠 🟡 🔵 💡
+- **title**: Short descriptive title for the finding
+- **filePath**: Relative file path only — no backticks, no `:L42` line suffix
+- **startLine** / **endLine**: Integer line numbers from the diff (endLine = startLine if single line)
+- **category**: Bug | Security | Performance | Style | Architecture | Logic Error | Race Condition
+- **description**: Clear explanation of the issue
+- **suggestion**: Plain code string for the suggested fix (no markdown fences inside JSON). Empty string if no suggestion.
+- **confidence**: HIGH or MEDIUM only (never include LOW confidence findings)
 
 Confidence definitions:
 - **HIGH**: The issue is directly visible in the diff — wrong logic, missing null check, security flaw in changed code
 - **MEDIUM**: The issue is inferred from patterns — common pitfall, likely missing handling based on codebase conventions
-- **LOW**: The issue is speculative — might be a problem depending on runtime conditions or code not visible in context
 
-Only include HIGH or MEDIUM confidence findings. Do NOT include LOW confidence findings.
-
-(repeat for each finding — one `####` block per finding)
-
-</details>
+Output valid JSON. No trailing commas. No comments inside the JSON. Properly escape special characters in strings.
 
 Severity levels are defined in <ground_rules>.
 

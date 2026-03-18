@@ -96,8 +96,10 @@ function countDiffFiles(diff: string): number {
   return files.size;
 }
 
-/** Count findings (#### [SEVERITY] patterns) in the review body */
+/** Count findings in the review body (JSON format first, legacy markdown fallback) */
 function countFindings(reviewBody: string): number {
+  const jsonFindings = parseFindingsFromJson(reviewBody);
+  if (jsonFindings !== null) return jsonFindings.length;
   const matches = reviewBody.match(/^####\s+(?:🔴|🟠|🟡|🔵|💡)/gm);
   return matches?.length ?? 0;
 }
@@ -190,16 +192,18 @@ function sortAndCapFindings(
   return { kept: sorted.slice(0, max), truncatedCount: sorted.length - max };
 }
 
-/** Build a collapsed summary block for low-severity findings (🔵/💡) that won't get inline comments. */
+/** Build a collapsed summary block for findings that won't get inline comments. */
 function buildLowSeveritySummary(findings: InlineFinding[]): string {
   if (findings.length === 0) return "";
   const rows = findings.map(
     (f) => `| ${f.severity} | \`${f.filePath}:L${f.startLine}\` | ${f.title} | ${f.description.slice(0, 120)}${f.description.length > 120 ? "…" : ""} |`,
   );
+  const uniqueSeverities = [...new Set(findings.map((f) => f.severity))];
+  const severityIcons = uniqueSeverities.join("");
   return [
     "",
     "<details>",
-    "<summary>🔵💡 Low-priority findings (" + findings.length + ")</summary>",
+    `<summary>${severityIcons} Additional findings</summary>`,
     "",
     "| Severity | File | Title | Description |",
     "|----------|------|-------|-------------|",
@@ -210,18 +214,61 @@ function buildLowSeveritySummary(findings: InlineFinding[]): string {
   ].join("\n");
 }
 
-/**
- * Parse findings from the review body.
- * Expected format per SYSTEM_PROMPT.md:
- *   #### 🔴 CRITICAL — Title
- *   - **File:** `path/to/file.ts:L42-L58`
- *   - **Description:** ...
- *   - **Suggestion:**
- *   ```lang
- *   code
- *   ```
- */
-function parseFindings(reviewBody: string): InlineFinding[] {
+const FINDINGS_START_MARKER = "<!-- OCTOPUS_FINDINGS_START -->";
+const FINDINGS_END_MARKER = "<!-- OCTOPUS_FINDINGS_END -->";
+
+/** Parse findings from JSON block (new format). Returns null if not found or unparseable. */
+function parseFindingsFromJson(reviewBody: string): InlineFinding[] | null {
+  const startIdx = reviewBody.indexOf(FINDINGS_START_MARKER);
+  const endIdx = reviewBody.indexOf(FINDINGS_END_MARKER);
+  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) return null;
+
+  let block = reviewBody.slice(startIdx + FINDINGS_START_MARKER.length, endIdx).trim();
+
+  // Strip markdown code fences if present
+  const fenceMatch = block.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+  if (fenceMatch) {
+    block = fenceMatch[1].trim();
+  }
+
+  try {
+    const parsed = JSON.parse(block);
+    if (!Array.isArray(parsed)) return null;
+
+    const findings: InlineFinding[] = [];
+    for (const item of parsed) {
+      if (
+        typeof item.severity !== "string" ||
+        typeof item.title !== "string" ||
+        typeof item.filePath !== "string" ||
+        typeof item.startLine !== "number" ||
+        typeof item.description !== "string"
+      ) {
+        continue;
+      }
+
+      findings.push({
+        severity: item.severity,
+        title: item.title,
+        filePath: item.filePath.replace(/^`|`$/g, "").replace(/:L\d+.*$/, ""),
+        startLine: item.startLine,
+        endLine: typeof item.endLine === "number" ? item.endLine : item.startLine,
+        category: item.category ?? "",
+        description: item.description,
+        suggestion: item.suggestion ?? "",
+        confidence: (item.confidence ?? "MEDIUM").toUpperCase(),
+      });
+    }
+
+    return findings.length > 0 ? findings : null;
+  } catch {
+    console.warn("[reviewer] JSON findings block found but failed to parse");
+    return null;
+  }
+}
+
+/** Parse findings from legacy markdown format (#### emoji headings). */
+function parseFindingsFromMarkdown(reviewBody: string): InlineFinding[] {
   const findings: InlineFinding[] = [];
   const parts = reviewBody.split(/^####\s+/m);
 
@@ -259,11 +306,35 @@ function parseFindings(reviewBody: string): InlineFinding[] {
   return findings;
 }
 
+/** Parse findings: try JSON format first, fall back to legacy markdown. */
+function parseFindings(reviewBody: string): InlineFinding[] {
+  const jsonFindings = parseFindingsFromJson(reviewBody);
+  if (jsonFindings !== null) {
+    console.log(`[reviewer] Parsed ${jsonFindings.length} findings from JSON block`);
+    return jsonFindings;
+  }
+  const mdFindings = parseFindingsFromMarkdown(reviewBody);
+  if (mdFindings.length > 0) {
+    console.log(`[reviewer] Parsed ${mdFindings.length} findings from legacy markdown format`);
+  }
+  return mdFindings;
+}
+
 /**
- * Strip the <details>Detailed Findings</details> block from the review body
- * so the main PR comment stays concise. Findings are posted as inline comments instead.
+ * Strip the findings block from the review body.
+ * Handles both JSON (HTML comment delimiters) and legacy (<details>) formats.
  */
 function stripDetailedFindings(reviewBody: string): string {
+  // New format: HTML comment delimiters
+  const startIdx = reviewBody.indexOf(FINDINGS_START_MARKER);
+  const endIdx = reviewBody.indexOf(FINDINGS_END_MARKER);
+  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+    const before = reviewBody.slice(0, startIdx).trimEnd();
+    const after = reviewBody.slice(endIdx + FINDINGS_END_MARKER.length).trimStart();
+    return before + (after ? "\n\n" + after : "");
+  }
+
+  // Legacy format: <details> block
   return reviewBody.replace(
     /\n*<details>\s*\n\s*<summary>\s*Detailed Findings\s*<\/summary>[\s\S]*?<\/details>\s*/i,
     "",
@@ -510,16 +581,34 @@ export async function processReview(pullRequestId: string): Promise<void> {
       ? ghCreatePullRequestComment(installationId!, owner, repoName, prNumber, body)
       : bitbucket.createPullRequestComment(org.id, owner, repoName, prNumber, body);
 
-  const providerUpdateComment = (commentId: number, body: string) =>
-    isGitHub
-      ? ghUpdatePullRequestComment(installationId!, owner, repoName, commentId, body)
-      : bitbucket.updatePullRequestComment(org.id, owner, repoName, pr.number, commentId, body);
+  const providerUpdateComment = async (commentId: number, body: string) => {
+    try {
+      if (isGitHub) {
+        await ghUpdatePullRequestComment(installationId!, owner, repoName, commentId, body);
+      } else {
+        await bitbucket.updatePullRequestComment(org.id, owner, repoName, pr.number, commentId, body);
+      }
+    } catch (err) {
+      // If the comment was deleted externally, create a new one and update the reference
+      if (err instanceof Error && err.message.includes("404")) {
+        console.warn(`[reviewer] Comment ${commentId} not found (deleted?), creating new comment`);
+        const newId = await providerCreateComment(pr.number, body);
+        reviewCommentId = newId;
+        await prisma.pullRequest.update({
+          where: { id: pr.id },
+          data: { reviewCommentId: newId },
+        });
+        return;
+      }
+      throw err;
+    }
+  };
 
   const providerGetTree = (branch: string) =>
     isGitHub
       ? ghGetRepositoryTree(installationId!, owner, repoName, branch)
       : bitbucket.getRepositoryTree(org.id, owner, repoName, branch);
-  const reviewCommentId = pr.reviewCommentId ? Number(pr.reviewCommentId) : null;
+  let reviewCommentId = pr.reviewCommentId ? Number(pr.reviewCommentId) : null;
   const baseEvent = {
     repoId: repo.id,
     pullRequestId: pr.id,
@@ -1080,6 +1169,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
       console.log(`[reviewer] Placeholder comment updated — commentId: ${reviewCommentId}`);
     } else {
       const newCommentId = await providerCreateComment(pr.number, mainCommentBody);
+      reviewCommentId = newCommentId;
       await prisma.pullRequest.update({
         where: { id: pr.id },
         data: { reviewCommentId: newCommentId },
@@ -1091,13 +1181,19 @@ export async function processReview(pullRequestId: string): Promise<void> {
     let findings = parseFindings(reviewBody);
     let effectiveReviewBody = reviewBody;
 
-    // Fallback: if Findings Summary table has counts but AI omitted the Detailed Findings block,
-    // make a follow-up call to extract just the findings
-    if (findingsCount === 0 && findings.length === 0) {
-      const hasFindingsTable = /\|\s*(?:🔴|🟠|🟡|🔵|💡).*[1-9]\d*\s*\|/m.test(reviewBody);
-      if (hasFindingsTable) {
-        console.warn(`[reviewer] ⚠️ Findings table has counts but no parseable findings — requesting findings via follow-up call`);
-        try {
+    // Debug: log whether JSON or markdown markers were found
+    const hasJsonMarkers = reviewBody.includes(FINDINGS_START_MARKER);
+    const hasLegacyMarkers = /<details>\s*\n\s*<summary>\s*Detailed Findings/i.test(reviewBody);
+    console.log(`[reviewer] Findings parse result: ${findings.length} findings (jsonMarkers=${hasJsonMarkers}, legacyMarkers=${hasLegacyMarkers})`);
+
+    // Fallback: if Findings Summary table count exceeds parsed findings,
+    // make a follow-up call to extract the missing findings
+    const tableFindingsTotal = countFindingsFromTable(reviewBody);
+    const hasMissingFindings = tableFindingsTotal > 0 && findings.length < tableFindingsTotal;
+    if (hasMissingFindings) {
+      const missingCount = tableFindingsTotal - findings.length;
+      console.warn(`[reviewer] ⚠️ Findings table reports ${tableFindingsTotal} but only ${findings.length} parsed (${missingCount} missing) — requesting findings via follow-up call`);
+      try {
           const followUp = await createAiMessage(
             {
               model: reviewModel,
@@ -1105,23 +1201,33 @@ export async function processReview(pullRequestId: string): Promise<void> {
               messages: [
                 {
                   role: "user",
-                  content: `You previously wrote this code review but omitted the Detailed Findings block. The review mentioned findings in the Findings Summary table but did not include the machine-readable findings section.
+                  content: `You previously wrote this code review but ${findings.length === 0 ? "omitted the findings block" : `only included ${findings.length} of ${tableFindingsTotal} findings`}. The Findings Summary table shows ${tableFindingsTotal} total findings.
 
 Here is the review you wrote:
 ${reviewBody}
 
-Now output ONLY the missing findings block. Use this EXACT format for each finding:
+Now output ONLY the ${findings.length === 0 ? "missing findings" : `${missingCount} missing finding(s)`} as a JSON array. Each finding must have this exact structure:
 
-#### [SEVERITY_EMOJI] [SEVERITY_LABEL] — Title
-- **File:** \`path/to/file.ts:L42-L58\`
-- **Category:** Bug | Security | Performance | Style | Architecture | Logic Error | Race Condition
-- **Description:** Clear explanation of the issue
-- **Suggestion:**
-\`\`\`language
-// suggested fix
-\`\`\`
+[
+  {
+    "severity": "🔴",
+    "title": "Issue title",
+    "filePath": "path/to/file.ts",
+    "startLine": 42,
+    "endLine": 58,
+    "category": "Bug",
+    "description": "Clear explanation of the issue",
+    "suggestion": "suggested fix code or empty string",
+    "confidence": "HIGH"
+  }
+]
 
-Output ALL findings that match the counts in your Findings Summary table. Nothing else — no intro text, no summary, just the #### blocks.`,
+Rules:
+- severity: one of 🔴 🟠 🟡 🔵 💡
+- filePath: relative path only, no backticks, no :L suffix
+- startLine/endLine: integers
+- confidence: HIGH or MEDIUM only
+- Output ONLY valid JSON array. No markdown, no explanation, no code fences.`,
                 },
               ],
             },
@@ -1141,20 +1247,42 @@ Output ALL findings that match the counts in your Findings Summary table. Nothin
             organizationId: org.id,
           });
 
-          const followUpFindings = parseFindings(findingsBlock);
-          if (followUpFindings.length > 0) {
-            findings = followUpFindings;
+          // Try JSON parse first (requested format), then markdown fallback
+          const wrappedBlock = `${FINDINGS_START_MARKER}\n${findingsBlock}\n${FINDINGS_END_MARKER}`;
+          let followUpFindings = parseFindingsFromJson(wrappedBlock);
+          if (!followUpFindings) {
+            // Try direct JSON parse (AI may omit markers but output valid JSON)
+            try {
+              const fenceMatch = findingsBlock.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+              const raw = fenceMatch ? fenceMatch[1].trim() : findingsBlock.trim();
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) {
+                followUpFindings = parseFindingsFromJson(`${FINDINGS_START_MARKER}\n\`\`\`json\n${JSON.stringify(parsed)}\n\`\`\`\n${FINDINGS_END_MARKER}`);
+              }
+            } catch {
+              // Final fallback: legacy markdown parser
+              followUpFindings = parseFindingsFromMarkdown(findingsBlock);
+              if (followUpFindings.length === 0) followUpFindings = null;
+            }
+          }
+          if (followUpFindings && followUpFindings.length > 0) {
+            // Merge: add only findings not already present (by file+title dedup)
+            const existingKeys = new Set(findings.map((f) => `${f.filePath}:${f.title}`));
+            const newFindings = followUpFindings.filter((f) => !existingKeys.has(`${f.filePath}:${f.title}`));
+            findings = [...findings, ...newFindings];
             // Append findings block to reviewBody so it gets stored in DB
-            effectiveReviewBody = `${reviewBody}\n\n<details>\n<summary>Detailed Findings</summary>\n\n${findingsBlock}\n\n</details>`;
-            console.log(`[reviewer] Follow-up recovered ${followUpFindings.length} findings (provider: ${repo.provider}, pr: #${pr.number})`);
+            effectiveReviewBody = `${reviewBody}\n\n${FINDINGS_START_MARKER}\n\`\`\`json\n${JSON.stringify(followUpFindings, null, 2)}\n\`\`\`\n${FINDINGS_END_MARKER}`;
+            console.log(`[reviewer] Follow-up recovered ${newFindings.length} new findings (${followUpFindings.length} total from follow-up, ${findings.length} combined) (provider: ${repo.provider}, pr: #${pr.number})`);
           } else {
             console.warn(`[reviewer] Follow-up also returned no parseable findings (provider: ${repo.provider}, pr: #${pr.number})`);
           }
         } catch (err) {
           console.error("[reviewer] Follow-up findings call failed:", err);
         }
-      }
     }
+
+    // Save all parsed findings before filtering — these will be shown in the summary comment
+    const allParsedFindings = [...findings];
 
     // Filter out findings below confidence threshold
     const confidenceThreshold = reviewConfig.confidenceThreshold ?? "MEDIUM";
@@ -1236,33 +1364,19 @@ Output ALL findings that match the counts in your Findings Summary table. Nothin
         ? ["🔴", "🟠"]
         : ["🔴", "🟠", "🟡"]; // default: medium
     const inlineFindings = findings.filter((f) => inlineSeverities.includes(f.severity));
-    const summaryOnlyFindings = findings.filter((f) => !inlineSeverities.includes(f.severity));
+
+    console.log(`[reviewer] Split: ${inlineFindings.length} inline (${inlineSeverities.join(",")}), severities: ${findings.map((f) => f.severity).join(",")}`);
 
     const diffLines = parseDiffLines(diff);
     const inlineComments = buildInlineComments(inlineFindings, diffLines, repo.provider);
-
-    // Append low-severity summary and truncation note to main comment if needed
-    if (summaryOnlyFindings.length > 0 || truncatedCount > 0) {
-      let appendix = "";
-      if (truncatedCount > 0) {
-        appendix += `\n\n> **Note:** Showing top ${findings.length} of ${findings.length + truncatedCount} findings, prioritized by severity.\n`;
-      }
-      appendix += buildLowSeveritySummary(summaryOnlyFindings);
-      if (appendix) {
-        // Re-update main comment with the appendix
-        const updatedMainBody = mainCommentBody + appendix;
-        if (reviewCommentId) {
-          await providerUpdateComment(reviewCommentId, updatedMainBody);
-        }
-      }
-    }
+    console.log(`[reviewer] Built ${inlineComments.length} inline comments from ${inlineFindings.length} inline findings`);
 
     // Use findings.length as the authoritative count (accounts for follow-up recovery)
     // Fall back to findings summary table count if both parsed findings and regex count are 0
     const tableFindingsCount = countFindingsFromTable(reviewBody);
-    const effectiveFindingsCount = findings.length || findingsCount || tableFindingsCount;
+    const effectiveFindingsCount = allParsedFindings.length || findingsCount || tableFindingsCount;
 
-    console.log(`[reviewer] Parsed ${findings.length} findings, ${inlineComments.length} inline comments`);
+    console.log(`[reviewer] Parsed ${allParsedFindings.length} total, ${findings.length} after filters, ${inlineComments.length} inline comments`);
 
     const hasCritical = findings.some((f) => f.severity === "🔴") || badFiles.length > 0;
     const hasHigh = findings.some((f) => f.severity === "🟠");
@@ -1277,16 +1391,41 @@ Output ALL findings that match the counts in your Findings Summary table. Nothin
       );
     const reviewEvent = shouldRequestChanges ? "REQUEST_CHANGES" : "COMMENT";
 
+    // Build the review summary body with non-inline findings embedded
+    const buildReviewSummary = (findingsBlock: string) => {
+      const header = `${filesChanged} file${filesChanged !== 1 ? "s" : ""} reviewed, ${effectiveFindingsCount} finding${effectiveFindingsCount !== 1 ? "s" : ""}`;
+      const parts = [header];
+      if (findingsBlock) parts.push(findingsBlock);
+      parts.push("[Octopus Review](https://github.com/apps/octopus-review)");
+      return parts.join("\n\n");
+    };
+
+    // Determine which findings go into the review summary (non-inline ones)
+    let inlineReviewSucceeded = false;
+    let inlinePostedPaths = new Set<string>();
+
     if (isGitHub && installationId) {
       // GitHub: use the PR review API for inline comments
       if (inlineComments.length > 0) {
-        const summaryLine = `${filesChanged} file${filesChanged !== 1 ? "s" : ""} reviewed, ${effectiveFindingsCount} finding${effectiveFindingsCount !== 1 ? "s" : ""}\n\n[Octopus Review](https://github.com/apps/octopus-review)`;
+        // First, figure out the collapsed block for the summary (we need it before posting)
+        const tempInlinePaths = new Set(inlineComments.map((c) => `${c.path}:${c.line}`));
+        const nonInlineFindings = allParsedFindings.filter((f) => {
+          for (let l = f.startLine; l <= f.endLine; l++) {
+            if (tempInlinePaths.has(`${f.filePath}:${l}`)) return false;
+          }
+          return true;
+        });
+        const findingsBlock = buildLowSeveritySummary(nonInlineFindings);
+        const summaryLine = buildReviewSummary(findingsBlock);
+
         try {
           const reviewId = await ghCreatePullRequestReview(
             installationId, owner, repoName, pr.number,
             summaryLine, reviewEvent as "COMMENT" | "REQUEST_CHANGES", inlineComments,
           );
-          console.log(`[reviewer] PR review submitted with ${inlineComments.length} inline comments (${reviewEvent}), reviewId: ${reviewId}`);
+          inlineReviewSucceeded = true;
+          inlinePostedPaths = tempInlinePaths;
+          console.log(`[reviewer] PR review submitted with ${inlineComments.length} inline comments, ${nonInlineFindings.length} in summary (${reviewEvent}), reviewId: ${reviewId}`);
 
           // Match GitHub review comments to ReviewIssue records by file+line
           try {
@@ -1315,18 +1454,20 @@ Output ALL findings that match the counts in your Findings Summary table. Nothin
             console.error("[reviewer] Failed to match GitHub comment IDs:", matchErr);
           }
         } catch (err) {
-          console.error("[reviewer] Failed to submit inline review, falling back to summary comment:", err);
-          const fallbackSummary = `${filesChanged} file${filesChanged !== 1 ? "s" : ""} reviewed, ${effectiveFindingsCount} finding${effectiveFindingsCount !== 1 ? "s" : ""}\n\n[Octopus Review](https://github.com/apps/octopus-review)`;
-          await ghCreatePullRequestComment(installationId, owner, repoName, pr.number, fallbackSummary);
+          console.error("[reviewer] Failed to submit inline review, falling back to summary-only:", err);
         }
-      } else {
-        const summaryBody = `${filesChanged} file${filesChanged !== 1 ? "s" : ""} reviewed, ${effectiveFindingsCount} finding${effectiveFindingsCount !== 1 ? "s" : ""}\n\n[Octopus Review](https://github.com/apps/octopus-review)`;
+      }
+
+      if (!inlineReviewSucceeded) {
+        // All findings go into the summary since none were posted inline
+        const findingsBlock = buildLowSeveritySummary(allParsedFindings);
+        const summaryBody = buildReviewSummary(findingsBlock);
         try {
           await ghCreatePullRequestReview(
             installationId, owner, repoName, pr.number,
             summaryBody, reviewEvent as "COMMENT" | "REQUEST_CHANGES", [],
           );
-          console.log(`[reviewer] PR review submitted without inline comments (${reviewEvent})`);
+          console.log(`[reviewer] PR review submitted without inline comments, ${allParsedFindings.length} in summary (${reviewEvent})`);
         } catch (err) {
           console.error("[reviewer] Failed to submit PR review, falling back to comment:", err);
           await ghCreatePullRequestComment(installationId, owner, repoName, pr.number, summaryBody);
@@ -1344,9 +1485,17 @@ Output ALL findings that match the counts in your Findings Summary table. Nothin
           console.error(`[reviewer] Failed to post Bitbucket inline comment on ${comment.path}:${comment.line}:`, err);
         }
       }
-      const summaryBody = `${filesChanged} file${filesChanged !== 1 ? "s" : ""} reviewed, ${effectiveFindingsCount} finding${effectiveFindingsCount !== 1 ? "s" : ""}`;
+      const bbInlinePaths = new Set(inlineComments.map((c) => `${c.path}:${c.line}`));
+      const bbNonInlineFindings = allParsedFindings.filter((f) => {
+        for (let l = f.startLine; l <= f.endLine; l++) {
+          if (bbInlinePaths.has(`${f.filePath}:${l}`)) return false;
+        }
+        return true;
+      });
+      const findingsBlock = buildLowSeveritySummary(bbNonInlineFindings);
+      const summaryBody = `${filesChanged} file${filesChanged !== 1 ? "s" : ""} reviewed, ${effectiveFindingsCount} finding${effectiveFindingsCount !== 1 ? "s" : ""}${findingsBlock ? "\n\n" + findingsBlock : ""}`;
       await providerCreateComment(pr.number, summaryBody);
-      console.log(`[reviewer] Bitbucket review posted with ${inlineComments.length} inline comments`);
+      console.log(`[reviewer] Bitbucket review posted with ${inlineComments.length} inline comments, ${bbNonInlineFindings.length} in summary`);
     }
 
     // Step 6: Persist parsed findings as ReviewIssue records (ALL findings, not just capped/inline)
@@ -1355,8 +1504,8 @@ Output ALL findings that match the counts in your Findings Summary table. Nothin
       where: { pullRequestId: pr.id },
     });
 
-    // Persist all findings (including low-severity summary-only ones) for dashboard/scoring
-    const allPersistFindings = [...findings, ...summaryOnlyFindings.filter((f) => !findings.includes(f))];
+    // Persist all parsed findings (pre-filter) for dashboard/scoring
+    const allPersistFindings = allParsedFindings;
     if (allPersistFindings.length > 0) {
       const severityMap: Record<string, string> = {
         "🔴": "critical",

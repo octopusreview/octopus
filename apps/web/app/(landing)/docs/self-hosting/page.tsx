@@ -1,4 +1,6 @@
 import { IconServer } from "@tabler/icons-react";
+import { CodeBlock } from "./code-block";
+import { EnvGenerator } from "./env-generator";
 
 export const metadata = {
   title: "Self-Hosting — Octopus Docs",
@@ -39,77 +41,123 @@ export default function SelfHostingPage() {
 
       {/* Quick start */}
       <Section title="Quick Start with Docker">
-        <CodeBlock title="docker-compose.yml">{`version: "3.8"
-services:
+        <Step number={1} title="Clone the repository">
+          <CodeBlock>{`git clone https://github.com/octopusreview/octopus.git
+cd octopus`}</CodeBlock>
+        </Step>
+
+        <Step number={2} title="Create your .env file">
+          <Paragraph>
+            Use the <a href="#environment-variables" className="text-white underline underline-offset-2 hover:text-[#ccc]">environment generator below</a> to
+            create a <Mono>.env</Mono> file with a pre-generated auth secret,
+            then save it to the project root. Fill in your API keys before
+            continuing.
+          </Paragraph>
+        </Step>
+
+        <Step number={3} title="Start with Docker Compose">
+          <Paragraph>
+            The project includes a <Mono>docker-compose.yml</Mono> that runs
+            Octopus, PostgreSQL, and Qdrant together. Database and Qdrant URLs
+            are automatically configured for Docker&apos;s internal network.
+          </Paragraph>
+          <CodeBlock title="docker-compose.yml">{`services:
   octopus:
-    image: ghcr.io/octopus-review/octopus:latest
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
     ports:
       - "3000:3000"
     env_file:
       - .env
+    environment:
+      DATABASE_URL: postgresql://octopus:octopus@postgres:5432/octopus
+      QDRANT_URL: http://qdrant:6333
     depends_on:
-      - postgres
-      - qdrant
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    restart: unless-stopped
 
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: octopus
       POSTGRES_USER: octopus
-      POSTGRES_PASSWORD: \${DB_PASSWORD}
+      POSTGRES_PASSWORD: octopus
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U octopus"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   qdrant:
     image: qdrant/qdrant:latest
-    ports:
-      - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
 
 volumes:
   pgdata:
   qdrant_data:`}</CodeBlock>
+        </Step>
 
-        <CodeBlock title="Start services">{`docker compose up -d`}</CodeBlock>
+        <Step number={4} title="Build and run">
+          <CodeBlock>{`docker compose up -d --build`}</CodeBlock>
+          <Paragraph>
+            First run will build the Octopus image from source — this may take a
+            few minutes. Subsequent starts use the cached image.
+          </Paragraph>
+        </Step>
+
+        <Step number={5} title="Run database migrations">
+          <CodeBlock>{`docker compose exec octopus bun run db:migrate`}</CodeBlock>
+        </Step>
+
+        <Step number={6} title="Open Octopus">
+          <Paragraph>
+            Visit <Mono>http://localhost:3000</Mono> to access your self-hosted
+            Octopus instance. Create your first account and connect a GitHub
+            repository to get started.
+          </Paragraph>
+        </Step>
       </Section>
 
       {/* Environment variables */}
-      <Section title="Environment Variables">
+      <Section id="environment-variables" title="Environment Variables">
         <Paragraph>
-          Create a <Mono>.env</Mono> file with the following variables:
+          Generate a default <Mono>.env</Mono> file with pre-filled defaults for
+          database, Qdrant, and auth. A unique{" "}
+          <Mono>BETTER_AUTH_SECRET</Mono> is generated automatically.
+          Fill in the remaining values (API keys, GitHub App, etc.) before
+          starting.
         </Paragraph>
 
-        <EnvGroup title="Database">
-          <EnvVar name="DATABASE_URL" example="postgresql://octopus:password@localhost:5432/octopus" required />
-        </EnvGroup>
+        <EnvGenerator />
 
-        <EnvGroup title="Qdrant">
-          <EnvVar name="QDRANT_URL" example="http://localhost:6333" required />
-          <EnvVar name="QDRANT_API_KEY" example="your-qdrant-api-key" />
-        </EnvGroup>
-
-        <EnvGroup title="AI Providers">
+        <EnvGroup title="Required — fill these in">
           <EnvVar name="OPENAI_API_KEY" example="sk-..." required description="Used for embeddings" />
           <EnvVar name="ANTHROPIC_API_KEY" example="sk-ant-..." description="Claude for reviews" />
-        </EnvGroup>
-
-        <EnvGroup title="Auth">
-          <EnvVar name="BETTER_AUTH_SECRET" example="random-32-char-string" required />
-          <EnvVar name="BETTER_AUTH_URL" example="https://octopus.yourcompany.com" required />
-        </EnvGroup>
-
-        <EnvGroup title="GitHub App">
           <EnvVar name="GITHUB_APP_ID" example="123456" required />
           <EnvVar name="GITHUB_APP_PRIVATE_KEY" example="-----BEGIN RSA..." required />
-          <EnvVar name="GITHUB_APP_WEBHOOK_SECRET" example="whsec_..." required />
+          <EnvVar name="GITHUB_WEBHOOK_SECRET" example="whsec_..." required />
           <EnvVar name="GITHUB_CLIENT_ID" example="Iv1.abc123" />
           <EnvVar name="GITHUB_CLIENT_SECRET" example="secret" />
         </EnvGroup>
 
+        <EnvGroup title="Pre-filled defaults">
+          <EnvVar name="DATABASE_URL" example="postgresql://octopus:octopus@localhost:5432/octopus" required />
+          <EnvVar name="QDRANT_URL" example="http://localhost:6333" required />
+          <EnvVar name="BETTER_AUTH_SECRET" example="Auto-generated (64-char hex)" required />
+          <EnvVar name="BETTER_AUTH_URL" example="http://localhost:3000" required />
+        </EnvGroup>
+
         <EnvGroup title="Optional">
+          <EnvVar name="QDRANT_API_KEY" example="your-qdrant-api-key" description="If Qdrant auth is enabled" />
           <EnvVar name="COHERE_API_KEY" example="..." description="For reranking search results" />
-          <EnvVar name="STRIPE_SECRET_KEY" example="sk_..." description="For billing (optional)" />
+          <EnvVar name="STRIPE_SECRET_KEY" example="sk_..." description="For billing" />
         </EnvGroup>
       </Section>
 
@@ -165,11 +213,17 @@ docker exec -it octopus-web bun run db:migrate`}</CodeBlock>
       </Section>
 
       {/* From source */}
-      <Section title="Building from Source">
-        <CodeBlock>{`git clone https://github.com/octopus-review/octopus.git
+      <Section title="Running without Docker">
+        <Paragraph>
+          If you prefer to run Octopus directly, you&apos;ll need PostgreSQL,
+          Qdrant, and Bun installed on your machine. Create your{" "}
+          <Mono>.env</Mono> file first using the generator above.
+        </Paragraph>
+        <CodeBlock>{`git clone https://github.com/octopusreview/octopus.git
 cd octopus
 bun install
 bun run db:generate
+bun run db:migrate
 bun run build
 bun run start`}</CodeBlock>
         <Paragraph>
@@ -187,14 +241,16 @@ bun run start`}</CodeBlock>
 /* ------------------------------------------------------------------ */
 
 function Section({
+  id,
   title,
   children,
 }: {
+  id?: string;
   title: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="mb-10">
+    <section id={id} className="mb-10 scroll-mt-20">
       <h2 className="mb-4 text-xl font-semibold text-white">{title}</h2>
       {children}
     </section>
@@ -213,26 +269,6 @@ function Mono({ children }: { children: React.ReactNode }) {
   );
 }
 
-function CodeBlock({
-  children,
-  title,
-}: {
-  children: React.ReactNode;
-  title?: string;
-}) {
-  return (
-    <div className="mb-4 overflow-hidden rounded-lg border border-white/[0.06]">
-      {title && (
-        <div className="border-b border-white/[0.06] bg-white/[0.02] px-4 py-1.5 text-xs text-[#666]">
-          {title}
-        </div>
-      )}
-      <pre className="overflow-x-auto bg-[#161616] px-4 py-3">
-        <code className="text-sm text-[#ccc]">{children}</code>
-      </pre>
-    </div>
-  );
-}
 
 function RequirementCard({
   title,
@@ -286,6 +322,28 @@ function EnvVar({
       <span className="ml-auto text-right text-xs text-[#555]">
         {description || example}
       </span>
+    </div>
+  );
+}
+
+function Step({
+  number,
+  title,
+  children,
+}: {
+  number: number;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mb-5">
+      <div className="mb-2 flex items-center gap-2.5">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-xs font-semibold text-white">
+          {number}
+        </span>
+        <h3 className="text-sm font-medium text-white">{title}</h3>
+      </div>
+      <div className="ml-8">{children}</div>
     </div>
   );
 }

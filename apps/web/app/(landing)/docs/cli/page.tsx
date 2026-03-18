@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { IconTerminal2 } from "@tabler/icons-react";
 
 export const metadata = {
@@ -134,6 +135,44 @@ octopus pr review https://github.com/owner/repo/pull/42`}</CodeBlock>
         <CodeBlock>{`octopus login --profile work
 octopus login --profile personal
 octopus config set activeProfile work`}</CodeBlock>
+      </Section>
+
+      {/* .octopusignore */}
+      <Section title=".octopusignore">
+        <Paragraph>
+          Control which files Octopus reviews and indexes by creating a{" "}
+          <Mono>.octopusignore</Mono> file at the root of your repository. It
+          uses the same syntax as <Mono>.gitignore</Mono>.
+        </Paragraph>
+        <CodeBlock>{`# Generated files
+docs/generated/**
+
+# Test fixtures
+tests/fixtures/**
+**/__snapshots__/**
+
+# Vendor / third-party
+vendor/**
+third-party/**
+
+# Large data files
+*.csv
+*.parquet`}</CodeBlock>
+        <Paragraph>
+          Matched files are excluded from both indexing (never chunked or
+          embedded) and PR review (the AI reviewer won&apos;t see changes to
+          those files).
+        </Paragraph>
+        <Paragraph>
+          See the full{" "}
+          <Link
+            href="/docs/octopusignore"
+            className="text-white underline decoration-white/30 underline-offset-2 transition-colors hover:decoration-white"
+          >
+            .octopusignore reference
+          </Link>{" "}
+          for syntax details, common patterns, and provider support.
+        </Paragraph>
       </Section>
     </article>
   );

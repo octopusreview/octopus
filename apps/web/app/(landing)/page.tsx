@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { FloatingOctopus } from "@/components/landing-unicorn-section";
 import { LandingFeatures } from "@/components/landing-features";
 import { TrackedLink, TrackedAnchor } from "@/components/tracked-link";
+import { LandingFooter } from "@/components/landing-footer";
 import {
   IconBrandGithub,
   IconArrowRight,
@@ -35,7 +36,7 @@ export default async function LandingPage() {
       />
 
       {/* Mobile nav — simple bar */}
-      <nav className="fixed left-0 right-0 top-0 z-40 border-b border-white/[0.06] bg-[#0c0c0c]/80 backdrop-blur-xl md:hidden">
+      <nav className="fixed left-0 right-0 top-0 z-40 border-b border-white/[0.06] bg-[#0c0c0c]/80 backdrop-blur-xl lg:hidden">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2">
             <Image src="/logo.svg" alt="Octopus" width={22} height={22} />
@@ -54,7 +55,7 @@ export default async function LandingPage() {
       </nav>
 
       {/* Desktop nav — floating pill */}
-      <nav className="fixed left-1/2 top-4 z-40 hidden -translate-x-1/2 md:block">
+      <nav className="fixed left-1/2 top-4 z-40 hidden -translate-x-1/2 lg:block">
         <div className="flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.05] px-3 py-1.5 shadow-lg shadow-black/20 backdrop-blur-xl">
           <div className="flex items-center gap-2 px-2">
             <Image src="/logo.svg" alt="Octopus" width={24} height={24} />
@@ -62,9 +63,9 @@ export default async function LandingPage() {
           </div>
           <div className="flex items-center gap-1 text-sm text-[#777]">
             <a href="#features" className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">Features</a>
-            <a href="#how-it-works" className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">How it works</a>
-            <TrackedLink href="/docs" event="nav_click" eventParams={{ label: "docs" }} className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">Docs</TrackedLink>
-            <a href="https://github.com/octopus-review" target="_blank" rel="noopener noreferrer" className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">GitHub</a>
+            <a href="#how-it-works" className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">How It Works</a>
+            <TrackedLink href="/docs/about" event="nav_click" eventParams={{ label: "docs" }} className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">Docs</TrackedLink>
+            <a href="https://github.com/octopusreview" target="_blank" rel="noopener noreferrer" className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">GitHub</a>
           </div>
           <div className="ml-2">
             {session ? (
@@ -117,7 +118,7 @@ export default async function LandingPage() {
               <IconArrowRight className="size-4" />
             </TrackedLink>
             <TrackedAnchor
-              href="https://github.com/octopus-review"
+              href="https://github.com/octopusreview"
               target="_blank"
               rel="noopener noreferrer"
               event="cta_click"
@@ -233,7 +234,7 @@ export default async function LandingPage() {
 
             <div className="mt-8 flex justify-center">
               <TrackedAnchor
-                href="https://github.com/octopus-review"
+                href="https://github.com/octopusreview"
                 target="_blank"
                 rel="noopener noreferrer"
                 event="cta_click"
@@ -272,79 +273,7 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="relative z-10 border-t border-white/[0.06] px-6 py-12 md:px-8 md:py-16">
-        <div className="mx-auto max-w-6xl">
-          <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
-            {/* Brand */}
-            <div className="sm:col-span-2 lg:col-span-1">
-              <div className="flex items-center gap-2.5">
-                <Image src="/logo.svg" alt="Octopus" width={22} height={22} />
-                <span className="text-sm font-semibold text-white">Octopus</span>
-              </div>
-              <p className="mt-3 text-sm leading-relaxed text-[#555]">
-                AI-powered code review automation. Open source, self-hostable.
-              </p>
-            </div>
-
-            {/* Product */}
-            <div>
-              <h4 className="mb-3 text-xs font-semibold uppercase tracking-[0.15em] text-[#555]">Product</h4>
-              <ul className="space-y-2">
-                <li><TrackedAnchor href="#features" event="footer_click" eventParams={{ label: "features" }} className="text-sm text-[#666] transition-colors hover:text-white">Features</TrackedAnchor></li>
-                <li><TrackedAnchor href="#how-it-works" event="footer_click" eventParams={{ label: "how_it_works" }} className="text-sm text-[#666] transition-colors hover:text-white">How it works</TrackedAnchor></li>
-                <li><TrackedLink href="/login" event="footer_click" eventParams={{ label: "get_started" }} className="text-sm text-[#666] transition-colors hover:text-white">Get Started</TrackedLink></li>
-              </ul>
-            </div>
-
-            {/* Docs */}
-            <div>
-              <h4 className="mb-3 text-xs font-semibold uppercase tracking-[0.15em] text-[#555]">Docs</h4>
-              <ul className="space-y-2">
-                <li><TrackedLink href="/docs/cli" event="footer_click" eventParams={{ label: "docs_cli" }} className="text-sm text-[#666] transition-colors hover:text-white">CLI</TrackedLink></li>
-                <li><TrackedLink href="/docs/octopusignore" event="footer_click" eventParams={{ label: "docs_octopusignore" }} className="text-sm text-[#666] transition-colors hover:text-white">.octopusignore</TrackedLink></li>
-                <li><TrackedLink href="/docs/self-hosting" event="footer_click" eventParams={{ label: "docs_self_hosting" }} className="text-sm text-[#666] transition-colors hover:text-white">Self-Hosting</TrackedLink></li>
-              </ul>
-            </div>
-
-            {/* Community */}
-            <div>
-              <h4 className="mb-3 text-xs font-semibold uppercase tracking-[0.15em] text-[#555]">Community</h4>
-              <ul className="space-y-2">
-                <li>
-                  <TrackedAnchor href="https://github.com/octopus-review" target="_blank" rel="noopener noreferrer" event="footer_click" eventParams={{ label: "github" }} className="flex items-center gap-1.5 text-sm text-[#666] transition-colors hover:text-white">
-                    <IconBrandGithub className="size-3.5" />
-                    GitHub
-                  </TrackedAnchor>
-                </li>
-                <li>
-                  <TrackedAnchor href="https://github.com/octopus-review/octopus/issues" target="_blank" rel="noopener noreferrer" event="footer_click" eventParams={{ label: "report_issue" }} className="text-sm text-[#666] transition-colors hover:text-white">
-                    Report an Issue
-                  </TrackedAnchor>
-                </li>
-                <li>
-                  <TrackedAnchor href="https://github.com/octopus-review/octopus/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" event="footer_click" eventParams={{ label: "license" }} className="text-sm text-[#666] transition-colors hover:text-white">
-                    MIT License
-                  </TrackedAnchor>
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          {/* Bottom bar */}
-          <div className="mt-10 flex flex-col items-center gap-3 border-t border-white/[0.06] pt-6 sm:flex-row sm:justify-between">
-            <span className="text-xs text-[#333]">
-              &copy; {new Date().getFullYear()} Octopus. Open source code review automation.
-            </span>
-            <span className="text-xs text-[#333]">
-              3D model{" "}
-              <a href="https://sketchfab.com/3d-models/octopus-lowpoly-rigged-52870f0c8cec4b29992bfda0854c7a30" target="_blank" rel="noopener noreferrer" className="underline transition-colors hover:text-white">&quot;Octopus Lowpoly Rigged&quot;</a>
-              {" "}by MushyDay,{" "}
-              <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" className="underline transition-colors hover:text-white">CC BY 4.0</a>
-            </span>
-          </div>
-        </div>
-      </footer>
+      <LandingFooter />
     </div>
   );
 }

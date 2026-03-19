@@ -77,3 +77,58 @@ export async function PATCH(
 
   return NextResponse.json({ member: updated });
 }
+
+// DELETE /api/orgs/:orgId/members/:memberId — Remove member from organization (soft delete)
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ orgId: string; memberId: string }> },
+) {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { orgId, memberId } = await params;
+
+  // Caller must be owner or admin
+  const caller = await prisma.organizationMember.findFirst({
+    where: {
+      organizationId: orgId,
+      userId: session.user.id,
+      role: { in: ["owner", "admin"] },
+      deletedAt: null,
+    },
+  });
+  if (!caller) {
+    return NextResponse.json({ error: "Forbidden: admin role required" }, { status: 403 });
+  }
+
+  const target = await prisma.organizationMember.findFirst({
+    where: { id: memberId, organizationId: orgId, deletedAt: null },
+  });
+  if (!target) {
+    return NextResponse.json({ error: "Member not found" }, { status: 404 });
+  }
+
+  // Cannot remove yourself
+  if (target.userId === session.user.id) {
+    return NextResponse.json({ error: "Cannot remove yourself" }, { status: 400 });
+  }
+
+  // Cannot remove the owner
+  if (target.role === "owner") {
+    return NextResponse.json({ error: "Cannot remove the owner" }, { status: 400 });
+  }
+
+  // Only owner can remove admins
+  if (caller.role !== "owner" && target.role === "admin") {
+    return NextResponse.json({ error: "Only the owner can remove admins" }, { status: 403 });
+  }
+
+  await prisma.organizationMember.update({
+    where: { id: memberId },
+    data: { deletedAt: new Date() },
+  });
+
+  return NextResponse.json({ success: true });
+}

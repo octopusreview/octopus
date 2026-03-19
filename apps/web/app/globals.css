@@ -146,6 +146,49 @@ button {
   animation: fade-in 0.7s ease-out forwards;
 }
 
+/* Shimmer border animation */
+@keyframes shimmer-spin {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+.shimmer-border {
+  position: relative;
+  border-radius: 8px;
+  padding: 1.5px;
+  overflow: hidden;
+}
+
+.shimmer-border::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 200%;
+  height: 200%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    transparent 55%,
+    #da552f 70%,
+    #ff6154 80%,
+    #da552f 90%,
+    transparent 95%
+  );
+  animation: shimmer-spin 3s linear infinite;
+}
+
+.shimmer-border > * {
+  position: relative;
+  z-index: 1;
+  display: block;
+  border-radius: 6px;
+}
+
 /* iOS-style auto-hide scrollbar — visible on hover */
 .scrollbar-auto-hide {
   scrollbar-width: thin;

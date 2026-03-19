@@ -1,5 +1,9 @@
 import Image from "next/image";
-import { IconBrandGithub } from "@tabler/icons-react";
+import {
+  IconBrandGithub,
+  IconBrandX,
+  IconBrandYoutube,
+} from "@tabler/icons-react";
 import { TrackedLink, TrackedAnchor } from "@/components/tracked-link";
 
 export function LandingFooter() {
@@ -16,6 +20,38 @@ export function LandingFooter() {
             <p className="mt-3 text-sm leading-relaxed text-[#555]">
               AI-powered code review automation. Open source, self-hostable.
             </p>
+            <div className="mt-4 flex items-center gap-3">
+              <TrackedAnchor
+                href="https://github.com/octopusreview"
+                target="_blank"
+                rel="noopener noreferrer"
+                event="footer_click"
+                eventParams={{ label: "github" }}
+                className="text-[#555] transition-colors hover:text-white"
+              >
+                <IconBrandGithub className="size-4" />
+              </TrackedAnchor>
+              <TrackedAnchor
+                href="https://x.com/octopus_review"
+                target="_blank"
+                rel="noopener noreferrer"
+                event="footer_click"
+                eventParams={{ label: "x" }}
+                className="text-[#555] transition-colors hover:text-white"
+              >
+                <IconBrandX className="size-4" />
+              </TrackedAnchor>
+              <TrackedAnchor
+                href="https://www.youtube.com/@OctopusReview"
+                target="_blank"
+                rel="noopener noreferrer"
+                event="footer_click"
+                eventParams={{ label: "youtube" }}
+                className="text-[#555] transition-colors hover:text-white"
+              >
+                <IconBrandYoutube className="size-4" />
+              </TrackedAnchor>
+            </div>
           </div>
 
           {/* Product */}
@@ -159,7 +195,7 @@ export function LandingFooter() {
               </li>
               <li>
                 <TrackedAnchor
-                  href="https://github.com/octopusreview/octopus/blob/main/LICENSE"
+                  href="https://github.com/octopusreview/octopus/blob/master/LICENSE.md"
                   target="_blank"
                   rel="noopener noreferrer"
                   event="footer_click"
@@ -170,6 +206,22 @@ export function LandingFooter() {
                 </TrackedAnchor>
               </li>
             </ul>
+            <div className="shimmer-border mt-4 inline-block">
+              <TrackedAnchor
+                href="https://www.producthunt.com/products/octopus-5?utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-octopus-4"
+                target="_blank"
+                rel="noopener noreferrer"
+                event="footer_click"
+                eventParams={{ label: "product_hunt" }}
+              >
+                <Image
+                  src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1102575&theme=dark&t=1773935793311"
+                  alt="Octopus on Product Hunt"
+                  width={180}
+                  height={39}
+                />
+              </TrackedAnchor>
+            </div>
           </div>
         </div>
 

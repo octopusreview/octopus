@@ -11,7 +11,7 @@ export default async function AdminUsagePage() {
   const [aiByModel, pricing] = await Promise.all([
     prisma.aiUsage.groupBy({
       by: ["model"],
-      where: { organization: { anthropicApiKey: null } },
+      where: { usedOwnKey: false },
       _sum: {
         inputTokens: true,
         outputTokens: true,

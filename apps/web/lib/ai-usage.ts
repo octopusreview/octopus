@@ -15,20 +15,7 @@ type LogAiUsageParams = {
 
 export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
   try {
-    await prisma.aiUsage.create({
-      data: {
-        provider: params.provider,
-        model: params.model,
-        operation: params.operation,
-        inputTokens: params.inputTokens,
-        outputTokens: params.outputTokens,
-        cacheReadTokens: params.cacheReadTokens ?? 0,
-        cacheWriteTokens: params.cacheWriteTokens ?? 0,
-        organizationId: params.organizationId,
-      },
-    });
-
-    // Only deduct credits for orgs without their own API key
+    // Determine key ownership before recording usage
     const org = await prisma.organization.findUnique({
       where: { id: params.organizationId },
       select: { anthropicApiKey: true, openaiApiKey: true, cohereApiKey: true, googleApiKey: true },
@@ -40,6 +27,21 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
       (params.provider === "google" && !!org?.googleApiKey) ||
       (params.provider === "cohere" && !!org?.cohereApiKey);
 
+    await prisma.aiUsage.create({
+      data: {
+        provider: params.provider,
+        model: params.model,
+        operation: params.operation,
+        inputTokens: params.inputTokens,
+        outputTokens: params.outputTokens,
+        cacheReadTokens: params.cacheReadTokens ?? 0,
+        cacheWriteTokens: params.cacheWriteTokens ?? 0,
+        usedOwnKey: hasOwnKey,
+        organizationId: params.organizationId,
+      },
+    });
+
+    // Only deduct credits for orgs without their own API key
     if (!hasOwnKey) {
       const pricing = await getModelPricing();
       const cost = calcCost(

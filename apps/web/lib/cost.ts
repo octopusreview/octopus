@@ -74,6 +74,7 @@ export async function getOrgMonthlySpend(orgId: string): Promise<number> {
     where: {
       organizationId: orgId,
       createdAt: { gte: monthStart },
+      usedOwnKey: false,
     },
     _sum: {
       inputTokens: true,

@@ -338,6 +338,7 @@ export function ModelsSettings({
           <form
             action={(formData) => {
               startTransition(async () => {
+                setSaveResult({});
                 const result = await updateDefaultModels({}, formData);
                 setSaveResult(result);
               });

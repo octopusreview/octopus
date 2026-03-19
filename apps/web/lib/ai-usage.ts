@@ -21,11 +21,16 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
       select: { anthropicApiKey: true, openaiApiKey: true, cohereApiKey: true, googleApiKey: true },
     });
 
+    if (!org) {
+      console.error("[ai-usage] Organization not found, skipping usage record:", params.organizationId);
+      return;
+    }
+
     const hasOwnKey =
-      (params.provider === "anthropic" && !!org?.anthropicApiKey) ||
-      (params.provider === "openai" && !!org?.openaiApiKey) ||
-      (params.provider === "google" && !!org?.googleApiKey) ||
-      (params.provider === "cohere" && !!org?.cohereApiKey);
+      (params.provider === "anthropic" && !!org.anthropicApiKey) ||
+      (params.provider === "openai" && !!org.openaiApiKey) ||
+      (params.provider === "google" && !!org.googleApiKey) ||
+      (params.provider === "cohere" && !!org.cohereApiKey);
 
     await prisma.aiUsage.create({
       data: {

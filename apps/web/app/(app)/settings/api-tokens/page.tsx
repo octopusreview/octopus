@@ -40,6 +40,7 @@ export default async function ApiTokensPage() {
 
   return (
     <ApiTokensClient
+      key={member.organizationId}
       tokens={tokens.map((t) => ({
         ...t,
         lastUsedAt: t.lastUsedAt?.toISOString() ?? null,

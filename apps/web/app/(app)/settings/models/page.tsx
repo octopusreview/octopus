@@ -74,6 +74,7 @@ export default async function ModelsPage() {
 
   return (
     <ModelsSettings
+      key={orgId}
       isOwner={isOwner}
       availableModels={availableModels}
       currentModelId={member.organization.defaultModelId}

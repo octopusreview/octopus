@@ -23,7 +23,7 @@ export default async function SettingsPage() {
     select: {
       role: true,
       organization: {
-        select: { name: true, slug: true },
+        select: { id: true, name: true, slug: true },
       },
     },
   });
@@ -45,7 +45,7 @@ export default async function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div key={member.organization.id} className="space-y-6">
       <OrgNameForm currentName={member.organization.name} isOwner={isOwner} />
       {isOwner && <DangerZoneCard orgSlug={member.organization.slug} isLastOrg={isLastOrg} />}
     </div>

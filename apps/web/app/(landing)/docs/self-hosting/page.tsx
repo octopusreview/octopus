@@ -312,14 +312,16 @@ function EnvVar({
   description?: string;
 }) {
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-white/[0.04] bg-white/[0.01] px-3 py-2">
-      <code className="shrink-0 text-sm text-white">{name}</code>
-      {required && (
-        <span className="shrink-0 rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-medium uppercase text-[#888]">
-          required
-        </span>
-      )}
-      <span className="ml-auto text-right text-xs text-[#555]">
+    <div className="rounded-lg border border-white/[0.04] bg-white/[0.01] px-3 py-2">
+      <div className="flex items-center gap-2">
+        <code className="text-xs text-white sm:text-sm">{name}</code>
+        {required && (
+          <span className="shrink-0 rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-medium uppercase text-[#888]">
+            required
+          </span>
+        )}
+      </div>
+      <span className="mt-1 block text-xs text-[#555]">
         {description || example}
       </span>
     </div>

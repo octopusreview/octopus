@@ -270,10 +270,10 @@ function EnvBlock({
         {vars.map((v) => (
           <div
             key={v.name}
-            className="flex items-center gap-3 rounded-lg border border-white/[0.04] bg-white/[0.01] px-3 py-2"
+            className="rounded-lg border border-white/[0.04] bg-white/[0.01] px-3 py-2"
           >
-            <code className="text-sm text-white">{v.name}</code>
-            <span className="ml-auto text-xs text-[#555]">
+            <code className="text-xs text-white sm:text-sm">{v.name}</code>
+            <span className="mt-1 block text-xs text-[#555]">
               {v.description}
             </span>
           </div>

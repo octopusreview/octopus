@@ -7,6 +7,7 @@ import { LandingFeatures } from "@/components/landing-features";
 import { TrackedLink, TrackedAnchor } from "@/components/tracked-link";
 import { LandingFooter } from "@/components/landing-footer";
 import { LaunchCountdown } from "@/components/landing-countdown";
+import { LandingMobileNav } from "@/components/landing-mobile-nav";
 import { NewsletterForm } from "@/components/landing-newsletter";
 import {
   IconBrandGithub,
@@ -37,24 +38,8 @@ export default async function LandingPage() {
         }}
       />
 
-      {/* Mobile nav — simple bar */}
-      <nav className="fixed left-0 right-0 top-0 z-40 border-b border-white/[0.06] bg-[#0c0c0c]/80 backdrop-blur-xl lg:hidden">
-        <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2">
-            <Image src="/logo.svg" alt="Octopus" width={22} height={22} />
-            <span className="text-sm font-semibold text-white">Octopus</span>
-          </div>
-          {session ? (
-            <Link href="/dashboard" className="rounded-full bg-white px-4 py-1.5 text-xs font-medium text-[#0c0c0c]">
-              Dashboard
-            </Link>
-          ) : (
-            <TrackedLink href="/login" event="cta_click" eventParams={{ location: "mobile_nav", label: "get_started" }} className="rounded-full bg-white px-4 py-1.5 text-xs font-medium text-[#0c0c0c]">
-              Get Started
-            </TrackedLink>
-          )}
-        </div>
-      </nav>
+      {/* Mobile nav — hamburger menu */}
+      <LandingMobileNav isLoggedIn={!!session} />
 
       {/* Desktop nav — floating pill */}
       <nav className="fixed left-1/2 top-4 z-40 hidden -translate-x-1/2 lg:block">

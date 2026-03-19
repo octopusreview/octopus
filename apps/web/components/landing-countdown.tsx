@@ -25,10 +25,10 @@ function getTimeLeft(): TimeLeft | null {
 function TimeUnit({ value, label }: { value: number; label: string }) {
   return (
     <div className="flex flex-col items-center">
-      <div className="flex size-16 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-2xl font-bold tabular-nums text-white sm:size-20 sm:text-3xl">
+      <div className="flex size-12 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-lg font-bold tabular-nums text-white min-[400px]:size-14 min-[400px]:text-xl sm:size-20 sm:rounded-xl sm:text-3xl">
         {String(value).padStart(2, "0")}
       </div>
-      <span className="mt-2 text-xs uppercase tracking-[0.15em] text-[#555]">{label}</span>
+      <span className="mt-1.5 text-[10px] uppercase tracking-[0.15em] text-[#555] sm:mt-2 sm:text-xs">{label}</span>
     </div>
   );
 }
@@ -52,7 +52,7 @@ export function LaunchCountdown() {
 
   if (!mounted) {
     return (
-      <div className="flex items-center justify-center gap-3 sm:gap-4">
+      <div className="flex items-center justify-center gap-2 sm:gap-4">
         {["Days", "Hours", "Min", "Sec"].map((label) => (
           <TimeUnit key={label} value={0} label={label} />
         ))}
@@ -75,13 +75,13 @@ export function LaunchCountdown() {
   }
 
   return (
-    <div className="flex items-center justify-center gap-3 sm:gap-4" role="timer" aria-live="polite" aria-label={`${timeLeft.days} days, ${timeLeft.hours} hours, ${timeLeft.minutes} minutes, ${timeLeft.seconds} seconds until launch`}>
+    <div className="flex items-center justify-center gap-2 sm:gap-4" role="timer" aria-live="polite" aria-label={`${timeLeft.days} days, ${timeLeft.hours} hours, ${timeLeft.minutes} minutes, ${timeLeft.seconds} seconds until launch`}>
       <TimeUnit value={timeLeft.days} label="Days" />
-      <span className="mt-[-1rem] text-xl font-light text-white/20">:</span>
+      <span className="mt-[-0.75rem] text-base font-light text-white/20 sm:mt-[-1rem] sm:text-xl">:</span>
       <TimeUnit value={timeLeft.hours} label="Hours" />
-      <span className="mt-[-1rem] text-xl font-light text-white/20">:</span>
+      <span className="mt-[-0.75rem] text-base font-light text-white/20 sm:mt-[-1rem] sm:text-xl">:</span>
       <TimeUnit value={timeLeft.minutes} label="Min" />
-      <span className="mt-[-1rem] text-xl font-light text-white/20">:</span>
+      <span className="mt-[-0.75rem] text-base font-light text-white/20 sm:mt-[-1rem] sm:text-xl">:</span>
       <TimeUnit value={timeLeft.seconds} label="Sec" />
     </div>
   );

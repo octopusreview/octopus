@@ -1,5 +1,6 @@
 import { IconFileText } from "@tabler/icons-react";
 import { TrackedAnchor } from "@/components/tracked-link";
+import { CodeBlock } from "../self-hosting/code-block";
 
 export const metadata = {
   title: ".octopusignore — Octopus Docs",
@@ -32,8 +33,7 @@ export default function OctopusIgnorePage() {
         </Paragraph>
         <CodeBlock
           title=".octopusignore"
-          lang="gitignore"
-        >{`# Generated documentation
+                 >{`# Generated documentation
 docs/generated/**
 
 # Test fixtures and snapshots
@@ -188,7 +188,7 @@ vendor/**
 
       {/* Common patterns */}
       <Section title="Common Patterns">
-        <CodeBlock title="Monorepo" lang="gitignore">
+        <CodeBlock title="Monorepo">
           {`# Ignore shared configs
 .eslintrc.*
 prettier.config.*
@@ -201,7 +201,7 @@ prettier.config.*
 **/migrations/**`}
         </CodeBlock>
 
-        <CodeBlock title="Frontend" lang="gitignore">
+        <CodeBlock title="Frontend">
           {`# Ignore bundled assets
 public/assets/**
 dist/**
@@ -212,7 +212,7 @@ package-lock.json
 bun.lock`}
         </CodeBlock>
 
-        <CodeBlock title="Data / ML" lang="gitignore">
+        <CodeBlock title="Data / ML">
           {`# Ignore data files
 *.csv
 *.parquet
@@ -285,28 +285,6 @@ function Mono({ children }: { children: React.ReactNode }) {
 }
 
 
-function CodeBlock({
-  children,
-  title,
-  lang,
-}: {
-  children: React.ReactNode;
-  title?: string;
-  lang?: string;
-}) {
-  return (
-    <div className="mb-4 overflow-hidden rounded-lg border border-white/[0.06]">
-      {title && (
-        <div className="border-b border-white/[0.06] bg-white/[0.02] px-4 py-1.5 text-xs text-[#666]">
-          {title}
-        </div>
-      )}
-      <pre className="overflow-x-auto bg-[#161616] px-4 py-3">
-        <code className="text-sm text-[#ccc]">{children}</code>
-      </pre>
-    </div>
-  );
-}
 
 function FlowDiagram({ steps }: { steps: string[] }) {
   return (

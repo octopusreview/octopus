@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { IconTerminal2 } from "@tabler/icons-react";
+import { CodeBlock } from "../self-hosting/code-block";
 
 export const metadata = {
   title: "CLI — Octopus Docs",
@@ -209,13 +210,6 @@ function Mono({ children }: { children: React.ReactNode }) {
   );
 }
 
-function CodeBlock({ children }: { children: React.ReactNode }) {
-  return (
-    <pre className="mb-4 overflow-x-auto rounded-lg border border-white/[0.06] bg-[#161616] px-4 py-3">
-      <code className="text-sm text-[#ccc]">{children}</code>
-    </pre>
-  );
-}
 
 function CommandCard({
   command,

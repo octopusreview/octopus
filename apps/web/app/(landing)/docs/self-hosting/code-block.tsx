@@ -31,7 +31,7 @@ export function CodeBlock({
         </pre>
         <button
           onClick={copy}
-          className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-white/[0.06] px-2 py-1 text-xs text-[#666] opacity-0 transition-opacity hover:bg-white/[0.1] hover:text-white group-hover:opacity-100"
+          className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-white/[0.06] px-2 py-1 text-xs text-[#666] transition-opacity hover:bg-white/[0.1] hover:text-white md:opacity-0 md:group-hover:opacity-100"
         >
           {copied ? (
             <IconCheck className="size-3.5 text-green-400" />

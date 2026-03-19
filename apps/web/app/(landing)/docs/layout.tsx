@@ -1,5 +1,4 @@
 import Image from "next/image";
-import { IconArrowLeft } from "@tabler/icons-react";
 import { TrackedLink } from "@/components/tracked-link";
 import { DocsBreadcrumb } from "./docs-breadcrumb";
 import { DocsMobileMenu } from "./docs-mobile-menu";
@@ -36,17 +35,6 @@ export default function DocsLayout({
             Docs
           </TrackedLink>
           <DocsBreadcrumb />
-          <div className="ml-auto">
-            <TrackedLink
-              href="/"
-              event="docs_nav_click"
-              eventParams={{ label: "home" }}
-              className="flex items-center gap-1.5 text-sm text-[#555] transition-colors hover:text-white"
-            >
-              <IconArrowLeft className="size-3.5" />
-              Home
-            </TrackedLink>
-          </div>
         </div>
       </header>
 

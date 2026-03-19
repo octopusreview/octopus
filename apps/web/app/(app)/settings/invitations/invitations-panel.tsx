@@ -82,6 +82,7 @@ export function InvitationsPanel({ orgId, isAdmin }: InvitationsPanelProps) {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [callerRole, setCallerRole] = useState<string>("member");
+  const [callerUserId, setCallerUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [membersLoading, setMembersLoading] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -98,6 +99,7 @@ export function InvitationsPanel({ orgId, isAdmin }: InvitationsPanelProps) {
       const data = await res.json();
       setMembers(data.members);
       setCallerRole(data.callerRole);
+      setCallerUserId(data.callerUserId);
     } finally {
       setMembersLoading(false);
     }
@@ -189,6 +191,7 @@ export function InvitationsPanel({ orgId, isAdmin }: InvitationsPanelProps) {
 
   function canRemoveMember(target: Member): boolean {
     if (!isAdmin) return false;
+    if (target.user.id === callerUserId) return false;
     if (target.role === "owner") return false;
     if (callerRole !== "owner" && target.role === "admin") return false;
     return true;

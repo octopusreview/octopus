@@ -27,6 +27,7 @@ export function LandingFooter() {
                 rel="noopener noreferrer"
                 event="footer_click"
                 eventParams={{ label: "github" }}
+                aria-label="GitHub"
                 className="text-[#555] transition-colors hover:text-white"
               >
                 <IconBrandGithub className="size-4" />
@@ -37,6 +38,7 @@ export function LandingFooter() {
                 rel="noopener noreferrer"
                 event="footer_click"
                 eventParams={{ label: "x" }}
+                aria-label="X (Twitter)"
                 className="text-[#555] transition-colors hover:text-white"
               >
                 <IconBrandX className="size-4" />
@@ -47,6 +49,7 @@ export function LandingFooter() {
                 rel="noopener noreferrer"
                 event="footer_click"
                 eventParams={{ label: "youtube" }}
+                aria-label="YouTube"
                 className="text-[#555] transition-colors hover:text-white"
               >
                 <IconBrandYoutube className="size-4" />
@@ -215,10 +218,11 @@ export function LandingFooter() {
                 eventParams={{ label: "product_hunt" }}
               >
                 <Image
-                  src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1102575&theme=dark&t=1773935793311"
+                  src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1102575&theme=dark"
                   alt="Octopus on Product Hunt"
                   width={180}
                   height={39}
+                  unoptimized
                 />
               </TrackedAnchor>
             </div>

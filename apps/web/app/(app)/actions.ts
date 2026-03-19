@@ -755,6 +755,37 @@ export async function updateOrgDefaultReviewConfig(
   return { success: true };
 }
 
+export async function updateOrgBlockedAuthors(
+  authors: string[],
+): Promise<{ error?: string; success?: boolean }> {
+  const user = await getUser();
+  const cookieStore = await cookies();
+  const orgId = cookieStore.get("current_org_id")?.value;
+
+  if (!orgId) return { error: "No organization selected." };
+
+  const member = await prisma.organizationMember.findFirst({
+    where: {
+      organizationId: orgId,
+      userId: user.id,
+      deletedAt: null,
+    },
+    select: { role: true },
+  });
+
+  if (!member || member.role !== "owner") {
+    return { error: "Only organization owners can change blocked authors." };
+  }
+
+  await prisma.organization.update({
+    where: { id: orgId },
+    data: { blockedAuthors: authors },
+  });
+
+  revalidatePath("/settings/reviews");
+  return { success: true };
+}
+
 export async function acknowledgeIssue(issueId: string): Promise<{ error?: string }> {
   const user = await getUser();
 

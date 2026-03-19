@@ -96,6 +96,7 @@ model Organization {
   monthlySpendLimitUsd    Float?   @default(150)
   checkFailureThreshold   String   @default("critical") // "critical" | "high" | "medium" | "none"
   reviewsPaused           Boolean  @default(false)
+  blockedAuthors          Json     @default("[]") // string[] of PR author usernames to skip review
   defaultReviewConfig     Json     @default("{}")
   stripeCustomerId        String?  @unique
   creditBalance           Decimal  @default(0) @db.Decimal(12, 4)
@@ -609,6 +610,7 @@ model AvailableModel {
 model SystemConfig {
   id        String   @id @default("singleton")
   defaultReviewConfig Json @default("{}")
+  blockedAuthors      Json @default("[]") // string[] of globally blocked PR author usernames
   updatedAt DateTime @updatedAt
 
   @@map("system_config")

@@ -2,6 +2,7 @@ import { prisma } from "@octopus/db";
 import { pubby } from "@/lib/pubby";
 import { processReview } from "@/lib/reviewer";
 import { eventBus } from "@/lib/events";
+import { isAuthorBlocked } from "@/lib/blocked-authors";
 import * as github from "@/lib/github";
 import * as bitbucket from "@/lib/bitbucket";
 
@@ -53,6 +54,12 @@ export async function startReviewFlow(params: {
 
   if (org?.reviewsPaused) {
     console.log(`[webhook] Reviews paused for org ${orgId}, skipping PR #${prNumber}`);
+    return;
+  }
+
+  // Check if PR author is blocked from triggering reviews
+  if (prAuthor && await isAuthorBlocked(orgId, prAuthor)) {
+    console.log(`[webhook] PR author "${prAuthor}" is blocked for org ${orgId}, skipping PR #${prNumber}`);
     return;
   }
 

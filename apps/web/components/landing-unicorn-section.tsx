@@ -5,6 +5,11 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useGLTF, useAnimations } from "@react-three/drei";
 import * as THREE from "three";
 
+const TEXT_TAGS = new Set([
+  "P", "H1", "H2", "H3", "H4", "H5", "H6",
+  "SPAN", "A", "LI", "LABEL", "BUTTON",
+]);
+
 /* ------------------------------------------------------------------ */
 /* 3D Octopus model                                                    */
 /* ------------------------------------------------------------------ */
@@ -232,15 +237,62 @@ function Scene() {
 
 export function FloatingOctopus() {
   const [mounted, setMounted] = useState(false);
+  const [dimmed, setDimmed] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
+  useEffect(() => {
+    if (!mounted) return;
+
+    let isOverText = false;
+    let undimTimer = 0;
+
+    const onMove = (e: MouseEvent) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      let hasText = false;
+      if (el != null) {
+        if (TEXT_TAGS.has(el.tagName)) {
+          hasText = true;
+        } else {
+          for (const n of el.childNodes) {
+            if (n.nodeType === Node.TEXT_NODE && n.textContent?.trim()) {
+              hasText = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (hasText === isOverText) return; // no change, skip
+      isOverText = hasText;
+
+      if (hasText) {
+        // Entering text — dim immediately, cancel any pending undim
+        window.clearTimeout(undimTimer);
+        setDimmed(true);
+      } else {
+        // Leaving text — debounce the undim
+        window.clearTimeout(undimTimer);
+        undimTimer = window.setTimeout(() => setDimmed(false), 500);
+      }
+    };
+
+    window.addEventListener("mousemove", onMove, { passive: true });
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.clearTimeout(undimTimer);
+    };
+  }, [mounted]);
+
   if (!mounted) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-30 hidden md:block">
+    <div
+      className="pointer-events-none fixed inset-0 z-30 hidden md:block"
+      style={{ opacity: dimmed ? 0.15 : 1, transition: "opacity 0.4s ease" }}
+    >
       <Canvas
         camera={{ position: [0, 0, 14], fov: 40 }}
         dpr={[1, 1.5]}

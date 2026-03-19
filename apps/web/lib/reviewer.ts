@@ -748,7 +748,11 @@ async function syncTextDismissalsForPR(
 
       // Embed feedback patterns for each dismissed issue
       for (const issue of remainingIssues) {
-        await embedFeedbackPattern(issue, "down");
+        try {
+          await embedFeedbackPattern(issue, "down");
+        } catch (err) {
+          console.error(`[reviewer] Failed to embed feedback pattern for issue ${issue.id}:`, err);
+        }
       }
       console.log(`[reviewer] Dismissed ${count} findings via issue comment dismissal keywords`);
     }

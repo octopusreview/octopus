@@ -541,7 +541,7 @@ export async function listPullRequestIssueComments(
   owner: string,
   repo: string,
   prNumber: number,
-): Promise<{ id: number; body: string; createdAt: string }[]> {
+): Promise<{ id: number; body: string; createdAt: string; user: string }[]> {
   const token = await getInstallationToken(installationId);
   const res = await fetchWithRetry(
     `${GITHUB_API}/repos/${owner}/${repo}/issues/${prNumber}/comments?per_page=100`,
@@ -558,11 +558,12 @@ export async function listPullRequestIssueComments(
     return [];
   }
 
-  const comments = (await res.json()) as { id: number; body: string; created_at: string }[];
+  const comments = (await res.json()) as { id: number; body: string; created_at: string; user: { login: string } }[];
   return comments.map((c) => ({
     id: c.id,
     body: c.body,
     createdAt: c.created_at,
+    user: c.user.login,
   }));
 }
 

@@ -652,6 +652,7 @@ async function syncTextDismissalsForPR(
   repoName: string,
   prNumber: number,
   pullRequestId: string,
+  prAuthor: string,
 ) {
   const issues = await prisma.reviewIssue.findMany({
     where: {
@@ -663,6 +664,7 @@ async function syncTextDismissalsForPR(
       title: true,
       description: true,
       severity: true,
+      createdAt: true,
       githubCommentId: true,
       pullRequest: {
         select: {
@@ -676,6 +678,7 @@ async function syncTextDismissalsForPR(
   if (issues.length === 0) return;
 
   let synced = 0;
+  const dismissedIds = new Set<string>();
 
   // --- Part 1: Scan inline review comment replies (threaded dismissals) ---
   const issuesWithCommentId = issues.filter((i) => i.githubCommentId !== null);
@@ -708,6 +711,7 @@ async function syncTextDismissalsForPR(
           data: { feedback: "down", feedbackAt: new Date(), feedbackBy: "github-reply-dismissal" },
         });
         await embedFeedbackPattern(issue, "down");
+        dismissedIds.add(issue.id);
         synced++;
       } catch (err) {
         console.error(`[reviewer] Failed to record text dismissal for issue ${issue.id}:`, err);
@@ -716,55 +720,37 @@ async function syncTextDismissalsForPR(
   }
 
   // --- Part 2: Scan general PR issue comments for dismissal keywords ---
-  // Issue comments are not threaded to specific findings, so when one contains
-  // dismissal keywords, dismiss ALL remaining pending findings for this PR.
-  const remainingIssues = await prisma.reviewIssue.findMany({
-    where: {
-      pullRequestId,
-      feedback: null,
-    },
-    select: {
-      id: true,
-      title: true,
-      description: true,
-      severity: true,
-      createdAt: true,
-      pullRequest: {
-        select: {
-          repositoryId: true,
-          repository: { select: { organizationId: true } },
-        },
-      },
-    },
-  });
+  // Issue comments are not threaded to specific findings, so when one from the
+  // PR author contains dismissal keywords, dismiss ALL remaining pending findings.
+  // Filter in-memory from the initial query to avoid a redundant DB round-trip.
+  const remainingIssues = issues.filter((i) => !dismissedIds.has(i.id));
 
   if (remainingIssues.length > 0) {
     const issueComments = await ghListPullRequestIssueComments(installationId, owner, repoName, prNumber);
 
-    // Only consider issue comments posted AFTER the findings were created
+    // Only consider comments from the PR author, posted AFTER the findings were created
     const oldestFinding = remainingIssues.reduce(
       (min, i) => (i.createdAt < min ? i.createdAt : min),
       remainingIssues[0].createdAt,
     );
     const relevantComments = issueComments.filter(
-      (c) => new Date(c.createdAt) > oldestFinding,
+      (c) => c.user === prAuthor && new Date(c.createdAt) > oldestFinding,
     );
     const hasDismissalComment = relevantComments.some((c) => isDismissalReply(c.body));
 
     if (hasDismissalComment) {
+      const remainingIds = remainingIssues.map((i) => i.id);
+      const { count } = await prisma.reviewIssue.updateMany({
+        where: { id: { in: remainingIds } },
+        data: { feedback: "down", feedbackAt: new Date(), feedbackBy: "github-issue-comment-dismissal" },
+      });
+      synced += count;
+
+      // Embed feedback patterns for each dismissed issue
       for (const issue of remainingIssues) {
-        try {
-          await prisma.reviewIssue.update({
-            where: { id: issue.id },
-            data: { feedback: "down", feedbackAt: new Date(), feedbackBy: "github-issue-comment-dismissal" },
-          });
-          await embedFeedbackPattern(issue, "down");
-          synced++;
-        } catch (err) {
-          console.error(`[reviewer] Failed to record issue comment dismissal for issue ${issue.id}:`, err);
-        }
+        await embedFeedbackPattern(issue, "down");
       }
-      console.log(`[reviewer] Dismissed ${remainingIssues.length} findings via issue comment dismissal keywords`);
+      console.log(`[reviewer] Dismissed ${count} findings via issue comment dismissal keywords`);
     }
   }
 
@@ -902,7 +888,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
   if (isGitHub && installationId) {
     try {
       await syncReactionsForPR(installationId, owner, repoName, pr.id);
-      await syncTextDismissalsForPR(installationId, owner, repoName, pr.number, pr.id);
+      await syncTextDismissalsForPR(installationId, owner, repoName, pr.number, pr.id, pr.author);
     } catch (err) {
       console.warn("[reviewer] Pre-review feedback sync failed, continuing:", err);
     }

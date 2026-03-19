@@ -39,5 +39,5 @@ export async function GET(
     orderBy: { createdAt: "asc" },
   });
 
-  return NextResponse.json({ members, callerRole: caller.role });
+  return NextResponse.json({ members, callerRole: caller.role, callerUserId: session.user.id });
 }

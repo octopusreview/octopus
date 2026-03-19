@@ -28,6 +28,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { IconX } from "@tabler/icons-react";
+import { toast } from "sonner";
 import { InviteModal } from "./invite-modal";
 
 interface Invitation {
@@ -80,12 +82,14 @@ export function InvitationsPanel({ orgId, isAdmin }: InvitationsPanelProps) {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [callerRole, setCallerRole] = useState<string>("member");
+  const [callerUserId, setCallerUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [membersLoading, setMembersLoading] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<Invitation | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [roleChanging, setRoleChanging] = useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<Member | null>(null);
 
   const fetchMembers = useCallback(async () => {
     setMembersLoading(true);
@@ -95,6 +99,7 @@ export function InvitationsPanel({ orgId, isAdmin }: InvitationsPanelProps) {
       const data = await res.json();
       setMembers(data.members);
       setCallerRole(data.callerRole);
+      setCallerUserId(data.callerUserId);
     } finally {
       setMembersLoading(false);
     }
@@ -165,6 +170,33 @@ export function InvitationsPanel({ orgId, isAdmin }: InvitationsPanelProps) {
     }
   }
 
+  async function handleRemoveMember() {
+    if (!removeTarget) return;
+    setActionLoading(removeTarget.id);
+    try {
+      const res = await fetch(`/api/orgs/${orgId}/members/${removeTarget.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || "Failed to remove member");
+        return;
+      }
+      await fetchMembers();
+    } finally {
+      setActionLoading(null);
+      setRemoveTarget(null);
+    }
+  }
+
+  function canRemoveMember(target: Member): boolean {
+    if (!isAdmin) return false;
+    if (target.user.id === callerUserId) return false;
+    if (target.role === "owner") return false;
+    if (callerRole !== "owner" && target.role === "admin") return false;
+    return true;
+  }
+
   function canChangeRole(target: Member): boolean {
     if (!isAdmin) return false;
     if (target.role === "owner") return false;
@@ -231,24 +263,37 @@ export function InvitationsPanel({ orgId, isAdmin }: InvitationsPanelProps) {
             )}
           </div>
         </div>
-        {changeable && (
-          <Select
-            value={m.role}
-            onValueChange={(val) => handleRoleChange(m.id, val)}
-            disabled={isBusy}
-          >
-            <SelectTrigger className="h-7 w-24 shrink-0 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {getAvailableRoles(m).map((role) => (
-                <SelectItem key={role} value={role} className="text-xs capitalize">
-                  {role}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {changeable && (
+            <Select
+              value={m.role}
+              onValueChange={(val) => handleRoleChange(m.id, val)}
+              disabled={isBusy}
+            >
+              <SelectTrigger className="h-7 w-24 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {getAvailableRoles(m).map((role) => (
+                  <SelectItem key={role} value={role} className="text-xs capitalize">
+                    {role}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {canRemoveMember(m) && (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-7 text-muted-foreground hover:text-destructive"
+              onClick={() => setRemoveTarget(m)}
+              disabled={isBusy}
+            >
+              <IconX className="size-4" />
+            </Button>
+          )}
+        </div>
       </div>
     );
   }
@@ -372,6 +417,23 @@ export function InvitationsPanel({ orgId, isAdmin }: InvitationsPanelProps) {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleRevoke}>
               {revokeTarget?.status === "accepted" ? "Remove" : "Revoke"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!removeTarget} onOpenChange={(o) => !o && setRemoveTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Member</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove <strong>{removeTarget?.user.name || removeTarget?.user.email}</strong> from the organization? They will lose access immediately.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRemoveMember} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Remove
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

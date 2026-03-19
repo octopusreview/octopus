@@ -2,7 +2,6 @@ import { prisma } from "@octopus/db";
 import { pubby } from "@/lib/pubby";
 import { processReview } from "@/lib/reviewer";
 import { eventBus } from "@/lib/events";
-import { isAuthorBlocked } from "@/lib/blocked-authors";
 import * as github from "@/lib/github";
 import * as bitbucket from "@/lib/bitbucket";
 
@@ -47,23 +46,23 @@ export async function startReviewFlow(params: {
   const [owner, repoName] = repoFullName.split("/");
 
   // Check if reviews are paused for this organization
-  const org = await prisma.organization.findUnique({
-    where: { id: orgId },
-    select: { reviewsPaused: true },
-  });
+  const [org, systemConfig] = await Promise.all([
+    prisma.organization.findUnique({
+      where: { id: orgId },
+      select: { reviewsPaused: true, blockedAuthors: true },
+    }),
+    prisma.systemConfig.findUnique({
+      where: { id: "singleton" },
+      select: { blockedAuthors: true },
+    }),
+  ]);
 
   if (org?.reviewsPaused) {
     console.log(`[webhook] Reviews paused for org ${orgId}, skipping PR #${prNumber}`);
     return;
   }
 
-  // Check if PR author is blocked from triggering reviews
-  if (prAuthor && await isAuthorBlocked(orgId, prAuthor)) {
-    console.log(`[webhook] PR author "${prAuthor}" is blocked for org ${orgId}, skipping PR #${prNumber}`);
-    return;
-  }
-
-  // Check existing PR status to prevent duplicate reviews
+  // Check existing PR status to prevent duplicate reviews (cheap indexed lookup first)
   const existingPr = await prisma.pullRequest.findUnique({
     where: {
       repositoryId_number: { repositoryId: repoId, number: prNumber },
@@ -77,6 +76,20 @@ export async function startReviewFlow(params: {
       return;
     }
     console.log(`[webhook] New SHA detected for PR #${prNumber}, restarting review`);
+  }
+
+  // Check if PR author is blocked from triggering reviews
+  if (prAuthor) {
+    const globalBlocked = (systemConfig?.blockedAuthors as string[]) ?? [];
+    const orgBlocked = (org?.blockedAuthors as string[]) ?? [];
+    const authorLower = prAuthor.toLowerCase();
+    const isBlocked = [...globalBlocked, ...orgBlocked].some(
+      (b) => b.toLowerCase() === authorLower,
+    );
+    if (isBlocked) {
+      console.log(`[webhook] PR author "${prAuthor}" is blocked for org ${orgId}, skipping PR #${prNumber}`);
+      return;
+    }
   }
 
   // Upsert PullRequest record

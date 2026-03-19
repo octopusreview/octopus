@@ -777,6 +777,13 @@ export async function updateOrgBlockedAuthors(
     return { error: "Only organization owners can change blocked authors." };
   }
 
+  if (authors.length > 50) {
+    return { error: "Maximum 50 blocked authors allowed." };
+  }
+  if (authors.some((a) => a.length > 100)) {
+    return { error: "Author names must be 100 characters or less." };
+  }
+
   await prisma.organization.update({
     where: { id: orgId },
     data: { blockedAuthors: authors },

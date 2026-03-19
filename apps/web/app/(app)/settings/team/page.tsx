@@ -29,5 +29,5 @@ export default async function TeamPage() {
 
   const isAdmin = member.role === "owner" || member.role === "admin";
 
-  return <InvitationsPanel orgId={member.organizationId} isAdmin={isAdmin} />;
+  return <InvitationsPanel key={member.organizationId} orgId={member.organizationId} isAdmin={isAdmin} />;
 }

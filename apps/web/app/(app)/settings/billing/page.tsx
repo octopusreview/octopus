@@ -58,6 +58,7 @@ export default async function BillingPage() {
 
   return (
     <BillingSettings
+      key={org.id}
       isOwner={isOwner}
       orgId={org.id}
       creditBalance={Number(org.creditBalance)}

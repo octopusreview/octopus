@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useActionState, useTransition, useCallback, useEffect, useRef } from "react";
+import { useState, useTransition, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -316,7 +316,10 @@ export function ModelsSettings({
   initialRepos: RepoModelItem[];
   totalRepoCount: number;
 }) {
-  const [modelState, modelAction, modelPending] = useActionState(updateDefaultModels, {});
+  const [selectedModelId, setSelectedModelId] = useState(currentModelId ?? "");
+  const [selectedEmbedModelId, setSelectedEmbedModelId] = useState(currentEmbedModelId ?? "");
+  const [saving, startTransition] = useTransition();
+  const [saveResult, setSaveResult] = useState<{ error?: string; success?: boolean }>({});
 
   const llmModels = availableModels.filter((m) => m.category === "llm");
   const embedModels = availableModels.filter((m) => m.category === "embedding");
@@ -332,13 +335,23 @@ export function ModelsSettings({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={modelAction} className="space-y-5">
+          <form
+            action={(formData) => {
+              startTransition(async () => {
+                setSaveResult({});
+                const result = await updateDefaultModels({}, formData);
+                setSaveResult(result);
+              });
+            }}
+            className="space-y-5"
+          >
             <div className="space-y-2">
               <Label htmlFor="defaultModelId">Review & Chat Model</Label>
               <select
                 id="defaultModelId"
                 name="defaultModelId"
-                defaultValue={currentModelId ?? ""}
+                value={selectedModelId}
+                onChange={(e) => setSelectedModelId(e.target.value)}
                 disabled={!isOwner}
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -361,7 +374,8 @@ export function ModelsSettings({
               <select
                 id="defaultEmbedModelId"
                 name="defaultEmbedModelId"
-                defaultValue={currentEmbedModelId ?? ""}
+                value={selectedEmbedModelId}
+                onChange={(e) => setSelectedEmbedModelId(e.target.value)}
                 disabled={!isOwner}
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -377,20 +391,20 @@ export function ModelsSettings({
               </p>
             </div>
 
-            {modelState.error && (
-              <p className="text-sm text-destructive">{modelState.error}</p>
+            {saveResult.error && (
+              <p className="text-sm text-destructive">{saveResult.error}</p>
             )}
-            {modelState.success && (
+            {saveResult.success && (
               <p className="text-sm text-green-600">Default models updated.</p>
             )}
 
             <Button
               type="submit"
-              disabled={modelPending || !isOwner}
+              disabled={saving || !isOwner}
               className="w-full"
               size="sm"
             >
-              {modelPending ? "Saving..." : "Save Defaults"}
+              {saving ? "Saving..." : "Save Defaults"}
             </Button>
 
             {!isOwner && (

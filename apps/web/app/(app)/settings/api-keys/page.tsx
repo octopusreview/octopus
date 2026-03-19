@@ -23,6 +23,7 @@ export default async function ApiKeysPage() {
       role: true,
       organization: {
         select: {
+          id: true,
           openaiApiKey: true,
           anthropicApiKey: true,
           googleApiKey: true,
@@ -38,6 +39,7 @@ export default async function ApiKeysPage() {
 
   return (
     <ApiKeysForm
+      key={member.organization.id}
       openaiApiKey={member.organization.openaiApiKey}
       anthropicApiKey={member.organization.anthropicApiKey}
       googleApiKey={member.organization.googleApiKey}

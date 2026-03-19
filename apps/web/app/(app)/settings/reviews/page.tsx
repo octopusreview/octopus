@@ -25,6 +25,7 @@ export default async function ReviewsSettingsPage() {
       role: true,
       organization: {
         select: {
+          id: true,
           checkFailureThreshold: true,
           reviewsPaused: true,
           defaultReviewConfig: true,
@@ -38,7 +39,7 @@ export default async function ReviewsSettingsPage() {
   const orgReviewConfig = (member.organization.defaultReviewConfig as Record<string, unknown>) ?? {};
 
   return (
-    <div className="space-y-6">
+    <div key={member.organization.id} className="space-y-6">
       <ReviewsPausedSwitch
         isOwner={member.role === "owner"}
         paused={member.organization.reviewsPaused}

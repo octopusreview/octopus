@@ -438,6 +438,7 @@ model AiUsage {
   outputTokens     Int
   cacheReadTokens  Int      @default(0)
   cacheWriteTokens Int      @default(0)
+  usedOwnKey       Boolean  @default(false)
   createdAt      DateTime @default(now())
 
   organizationId String
@@ -445,6 +446,7 @@ model AiUsage {
 
   @@index([organizationId, createdAt])
   @@index([createdAt])
+  @@index([usedOwnKey, createdAt])
   @@map("ai_usages")
 }
 

@@ -29,6 +29,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { IconX } from "@tabler/icons-react";
+import { toast } from "sonner";
 import { InviteModal } from "./invite-modal";
 
 interface Invitation {
@@ -176,7 +177,7 @@ export function InvitationsPanel({ orgId, isAdmin }: InvitationsPanelProps) {
       });
       if (!res.ok) {
         const data = await res.json();
-        console.error("Remove member failed:", data.error);
+        toast.error(data.error || "Failed to remove member");
         return;
       }
       await fetchMembers();

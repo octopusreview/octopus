@@ -127,7 +127,7 @@ export async function DELETE(
 
   await prisma.organizationMember.update({
     where: { id: memberId },
-    data: { deletedAt: new Date() },
+    data: { deletedAt: new Date(), removedById: session.user.id },
   });
 
   return NextResponse.json({ success: true });

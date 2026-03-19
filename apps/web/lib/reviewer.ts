@@ -29,6 +29,7 @@ import {
   getFileContent as ghGetFileContent,
   listReviewComments as ghListReviewComments,
   listPullRequestReviewComments as ghListPullRequestReviewComments,
+  listPullRequestIssueComments as ghListPullRequestIssueComments,
   getCommentReactions as ghGetCommentReactions,
 } from "@/lib/github";
 import * as bitbucket from "@/lib/bitbucket";
@@ -640,6 +641,10 @@ async function syncReactionsForPR(
 /**
  * Scan reply comments on previous review inline comments for dismissal keywords.
  * If a reply says "false positive", "intentional", etc., mark the finding as feedback: "down".
+ *
+ * Also scans general PR issue comments for dismissal keywords. When a general
+ * comment contains dismissal patterns, ALL pending findings for the PR are dismissed
+ * (since issue comments are not threaded to specific findings).
  */
 async function syncTextDismissalsForPR(
   installationId: number,
@@ -651,7 +656,6 @@ async function syncTextDismissalsForPR(
   const issues = await prisma.reviewIssue.findMany({
     where: {
       pullRequestId,
-      githubCommentId: { not: null },
       feedback: null,
     },
     select: {
@@ -671,39 +675,96 @@ async function syncTextDismissalsForPR(
 
   if (issues.length === 0) return;
 
-  // Fetch all review comments on this PR (includes replies)
-  const allComments = await ghListPullRequestReviewComments(installationId, owner, repoName, prNumber);
+  let synced = 0;
 
-  // Build map: parent comment ID → reply bodies
-  const repliesByParent = new Map<number, string[]>();
-  for (const comment of allComments) {
-    if (comment.inReplyToId) {
-      const replies = repliesByParent.get(comment.inReplyToId) ?? [];
-      replies.push(comment.body);
-      repliesByParent.set(comment.inReplyToId, replies);
+  // --- Part 1: Scan inline review comment replies (threaded dismissals) ---
+  const issuesWithCommentId = issues.filter((i) => i.githubCommentId !== null);
+  if (issuesWithCommentId.length > 0) {
+    const allReviewComments = await ghListPullRequestReviewComments(installationId, owner, repoName, prNumber);
+
+    // Build map: parent comment ID → reply bodies
+    const repliesByParent = new Map<number, string[]>();
+    for (const comment of allReviewComments) {
+      if (comment.inReplyToId) {
+        const replies = repliesByParent.get(comment.inReplyToId) ?? [];
+        replies.push(comment.body);
+        repliesByParent.set(comment.inReplyToId, replies);
+      }
+    }
+
+    for (const issue of issuesWithCommentId) {
+      const commentId = Number(issue.githubCommentId);
+      if (isNaN(commentId)) continue;
+
+      const replies = repliesByParent.get(commentId);
+      if (!replies) continue;
+
+      const hasDismissal = replies.some(isDismissalReply);
+      if (!hasDismissal) continue;
+
+      try {
+        await prisma.reviewIssue.update({
+          where: { id: issue.id },
+          data: { feedback: "down", feedbackAt: new Date(), feedbackBy: "github-reply-dismissal" },
+        });
+        await embedFeedbackPattern(issue, "down");
+        synced++;
+      } catch (err) {
+        console.error(`[reviewer] Failed to record text dismissal for issue ${issue.id}:`, err);
+      }
     }
   }
 
-  let synced = 0;
-  for (const issue of issues) {
-    const commentId = Number(issue.githubCommentId);
-    if (isNaN(commentId)) continue;
+  // --- Part 2: Scan general PR issue comments for dismissal keywords ---
+  // Issue comments are not threaded to specific findings, so when one contains
+  // dismissal keywords, dismiss ALL remaining pending findings for this PR.
+  const remainingIssues = await prisma.reviewIssue.findMany({
+    where: {
+      pullRequestId,
+      feedback: null,
+    },
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      severity: true,
+      createdAt: true,
+      pullRequest: {
+        select: {
+          repositoryId: true,
+          repository: { select: { organizationId: true } },
+        },
+      },
+    },
+  });
 
-    const replies = repliesByParent.get(commentId);
-    if (!replies) continue;
+  if (remainingIssues.length > 0) {
+    const issueComments = await ghListPullRequestIssueComments(installationId, owner, repoName, prNumber);
 
-    const hasDismissal = replies.some(isDismissalReply);
-    if (!hasDismissal) continue;
+    // Only consider issue comments posted AFTER the findings were created
+    const oldestFinding = remainingIssues.reduce(
+      (min, i) => (i.createdAt < min ? i.createdAt : min),
+      remainingIssues[0].createdAt,
+    );
+    const relevantComments = issueComments.filter(
+      (c) => new Date(c.createdAt) > oldestFinding,
+    );
+    const hasDismissalComment = relevantComments.some((c) => isDismissalReply(c.body));
 
-    try {
-      await prisma.reviewIssue.update({
-        where: { id: issue.id },
-        data: { feedback: "down", feedbackAt: new Date(), feedbackBy: "github-reply-dismissal" },
-      });
-      await embedFeedbackPattern(issue, "down");
-      synced++;
-    } catch (err) {
-      console.error(`[reviewer] Failed to record text dismissal for issue ${issue.id}:`, err);
+    if (hasDismissalComment) {
+      for (const issue of remainingIssues) {
+        try {
+          await prisma.reviewIssue.update({
+            where: { id: issue.id },
+            data: { feedback: "down", feedbackAt: new Date(), feedbackBy: "github-issue-comment-dismissal" },
+          });
+          await embedFeedbackPattern(issue, "down");
+          synced++;
+        } catch (err) {
+          console.error(`[reviewer] Failed to record issue comment dismissal for issue ${issue.id}:`, err);
+        }
+      }
+      console.log(`[reviewer] Dismissed ${remainingIssues.length} findings via issue comment dismissal keywords`);
     }
   }
 

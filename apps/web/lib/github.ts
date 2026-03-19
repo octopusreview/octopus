@@ -532,6 +532,40 @@ export async function listPullRequestReviewComments(
   }));
 }
 
+/**
+ * List issue comments (general PR comments, NOT inline review comments).
+ * These are the comments posted via issues/{number}/comments endpoint.
+ */
+export async function listPullRequestIssueComments(
+  installationId: number,
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<{ id: number; body: string; createdAt: string }[]> {
+  const token = await getInstallationToken(installationId);
+  const res = await fetchWithRetry(
+    `${GITHUB_API}/repos/${owner}/${repo}/issues/${prNumber}/comments?per_page=100`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+      },
+    },
+  );
+
+  if (!res.ok) {
+    console.error(`[github] Failed to list PR issue comments: ${res.status}`);
+    return [];
+  }
+
+  const comments = (await res.json()) as { id: number; body: string; created_at: string }[];
+  return comments.map((c) => ({
+    id: c.id,
+    body: c.body,
+    createdAt: c.created_at,
+  }));
+}
+
 export async function getCommentReactions(
   installationId: number,
   owner: string,

@@ -1,9 +1,14 @@
 "use client";
 
-import { useRef, useEffect, useState, useCallback, Suspense } from "react";
+import { useRef, useEffect, useState, Suspense } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useGLTF, useAnimations } from "@react-three/drei";
 import * as THREE from "three";
+
+const TEXT_TAGS = new Set([
+  "P", "H1", "H2", "H3", "H4", "H5", "H6",
+  "SPAN", "A", "LI", "LABEL", "BUTTON",
+]);
 
 /* ------------------------------------------------------------------ */
 /* 3D Octopus model                                                    */
@@ -241,20 +246,24 @@ export function FloatingOctopus() {
   useEffect(() => {
     if (!mounted) return;
 
-    const TEXT_TAGS = new Set([
-      "P", "H1", "H2", "H3", "H4", "H5", "H6",
-      "SPAN", "A", "LI", "LABEL", "BUTTON",
-    ]);
-
     let isOverText = false;
     let undimTimer = 0;
 
     const onMove = (e: MouseEvent) => {
       const el = document.elementFromPoint(e.clientX, e.clientY);
-      const hasText = el != null && (
-        TEXT_TAGS.has(el.tagName) ||
-        Array.from(el.childNodes).some(n => n.nodeType === Node.TEXT_NODE && n.textContent?.trim())
-      );
+      let hasText = false;
+      if (el != null) {
+        if (TEXT_TAGS.has(el.tagName)) {
+          hasText = true;
+        } else {
+          for (const n of el.childNodes) {
+            if (n.nodeType === Node.TEXT_NODE && n.textContent?.trim()) {
+              hasText = true;
+              break;
+            }
+          }
+        }
+      }
 
       if (hasText === isOverText) return; // no change, skip
       isOverText = hasText;

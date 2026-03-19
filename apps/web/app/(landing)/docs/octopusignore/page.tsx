@@ -33,7 +33,7 @@ export default function OctopusIgnorePage() {
         </Paragraph>
         <CodeBlock
           title=".octopusignore"
-                 >{`# Generated documentation
+        >{`# Generated documentation
 docs/generated/**
 
 # Test fixtures and snapshots

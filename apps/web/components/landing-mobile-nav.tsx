@@ -61,6 +61,7 @@ export function LandingMobileNav({ isLoggedIn }: { isLoggedIn: boolean }) {
                 href="/docs/about"
                 event="nav_click"
                 eventParams={{ label: "docs" }}
+                onClick={() => setOpen(false)}
                 className="rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
               >
                 Docs

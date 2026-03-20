@@ -1420,31 +1420,32 @@ export async function processReview(pullRequestId: string): Promise<void> {
       console.warn("[reviewer] Failed to fetch feedback context:", err);
     }
 
-    // Collect prior review comments from this bot on the same PR.
-    // Injected into the prompt so the LLM avoids repeating findings that were
-    // already raised (whether or not explicit feedback was recorded).
-    let priorReviewContext = "";
+    // Fetch prior review comments once — shared by prompt context injection and inline dedup.
+    const appSlug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG ?? "octopus-review";
+    const botLogin = `${appSlug}[bot]`;
+    let allPriorReviewComments: import("@/lib/github").PRReviewComment[] = [];
     if (isGitHub && installationId) {
       try {
-        const priorComments = await ghListPullRequestReviewComments(installationId, owner, repoName, pr.number);
-        const appSlug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG ?? "octopus-review";
-        const botLogin = `${appSlug}[bot]`;
-        const botComments = priorComments.filter((c) => !c.inReplyToId && c.user === botLogin && c.line != null);
-
-        if (botComments.length > 0) {
-          const summaries = botComments.map((c) => {
-            const firstLine = c.body.split("\n")[0].replace(/\*\*/g, "").trim();
-            return `- ${c.path}:${c.line} — ${firstLine}`;
-          });
-          priorReviewContext = [
-            "PRIOR REVIEW COMMENTS (already posted on this PR — do NOT repeat these or raise similar findings on the same locations):",
-            ...summaries,
-          ].join("\n");
-          console.log(`[reviewer] Prior review context: ${botComments.length} existing inline comments`);
-        }
+        allPriorReviewComments = await ghListPullRequestReviewComments(installationId, owner, repoName, pr.number);
       } catch (err) {
         console.warn("[reviewer] Failed to fetch prior review comments:", err);
       }
+    }
+
+    // Inject prior bot inline comments into the prompt so the LLM avoids
+    // repeating findings that were already raised.
+    let priorReviewContext = "";
+    const botComments = allPriorReviewComments.filter((c) => !c.inReplyToId && c.user === botLogin && c.line != null);
+    if (botComments.length > 0) {
+      const summaries = botComments.map((c) => {
+        const firstLine = c.body.split("\n")[0].replace(/\*\*/g, "").trim();
+        return `- ${c.path}:${c.line} — ${firstLine}`;
+      });
+      priorReviewContext = [
+        "PRIOR REVIEW COMMENTS (already posted on this PR — do NOT repeat these or raise similar findings on the same locations):",
+        ...summaries,
+      ].join("\n");
+      console.log(`[reviewer] Prior review context: ${botComments.length} existing inline comments`);
     }
 
     const FILE_TREE_IGNORE = [
@@ -1806,11 +1807,8 @@ Rules:
       // GitHub: use the PR review API for inline comments
       if (inlineComments.length > 0) {
         // Dedup: skip inline comments where the bot already posted on the same file+line
-        const existingReviewComments = await ghListPullRequestReviewComments(installationId, owner, repoName, pr.number);
-        const appSlug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG ?? "octopus-review";
-        const botLogin = `${appSlug}[bot]`;
         const existingLocations = new Set(
-          existingReviewComments
+          allPriorReviewComments
             .filter((c) => !c.inReplyToId && c.line != null && c.user === botLogin)
             .map((c) => `${c.path}:${c.line}`),
         );

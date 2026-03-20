@@ -666,6 +666,8 @@ export async function cancelIndexing(repoId: string): Promise<{ error?: string }
         repoId,
         status: "cancelled",
       });
+
+      revalidatePath("/");
     } catch (error) {
       console.error(`[abort-indexing] Failed to reset status for repo ${repoId}:`, error);
       return { error: "Failed to cancel indexing. Please try again." };

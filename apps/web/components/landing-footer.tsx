@@ -8,6 +8,9 @@ import {
 } from "@tabler/icons-react";
 import { TrackedLink, TrackedAnchor } from "@/components/tracked-link";
 
+const DISCORD_INVITE_URL = "https://discord.gg/qyuWTXghbS";
+const LINKEDIN_URL = "https://www.linkedin.com/company/octopus-review";
+
 export function LandingFooter() {
   return (
     <footer className="border-t border-white/[0.06] px-6 py-12 md:px-8 md:py-16">
@@ -57,7 +60,7 @@ export function LandingFooter() {
                 <IconBrandYoutube className="size-4" />
               </TrackedAnchor>
               <TrackedAnchor
-                href="https://discord.gg/qyuWTXghbS"
+                href={DISCORD_INVITE_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 event="footer_click"
@@ -68,7 +71,7 @@ export function LandingFooter() {
                 <IconBrandDiscord className="size-4" />
               </TrackedAnchor>
               <TrackedAnchor
-                href="https://www.linkedin.com/company/octopus-review"
+                href={LINKEDIN_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 event="footer_click"
@@ -210,7 +213,7 @@ export function LandingFooter() {
               </li>
               <li>
                 <TrackedAnchor
-                  href="https://discord.gg/qyuWTXghbS"
+                  href={DISCORD_INVITE_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   event="footer_click"
@@ -219,6 +222,19 @@ export function LandingFooter() {
                 >
                   <IconBrandDiscord className="size-3.5" />
                   Discord
+                </TrackedAnchor>
+              </li>
+              <li>
+                <TrackedAnchor
+                  href={LINKEDIN_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  event="footer_click"
+                  eventParams={{ label: "linkedin" }}
+                  className="flex items-center gap-1.5 text-sm text-[#666] transition-colors hover:text-white"
+                >
+                  <IconBrandLinkedin className="size-3.5" />
+                  LinkedIn
                 </TrackedAnchor>
               </li>
               <li>

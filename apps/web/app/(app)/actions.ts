@@ -647,7 +647,22 @@ export async function cancelIndexing(repoId: string): Promise<{ error?: string }
     return { error: "Repository is not currently indexing." };
   }
 
-  abortIndexing(repoId);
+  const aborted = abortIndexing(repoId);
+
+  if (!aborted) {
+    // No in-memory controller found — the process is dead (e.g. server restart).
+    // Directly reset the DB status so the user isn't stuck.
+    await prisma.repository.update({
+      where: { id: repoId },
+      data: { indexStatus: "pending" },
+    });
+
+    pubby.trigger(`presence-org-${repo.organizationId}`, "index-status", {
+      repoId,
+      status: "cancelled",
+    });
+  }
+
   return {};
 }
 

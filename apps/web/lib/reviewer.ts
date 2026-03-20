@@ -1776,12 +1776,16 @@ Rules:
 
         // Update the main comment to reflect filtered findings.
         // The original mainCommentBody was posted before filtering (Step 5a),
-        // so it still shows the LLM's unfiltered summary/score/findings tables.
+        // so it still shows the LLM's unfiltered findings summary table.
+        // Keep summary, score, risk assessment, highlights, diagram — only replace the findings table.
         if (reviewCommentId) {
           try {
-            const reReviewBody = allParsedFindings.length === 0
-              ? `## 🐙 Octopus Review — PR #${pr.number}\n\nAll previously raised findings have been addressed. No critical issues found.\n\n[Octopus Review](https://github.com/apps/octopus-review)`
-              : mainCommentBody;
+            let reReviewBody = mainCommentBody;
+            // Replace the Findings Summary section: from "### Findings Summary" to next "###" or "---" or end
+            reReviewBody = reReviewBody.replace(
+              /### Findings Summary[\s\S]*?(?=###|---|$)/,
+              "### Findings Summary\n\nAll previously raised findings have been addressed. No critical issues found.\n\n",
+            );
             await providerUpdateComment(reviewCommentId, reReviewBody);
             console.log(`[reviewer] Updated main comment for re-review (${allParsedFindings.length} findings remain)`);
           } catch (err) {

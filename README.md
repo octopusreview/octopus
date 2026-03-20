@@ -4,6 +4,8 @@
 
 <p align="center">
   <a href="https://github.com/octopusreview/octopus/actions/workflows/ci.yml"><img src="https://github.com/octopusreview/octopus/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/octopusreview/octopus/actions/workflows/dependabot/dependabot-updates"><img src="https://github.com/octopusreview/octopus/actions/workflows/dependabot/dependabot-updates/badge.svg" alt="Dependabot Updates" /></a>
+  <a href="https://github.com/octopusreview/octopus/actions/workflows/github-code-scanning/codeql"><img src="https://github.com/octopusreview/octopus/actions/workflows/github-code-scanning/codeql/badge.svg" alt="CodeQL" /></a>
   <a href="LICENSE.md"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
   <a href="https://github.com/octopusreview/octopus/discussions"><img src="https://img.shields.io/github/discussions/octopusreview/octopus" alt="GitHub Discussions" /></a>
 </p>

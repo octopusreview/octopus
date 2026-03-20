@@ -1432,20 +1432,35 @@ export async function processReview(pullRequestId: string): Promise<void> {
       }
     }
 
-    // Inject prior bot inline comments into the prompt so the LLM avoids
-    // repeating findings that were already raised.
+    // Detect re-review: if the bot already has inline comments or a previous reviewBody,
+    // this is a follow-up review. Inject prior findings and change the review strategy.
     let priorReviewContext = "";
     const botComments = allPriorReviewComments.filter((c) => !c.inReplyToId && c.user === botLogin && c.line != null);
-    if (botComments.length > 0) {
-      const summaries = botComments.map((c) => {
-        const firstLine = c.body.split("\n")[0].replace(/\*\*/g, "").trim();
-        return `- ${c.path}:${c.line} — ${firstLine}`;
-      });
-      priorReviewContext = [
-        "PRIOR REVIEW COMMENTS (already posted on this PR — do NOT repeat these or raise similar findings on the same locations):",
-        ...summaries,
-      ].join("\n");
-      console.log(`[reviewer] Prior review context: ${botComments.length} existing inline comments`);
+    const isReReview = botComments.length > 0 || !!pr.reviewBody;
+
+    if (isReReview) {
+      const parts: string[] = [
+        "RE-REVIEW MODE: This PR has already been reviewed. Your priority is to verify whether previously raised findings have been addressed. Follow these rules strictly:",
+        "1. Do NOT raise new findings unless they are critical severity (🔴) or were clearly introduced by changes made since the last review.",
+        "2. Do NOT rephrase, reframe, or re-raise previously dismissed findings from a different angle.",
+        "3. Focus on confirming fixes: check if the code changes actually resolve the issues you previously raised.",
+        "4. If all previous findings are addressed and no critical new issues exist, keep the findings list empty.",
+      ];
+
+      if (botComments.length > 0) {
+        const summaries = botComments.map((c) => {
+          const firstLine = c.body.split("\n")[0].replace(/\*\*/g, "").trim();
+          return `- ${c.path}:${c.line} — ${firstLine}`;
+        });
+        parts.push(
+          "",
+          "PRIOR INLINE COMMENTS (already posted — do NOT repeat):",
+          ...summaries,
+        );
+      }
+
+      priorReviewContext = parts.join("\n");
+      console.log(`[reviewer] Re-review detected: ${botComments.length} prior inline comments, injecting re-review instructions`);
     }
 
     const FILE_TREE_IGNORE = [

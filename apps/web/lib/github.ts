@@ -521,7 +521,7 @@ export async function listPullRequestReviewComments(
     line: number | null;
     original_line: number | null;
     body: string;
-    user: { login: string };
+    user: { login: string } | null;
     in_reply_to_id?: number;
   }[];
 
@@ -530,7 +530,7 @@ export async function listPullRequestReviewComments(
     path: c.path,
     line: c.line ?? c.original_line,
     body: c.body,
-    user: c.user.login,
+    user: c.user?.login ?? "",
     inReplyToId: c.in_reply_to_id ?? null,
   }));
 }

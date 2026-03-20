@@ -1764,6 +1764,18 @@ Rules:
       }
     }
 
+    // Re-review filter: only keep critical findings on follow-up reviews.
+    // This is a hard filter — prompt instructions alone are not reliable enough.
+    if (isReReview) {
+      const beforeReReviewFilter = allParsedFindings.length;
+      allParsedFindings = allParsedFindings.filter((f) => f.severity === "🔴");
+      findings = findings.filter((f) => f.severity === "🔴");
+      const filtered = beforeReReviewFilter - allParsedFindings.length;
+      if (filtered > 0) {
+        console.log(`[reviewer] Re-review filter: removed ${filtered} non-critical findings, kept ${allParsedFindings.length}`);
+      }
+    }
+
     // Cap findings to top N by severity
     const maxFindings = reviewConfig.maxFindings ?? MAX_FINDINGS_PER_REVIEW;
     const { kept: cappedFindings, truncatedCount } = sortAndCapFindings(findings, maxFindings);

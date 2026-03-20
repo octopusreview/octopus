@@ -662,16 +662,16 @@ export async function cancelIndexing(repoId: string): Promise<{ error?: string }
         data: { indexStatus: "pending" },
       });
 
-      pubby.trigger(`presence-org-${repo.organizationId}`, "index-status", {
-        repoId,
-        status: "cancelled",
-      });
-
-      revalidatePath("/");
+      revalidatePath("/repositories");
     } catch (error) {
       console.error(`[abort-indexing] Failed to reset status for repo ${repoId}:`, error);
       return { error: "Failed to cancel indexing. Please try again." };
     }
+
+    pubby.trigger(`presence-org-${repo.organizationId}`, "index-status", {
+      repoId,
+      status: "cancelled",
+    });
   }
 
   return {};

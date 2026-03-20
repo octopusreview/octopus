@@ -1781,10 +1781,10 @@ Rules:
         if (reviewCommentId) {
           try {
             let reReviewBody = mainCommentBody;
-            // Replace the Findings Summary section: from "### Findings Summary" to next "###" or "---" or end
+            // Replace the Findings Summary section: from "### Findings Summary" to next heading or end
             reReviewBody = reReviewBody.replace(
-              /### Findings Summary[\s\S]*?(?=###|---|$)/,
-              "### Findings Summary\n\nAll previously raised findings have been addressed. No critical issues found.\n\n",
+              /### Findings Summary[\s\S]*?(?=\n### |\n## |$)/,
+              "### Findings Summary\n\nAll previously raised findings have been addressed. No critical issues found.\n",
             );
             await providerUpdateComment(reviewCommentId, reReviewBody);
             console.log(`[reviewer] Updated main comment for re-review (${allParsedFindings.length} findings remain)`);

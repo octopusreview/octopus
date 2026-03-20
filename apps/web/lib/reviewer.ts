@@ -1538,7 +1538,7 @@ Rules:
     }
 
     // Save all parsed findings before filtering — these will be shown in the summary comment
-    const allParsedFindings = [...findings];
+    let allParsedFindings = [...findings];
 
     // Filter out findings below confidence threshold
     const confidenceThreshold = reviewConfig.confidenceThreshold ?? "MEDIUM";
@@ -1566,28 +1566,41 @@ Rules:
     // Semantic feedback matching: suppress findings that match known false positive patterns
     try {
       await ensureFeedbackCollection();
-      const findingTexts = findings.map((f) => `${f.title} ${f.description}`);
-      if (findingTexts.length > 0) {
-        const findingVectors = await createEmbeddings(findingTexts, {
+
+      // Build texts for ALL parsed findings (used for both inline filtering and summary filtering)
+      const allFindingTexts = allParsedFindings.map((f) => `${f.title} ${f.description}`);
+      if (allFindingTexts.length > 0) {
+        const allFindingVectors = await createEmbeddings(allFindingTexts, {
           organizationId: org.id,
           operation: "embedding",
           repositoryId: repo.id,
         });
 
-        const suppressedIndexes = new Set<number>();
-        for (let i = 0; i < findings.length; i++) {
-          const matches = await searchFeedbackPatterns(repo.id, findingVectors[i], 3, org.id, findingTexts[i]);
+        const suppressedAllIndexes = new Set<number>();
+        for (let i = 0; i < allParsedFindings.length; i++) {
+          const matches = await searchFeedbackPatterns(repo.id, allFindingVectors[i], 3, org.id, allFindingTexts[i]);
           const falsePositiveMatch = matches.find(
             (m) => m.feedback === "down" && m.score > 0.85,
           );
           if (falsePositiveMatch) {
-            suppressedIndexes.add(i);
+            suppressedAllIndexes.add(i);
           }
         }
 
-        if (suppressedIndexes.size > 0) {
-          findings = findings.filter((_, i) => !suppressedIndexes.has(i));
-          console.log(`[reviewer] Suppressed ${suppressedIndexes.size} findings via semantic feedback matching`);
+        if (suppressedAllIndexes.size > 0) {
+          // Filter allParsedFindings so dismissed findings don't appear in the summary table
+          allParsedFindings = allParsedFindings.filter((_, i) => !suppressedAllIndexes.has(i));
+
+          // Also filter the inline findings list using the same suppressed set mapped to current findings
+          const suppressedFindingKeys = new Set(
+            [...suppressedAllIndexes].map((i) => allFindingTexts[i]),
+          );
+          const beforeCount = findings.length;
+          findings = findings.filter((f) => !suppressedFindingKeys.has(`${f.title} ${f.description}`));
+
+          const totalSuppressed = suppressedAllIndexes.size;
+          const inlineSuppressed = beforeCount - findings.length;
+          console.log(`[reviewer] Suppressed ${totalSuppressed} findings via semantic feedback matching (${inlineSuppressed} inline, ${totalSuppressed - inlineSuppressed} summary-only)`);
         }
       }
     } catch (err) {

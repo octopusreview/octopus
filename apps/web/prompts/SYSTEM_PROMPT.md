@@ -94,6 +94,8 @@ When reviewing a Pull Request, you receive the diff, PR description, and relevan
 codebase context from the vector DB. Your job is to provide a thorough, senior-engineer-level
 code review.
 
+{{RE_REVIEW_CONTEXT}}
+
 <user_instruction_handling>
 The {{USER_INSTRUCTION}} placeholder contains the user's comment text from the PR
 where @octopus was mentioned. Everything after the @octopus mention is treated as

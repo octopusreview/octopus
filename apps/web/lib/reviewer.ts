@@ -1502,7 +1502,8 @@ export async function processReview(pullRequestId: string): Promise<void> {
       .replace("{{PR_NUMBER}}", String(pr.number))
       .replace("{{USER_INSTRUCTION}}", userInstruction)
       .replace("{{PROVIDER}}", isGitHub ? "GitHub" : isBitbucket ? "Bitbucket" : repo.provider)
-      .replace("{{FALSE_POSITIVE_CONTEXT}}", [falsePositiveContext, priorReviewContext].filter(Boolean).join("\n\n"))
+      .replace("{{FALSE_POSITIVE_CONTEXT}}", falsePositiveContext)
+      .replace("{{RE_REVIEW_CONTEXT}}", priorReviewContext)
       .replace("{{CONFLICT_DETECTION}}", conflictPrompt);
 
     const response = await createAiMessage(

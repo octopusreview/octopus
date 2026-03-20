@@ -548,10 +548,65 @@ const DISMISSAL_PATTERNS = [
   /\bignore\s*this\b/i,
   /\bnot\s*(an?\s*)?issue\b/i,
   /\bworking\s*as\s*(intended|expected|designed)\b/i,
+  /👎/,
+  /:-1:/,
+];
+
+const ACCEPTANCE_PATTERNS = [
+  /👍/,
+  /:\+1:/,
 ];
 
 function isDismissalReply(body: string): boolean {
   return DISMISSAL_PATTERNS.some((p) => p.test(body));
+}
+
+function isAcceptanceReply(body: string): boolean {
+  return ACCEPTANCE_PATTERNS.some((p) => p.test(body));
+}
+
+/**
+ * Normalize a finding title for fuzzy matching.
+ * Strips severity emojis, backtick contents, and collapses whitespace.
+ */
+function normalizeFindingTitle(title: string): string {
+  return title
+    .replace(/[🔴🟠🟡🔵💡]/g, "")
+    .replace(/`[^`]+`/g, "...")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Parse per-finding feedback from a structured comment body.
+ * Recognizes lines like:
+ *   - 🟡 **Finding title** — 👍 Explanation
+ *   - 🔵 **Finding title** — 👎 Reason
+ *
+ * Returns null if the comment doesn't contain per-finding feedback format.
+ */
+function parsePerFindingFeedback(body: string): { title: string; feedback: "up" | "down" }[] | null {
+  const lines = body.split("\n");
+  const results: { title: string; feedback: "up" | "down" }[] = [];
+
+  for (const line of lines) {
+    // Match lines with bold title and 👍/👎 feedback
+    const titleMatch = line.match(/\*\*(.+?)\*\*/);
+    if (!titleMatch) continue;
+
+    const title = titleMatch[1].trim();
+    // Check the part after the title for feedback signals
+    const afterTitle = line.slice(line.indexOf(titleMatch[0]) + titleMatch[0].length);
+
+    if (DISMISSAL_PATTERNS.some((p) => p.test(afterTitle))) {
+      results.push({ title, feedback: "down" });
+    } else if (ACCEPTANCE_PATTERNS.some((p) => p.test(afterTitle))) {
+      results.push({ title, feedback: "up" });
+    }
+  }
+
+  return results.length > 0 ? results : null;
 }
 
 async function embedFeedbackPattern(
@@ -639,12 +694,12 @@ async function syncReactionsForPR(
 }
 
 /**
- * Scan reply comments on previous review inline comments for dismissal keywords.
- * If a reply says "false positive", "intentional", etc., mark the finding as feedback: "down".
+ * Scan reply comments on previous review inline comments for dismissal/acceptance signals.
+ * If a reply says "false positive", "👎", etc., mark as "down". If "👍", mark as "up".
  *
- * Also scans general PR issue comments for dismissal keywords. When a general
- * comment contains dismissal patterns, ALL pending findings for the PR are dismissed
- * (since issue comments are not threaded to specific findings).
+ * Also scans general PR issue comments for per-finding feedback (lines like
+ * "**Title** — 👎 reason" or "**Title** — 👍 addressed"). Falls back to bulk
+ * dismiss if no per-finding format is detected but dismissal keywords exist.
  */
 async function syncTextDismissalsForPR(
   installationId: number,
@@ -703,26 +758,28 @@ async function syncTextDismissalsForPR(
       if (!replies) continue;
 
       const hasDismissal = replies.some(isDismissalReply);
-      if (!hasDismissal) continue;
+      const hasAcceptance = !hasDismissal && replies.some(isAcceptanceReply);
+      if (!hasDismissal && !hasAcceptance) continue;
 
+      const vote = hasDismissal ? "down" : "up";
       try {
         await prisma.reviewIssue.update({
           where: { id: issue.id },
-          data: { feedback: "down", feedbackAt: new Date(), feedbackBy: "github-reply-dismissal" },
+          data: { feedback: vote, feedbackAt: new Date(), feedbackBy: "github-reply-dismissal" },
         });
-        await embedFeedbackPattern(issue, "down");
+        await embedFeedbackPattern(issue, vote);
         dismissedIds.add(issue.id);
         synced++;
       } catch (err) {
-        console.error(`[reviewer] Failed to record text dismissal for issue ${issue.id}:`, err);
+        console.error(`[reviewer] Failed to record text feedback for issue ${issue.id}:`, err);
       }
     }
   }
 
-  // --- Part 2: Scan general PR issue comments for dismissal keywords ---
-  // Issue comments are not threaded to specific findings, so when one from the
-  // PR author contains dismissal keywords, dismiss ALL remaining pending findings.
-  // Filter in-memory from the initial query to avoid a redundant DB round-trip.
+  // --- Part 2: Scan general PR issue comments for per-finding or bulk feedback ---
+  // Supports two modes:
+  // (a) Per-finding: comment has lines like "**Title** — 👎 reason" → match to specific findings
+  // (b) Bulk dismiss: comment has dismissal keywords but no per-finding format → dismiss ALL
   const remainingIssues = issues.filter((i) => !dismissedIds.has(i.id));
 
   if (remainingIssues.length > 0) {
@@ -736,25 +793,71 @@ async function syncTextDismissalsForPR(
     const relevantComments = issueComments.filter(
       (c) => c.user === prAuthor && new Date(c.createdAt) > oldestFinding,
     );
-    const hasDismissalComment = relevantComments.some((c) => isDismissalReply(c.body));
 
-    if (hasDismissalComment) {
-      const remainingIds = remainingIssues.map((i) => i.id);
-      const { count } = await prisma.reviewIssue.updateMany({
-        where: { id: { in: remainingIds } },
-        data: { feedback: "down", feedbackAt: new Date(), feedbackBy: "github-issue-comment-dismissal" },
-      });
-      synced += count;
+    // Build normalized title → issue mapping for per-finding matching
+    const issuesByNormalizedTitle = new Map<string, typeof remainingIssues>();
+    for (const issue of remainingIssues) {
+      const key = normalizeFindingTitle(issue.title);
+      const existing = issuesByNormalizedTitle.get(key) ?? [];
+      existing.push(issue);
+      issuesByNormalizedTitle.set(key, existing);
+    }
 
-      // Embed feedback patterns for each dismissed issue
-      for (const issue of remainingIssues) {
-        try {
-          await embedFeedbackPattern(issue, "down");
-        } catch (err) {
-          console.error(`[reviewer] Failed to embed feedback pattern for issue ${issue.id}:`, err);
+    const bulkDismissComments: typeof relevantComments = [];
+
+    for (const comment of relevantComments) {
+      const perFinding = parsePerFindingFeedback(comment.body);
+
+      if (perFinding) {
+        // Per-finding mode: match each feedback line to specific findings
+        for (const { title, feedback } of perFinding) {
+          const normalizedTitle = normalizeFindingTitle(title);
+          const matched = issuesByNormalizedTitle.get(normalizedTitle);
+          if (!matched) continue;
+
+          for (const issue of matched) {
+            if (dismissedIds.has(issue.id)) continue;
+            try {
+              await prisma.reviewIssue.update({
+                where: { id: issue.id },
+                data: { feedback, feedbackAt: new Date(), feedbackBy: "github-issue-comment-per-finding" },
+              });
+              await embedFeedbackPattern(issue, feedback);
+              dismissedIds.add(issue.id);
+              synced++;
+            } catch (err) {
+              console.error(`[reviewer] Failed to record per-finding feedback for issue ${issue.id}:`, err);
+            }
+          }
         }
+      } else {
+        // No per-finding format — candidate for bulk dismiss
+        bulkDismissComments.push(comment);
       }
-      console.log(`[reviewer] Dismissed ${count} findings via issue comment dismissal keywords`);
+    }
+
+    // Fallback: bulk dismiss for comments that didn't have per-finding format
+    {
+      const stillRemaining = remainingIssues.filter((i) => !dismissedIds.has(i.id));
+      const hasDismissalComment = bulkDismissComments.some((c) => isDismissalReply(c.body));
+
+      if (hasDismissalComment && stillRemaining.length > 0) {
+        const remainingIds = stillRemaining.map((i) => i.id);
+        const { count } = await prisma.reviewIssue.updateMany({
+          where: { id: { in: remainingIds } },
+          data: { feedback: "down", feedbackAt: new Date(), feedbackBy: "github-issue-comment-dismissal" },
+        });
+        synced += count;
+
+        for (const issue of stillRemaining) {
+          try {
+            await embedFeedbackPattern(issue, "down");
+          } catch (err) {
+            console.error(`[reviewer] Failed to embed feedback pattern for issue ${issue.id}:`, err);
+          }
+        }
+        console.log(`[reviewer] Dismissed ${count} findings via bulk issue comment dismissal`);
+      }
     }
   }
 
@@ -1317,6 +1420,49 @@ export async function processReview(pullRequestId: string): Promise<void> {
       console.warn("[reviewer] Failed to fetch feedback context:", err);
     }
 
+    // Fetch prior review comments once — shared by prompt context injection and inline dedup.
+    const appSlug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG ?? "octopus-review";
+    const botLogin = `${appSlug}[bot]`;
+    let allPriorReviewComments: import("@/lib/github").PRReviewComment[] = [];
+    if (isGitHub && installationId) {
+      try {
+        allPriorReviewComments = await ghListPullRequestReviewComments(installationId, owner, repoName, pr.number);
+      } catch (err) {
+        console.warn("[reviewer] Failed to fetch prior review comments:", err);
+      }
+    }
+
+    // Detect re-review: if the bot already has inline comments or a previous reviewBody,
+    // this is a follow-up review. Inject prior findings and change the review strategy.
+    let priorReviewContext = "";
+    const botComments = allPriorReviewComments.filter((c) => !c.inReplyToId && c.user === botLogin && c.line != null);
+    const isReReview = botComments.length > 0 || !!pr.reviewBody;
+
+    if (isReReview) {
+      const parts: string[] = [
+        "RE-REVIEW MODE: This PR has already been reviewed. Your priority is to verify whether previously raised findings have been addressed. Follow these rules strictly:",
+        "1. Do NOT raise new findings unless they are critical severity (🔴) or were clearly introduced by changes made since the last review.",
+        "2. Do NOT rephrase, reframe, or re-raise previously dismissed findings from a different angle.",
+        "3. Focus on confirming fixes: check if the code changes actually resolve the issues you previously raised.",
+        "4. If all previous findings are addressed and no critical new issues exist, keep the findings list empty.",
+      ];
+
+      if (botComments.length > 0) {
+        const summaries = botComments.map((c) => {
+          const firstLine = c.body.split("\n")[0].replace(/\*\*/g, "").trim();
+          return `- ${c.path}:${c.line} — ${firstLine}`;
+        });
+        parts.push(
+          "",
+          "PRIOR INLINE COMMENTS (already posted — do NOT repeat):",
+          ...summaries,
+        );
+      }
+
+      priorReviewContext = parts.join("\n");
+      console.log(`[reviewer] Re-review detected: ${botComments.length} prior inline comments, injecting re-review instructions`);
+    }
+
     const FILE_TREE_IGNORE = [
       // JS/TS ecosystem
       "node_modules/", "dist/", "build/", ".next/", ".nuxt/",
@@ -1357,6 +1503,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
       .replace("{{USER_INSTRUCTION}}", userInstruction)
       .replace("{{PROVIDER}}", isGitHub ? "GitHub" : isBitbucket ? "Bitbucket" : repo.provider)
       .replace("{{FALSE_POSITIVE_CONTEXT}}", falsePositiveContext)
+      .replace("{{RE_REVIEW_CONTEXT}}", priorReviewContext)
       .replace("{{CONFLICT_DETECTION}}", conflictPrompt);
 
     const response = await createAiMessage(
@@ -1617,6 +1764,18 @@ Rules:
       }
     }
 
+    // Re-review filter: only keep critical findings on follow-up reviews.
+    // This is a hard filter — prompt instructions alone are not reliable enough.
+    if (isReReview) {
+      const beforeReReviewFilter = allParsedFindings.length;
+      allParsedFindings = allParsedFindings.filter((f) => f.severity === "🔴");
+      findings = findings.filter((f) => f.severity === "🔴");
+      const filtered = beforeReReviewFilter - allParsedFindings.length;
+      if (filtered > 0) {
+        console.log(`[reviewer] Re-review filter: removed ${filtered} non-critical findings, kept ${allParsedFindings.length}`);
+      }
+    }
+
     // Cap findings to top N by severity
     const maxFindings = reviewConfig.maxFindings ?? MAX_FINDINGS_PER_REVIEW;
     const { kept: cappedFindings, truncatedCount } = sortAndCapFindings(findings, maxFindings);
@@ -1671,16 +1830,27 @@ Rules:
 
     // Determine which findings go into the review summary (non-inline ones)
     let inlineReviewSucceeded = false;
-    let inlinePostedPaths = new Set<string>();
 
     if (isGitHub && installationId) {
       // GitHub: use the PR review API for inline comments
       if (inlineComments.length > 0) {
+        // Dedup: skip inline comments where the bot already posted on the same file+line
+        const existingLocations = new Set(
+          allPriorReviewComments
+            .filter((c) => !c.inReplyToId && c.line != null && c.user === botLogin)
+            .map((c) => `${c.path}:${c.line}`),
+        );
+        const dedupedComments = inlineComments.filter((c) => !existingLocations.has(`${c.path}:${c.line}`));
+        if (dedupedComments.length < inlineComments.length) {
+          console.log(`[reviewer] Deduped inline comments: ${inlineComments.length} → ${dedupedComments.length} (${inlineComments.length - dedupedComments.length} already posted)`);
+        }
+
         // First, figure out the collapsed block for the summary (we need it before posting)
-        const tempInlinePaths = new Set(inlineComments.map((c) => `${c.path}:${c.line}`));
+        // Include ALL inline locations (both new and already-posted) so they don't leak into summary
+        const allInlinePaths = new Set(inlineComments.map((c) => `${c.path}:${c.line}`));
         const nonInlineFindings = allParsedFindings.filter((f) => {
           for (let l = f.startLine; l <= f.endLine; l++) {
-            if (tempInlinePaths.has(`${f.filePath}:${l}`)) return false;
+            if (allInlinePaths.has(`${f.filePath}:${l}`)) return false;
           }
           return true;
         });
@@ -1690,11 +1860,10 @@ Rules:
         try {
           const reviewId = await ghCreatePullRequestReview(
             installationId, owner, repoName, pr.number,
-            summaryLine, reviewEvent as "COMMENT" | "REQUEST_CHANGES", inlineComments,
+            summaryLine, reviewEvent as "COMMENT" | "REQUEST_CHANGES", dedupedComments,
           );
           inlineReviewSucceeded = true;
-          inlinePostedPaths = tempInlinePaths;
-          console.log(`[reviewer] PR review submitted with ${inlineComments.length} inline comments, ${nonInlineFindings.length} in summary (${reviewEvent}), reviewId: ${reviewId}`);
+          console.log(`[reviewer] PR review submitted with ${dedupedComments.length} inline comments, ${nonInlineFindings.length} in summary (${reviewEvent}), reviewId: ${reviewId}`);
 
           // Match GitHub review comments to ReviewIssue records by file+line
           try {

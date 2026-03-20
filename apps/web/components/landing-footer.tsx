@@ -1,10 +1,15 @@
 import Image from "next/image";
 import {
+  IconBrandDiscord,
   IconBrandGithub,
+  IconBrandLinkedin,
   IconBrandX,
   IconBrandYoutube,
 } from "@tabler/icons-react";
 import { TrackedLink, TrackedAnchor } from "@/components/tracked-link";
+
+const DISCORD_INVITE_URL = "https://discord.gg/qyuWTXghbS";
+const LINKEDIN_URL = "https://www.linkedin.com/company/octopus-review";
 
 export function LandingFooter() {
   return (
@@ -53,6 +58,28 @@ export function LandingFooter() {
                 className="text-[#555] transition-colors hover:text-white"
               >
                 <IconBrandYoutube className="size-4" />
+              </TrackedAnchor>
+              <TrackedAnchor
+                href={DISCORD_INVITE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                event="footer_click"
+                eventParams={{ label: "discord" }}
+                aria-label="Discord"
+                className="text-[#555] transition-colors hover:text-white"
+              >
+                <IconBrandDiscord className="size-4" />
+              </TrackedAnchor>
+              <TrackedAnchor
+                href={LINKEDIN_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                event="footer_click"
+                eventParams={{ label: "linkedin" }}
+                aria-label="LinkedIn"
+                className="text-[#555] transition-colors hover:text-white"
+              >
+                <IconBrandLinkedin className="size-4" />
               </TrackedAnchor>
             </div>
           </div>
@@ -182,6 +209,32 @@ export function LandingFooter() {
                 >
                   <IconBrandGithub className="size-3.5" />
                   GitHub
+                </TrackedAnchor>
+              </li>
+              <li>
+                <TrackedAnchor
+                  href={DISCORD_INVITE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  event="footer_click"
+                  eventParams={{ label: "discord" }}
+                  className="flex items-center gap-1.5 text-sm text-[#666] transition-colors hover:text-white"
+                >
+                  <IconBrandDiscord className="size-3.5" />
+                  Discord
+                </TrackedAnchor>
+              </li>
+              <li>
+                <TrackedAnchor
+                  href={LINKEDIN_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  event="footer_click"
+                  eventParams={{ label: "linkedin" }}
+                  className="flex items-center gap-1.5 text-sm text-[#666] transition-colors hover:text-white"
+                >
+                  <IconBrandLinkedin className="size-3.5" />
+                  LinkedIn
                 </TrackedAnchor>
               </li>
               <li>

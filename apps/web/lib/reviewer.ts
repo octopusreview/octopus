@@ -1420,6 +1420,33 @@ export async function processReview(pullRequestId: string): Promise<void> {
       console.warn("[reviewer] Failed to fetch feedback context:", err);
     }
 
+    // Collect prior review comments from this bot on the same PR.
+    // Injected into the prompt so the LLM avoids repeating findings that were
+    // already raised (whether or not explicit feedback was recorded).
+    let priorReviewContext = "";
+    if (isGitHub && installationId) {
+      try {
+        const priorComments = await ghListPullRequestReviewComments(installationId, owner, repoName, pr.number);
+        const appSlug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG ?? "octopus-review";
+        const botLogin = `${appSlug}[bot]`;
+        const botComments = priorComments.filter((c) => !c.inReplyToId && c.user === botLogin && c.line != null);
+
+        if (botComments.length > 0) {
+          const summaries = botComments.map((c) => {
+            const firstLine = c.body.split("\n")[0].replace(/\*\*/g, "").trim();
+            return `- ${c.path}:${c.line} — ${firstLine}`;
+          });
+          priorReviewContext = [
+            "PRIOR REVIEW COMMENTS (already posted on this PR — do NOT repeat these or raise similar findings on the same locations):",
+            ...summaries,
+          ].join("\n");
+          console.log(`[reviewer] Prior review context: ${botComments.length} existing inline comments`);
+        }
+      } catch (err) {
+        console.warn("[reviewer] Failed to fetch prior review comments:", err);
+      }
+    }
+
     const FILE_TREE_IGNORE = [
       // JS/TS ecosystem
       "node_modules/", "dist/", "build/", ".next/", ".nuxt/",
@@ -1459,7 +1486,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
       .replace("{{PR_NUMBER}}", String(pr.number))
       .replace("{{USER_INSTRUCTION}}", userInstruction)
       .replace("{{PROVIDER}}", isGitHub ? "GitHub" : isBitbucket ? "Bitbucket" : repo.provider)
-      .replace("{{FALSE_POSITIVE_CONTEXT}}", falsePositiveContext)
+      .replace("{{FALSE_POSITIVE_CONTEXT}}", [falsePositiveContext, priorReviewContext].filter(Boolean).join("\n\n"))
       .replace("{{CONFLICT_DETECTION}}", conflictPrompt);
 
     const response = await createAiMessage(
@@ -1780,9 +1807,11 @@ Rules:
       if (inlineComments.length > 0) {
         // Dedup: skip inline comments where the bot already posted on the same file+line
         const existingReviewComments = await ghListPullRequestReviewComments(installationId, owner, repoName, pr.number);
+        const appSlug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG ?? "octopus-review";
+        const botLogin = `${appSlug}[bot]`;
         const existingLocations = new Set(
           existingReviewComments
-            .filter((c) => !c.inReplyToId && c.line != null && /\*\*[🔴🟠🟡🔵💡]/.test(c.body))
+            .filter((c) => !c.inReplyToId && c.line != null && c.user === botLogin)
             .map((c) => `${c.path}:${c.line}`),
         );
         const dedupedComments = inlineComments.filter((c) => !existingLocations.has(`${c.path}:${c.line}`));

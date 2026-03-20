@@ -652,15 +652,24 @@ export async function cancelIndexing(repoId: string): Promise<{ error?: string }
   if (!aborted) {
     // No in-memory controller found — the process is dead (e.g. server restart).
     // Directly reset the DB status so the user isn't stuck.
-    await prisma.repository.update({
-      where: { id: repoId },
-      data: { indexStatus: "pending" },
-    });
+    try {
+      console.warn(
+        `[abort-indexing] No in-memory controller for repo ${repoId}, resetting DB status directly`,
+      );
 
-    pubby.trigger(`presence-org-${repo.organizationId}`, "index-status", {
-      repoId,
-      status: "cancelled",
-    });
+      await prisma.repository.update({
+        where: { id: repoId },
+        data: { indexStatus: "pending" },
+      });
+
+      pubby.trigger(`presence-org-${repo.organizationId}`, "index-status", {
+        repoId,
+        status: "cancelled",
+      });
+    } catch (error) {
+      console.error(`[abort-indexing] Failed to reset status for repo ${repoId}:`, error);
+      return { error: "Failed to cancel indexing. Please try again." };
+    }
   }
 
   return {};

@@ -1,6 +1,8 @@
 import Image from "next/image";
 import {
+  IconBrandDiscord,
   IconBrandGithub,
+  IconBrandLinkedin,
   IconBrandX,
   IconBrandYoutube,
 } from "@tabler/icons-react";
@@ -53,6 +55,28 @@ export function LandingFooter() {
                 className="text-[#555] transition-colors hover:text-white"
               >
                 <IconBrandYoutube className="size-4" />
+              </TrackedAnchor>
+              <TrackedAnchor
+                href="https://discord.gg/qyuWTXghbS"
+                target="_blank"
+                rel="noopener noreferrer"
+                event="footer_click"
+                eventParams={{ label: "discord" }}
+                aria-label="Discord"
+                className="text-[#555] transition-colors hover:text-white"
+              >
+                <IconBrandDiscord className="size-4" />
+              </TrackedAnchor>
+              <TrackedAnchor
+                href="https://www.linkedin.com/company/octopus-review"
+                target="_blank"
+                rel="noopener noreferrer"
+                event="footer_click"
+                eventParams={{ label: "linkedin" }}
+                aria-label="LinkedIn"
+                className="text-[#555] transition-colors hover:text-white"
+              >
+                <IconBrandLinkedin className="size-4" />
               </TrackedAnchor>
             </div>
           </div>
@@ -182,6 +206,19 @@ export function LandingFooter() {
                 >
                   <IconBrandGithub className="size-3.5" />
                   GitHub
+                </TrackedAnchor>
+              </li>
+              <li>
+                <TrackedAnchor
+                  href="https://discord.gg/qyuWTXghbS"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  event="footer_click"
+                  eventParams={{ label: "discord" }}
+                  className="flex items-center gap-1.5 text-sm text-[#666] transition-colors hover:text-white"
+                >
+                  <IconBrandDiscord className="size-3.5" />
+                  Discord
                 </TrackedAnchor>
               </li>
               <li>

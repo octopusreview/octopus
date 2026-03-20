@@ -1773,6 +1773,21 @@ Rules:
       const filtered = beforeReReviewFilter - allParsedFindings.length;
       if (filtered > 0) {
         console.log(`[reviewer] Re-review filter: removed ${filtered} non-critical findings, kept ${allParsedFindings.length}`);
+
+        // Update the main comment to reflect filtered findings.
+        // The original mainCommentBody was posted before filtering (Step 5a),
+        // so it still shows the LLM's unfiltered summary/score/findings tables.
+        if (reviewCommentId) {
+          try {
+            const reReviewBody = allParsedFindings.length === 0
+              ? `## 🐙 Octopus Review — PR #${pr.number}\n\nAll previously raised findings have been addressed. No critical issues found.\n\n[Octopus Review](https://github.com/apps/octopus-review)`
+              : mainCommentBody;
+            await providerUpdateComment(reviewCommentId, reReviewBody);
+            console.log(`[reviewer] Updated main comment for re-review (${allParsedFindings.length} findings remain)`);
+          } catch (err) {
+            console.warn("[reviewer] Failed to update main comment for re-review:", err);
+          }
+        }
       }
     }
 
@@ -1801,8 +1816,11 @@ Rules:
 
     // Use findings.length as the authoritative count (accounts for follow-up recovery)
     // Fall back to findings summary table count if both parsed findings and regex count are 0
+    // When re-review filter is active, allParsedFindings is authoritative (may be 0)
     const tableFindingsCount = countFindingsFromTable(reviewBody);
-    const effectiveFindingsCount = allParsedFindings.length || findingsCount || tableFindingsCount;
+    const effectiveFindingsCount = isReReview
+      ? allParsedFindings.length
+      : (allParsedFindings.length || findingsCount || tableFindingsCount);
 
     console.log(`[reviewer] Parsed ${allParsedFindings.length} total, ${findings.length} after filters, ${inlineComments.length} inline comments`);
 

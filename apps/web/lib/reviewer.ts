@@ -803,14 +803,13 @@ async function syncTextDismissalsForPR(
       issuesByNormalizedTitle.set(key, existing);
     }
 
-    let usedPerFinding = false;
+    const bulkDismissComments: typeof relevantComments = [];
 
     for (const comment of relevantComments) {
       const perFinding = parsePerFindingFeedback(comment.body);
 
       if (perFinding) {
         // Per-finding mode: match each feedback line to specific findings
-        usedPerFinding = true;
         for (const { title, feedback } of perFinding) {
           const normalizedTitle = normalizeFindingTitle(title);
           const matched = issuesByNormalizedTitle.get(normalizedTitle);
@@ -831,13 +830,16 @@ async function syncTextDismissalsForPR(
             }
           }
         }
+      } else {
+        // No per-finding format — candidate for bulk dismiss
+        bulkDismissComments.push(comment);
       }
     }
 
-    // Fallback: bulk dismiss if no per-finding feedback was found but a dismissal keyword exists
-    if (!usedPerFinding) {
+    // Fallback: bulk dismiss for comments that didn't have per-finding format
+    {
       const stillRemaining = remainingIssues.filter((i) => !dismissedIds.has(i.id));
-      const hasDismissalComment = relevantComments.some((c) => isDismissalReply(c.body));
+      const hasDismissalComment = bulkDismissComments.some((c) => isDismissalReply(c.body));
 
       if (hasDismissalComment && stillRemaining.length > 0) {
         const remainingIds = stillRemaining.map((i) => i.id);
@@ -1772,7 +1774,6 @@ Rules:
 
     // Determine which findings go into the review summary (non-inline ones)
     let inlineReviewSucceeded = false;
-    let inlinePostedPaths = new Set<string>();
 
     if (isGitHub && installationId) {
       // GitHub: use the PR review API for inline comments
@@ -1781,7 +1782,7 @@ Rules:
         const existingReviewComments = await ghListPullRequestReviewComments(installationId, owner, repoName, pr.number);
         const existingLocations = new Set(
           existingReviewComments
-            .filter((c) => !c.inReplyToId && /\*\*[🔴🟠🟡🔵💡]/.test(c.body))
+            .filter((c) => !c.inReplyToId && c.line != null && /\*\*[🔴🟠🟡🔵💡]/.test(c.body))
             .map((c) => `${c.path}:${c.line}`),
         );
         const dedupedComments = inlineComments.filter((c) => !existingLocations.has(`${c.path}:${c.line}`));
@@ -1807,7 +1808,6 @@ Rules:
             summaryLine, reviewEvent as "COMMENT" | "REQUEST_CHANGES", dedupedComments,
           );
           inlineReviewSucceeded = true;
-          inlinePostedPaths = allInlinePaths;
           console.log(`[reviewer] PR review submitted with ${dedupedComments.length} inline comments, ${nonInlineFindings.length} in summary (${reviewEvent}), reviewId: ${reviewId}`);
 
           // Match GitHub review comments to ReviewIssue records by file+line

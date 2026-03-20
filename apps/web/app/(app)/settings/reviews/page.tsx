@@ -5,6 +5,7 @@ import { prisma } from "@octopus/db";
 import { ReviewSettingsForm } from "./review-settings-form";
 import { ReviewsPausedSwitch } from "./reviews-paused-switch";
 import { OrgReviewConfigForm } from "./org-review-config-form";
+import { BlockedAuthorsForm } from "./blocked-authors-form";
 
 export default async function ReviewsSettingsPage() {
   const session = await auth.api.getSession({
@@ -29,6 +30,7 @@ export default async function ReviewsSettingsPage() {
           checkFailureThreshold: true,
           reviewsPaused: true,
           defaultReviewConfig: true,
+          blockedAuthors: true,
         },
       },
     },
@@ -37,6 +39,13 @@ export default async function ReviewsSettingsPage() {
   if (!member) redirect("/dashboard");
 
   const orgReviewConfig = (member.organization.defaultReviewConfig as Record<string, unknown>) ?? {};
+  const orgBlockedAuthors = (member.organization.blockedAuthors as string[]) ?? [];
+
+  const globalConfig = await prisma.systemConfig.findUnique({
+    where: { id: "singleton" },
+    select: { blockedAuthors: true },
+  });
+  const globalBlockedAuthors = (globalConfig?.blockedAuthors as string[]) ?? [];
 
   return (
     <div key={member.organization.id} className="space-y-6">
@@ -51,6 +60,11 @@ export default async function ReviewsSettingsPage() {
       <OrgReviewConfigForm
         isOwner={member.role === "owner"}
         initialConfig={orgReviewConfig}
+      />
+      <BlockedAuthorsForm
+        isOwner={member.role === "owner"}
+        initialAuthors={orgBlockedAuthors}
+        globalAuthors={globalBlockedAuthors}
       />
     </div>
   );

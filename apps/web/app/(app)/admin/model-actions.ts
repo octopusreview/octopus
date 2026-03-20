@@ -142,3 +142,30 @@ export async function getSystemReviewConfig(): Promise<Record<string, unknown>> 
   const row = await prisma.systemConfig.findUnique({ where: { id: "singleton" } });
   return (row?.defaultReviewConfig as Record<string, unknown>) ?? {};
 }
+
+export async function getGlobalBlockedAuthors(): Promise<string[]> {
+  const row = await prisma.systemConfig.findUnique({ where: { id: "singleton" } });
+  return (row?.blockedAuthors as string[]) ?? [];
+}
+
+export async function updateGlobalBlockedAuthors(
+  authors: string[],
+): Promise<{ error?: string; success?: boolean }> {
+  await requireAdmin();
+
+  if (authors.length > 50) {
+    return { error: "Maximum 50 blocked authors allowed." };
+  }
+  if (authors.some((a) => a.length > 100)) {
+    return { error: "Author names must be 100 characters or less." };
+  }
+
+  await prisma.systemConfig.upsert({
+    where: { id: "singleton" },
+    create: { id: "singleton", blockedAuthors: authors },
+    update: { blockedAuthors: authors },
+  });
+
+  revalidatePath("/admin/blocked-authors");
+  return { success: true };
+}

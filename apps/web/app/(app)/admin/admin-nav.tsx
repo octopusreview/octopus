@@ -10,6 +10,7 @@ import {
   IconBrain,
   IconChartBar,
   IconEye,
+  IconRobot,
 } from "@tabler/icons-react";
 
 const items = [
@@ -19,6 +20,7 @@ const items = [
   { href: "/admin/usage", label: "AI Usage", icon: IconChartBar },
   { href: "/admin/models", label: "Models", icon: IconBrain },
   { href: "/admin/review-defaults", label: "Review Defaults", icon: IconEye },
+  { href: "/admin/blocked-authors", label: "Blocked Authors", icon: IconRobot },
 ];
 
 export function AdminNav() {

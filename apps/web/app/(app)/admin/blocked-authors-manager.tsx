@@ -27,10 +27,9 @@ export function BlockedAuthorsManager({
     setError("");
     setSaved(false);
     startTransition(async () => {
-      const list = authors
-        .split(",")
-        .map((a) => a.trim())
-        .filter(Boolean);
+      const list = [...new Set(
+        authors.split(",").map((a) => a.trim()).filter(Boolean),
+      )];
 
       const result = await updateGlobalBlockedAuthors(list);
       if (result.error) {

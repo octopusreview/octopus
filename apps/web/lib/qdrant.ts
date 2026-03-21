@@ -30,7 +30,7 @@ export async function ensureCollection() {
 
   if (!exists) {
     await qdrant.createCollection(COLLECTION_NAME, {
-      vectors: { size: VECTOR_SIZE, distance: "Cosine" },
+      vectors: { "": { size: VECTOR_SIZE, distance: "Cosine" } },
       sparse_vectors: { [SPARSE_VECTOR_NAME]: {} },
     });
     await qdrant.createPayloadIndex(COLLECTION_NAME, {

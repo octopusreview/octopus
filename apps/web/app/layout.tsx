@@ -21,9 +21,68 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const SITE_URL = "https://octopus-review.ai";
+
 export const metadata: Metadata = {
-  title: "Octopus",
-  description: "Code review automation platform",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "Octopus — AI-Powered Code Review",
+    template: "%s | Octopus",
+  },
+  description:
+    "AI-powered code review tool. Connects to GitHub & Bitbucket, indexes your codebase, and automatically reviews pull requests with severity-rated findings.",
+  keywords: [
+    "code review",
+    "AI code review",
+    "pull request review",
+    "automated code review",
+    "GitHub",
+    "Bitbucket",
+    "Claude",
+    "OpenAI",
+    "static analysis",
+    "code quality",
+  ],
+  authors: [{ name: "Octopus" }],
+  creator: "Octopus",
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: SITE_URL,
+    siteName: "Octopus",
+    title: "Octopus — AI-Powered Code Review",
+    description:
+      "AI-powered code review tool. Connects to GitHub & Bitbucket, indexes your codebase, and automatically reviews pull requests with severity-rated findings.",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Octopus — AI-Powered Code Review",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Octopus — AI-Powered Code Review",
+    description:
+      "AI-powered code review tool. Connects to GitHub & Bitbucket, indexes your codebase, and automatically reviews pull requests.",
+    images: ["/og-image.png"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  alternates: {
+    canonical: SITE_URL,
+  },
 };
 
 export default function RootLayout({

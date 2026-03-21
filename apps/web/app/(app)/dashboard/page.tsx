@@ -18,6 +18,7 @@ import { RepoTable } from "@/components/dashboard/repo-table";
 import { SyncReposButton } from "@/components/sync-repos-button";
 import { KpiFilters } from "@/components/dashboard/kpi-filters";
 import { ProvidersBanner } from "@/components/dashboard/providers-banner";
+import { OnboardingTips } from "@/components/dashboard/onboarding-tips";
 
 // --- Constants ---
 
@@ -141,6 +142,8 @@ export default async function DashboardPage({
               indexDurationMs: true,
               summary: true,
               purpose: true,
+              analysisStatus: true,
+              autoReview: true,
               pullRequests: {
                 where: { status: { in: ["pending", "reviewing"] } },
                 select: {
@@ -180,6 +183,12 @@ export default async function DashboardPage({
   });
   const bitbucketConnected = !!bitbucketIntegration;
   const bannerDismissed = cookieStore.get("providers_banner_dismissed")?.value === "1";
+
+  const hasIndexedRepo = repos.some((r) => r.indexStatus === "indexed");
+  const hasAnalyzedRepo = repos.some((r) => r.analysisStatus === "analyzed" || r.analysisStatus === "completed");
+  const hasAutoReviewRepo = repos.some((r) => r.autoReview === true);
+  const onboardingComplete = hasIndexedRepo && hasAnalyzedRepo && hasAutoReviewRepo;
+  const onboardingDismissed = cookieStore.get("onboarding_tips_dismissed")?.value === "1";
 
   // --- Chart Queries ---
 
@@ -450,6 +459,14 @@ export default async function DashboardPage({
           bitbucketConnected={bitbucketConnected}
           githubAppSlug={githubAppSlug}
           baseUrl={baseUrl}
+        />
+      )}
+
+      {!onboardingComplete && !onboardingDismissed && (
+        <OnboardingTips
+          hasIndexedRepo={hasIndexedRepo}
+          hasAnalyzedRepo={hasAnalyzedRepo}
+          hasAutoReviewRepo={hasAutoReviewRepo}
         />
       )}
 

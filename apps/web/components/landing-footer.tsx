@@ -258,7 +258,7 @@ export function LandingFooter() {
                   eventParams={{ label: "license" }}
                   className="text-sm text-[#666] transition-colors hover:text-white"
                 >
-                  MIT License
+                  Modified MIT License
                 </TrackedAnchor>
               </li>
             </ul>

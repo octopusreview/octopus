@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://x.com/octopus_review"><img src="https://img.shields.io/badge/X-@octopus__review-212429?logo=x&logoColor=white" alt="X (Twitter)" /></a>
+  <a href="https://x.com/octopus_review"><img src="https://img.shields.io/badge/@octopus__review-212429?logo=x&logoColor=white" alt="X (Twitter)" /></a>
   <a href="https://discord.gg/qyuWTXghbS"><img src="https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
   <a href="https://www.youtube.com/@OctopusReview"><img src="https://img.shields.io/badge/YouTube-@OctopusReview-FF0000?logo=youtube&logoColor=white" alt="YouTube" /></a>
   <a href="https://www.linkedin.com/company/octopus-review"><img src="https://img.shields.io/badge/LinkedIn-Octopus%20Review-0A66C2?logo=linkedin&logoColor=white" alt="LinkedIn" /></a>

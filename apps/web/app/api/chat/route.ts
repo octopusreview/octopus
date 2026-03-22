@@ -582,7 +582,7 @@ ${chatHistoryContext || "No relevant previous conversations found."}
 
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
-      } catch (err) {
+      } catch {
         // Mark queue entry as failed for shared chats
         if (conversation.isShared) {
           await prisma.chatQueue.updateMany({

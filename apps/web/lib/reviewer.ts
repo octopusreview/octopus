@@ -43,7 +43,7 @@ import { analyzeRepository } from "@/lib/analyzer";
 import { writeSyncLog, deleteSyncLogs } from "@/lib/elasticsearch";
 import { logAiUsage } from "@/lib/ai-usage";
 import { getReviewModel } from "@/lib/ai-client";
-import { createAiMessage, resolveProvider } from "@/lib/ai-router";
+import { createAiMessage } from "@/lib/ai-router";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import fs from "node:fs";
 import path from "node:path";
@@ -92,10 +92,6 @@ function extractUserInstruction(commentBody: string): string {
   return raw.replace(/^review\b\s*/i, "").trim();
 }
 
-/** Count unique files changed in a unified diff */
-function countDiffFiles(diff: string): number {
-  return extractDiffFiles(diff).size;
-}
 
 /** Extract all file paths touched by a unified diff (using the "b/" side). */
 function extractDiffFiles(diff: string): Set<string> {

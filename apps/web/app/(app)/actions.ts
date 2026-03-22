@@ -368,7 +368,7 @@ export async function deleteOrganization(
 }
 
 export async function syncRepos(): Promise<{ synced: number; removed: number; error?: string }> {
-  const user = await getUser();
+  await getUser();
   const cookieStore = await cookies();
   const orgId = cookieStore.get("current_org_id")?.value;
 

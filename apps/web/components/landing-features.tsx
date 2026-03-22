@@ -9,10 +9,8 @@ import {
   IconBook,
   IconUsers,
   IconChartBar,
-  IconMessageChatbot,
   IconCheck,
   IconAlertTriangle,
-  IconGitPullRequest,
 } from "@tabler/icons-react";
 
 const features = [

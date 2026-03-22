@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import { getInstallationToken, getFileContent as ghGetFileContent } from "@/lib/github";
 import * as bitbucketLib from "@/lib/bitbucket";
-import { createEmbeddings } from "@/lib/embeddings";
 import { ensureCollection, upsertChunks, deleteRepoChunks } from "@/lib/qdrant";
 import { generateSparseVectors } from "@/lib/sparse-vector";
 import { parseOctopusIgnore, type Ignore } from "@/lib/octopus-ignore";

@@ -193,7 +193,7 @@ function RepositoryModelsSection({
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
-  const isSearching = query.length > 0;
+  const _isSearching = query.length > 0;
 
   const doSearch = useCallback(async (searchQuery: string) => {
     setLoading(true);

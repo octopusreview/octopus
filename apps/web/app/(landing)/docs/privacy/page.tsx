@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { IconShieldLock } from "@tabler/icons-react";
 
 export const metadata = {

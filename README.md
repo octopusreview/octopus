@@ -6,8 +6,15 @@
   <a href="https://github.com/octopusreview/octopus/actions/workflows/ci.yml"><img src="https://github.com/octopusreview/octopus/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/octopusreview/octopus/actions/workflows/dependabot/dependabot-updates"><img src="https://github.com/octopusreview/octopus/actions/workflows/dependabot/dependabot-updates/badge.svg" alt="Dependabot Updates" /></a>
   <a href="https://github.com/octopusreview/octopus/actions/workflows/github-code-scanning/codeql"><img src="https://github.com/octopusreview/octopus/actions/workflows/github-code-scanning/codeql/badge.svg" alt="CodeQL" /></a>
-  <a href="LICENSE.md"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/License-Modified%20MIT-blue.svg" alt="License: Modified MIT" /></a>
   <a href="https://github.com/octopusreview/octopus/discussions"><img src="https://img.shields.io/github/discussions/octopusreview/octopus" alt="GitHub Discussions" /></a>
+</p>
+
+<p align="center">
+  <a href="https://x.com/octopus_review"><img src="https://img.shields.io/badge/X-@octopus__review-000000?logo=x&logoColor=white" alt="X (Twitter)" /></a>
+  <a href="https://discord.gg/qyuWTXghbS"><img src="https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
+  <a href="https://www.youtube.com/@OctopusReview"><img src="https://img.shields.io/badge/YouTube-@OctopusReview-FF0000?logo=youtube&logoColor=white" alt="YouTube" /></a>
+  <a href="https://www.linkedin.com/company/octopus-review"><img src="https://img.shields.io/badge/LinkedIn-Octopus%20Review-0A66C2?logo=linkedin&logoColor=white" alt="LinkedIn" /></a>
 </p>
 
 # Octopus
@@ -141,4 +148,4 @@ Please see [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE.md).
+This project is licensed under the [Modified MIT License](LICENSE.md).

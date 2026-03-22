@@ -367,8 +367,10 @@ export async function deleteOrganization(
   redirect("/dashboard");
 }
 
+// getUser() acts as an auth guard — throws if unauthenticated.
+// The return value is intentionally discarded; org scoping uses cookie-based orgId below.
 export async function syncRepos(): Promise<{ synced: number; removed: number; error?: string }> {
-  const user = await getUser();
+  await getUser();
   const cookieStore = await cookies();
   const orgId = cookieStore.get("current_org_id")?.value;
 

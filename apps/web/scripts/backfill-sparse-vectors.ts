@@ -43,7 +43,6 @@ async function main() {
     let offset: string | number | undefined = undefined;
     let total = 0;
 
-    // eslint-disable-next-line no-constant-condition
     while (true) {
       const result = await qdrant.scroll(col.name, {
         limit: BATCH_SIZE,

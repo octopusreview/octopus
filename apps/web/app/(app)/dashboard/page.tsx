@@ -427,7 +427,7 @@ export default async function DashboardPage({
   });
 
   // Fetch current Linear statuses for issues that have been linked
-  let issueLinearStatuses: Record<string, { state: string; url: string; identifier: string }> = {};
+  const issueLinearStatuses: Record<string, { state: string; url: string; identifier: string }> = {};
   if (linearIntegration) {
     const linkedIssueIds = recentIssues
       .filter((i) => i.linearIssueId)

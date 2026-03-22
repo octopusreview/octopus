@@ -101,7 +101,7 @@ function formatDate(dateStr: string): string {
 function IndexBadge({
   status,
   repoId,
-  indexedAt,
+  indexedAt: _indexedAt,
   needsAccess,
   githubAppSlug,
   onIndexStart,

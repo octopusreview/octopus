@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
 
     const repoFullName: string = payload.repository?.full_name ?? "";
     const repoExternalId = String(payload.repository?.id ?? "");
-    const [owner, repoName] = repoFullName.split("/");
+    const [_owner, _repoName] = repoFullName.split("/");
     const prNumber: number = payload.pull_request?.number;
     const prTitle: string = payload.pull_request?.title ?? `PR #${prNumber}`;
     const prUrl: string = payload.pull_request?.html_url ?? "";

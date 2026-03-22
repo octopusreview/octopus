@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -22,7 +22,6 @@ interface Organization {
 
 function AuthorizeContent() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const code = searchParams.get("code");
 
   const [orgs, setOrgs] = React.useState<Organization[]>([]);

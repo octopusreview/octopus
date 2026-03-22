@@ -6,7 +6,6 @@ import { GitHubIntegrationCard } from "./github-integration-card";
 import { SlackIntegrationCard } from "./slack-integration-card";
 import { BitbucketIntegrationCard } from "./bitbucket-integration-card";
 import { BitbucketDebugBanner } from "./bitbucket-debug-banner";
-import { CollabIntegrationCard } from "./collab-integration-card";
 import { LinearIntegrationCard } from "./linear-integration-card";
 
 export default async function IntegrationsPage({
@@ -37,7 +36,7 @@ export default async function IntegrationsPage({
 
   const orgId = member.organizationId;
 
-  const [slackIntegration, bitbucketIntegration, githubData, collabIntegration, linearIntegration] = await Promise.all([
+  const [slackIntegration, bitbucketIntegration, githubData, , linearIntegration] = await Promise.all([
     prisma.slackIntegration.findUnique({
       where: { organizationId: orgId },
       select: {

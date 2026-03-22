@@ -300,7 +300,6 @@ export function InvitationsPanel({ orgId, isAdmin }: InvitationsPanelProps) {
 
   function renderInvitationRow(inv: Invitation) {
     const badge = STATUS_BADGES[inv.status] ?? STATUS_BADGES.pending;
-    const isPending = inv.status === "pending" || inv.status === "expired";
     const busy = actionLoading === inv.id;
 
     return (

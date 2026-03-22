@@ -49,9 +49,6 @@ const PROGRESS_PATTERNS = [
   /^Storing \d+ vectors/,
 ];
 
-function isProgressLog(message: string): boolean {
-  return PROGRESS_PATTERNS.some((p) => p.test(message));
-}
 
 function getProgressKey(message: string): string | null {
   for (const p of PROGRESS_PATTERNS) {

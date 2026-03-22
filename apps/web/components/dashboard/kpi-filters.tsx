@@ -26,9 +26,9 @@ const periodOptions = [
 ];
 
 export function KpiFilters({
-  repos,
+  repos: _repos,
   authors,
-  currentRepo,
+  currentRepo: _currentRepo,
   currentAuthor,
   currentPeriod,
 }: KpiFiltersProps) {

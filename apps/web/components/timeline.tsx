@@ -77,7 +77,7 @@ export type TimelineWeek = {
 
 export function Timeline({
   initialWeeks,
-  currentWeekStart,
+  currentWeekStart: _currentWeekStart,
   linearConnected = false,
   githubConnected = false,
 }: {
@@ -476,7 +476,7 @@ function DaySummary({
   const [summary, setSummary] = useState<string | null>(null);
   const [savedPrCount, setSavedPrCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const [loadedFromDb, setLoadedFromDb] = useState(false);
+  const [, setLoadedFromDb] = useState(false);
 
   // Load existing summary from DB on mount
   useEffect(() => {

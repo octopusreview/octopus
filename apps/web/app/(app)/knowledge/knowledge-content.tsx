@@ -310,6 +310,7 @@ export function KnowledgeContent({ documents: initialDocuments, deletedDocuments
     if (updated) {
       setSheetDoc(updated);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally depend on sheetDoc.id only
   }, [documents, sheetDoc?.id]);
 
   function handleDelete(documentId: string) {

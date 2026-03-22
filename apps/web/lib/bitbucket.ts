@@ -278,7 +278,7 @@ export async function getRepositoryTree(
 ): Promise<string[]> {
   const token = await getAccessToken(organizationId);
   const paths: string[] = [];
-  let url: string | null =
+  const url: string | null =
     `${BITBUCKET_API}/repositories/${workspace}/${repoSlug}/src/${encodeURIComponent(branch)}/?pagelen=100&max_depth=10`;
 
   // Bitbucket returns directory listing; we need to recursively traverse

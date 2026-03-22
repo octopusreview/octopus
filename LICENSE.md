@@ -1,4 +1,4 @@
-MIT License
+Modified MIT License
 
 Copyright (c) 2026 S. Ferit Arslan
 
@@ -19,3 +19,9 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+Our only modification part is that, if the Software (or any derivative works
+thereof) is used for any of your commercial products or services that have
+more than 10,000 monthly active users, or more than 100,000 US dollars
+(or equivalent in other currencies) in monthly revenue, you shall prominently
+display "Octopus Code Review" on the user interface of such product or service.

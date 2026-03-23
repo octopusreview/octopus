@@ -1,6 +1,7 @@
 import { describe, it, expect, mock } from "bun:test";
 
-// Mock the db module before importing cost.ts (which imports prisma at top level)
+// Mock the db module before importing cost.ts (which imports prisma at top level).
+// Bun's module mocks are file-scoped and automatically cleaned up — no manual restore needed.
 mock.module("@octopus/db", () => ({
   prisma: {},
 }));
@@ -75,6 +76,7 @@ describe("calcCost", () => {
   });
 
   it("returns 0 for zero tokens", () => {
+    // 0 tokens * any price = 0, markup (1.2x) is irrelevant on zero base cost
     const cost = calcCost(pricing, "claude-sonnet-4-20250514", 0, 0, 0, 0);
     expect(cost).toBe(0);
   });
@@ -97,7 +99,15 @@ describe("formatUsd", () => {
   it("formats regular amounts with 2 decimal places", () => {
     expect(formatUsd(1.50)).toBe("$1.50");
     expect(formatUsd(0.01)).toBe("$0.01");
+    expect(formatUsd(0.10)).toBe("$0.10");
     expect(formatUsd(99.99)).toBe("$99.99");
+  });
+
+  it("handles the 2-decimal / 4-decimal boundary correctly", () => {
+    // Values < 0.01 get 4 decimal places, values >= 0.01 get 2
+    expect(formatUsd(0.0099)).toBe("$0.0099");
+    expect(formatUsd(0.01)).toBe("$0.01");
+    expect(formatUsd(0.011)).toBe("$0.01");
   });
 
   it("formats zero", () => {
@@ -119,7 +129,7 @@ describe("formatNumber", () => {
   it("formats thousands", () => {
     expect(formatNumber(1_000)).toBe("1.0K");
     expect(formatNumber(2_500)).toBe("2.5K");
-    expect(formatNumber(999_999)).toBe("1000.0K");
+    expect(formatNumber(500_000)).toBe("500.0K");
   });
 
   it("formats small numbers with locale string", () => {

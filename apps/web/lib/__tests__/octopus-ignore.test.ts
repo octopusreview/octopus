@@ -138,12 +138,19 @@ describe("detectBadCommits", () => {
 
   it("detects multiple bad directories", () => {
     const diff = `diff --git a/node_modules/x/y.js b/node_modules/x/y.js
+--- a/node_modules/x/y.js
 +++ b/node_modules/x/y.js
++module.exports = {}
 diff --git a/dist/main.js b/dist/main.js
+--- a/dist/main.js
 +++ b/dist/main.js
++console.log("built")
 diff --git a/coverage/lcov.info b/coverage/lcov.info
-+++ b/coverage/lcov.info`;
+--- a/coverage/lcov.info
++++ b/coverage/lcov.info
++TN:`;
     const bad = detectBadCommits(diff);
+    // Each diff section targets a known bad directory: node_modules, dist, coverage
     expect(bad.length).toBe(3);
   });
 

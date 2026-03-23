@@ -65,9 +65,10 @@ describe("generateSparseVector", () => {
   });
 
   it("splits snake_case tokens", () => {
-    const result = generateSparseVector("handle_webhook_event");
-    // Should produce tokens for handle, webhook, event
-    expect(result.indices.length).toBeGreaterThanOrEqual(3);
+    const snakeCase = generateSparseVector("handle_webhook_event");
+    const spaced = generateSparseVector("handle webhook event");
+    // Should produce the same tokens after snake_case splitting
+    expect(snakeCase.indices).toEqual(spaced.indices);
   });
 
   it("filters out single-character tokens", () => {

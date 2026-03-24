@@ -127,6 +127,12 @@ sequenceDiagram
 });
 
 describe("sanitizeMermaidCode", () => {
+  it("replaces escaped quotes with #quot;", () => {
+    const result = sanitizeMermaidCode('FormInput["Form Input (empty string \\"\\")"]');
+    expect(result).toBe('FormInput["Form Input (empty string #quot;#quot;)"]');
+    expect(result).not.toContain('\\"');
+  });
+
   it("replaces literal \\n with <br/>", () => {
     const result = sanitizeMermaidCode('A["Hello\\nWorld"]');
     expect(result).toBe('A["Hello<br/>World"]');

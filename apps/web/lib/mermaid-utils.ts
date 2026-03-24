@@ -54,21 +54,28 @@ export function extractMermaidCode(text: string | null | undefined): string | nu
  * Sanitize LLM-generated mermaid code to fix common syntax issues.
  *
  * Fixes applied:
- * 1. Replace literal `\n` with `<br/>` (mermaid line break) — LLMs output \n
+ * 1. Replace escaped quotes `\"` with `#quot;` (mermaid HTML entity) — LLMs output
+ *    escaped quotes inside node labels which causes parse errors
+ * 2. Replace literal `\n` with `<br/>` (mermaid line break) — LLMs output \n
  *    inside node labels intending a line break, but mermaid renders it literally
- * 2. Remove backticks inside node labels (triggers markdown mode, causes parse errors)
- * 3. Ensure `class` statements are each on their own line
- * 4. Remove trailing whitespace on lines
+ * 3. Remove backticks inside node labels (triggers markdown mode, causes parse errors)
+ * 4. Ensure `class` statements are each on their own line
+ * 5. Remove trailing whitespace on lines
  */
 export function sanitizeMermaidCode(code: string): string {
   let result = code;
 
-  // 1. Replace literal \n with <br/> (mermaid line break).
+  // 1. Replace escaped quotes \" with #quot; (mermaid HTML entity).
+  //    LLMs often output \" inside node labels instead of #quot;, which causes
+  //    mermaid parse errors (e.g. FormInput["Form Input (empty string \"\")"])
+  result = result.replace(/\\"/g, "#quot;");
+
+  // 2. Replace literal \n with <br/> (mermaid line break).
   //    Literal \n in mermaid code only appears inside node labels where the LLM
   //    intended a line break. It's not valid mermaid syntax anywhere else.
   result = result.replace(/\\n/g, "<br/>");
 
-  // 2. Remove backticks inside node labels (triggers markdown mode, causes parse errors)
+  // 3. Remove backticks inside node labels (triggers markdown mode, causes parse errors)
   result = result.replace(
     /([\[({]["'])((?:[^"'\\]|\\.)*)(['"][\])}])/g,
     (_match, open: string, content: string, close: string) => {
@@ -77,14 +84,14 @@ export function sanitizeMermaidCode(code: string): string {
     },
   );
 
-  // 3. Split multiple class statements crammed onto one line
+  // 4. Split multiple class statements crammed onto one line
   //    e.g. "class A,B changed class C,D added" → separate lines
   result = result.replace(
     /^(\s*class\s+\S+\s+\w+)\s+(class\s+)/gm,
     "$1\n    $2",
   );
 
-  // 4. Remove trailing whitespace
+  // 5. Remove trailing whitespace
   result = result.replace(/[ \t]+$/gm, "");
 
   return result;

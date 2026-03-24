@@ -18,6 +18,7 @@
         "@getpubby/sdk": "^0.2.0",
         "@google/generative-ai": "^0.24.1",
         "@octopus/db": "workspace:*",
+        "@octopus/package-analyzer": "workspace:*",
         "@qdrant/js-client-rest": "^1.17.0",
         "@react-three/drei": "^10.7.7",
         "@react-three/fiber": "^9.5.0",
@@ -86,6 +87,7 @@
         "octopus": "./bin/octopus.js",
       },
       "dependencies": {
+        "@octopus/package-analyzer": "workspace:*",
         "chalk": "^5.4.1",
         "commander": "^13.1.0",
         "ora": "^8.2.0",
@@ -109,6 +111,15 @@
         "@octopus/tsconfig": "workspace:*",
         "@types/pg": "^8.16.0",
         "prisma": "^7.4.1",
+        "typescript": "^5",
+      },
+    },
+    "packages/package-analyzer": {
+      "name": "@octopus/package-analyzer",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@octopus/tsconfig": "workspace:*",
+        "@types/node": "^20",
         "typescript": "^5",
       },
     },
@@ -479,6 +490,8 @@
     "@octopus/db": ["@octopus/db@workspace:packages/db"],
 
     "@octopus/eslint-config": ["@octopus/eslint-config@workspace:tools/eslint-config"],
+
+    "@octopus/package-analyzer": ["@octopus/package-analyzer@workspace:packages/package-analyzer"],
 
     "@octopus/tsconfig": ["@octopus/tsconfig@workspace:tools/tsconfig"],
 

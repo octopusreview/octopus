@@ -31,6 +31,9 @@ model User {
   deletedKnowledgeDocs  KnowledgeDocument[] @relation("DeletedKnowledgeDocs")
   knowledgeAuditLogs    KnowledgeAuditLog[]
   createdApiTokens      OrgApiToken[] @relation("CreatedApiTokens")
+  packageAnalyses       PackageAnalysis[]
+  safePackageRequests   SafePackageRequest[]
+  packageDeepDives      PackageDeepDive[]
 
   @@map("users")
 }
@@ -123,6 +126,9 @@ model Organization {
   creditTransactions CreditTransaction[]
   autoReloadConfig   AutoReloadConfig?
   apiTokens          OrgApiToken[]
+  packageAnalyses       PackageAnalysis[]
+  safePackageRequests   SafePackageRequest[]
+  packageDeepDives      PackageDeepDive[]
 
   @@map("organizations")
 }
@@ -204,6 +210,7 @@ model Repository {
   collabProjectMappings CollabProjectMapping[]
   favoritedBy           FavoriteRepository[]
   linearTeamMappings    LinearTeamMapping[]
+  packageAnalyses       PackageAnalysis[]
 
   @@unique([provider, externalId])
   @@index([organizationId, isActive])
@@ -624,4 +631,103 @@ model NewsletterSubscriber {
   unsubscribedAt DateTime?
 
   @@map("newsletter_subscribers")
+}
+
+model PackageAnalysis {
+  id             String   @id @default(cuid())
+  repoUrl        String   // GitHub URL (for ad-hoc analyses)
+  repoName       String   // "owner/repo"
+  commitHash     String?  // HEAD commit at time of analysis (for cache)
+  status         String   @default("running") // "running" | "completed" | "failed"
+  results        Json?    // DependencyRiskReport[]
+  analyzedFiles  Json?    // string[] — which package.json files were analyzed
+  totalPackages  Int      @default(0)
+  criticalCount  Int      @default(0)
+  highCount      Int      @default(0)
+  mediumCount    Int      @default(0)
+  durationMs     Int?
+  errorMessage   String?
+  createdAt      DateTime @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  repositoryId   String?
+  repository     Repository? @relation(fields: [repositoryId], references: [id], onDelete: SetNull)
+
+  userId         String
+  user           User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  deepDives PackageDeepDive[]
+
+  @@index([organizationId, createdAt])
+  @@index([repositoryId, commitHash])
+  @@map("package_analyses")
+}
+
+/// Global safe packages list — admin-approved, checked before every scan
+model SafePackage {
+  id              String   @id @default(cuid())
+  name            String   @unique // npm package name
+  weeklyDownloads Int      @default(0)
+  reason          String?  // why it's considered safe
+  approvedBy      String?  // admin user id
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("safe_packages")
+}
+
+/// User requests to mark a package as safe — goes to admin for approval
+model SafePackageRequest {
+  id        String   @id @default(cuid())
+  name      String   // npm package name
+  version   String?
+  reason    String   // user's justification
+  status    String   @default("pending") // "pending" | "approved" | "rejected"
+  reviewedBy String? // admin who reviewed
+  reviewNote String? // admin's note on decision
+  createdAt DateTime @default(now())
+  reviewedAt DateTime?
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([organizationId])
+  @@map("safe_package_requests")
+}
+
+model PackageDeepDive {
+  id            String   @id @default(cuid())
+  packageName   String
+  version       String?
+  verdict       String   // "malicious" | "suspicious" | "likely_safe" | "safe"
+  confidence    String   // "high" | "medium" | "low"
+  summary       String
+  findings      Json     // DeepDiveFinding[]
+  recommendation String
+  filesAnalyzed Int      @default(0)
+  totalSize     Int      @default(0)
+  model         String?  // AI model used
+  inputTokens   Int      @default(0)
+  outputTokens  Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  analysisId String?
+  analysis   PackageAnalysis? @relation(fields: [analysisId], references: [id], onDelete: SetNull)
+
+  @@index([packageName, version])
+  @@index([organizationId, createdAt])
+  @@index([analysisId])
+  @@map("package_deep_dives")
 }

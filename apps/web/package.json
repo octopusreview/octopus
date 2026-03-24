@@ -18,6 +18,7 @@
     "@getpubby/sdk": "^0.2.0",
     "@google/generative-ai": "^0.24.1",
     "@octopus/db": "workspace:*",
+    "@octopus/package-analyzer": "workspace:*",
     "@qdrant/js-client-rest": "^1.17.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",

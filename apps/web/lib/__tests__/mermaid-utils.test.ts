@@ -127,9 +127,15 @@ sequenceDiagram
 });
 
 describe("sanitizeMermaidCode", () => {
-  it("replaces escaped quotes with single quotes", () => {
+  it("replaces escaped quotes with single quotes in double-quoted labels", () => {
     const result = sanitizeMermaidCode('FormInput["Form Input (empty string \\"\\")"]');
     expect(result).toBe("FormInput[\"Form Input (empty string '')\"]");
+    expect(result).not.toContain('\\"');
+  });
+
+  it("replaces escaped quotes with single quotes in single-quoted labels", () => {
+    const result = sanitizeMermaidCode("Node['value with \\\"quotes\\\"']");
+    expect(result).toBe("Node['value with 'quotes'']");
     expect(result).not.toContain('\\"');
   });
 

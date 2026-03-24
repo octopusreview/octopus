@@ -133,10 +133,9 @@ describe("sanitizeMermaidCode", () => {
     expect(result).not.toContain('\\"');
   });
 
-  it("replaces escaped quotes with single quotes in single-quoted labels", () => {
-    const result = sanitizeMermaidCode("Node['value with \\\"quotes\\\"']");
-    expect(result).toBe("Node['value with 'quotes'']");
-    expect(result).not.toContain('\\"');
+  it("does not replace escaped quotes outside node labels", () => {
+    const result = sanitizeMermaidCode('%% Author: \\"Alice\\"');
+    expect(result).toBe('%% Author: \\"Alice\\"');
   });
 
   it("replaces literal \\n with <br/>", () => {

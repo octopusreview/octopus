@@ -147,6 +147,19 @@ button {
 }
 
 /* Shimmer border animation */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
 @keyframes shimmer-spin {
   from {
     transform: translate(-50%, -50%) rotate(0deg);
@@ -190,25 +203,39 @@ button {
 }
 
 /* iOS-style auto-hide scrollbar — visible on hover */
-.scrollbar-auto-hide {
+.scrollbar-auto-hide,
+html {
+  scroll-behavior: smooth;
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
+  scrollbar-gutter: stable;
   transition: scrollbar-color 0.3s;
 }
-.scrollbar-auto-hide:hover {
+.scrollbar-auto-hide:hover,
+html:hover {
   scrollbar-color: oklch(0.5 0 0 / 30%) transparent;
 }
-.scrollbar-auto-hide::-webkit-scrollbar {
+.scrollbar-auto-hide::-webkit-scrollbar,
+html::-webkit-scrollbar {
   width: 6px;
 }
-.scrollbar-auto-hide::-webkit-scrollbar-track {
+.scrollbar-auto-hide::-webkit-scrollbar-track,
+html::-webkit-scrollbar-track {
   background: transparent;
 }
-.scrollbar-auto-hide::-webkit-scrollbar-thumb {
+.scrollbar-auto-hide::-webkit-scrollbar-thumb,
+html::-webkit-scrollbar-thumb {
   background: transparent;
   border-radius: 3px;
 }
-.scrollbar-auto-hide:hover::-webkit-scrollbar-thumb {
+.scrollbar-auto-hide:hover::-webkit-scrollbar-thumb,
+html:hover::-webkit-scrollbar-thumb {
   background: oklch(0.5 0 0 / 30%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }
 

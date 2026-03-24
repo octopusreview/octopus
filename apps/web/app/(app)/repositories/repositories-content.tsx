@@ -49,6 +49,7 @@ import {
   IconFilter,
   IconFilterOff,
   IconSettings,
+  IconPackage,
 } from "@tabler/icons-react";
 import {
   Dialog,
@@ -668,15 +669,23 @@ function AnalysisSection({
               </span>
             )}
           </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 text-xs"
-            onClick={handleAnalyze}
-          >
-            <IconRefresh className="mr-1 size-3" />
-            Re-analyze
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link href={`/package-analyzer?repo=${encodeURIComponent(`https://github.com/${repo.fullName}`)}&repoId=${repo.id}`}>
+              <Button size="sm" variant="outline" className="h-7 text-xs">
+                <IconPackage className="mr-1 size-3" />
+                Package Analyzer
+              </Button>
+            </Link>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs"
+              onClick={handleAnalyze}
+            >
+              <IconRefresh className="mr-1 size-3" />
+              Re-analyze
+            </Button>
+          </div>
         </div>
         {error && <p className="text-xs text-destructive">{error}</p>}
         <Accordion type="multiple" defaultValue={[sections[0]?.title ?? ""]} className="space-y-2">
@@ -1213,6 +1222,7 @@ function RepoDetail({
                   src={c.avatarUrl}
                   alt={c.login}
                   className="size-5 rounded-full"
+                  loading="lazy"
                 />
                 <span>{c.login}</span>
               </a>

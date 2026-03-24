@@ -181,7 +181,7 @@ function PreviewRagChat() {
       </div>
       {/* AI response */}
       <div className="flex items-start gap-3">
-        <Image src="/logo.svg" alt="" width={24} height={24} className="mt-1 shrink-0" />
+        <Image src="/logo.svg" alt="Octopus assistant" width={24} height={24} className="mt-1 shrink-0" />
         <div className="space-y-2 rounded-2xl rounded-bl-md bg-white/[0.04] px-4 py-3 text-sm">
           <p className="text-[#ccc]">
             The middleware extracts the JWT from the <code className="rounded bg-white/[0.06] px-1 py-0.5 text-xs text-white">Authorization</code> header,
@@ -200,7 +200,7 @@ function PreviewRagChat() {
         What happens if the token is expired?
       </div>
       <div className="flex items-start gap-3">
-        <Image src="/logo.svg" alt="" width={24} height={24} className="mt-1 shrink-0" />
+        <Image src="/logo.svg" alt="Octopus assistant" width={24} height={24} className="mt-1 shrink-0" />
         <div className="rounded-2xl rounded-bl-md bg-white/[0.04] px-4 py-3 text-sm text-[#999]">
           <span className="inline-flex gap-1"><span className="animate-pulse">...</span></span>
         </div>

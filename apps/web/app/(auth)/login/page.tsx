@@ -187,6 +187,7 @@ function LoginContent() {
               alt="Octopus"
               width={36}
               height={38}
+              priority
             />
             <span className="text-xl font-bold tracking-tight text-white">Octopus</span>
           </Link>

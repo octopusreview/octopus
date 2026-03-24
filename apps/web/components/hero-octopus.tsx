@@ -309,14 +309,32 @@ function Scene() {
 /* Exported component                                                  */
 /* ------------------------------------------------------------------ */
 
+function isWebGLAvailable(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    const gl =
+      canvas.getContext("webgl2") ||
+      canvas.getContext("webgl") ||
+      canvas.getContext("experimental-webgl");
+    return gl instanceof WebGLRenderingContext || gl instanceof WebGL2RenderingContext;
+  } catch {
+    return false;
+  }
+}
+
 export function HeroOctopus({ className }: { className?: string }) {
   const [mounted, setMounted] = useState(false);
+  const [webglSupported, setWebglSupported] = useState(true);
 
   useEffect(() => {
     setMounted(true);
+    setWebglSupported(isWebGLAvailable());
+    const onToggle = () => setWebglSupported((v) => !v);
+    window.addEventListener("webgl-toggle", onToggle);
+    return () => window.removeEventListener("webgl-toggle", onToggle);
   }, []);
 
-  if (!mounted) return null;
+  if (!mounted || !webglSupported) return null;
 
   return (
     <div className={className ?? "pointer-events-auto absolute inset-0 z-0 opacity-30 dark:opacity-20"}>
@@ -325,6 +343,12 @@ export function HeroOctopus({ className }: { className?: string }) {
         dpr={[1, 1.5]}
         gl={{ alpha: true, antialias: true }}
         style={{ background: "transparent" }}
+        onCreated={({ gl }) => {
+          // If context is lost (e.g. blocked by extension), hide gracefully
+          gl.domElement.addEventListener("webglcontextlost", () => {
+            setWebglSupported(false);
+          });
+        }}
       >
         <Scene />
       </Canvas>

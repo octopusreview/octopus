@@ -86,6 +86,7 @@ function CardExample() {
           alt="Photo by mymind on Unsplash"
           title="Photo by mymind on Unsplash"
           className="relative z-20 aspect-video w-full object-cover brightness-60 grayscale"
+          loading="lazy"
         />
         <CardHeader>
           <CardTitle>Observability Plus is replacing Monitoring</CardTitle>

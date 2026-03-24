@@ -87,6 +87,20 @@ export default function CLIPage() {
 octopus pr review https://github.com/owner/repo/pull/42`}</CodeBlock>
       </Section>
 
+      {/* Dependency Analysis */}
+      <Section title="Dependency Analysis">
+        <Paragraph>
+          Analyze npm dependencies in a GitHub repository for security risks.
+          Results stream in real-time with risk categorization.
+        </Paragraph>
+        <CommandCard
+          command="octopus analyze-deps <repo-url>"
+          description="Scan a repository's npm dependencies for known vulnerabilities, malicious packages, and supply chain risks."
+        />
+        <Paragraph>Example:</Paragraph>
+        <CodeBlock>octopus analyze-deps https://github.com/acme/backend</CodeBlock>
+      </Section>
+
       {/* Knowledge commands */}
       <Section title="Knowledge Base">
         <Paragraph>
@@ -106,6 +120,57 @@ octopus pr review https://github.com/owner/repo/pull/42`}</CodeBlock>
           command="octopus knowledge remove <id>"
           description="Remove a knowledge document."
         />
+      </Section>
+
+      {/* Skills */}
+      <Section title="Skills">
+        <Paragraph>
+          Install and manage Octopus skills for AI coding agents like Claude
+          Code and Codex. Skills are reusable automation workflows that run
+          inside your AI editor. See the{" "}
+          <Link
+            href="/docs/skills"
+            className="text-white underline decoration-white/30 underline-offset-2 transition-colors hover:decoration-white"
+          >
+            Skills docs
+          </Link>{" "}
+          for details on each skill.
+        </Paragraph>
+
+        <CommandCard
+          command="octopus skills list"
+          description="List available Octopus skills."
+        />
+        <CodeBlock>{`$ octopus skills list
+
+  Skill        Description
+  octopus-fix  Check open PRs for review comments, apply fixes, and push updates`}</CodeBlock>
+
+        <CommandCard
+          command="octopus skills install"
+          description="Install Octopus skills for AI coding agents. By default installs for both Claude Code and Codex."
+        />
+        <CodeBlock>{`# Install for both Claude Code and Codex
+octopus skills install
+
+# Install only for Claude Code
+octopus skills install --claude
+
+# Install only for Codex
+octopus skills install --codex`}</CodeBlock>
+        <Paragraph>
+          Once installed, you can use the skills as slash commands:
+        </Paragraph>
+        <div className="mb-3 space-y-1.5">
+          <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
+            <span className="text-sm text-[#888]">Claude Code: </span>
+            <Mono>/octopus-fix</Mono>
+          </div>
+          <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
+            <span className="text-sm text-[#888]">Codex: </span>
+            <span className="text-sm text-[#888]">Automatically available as a skill</span>
+          </div>
+        </div>
       </Section>
 
       {/* Config & Usage */}

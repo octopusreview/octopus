@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import {
+  IconRocket,
   IconTerminal2,
   IconServer,
   IconPlugConnected,
@@ -12,16 +13,21 @@ import {
   IconScale,
   IconCookie,
   IconQuestionMark,
+  IconWand,
+  IconBook2,
 } from "@tabler/icons-react";
 import { trackEvent } from "@/lib/analytics";
 import { DocsSearch } from "./docs-search";
 
 const sidebarItems = [
+  { href: "/docs/getting-started", label: "Getting Started", icon: IconRocket, description: "Connect your repo, first review" },
   { href: "/docs/self-hosting", label: "Self-Hosting", icon: IconServer, description: "Deploy on your infrastructure" },
   { href: "/docs/integrations", label: "Integrations", icon: IconPlugConnected, description: "GitHub, Bitbucket, Slack, Linear" },
+  { href: "/docs/skills", label: "Skills", icon: IconWand, description: "AI-powered automation workflows" },
   { href: "/docs/cli", label: "CLI", icon: IconTerminal2, description: "Installation & commands" },
   { href: "/docs/pricing", label: "Pricing", icon: IconCreditCard, description: "Credits, billing & BYO keys" },
   { href: "/docs/about", label: "About", icon: IconInfoCircle, description: "The story behind Octopus" },
+  { href: "/docs/glossary", label: "Glossary", icon: IconBook2, description: "Key terms & definitions" },
   { href: "/docs/faq", label: "FAQ", icon: IconQuestionMark, description: "Frequently asked questions" },
 ];
 

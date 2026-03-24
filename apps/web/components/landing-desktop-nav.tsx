@@ -26,13 +26,24 @@ export function LandingDesktopNav({ isLoggedIn }: { isLoggedIn: boolean }) {
             className="relative"
             onMouseEnter={() => setResourcesOpen(true)}
             onMouseLeave={() => setResourcesOpen(false)}
+            onFocus={() => setResourcesOpen(true)}
+            onBlur={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget)) {
+                setResourcesOpen(false);
+              }
+            }}
           >
-            <button className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">
+            <button
+              type="button"
+              aria-expanded={resourcesOpen}
+              aria-haspopup="true"
+              className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white"
+            >
               Resources
             </button>
 
             {/* Invisible bridge so mouse can travel from button to dropdown */}
-            <div className="absolute left-0 right-0 h-3" />
+            <div className="absolute -left-8 -right-8 h-3" />
 
             <div
               className={`absolute left-1/2 top-full pt-3 -translate-x-1/2 transition-all duration-150 ${

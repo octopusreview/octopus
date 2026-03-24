@@ -102,6 +102,7 @@ export function LandingMobileNav({ isLoggedIn }: { isLoggedIn: boolean }) {
                   href="https://github.com/octopusreview"
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={() => setOpen(false)}
                   className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
                 >
                   <IconBrandGithub className="size-4 text-[#555]" />

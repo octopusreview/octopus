@@ -8,6 +8,7 @@ import { TrackedLink, TrackedAnchor } from "@/components/tracked-link";
 import { LandingFooter } from "@/components/landing-footer";
 import { LaunchCountdown } from "@/components/landing-countdown";
 import { LandingMobileNav } from "@/components/landing-mobile-nav";
+import { WebGLToggleButton } from "@/components/webgl-toggle-button";
 import { NewsletterForm } from "@/components/landing-newsletter";
 import {
   IconBrandGithub,
@@ -21,18 +22,98 @@ import {
   IconEye,
   IconBolt,
   IconClock,
+  IconQuestionMark,
 } from "@tabler/icons-react";
+
+const landingFaqs = [
+  {
+    q: "What is Octopus?",
+    a: "Octopus is an AI-powered code review tool that connects to GitHub and Bitbucket, indexes your codebase for deep context, and automatically reviews every pull request — posting findings as inline comments with severity levels.",
+  },
+  {
+    q: "How does the automated review work?",
+    a: "When a pull request is opened, Octopus fetches the diff, retrieves relevant context from your indexed codebase using vector search, and sends it to an LLM (Claude or OpenAI) for analysis. Findings are posted directly on the PR with severity ratings: Critical, Major, Minor, Suggestion, and Tip.",
+  },
+  {
+    q: "Which programming languages are supported?",
+    a: "Octopus is language-agnostic. It reviews any text-based code file — TypeScript, Python, Go, Rust, Java, C#, Ruby, PHP, Swift, Kotlin, and more. Since it uses LLMs for analysis, it understands the semantics and patterns of virtually any language.",
+  },
+  {
+    q: "Is my source code safe?",
+    a: "Yes. Your code is processed in-memory and never stored permanently. Only vector embeddings are persisted for search. You can also self-host Octopus on your own infrastructure so your code never leaves your servers.",
+  },
+  {
+    q: "Does Octopus replace human reviewers?",
+    a: "No. Octopus augments your team's review process. It catches bugs, security issues, and style inconsistencies so your human reviewers can focus on architecture, design decisions, and business logic.",
+  },
+  {
+    q: "Is Octopus free to use?",
+    a: "Yes. Octopus is open source under the MIT license and free to self-host. The cloud service includes free credits to get started, with a credit-based model for continued use. You can also bring your own API keys to use your existing AI provider billing.",
+  },
+];
+
+const productJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "Octopus",
+  url: "https://octopus-review.ai",
+  logo: "https://octopus-review.ai/logo.svg",
+  description:
+    "AI-powered code review tool that connects to GitHub and Bitbucket, indexes your codebase, and automatically reviews pull requests with severity-rated findings.",
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "Web",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+  },
+  featureList: [
+    "Automated pull request review",
+    "Codebase indexing with vector search",
+    "Severity-rated findings (Critical, Major, Minor, Suggestion, Tip)",
+    "GitHub and Bitbucket integration",
+    "Slack and Linear integration",
+    "Self-hostable with Docker",
+    "Bring Your Own API keys",
+    "Real-time WebSocket updates",
+    "Knowledge base for custom review rules",
+    "CLI for terminal-based workflows",
+  ],
+};
+
+const faqJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: landingFaqs.map((f) => ({
+    "@type": "Question",
+    name: f.q,
+    acceptedAnswer: {
+      "@type": "Answer",
+      text: f.a,
+    },
+  })),
+};
 
 export default async function LandingPage() {
   const session = await auth.api.getSession({ headers: await headers() });
   return (
     <div className="dark relative min-h-screen bg-[#0c0c0c] text-[#a0a0a0] selection:bg-white/20">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+      />
+
       {/* Floating particle octopus — follows scroll across entire page */}
       <FloatingOctopus />
 
       {/* Grain overlay */}
       <div
         className="pointer-events-none fixed inset-0 z-50 opacity-[0.025]"
+        aria-hidden="true"
         style={{
           backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
         }}
@@ -45,13 +126,14 @@ export default async function LandingPage() {
       <nav className="fixed left-1/2 top-4 z-40 hidden -translate-x-1/2 lg:block">
         <div className="flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.05] px-3 py-1.5 shadow-lg shadow-black/20 backdrop-blur-xl">
           <div className="flex items-center gap-2 px-2">
-            <Image src="/logo.svg" alt="Octopus" width={24} height={24} />
+            <Image src="/logo.svg" alt="Octopus" width={24} height={24} priority />
             <span className="text-sm font-semibold tracking-tight text-white">Octopus</span>
           </div>
-          <div className="flex items-center gap-1 text-sm text-[#777]">
+          <div className="flex items-center gap-1 whitespace-nowrap pl-4 text-sm text-[#777]">
             <a href="#features" className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">Features</a>
             <a href="#how-it-works" className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">How It Works</a>
-            <TrackedLink href="/docs/about" event="nav_click" eventParams={{ label: "docs" }} className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">Docs</TrackedLink>
+            <a href="#faq" className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">FAQ</a>
+            <TrackedLink href="/docs/getting-started" event="nav_click" eventParams={{ label: "docs" }} className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">Docs</TrackedLink>
             <a href="https://github.com/octopusreview" target="_blank" rel="noopener noreferrer" className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">GitHub</a>
           </div>
           <div className="ml-2">
@@ -120,8 +202,11 @@ export default async function LandingPage() {
       </section>
 
       {/* How it works */}
-      <section id="how-it-works" className="relative z-10 px-4 sm:px-8 md:px-12">
-        <div className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-white/[0.06] bg-[#161616] px-6 py-20 md:px-12 md:py-28">
+      <section id="how-it-works" className="relative z-10 scroll-mt-20 px-4 sm:px-8 md:px-12">
+        <div className="relative mx-auto max-w-6xl overflow-hidden rounded-3xl border border-white/[0.06] bg-[#161616] px-6 py-20 md:px-12 md:py-28">
+          <div className="absolute right-4 top-4 z-10 md:right-6 md:top-6">
+            <WebGLToggleButton />
+          </div>
           <div className="mx-auto max-w-5xl">
             <div className="mx-auto max-w-2xl text-center">
               <span className="text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">How it works</span>
@@ -166,14 +251,14 @@ export default async function LandingPage() {
       </section>
 
       {/* Features — DARK panel, split layout like skillo */}
-      <section id="features" className="relative z-10 px-4 py-8 sm:px-8 md:px-12">
+      <section id="features" className="relative z-10 scroll-mt-20 px-4 py-8 sm:px-8 md:px-12">
         <div className="mx-auto max-w-6xl overflow-hidden rounded-3xl bg-[#161616] px-6 py-20 md:px-12 md:py-28">
           <LandingFeatures />
         </div>
       </section>
 
       {/* Open Source */}
-      <section className="relative z-10 px-4 sm:px-8 md:px-12">
+      <section id="open-source" className="relative z-10 scroll-mt-20 px-4 sm:px-8 md:px-12">
         <div className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-white/[0.06] bg-[#161616] px-6 py-20 md:px-12 md:py-28">
           <div className="mx-auto max-w-5xl">
             <div className="mx-auto max-w-2xl text-center">
@@ -244,6 +329,49 @@ export default async function LandingPage() {
         </div>
       </section>
 
+      {/* FAQ */}
+      <section id="faq" className="relative z-10 scroll-mt-20 px-4 py-8 sm:px-8 md:px-12">
+        <div className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-white/[0.06] bg-[#161616] px-6 py-20 md:px-12 md:py-28">
+          <div className="mx-auto max-w-3xl">
+            <div className="mx-auto max-w-2xl text-center">
+              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">FAQ</span>
+              <h2 className="mt-4 text-3xl font-bold tracking-tight text-white sm:text-4xl">
+                Frequently asked questions
+              </h2>
+              <p className="mt-4 text-[#888]">
+                Quick answers to the most common questions about Octopus.
+              </p>
+            </div>
+
+            <dl className="mt-14 space-y-8">
+              {landingFaqs.map((faq) => (
+                <div key={faq.q} className="rounded-xl border border-white/[0.06] px-6 py-5 transition-colors hover:border-white/[0.12]">
+                  <dt className="flex items-start gap-3">
+                    <IconQuestionMark className="mt-0.5 size-5 shrink-0 text-[#555]" />
+                    <span className="text-base font-semibold text-white">{faq.q}</span>
+                  </dt>
+                  <dd className="mt-3 pl-8 text-sm leading-relaxed text-[#888]">
+                    {faq.a}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+
+            <div className="mt-10 text-center">
+              <TrackedLink
+                href="/docs/faq"
+                event="faq_click"
+                eventParams={{ label: "view_all_faqs" }}
+                className="inline-flex items-center gap-2 text-sm text-[#666] transition-colors hover:text-white"
+              >
+                View all FAQs
+                <IconArrowRight className="size-3.5" />
+              </TrackedLink>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* CTA — dark bg (no panel, just full width) */}
       <section className="relative z-10 px-6 py-24 md:px-8 md:py-32">
         <div className="relative mx-auto max-w-2xl text-center">
@@ -271,7 +399,7 @@ export default async function LandingPage() {
       {/* Newsletter */}
       <section className="relative z-10 px-6 pb-16 md:px-8">
         <div className="mx-auto max-w-2xl text-center">
-          <h3 className="text-lg font-semibold text-white">Stay in the loop</h3>
+          <h2 className="text-lg font-semibold text-white">Stay in the loop</h2>
           <p className="mt-2 text-sm text-[#666]">
             Get notified about new features, updates, and the open source launch.
           </p>

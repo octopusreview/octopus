@@ -3,6 +3,7 @@ import {
   IconBrandDiscord,
   IconBrandGithub,
   IconBrandLinkedin,
+  IconBrandReddit,
   IconBrandX,
   IconBrandYoutube,
 } from "@tabler/icons-react";
@@ -10,6 +11,7 @@ import { TrackedLink, TrackedAnchor } from "@/components/tracked-link";
 
 const DISCORD_INVITE_URL = "https://discord.gg/qyuWTXghbS";
 const LINKEDIN_URL = "https://www.linkedin.com/company/octopus-review";
+const REDDIT_URL = "https://www.reddit.com/r/octopusreview/";
 
 export function LandingFooter() {
   return (
@@ -80,6 +82,17 @@ export function LandingFooter() {
                 className="text-[#555] transition-colors hover:text-white"
               >
                 <IconBrandLinkedin className="size-4" />
+              </TrackedAnchor>
+              <TrackedAnchor
+                href={REDDIT_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                event="footer_click"
+                eventParams={{ label: "reddit" }}
+                aria-label="Reddit"
+                className="text-[#555] transition-colors hover:text-white"
+              >
+                <IconBrandReddit className="size-4" />
               </TrackedAnchor>
             </div>
           </div>
@@ -239,6 +252,19 @@ export function LandingFooter() {
               </li>
               <li>
                 <TrackedAnchor
+                  href={REDDIT_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  event="footer_click"
+                  eventParams={{ label: "reddit" }}
+                  className="flex items-center gap-1.5 text-sm text-[#666] transition-colors hover:text-white"
+                >
+                  <IconBrandReddit className="size-3.5" />
+                  Reddit
+                </TrackedAnchor>
+              </li>
+              <li>
+                <TrackedAnchor
                   href="https://github.com/octopusreview/octopus/issues"
                   target="_blank"
                   rel="noopener noreferrer"
@@ -276,6 +302,7 @@ export function LandingFooter() {
                   width={180}
                   height={39}
                   unoptimized
+                  loading="lazy"
                 />
               </TrackedAnchor>
             </div>

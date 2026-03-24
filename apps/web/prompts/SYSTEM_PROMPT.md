@@ -279,6 +279,8 @@ SCORING RULES:
 </review_rules>
 
 {{CONFLICT_DETECTION}}
+
+{{DEPENDENCY_SECURITY}}
 </mode>
 
 <!-- ============================================================ -->

@@ -45,6 +45,7 @@ import { logAiUsage } from "@/lib/ai-usage";
 import { getReviewModel } from "@/lib/ai-client";
 import { createAiMessage } from "@/lib/ai-router";
 import { isOrgOverSpendLimit } from "@/lib/cost";
+import { analyzePrDependencies, formatDependencyFindings } from "@octopus/package-analyzer";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -1487,6 +1488,47 @@ export async function processReview(pullRequestId: string): Promise<void> {
       ? filteredTree.slice(0, MAX_TREE_FILES).join("\n") + `\n... and ${filteredTree.length - MAX_TREE_FILES} more files`
       : filteredTree.join("\n");
 
+    // ── Dependency security analysis ──
+    let dependencySecurityContext = "";
+    try {
+      const changedFiles = [...extractDiffFiles(diff)];
+      const hasPackageJsonChange = changedFiles.some(
+        (f) => f.endsWith("/package.json") || f === "package.json",
+      );
+      if (hasPackageJsonChange) {
+        console.log("[reviewer] package.json changes detected, running dependency security analysis...");
+        const providerGetFileContent = async (branch: string, filePath: string): Promise<string | null> => {
+          try {
+            if (isGitHub && installationId) {
+              return await ghGetFileContent(installationId, owner, repoName, branch, filePath);
+            }
+            if (isBitbucket) {
+              return await bitbucket.getFileContent(org.id, owner, repoName, branch, filePath);
+            }
+            return null;
+          } catch {
+            return null;
+          }
+        };
+        const depReports = await analyzePrDependencies({
+          changedFiles,
+          getFileContent: providerGetFileContent,
+          baseBranch: repo.defaultBranch,
+          headBranch: pr.headSha ?? repo.defaultBranch, // GitHub API accepts SHAs as ref
+          diff,
+          onProgress: (event) => {
+            pubby.trigger(`presence-org-${org.id}`, "dep-analysis-progress", event);
+          },
+        });
+        if (depReports.length > 0) {
+          dependencySecurityContext = formatDependencyFindings(depReports);
+          console.log(`[reviewer] Dependency analysis found ${depReports.length} risky package(s)`);
+        }
+      }
+    } catch (err) {
+      console.warn("[reviewer] Dependency security analysis failed:", err);
+    }
+
     const enableConflict = reviewConfig.enableConflictDetection !== undefined
       ? reviewConfig.enableConflictDetection
       : touchesSharedFiles(diff);
@@ -1500,7 +1542,8 @@ export async function processReview(pullRequestId: string): Promise<void> {
       .replace("{{PROVIDER}}", isGitHub ? "GitHub" : isBitbucket ? "Bitbucket" : repo.provider)
       .replace("{{FALSE_POSITIVE_CONTEXT}}", falsePositiveContext)
       .replace("{{RE_REVIEW_CONTEXT}}", priorReviewContext)
-      .replace("{{CONFLICT_DETECTION}}", conflictPrompt);
+      .replace("{{CONFLICT_DETECTION}}", conflictPrompt)
+      .replace("{{DEPENDENCY_SECURITY}}", dependencySecurityContext);
 
     const response = await createAiMessage(
       {

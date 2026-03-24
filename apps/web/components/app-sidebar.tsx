@@ -34,6 +34,7 @@ import {
   IconShieldCog,
   IconBug,
   IconCreditCard,
+  IconPackage,
 } from "@tabler/icons-react";
 import { CommandPalette } from "@/components/command-palette";
 
@@ -41,6 +42,7 @@ const mainNavItems = [
   { href: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard },
   { href: "/repositories", label: "Repositories", icon: IconGitBranch },
   { href: "/issues", label: "Issues", icon: IconBug },
+  { href: "/package-analyzer", label: "Package Analyzer", icon: IconPackage },
   { href: "/timeline", label: "Timeline", icon: IconTimeline },
 ];
 

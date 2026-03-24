@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { TrackedLink } from "@/components/tracked-link";
-import { IconMenu2, IconX, IconBrandGithub } from "@tabler/icons-react";
+import { IconMenu2, IconX, IconBrandGithub, IconBook, IconPalette, IconCoin } from "@tabler/icons-react";
 
 export function LandingMobileNav({ isLoggedIn }: { isLoggedIn: boolean }) {
   const [open, setOpen] = useState(false);
@@ -58,37 +58,57 @@ export function LandingMobileNav({ isLoggedIn }: { isLoggedIn: boolean }) {
                 How It Works
               </a>
               <a
-                href="#open-source"
-                onClick={() => setOpen(false)}
-                className="rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
-              >
-                Open Source
-              </a>
-              <a
                 href="#faq"
                 onClick={() => setOpen(false)}
                 className="rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
               >
                 FAQ
               </a>
-              <TrackedLink
-                href="/docs/getting-started"
-                event="nav_click"
-                eventParams={{ label: "docs" }}
-                onClick={() => setOpen(false)}
-                className="rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
-              >
-                Docs
-              </TrackedLink>
-              <a
-                href="https://github.com/octopusreview"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
-              >
-                <IconBrandGithub className="size-4" />
-                GitHub
-              </a>
+
+              {/* Resources */}
+              <div className="mt-2 border-t border-white/[0.06] pt-2">
+                <span className="px-3 py-1 text-xs font-semibold uppercase tracking-[0.15em] text-[#444]">Resources</span>
+                <TrackedLink
+                  href="/docs/getting-started"
+                  event="nav_click"
+                  eventParams={{ label: "docs" }}
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
+                >
+                  <IconBook className="size-4 text-[#555]" />
+                  Documentation
+                </TrackedLink>
+                <TrackedLink
+                  href="/brand"
+                  event="nav_click"
+                  eventParams={{ label: "brand" }}
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
+                >
+                  <IconPalette className="size-4 text-[#555]" />
+                  Brand Guidelines
+                </TrackedLink>
+                <TrackedLink
+                  href="/docs/pricing"
+                  event="nav_click"
+                  eventParams={{ label: "pricing" }}
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
+                >
+                  <IconCoin className="size-4 text-[#555]" />
+                  Pricing
+                </TrackedLink>
+                <a
+                  href="https://github.com/octopusreview"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
+                >
+                  <IconBrandGithub className="size-4 text-[#555]" />
+                  GitHub
+                </a>
+              </div>
             </div>
           </div>
         </div>

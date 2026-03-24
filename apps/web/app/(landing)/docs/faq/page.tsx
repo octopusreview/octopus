@@ -139,7 +139,7 @@ export default function FaqPage() {
     <article className="max-w-3xl">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd).replace(/<\/script>/gi, "<\\/script>") }}
       />
       <div className="mb-10">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">

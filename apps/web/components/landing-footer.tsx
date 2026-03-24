@@ -125,6 +125,16 @@ export function LandingFooter() {
               </li>
               <li>
                 <TrackedLink
+                  href="/brand"
+                  event="footer_click"
+                  eventParams={{ label: "brand" }}
+                  className="text-sm text-[#666] transition-colors hover:text-white"
+                >
+                  Brand Guidelines
+                </TrackedLink>
+              </li>
+              <li>
+                <TrackedLink
                   href="/login"
                   event="footer_click"
                   eventParams={{ label: "get_started" }}

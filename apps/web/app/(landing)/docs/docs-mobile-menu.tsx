@@ -11,6 +11,9 @@ import {
   IconCreditCard,
   IconInfoCircle,
   IconQuestionMark,
+  IconRocket,
+  IconWand,
+  IconBook2,
   IconShieldLock,
   IconScale,
   IconCookie,
@@ -26,11 +29,14 @@ import {
 } from "@/components/ui/sheet";
 
 const sidebarItems = [
+  { href: "/docs/getting-started", label: "Getting Started", icon: IconRocket },
   { href: "/docs/self-hosting", label: "Self-Hosting", icon: IconServer },
   { href: "/docs/integrations", label: "Integrations", icon: IconPlugConnected },
+  { href: "/docs/skills", label: "Skills", icon: IconWand },
   { href: "/docs/cli", label: "CLI", icon: IconTerminal2 },
   { href: "/docs/pricing", label: "Pricing", icon: IconCreditCard },
   { href: "/docs/about", label: "About", icon: IconInfoCircle },
+  { href: "/docs/glossary", label: "Glossary", icon: IconBook2 },
   { href: "/docs/faq", label: "FAQ", icon: IconQuestionMark },
 ];
 

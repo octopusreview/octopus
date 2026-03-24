@@ -22,12 +22,12 @@ export default function DocsLayout({
             eventParams={{ label: "logo" }}
             className="flex items-center gap-2"
           >
-            <Image src="/logo.svg" alt="Octopus" width={22} height={22} />
+            <Image src="/logo.svg" alt="Octopus" width={22} height={22} priority />
             <span className="text-sm font-semibold text-white">Octopus</span>
           </TrackedLink>
           <span className="text-[#333]">/</span>
           <TrackedLink
-            href="/docs/about"
+            href="/docs/getting-started"
             event="docs_nav_click"
             eventParams={{ label: "docs" }}
             className="text-sm text-[#666] transition-colors hover:text-white"

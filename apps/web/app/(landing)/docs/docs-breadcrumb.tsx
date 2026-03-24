@@ -13,6 +13,9 @@ const pageNames: Record<string, string> = {
   "/docs/terms": "Terms & Conditions",
   "/docs/cookies": "Cookie Policy",
   "/docs/faq": "FAQ",
+  "/docs/glossary": "Glossary",
+  "/docs/getting-started": "Getting Started",
+  "/docs/skills": "Skills",
 };
 
 export function DocsBreadcrumb() {

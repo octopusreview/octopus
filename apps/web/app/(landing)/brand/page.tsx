@@ -203,13 +203,13 @@ export default async function BrandPage() {
             Aa
           </p>
           <p className="mt-4 text-2xl font-semibold text-white">Public Sans</p>
-          <p className="mt-4 text-lg text-[#888]">
+          <p className="mt-4 break-all text-sm text-[#888] sm:text-lg">
             ABCDEFGHIJKLMNOPQRSTUVWXYZ
           </p>
-          <p className="text-lg text-[#888]">
+          <p className="break-all text-sm text-[#888] sm:text-lg">
             abcdefghijklmnopqrstuvwxyz
           </p>
-          <p className="text-lg text-[#888]">
+          <p className="break-all text-sm text-[#888] sm:text-lg">
             0123456789 !@#$%^&*()
           </p>
           <div className="mt-8 flex flex-wrap gap-4">

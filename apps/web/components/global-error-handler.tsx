@@ -37,24 +37,26 @@ export function GlobalErrorHandler() {
     };
 
     // Press "H" to toggle WebGL on/off (dev testing for fallback UI)
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "h" || e.key === "H") {
-        const tag = (e.target as HTMLElement)?.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-        if ((e.target as HTMLElement)?.isContentEditable) return;
+    const handleKeyDown = process.env.NODE_ENV === "development"
+      ? (e: KeyboardEvent) => {
+          if (e.key === "h" || e.key === "H") {
+            const tag = (e.target as HTMLElement)?.tagName;
+            if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+            if ((e.target as HTMLElement)?.isContentEditable) return;
 
-        window.dispatchEvent(new Event("webgl-toggle"));
-      }
-    };
+            window.dispatchEvent(new Event("webgl-toggle"));
+          }
+        }
+      : null;
 
     window.addEventListener("error", handleError);
     window.addEventListener("unhandledrejection", handleRejection);
-    window.addEventListener("keydown", handleKeyDown);
+    if (handleKeyDown) window.addEventListener("keydown", handleKeyDown);
 
     return () => {
       window.removeEventListener("error", handleError);
       window.removeEventListener("unhandledrejection", handleRejection);
-      window.removeEventListener("keydown", handleKeyDown);
+      if (handleKeyDown) window.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
 

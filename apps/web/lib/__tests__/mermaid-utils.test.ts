@@ -127,6 +127,17 @@ sequenceDiagram
 });
 
 describe("sanitizeMermaidCode", () => {
+  it("replaces escaped quotes with single quotes in double-quoted labels", () => {
+    const result = sanitizeMermaidCode('FormInput["Form Input (empty string \\"\\")"]');
+    expect(result).toBe("FormInput[\"Form Input (empty string '')\"]");
+    expect(result).not.toContain('\\"');
+  });
+
+  it("does not replace escaped quotes outside node labels", () => {
+    const result = sanitizeMermaidCode('%% Author: \\"Alice\\"');
+    expect(result).toBe('%% Author: \\"Alice\\"');
+  });
+
   it("replaces literal \\n with <br/>", () => {
     const result = sanitizeMermaidCode('A["Hello\\nWorld"]');
     expect(result).toBe('A["Hello<br/>World"]');

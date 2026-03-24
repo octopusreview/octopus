@@ -96,18 +96,17 @@ describe("formatUsd", () => {
     expect(formatUsd(0.009)).toBe("$0.0090");
   });
 
-  it("formats regular amounts with 2 decimal places", () => {
-    expect(formatUsd(1.50)).toBe("$1.50");
-    expect(formatUsd(0.01)).toBe("$0.01");
-    expect(formatUsd(0.10)).toBe("$0.10");
-    expect(formatUsd(99.99)).toBe("$99.99");
+  it("formats values at the 0.01 boundary correctly", () => {
+    // Values < 0.01 get 4 decimal places, values >= 0.01 get 2
+    expect(formatUsd(0.0099)).toBe("$0.0099"); // just below → 4 decimals
+    expect(formatUsd(0.01)).toBe("$0.01"); // exactly at boundary → 2 decimals
+    expect(formatUsd(0.011)).toBe("$0.01"); // just above → 2 decimals (truncated)
   });
 
-  it("handles the 2-decimal / 4-decimal boundary correctly", () => {
-    // Values < 0.01 get 4 decimal places, values >= 0.01 get 2
-    expect(formatUsd(0.0099)).toBe("$0.0099");
-    expect(formatUsd(0.01)).toBe("$0.01");
-    expect(formatUsd(0.011)).toBe("$0.01");
+  it("formats regular amounts with 2 decimal places", () => {
+    expect(formatUsd(1.50)).toBe("$1.50");
+    expect(formatUsd(0.10)).toBe("$0.10");
+    expect(formatUsd(99.99)).toBe("$99.99");
   });
 
   it("formats zero", () => {
@@ -133,11 +132,10 @@ describe("formatNumber", () => {
   });
 
   it("formats small numbers with locale string", () => {
-    const result = formatNumber(42);
-    expect(result).toBe("42");
+    expect(formatNumber(42)).toBe((42).toLocaleString());
   });
 
   it("formats zero", () => {
-    expect(formatNumber(0)).toBe("0");
+    expect(formatNumber(0)).toBe((0).toLocaleString());
   });
 });

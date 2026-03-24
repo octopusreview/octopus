@@ -56,7 +56,8 @@ export function extractMermaidCode(text: string | null | undefined): string | nu
  * Fixes applied:
  * 1. Replace literal `\n` with `<br/>` (mermaid line break) — LLMs output \n
  *    inside node labels intending a line break, but mermaid renders it literally
- * 2. Remove backticks inside node labels (triggers markdown mode, causes parse errors)
+ * 2. Inside node labels: replace backticks and escaped quotes with single quotes
+ *    (backticks trigger markdown mode; escaped quotes break label delimiters)
  * 3. Ensure `class` statements are each on their own line
  * 4. Remove trailing whitespace on lines
  */
@@ -68,11 +69,13 @@ export function sanitizeMermaidCode(code: string): string {
   //    intended a line break. It's not valid mermaid syntax anywhere else.
   result = result.replace(/\\n/g, "<br/>");
 
-  // 2. Remove backticks inside node labels (triggers markdown mode, causes parse errors)
+  // 2. Inside node labels: replace backticks and escaped quotes with single quotes.
+  //    Backticks trigger markdown mode; escaped quotes (\\") break label delimiters.
+  //    Scoped to label boundaries to avoid mutating comments or other constructs.
   result = result.replace(
     /([\[({]["'])((?:[^"'\\]|\\.)*)(['"][\])}])/g,
     (_match, open: string, content: string, close: string) => {
-      const fixed = content.replace(/`/g, "'");
+      const fixed = content.replace(/`/g, "'").replace(/\\"/g, "'");
       return `${open}${fixed}${close}`;
     },
   );

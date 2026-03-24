@@ -110,7 +110,7 @@ ${codeContext}`,
     await logAiUsage({
       provider: response.provider,
       model: analyzeModel,
-      operation: "analyze",
+      operation: "repo-analyze",
       inputTokens: response.usage.inputTokens,
       outputTokens: response.usage.outputTokens,
       cacheReadTokens: response.usage.cacheReadTokens,

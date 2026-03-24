@@ -6,7 +6,7 @@ config({ path: path.resolve(__dirname, "../../.env") });
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  transpilePackages: ["@octopus/db"],
+  transpilePackages: ["@octopus/db", "@octopus/package-analyzer"],
   images: {
     remotePatterns: [
       {

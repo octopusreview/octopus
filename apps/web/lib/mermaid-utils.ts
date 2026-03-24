@@ -54,8 +54,8 @@ export function extractMermaidCode(text: string | null | undefined): string | nu
  * Sanitize LLM-generated mermaid code to fix common syntax issues.
  *
  * Fixes applied:
- * 1. Replace escaped quotes `\"` with `#quot;` (mermaid HTML entity) — LLMs output
- *    escaped quotes inside node labels which causes parse errors
+ * 1. Replace escaped quotes `\"` with single quotes `'` — LLMs output escaped
+ *    quotes inside node labels which causes parse errors
  * 2. Replace literal `\n` with `<br/>` (mermaid line break) — LLMs output \n
  *    inside node labels intending a line break, but mermaid renders it literally
  * 3. Remove backticks inside node labels (triggers markdown mode, causes parse errors)
@@ -65,10 +65,11 @@ export function extractMermaidCode(text: string | null | undefined): string | nu
 export function sanitizeMermaidCode(code: string): string {
   let result = code;
 
-  // 1. Replace escaped quotes \" with #quot; (mermaid HTML entity).
-  //    LLMs often output \" inside node labels instead of #quot;, which causes
-  //    mermaid parse errors (e.g. FormInput["Form Input (empty string \"\")"])
-  result = result.replace(/\\"/g, "#quot;");
+  // 1. Replace escaped quotes \" with single quotes '.
+  //    LLMs often output \" inside node labels which causes mermaid parse errors.
+  //    Using ' instead of #quot; because #quot; is a mermaid HTML entity that
+  //    renders as " and breaks label delimiters.
+  result = result.replace(/\\"/g, "'");
 
   // 2. Replace literal \n with <br/> (mermaid line break).
   //    Literal \n in mermaid code only appears inside node labels where the LLM

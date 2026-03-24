@@ -129,7 +129,7 @@ export default function GettingStartedPage() {
               </span>
               <span>
                 AI reviews the changes with full codebase context and your
-                organization's knowledge base
+                organization&apos;s knowledge base
               </span>
             </li>
             <li className="flex items-start gap-2">

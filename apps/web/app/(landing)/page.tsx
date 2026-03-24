@@ -8,6 +8,7 @@ import { TrackedLink, TrackedAnchor } from "@/components/tracked-link";
 import { LandingFooter } from "@/components/landing-footer";
 import { LaunchCountdown } from "@/components/landing-countdown";
 import { LandingMobileNav } from "@/components/landing-mobile-nav";
+import { LandingDesktopNav } from "@/components/landing-desktop-nav";
 import { WebGLToggleButton } from "@/components/webgl-toggle-button";
 import { NewsletterForm } from "@/components/landing-newsletter";
 import {
@@ -123,34 +124,7 @@ export default async function LandingPage() {
       <LandingMobileNav isLoggedIn={!!session} />
 
       {/* Desktop nav — floating pill */}
-      <nav className="fixed left-1/2 top-4 z-40 hidden -translate-x-1/2 lg:block">
-        <div className="flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.05] px-3 py-1.5 shadow-lg shadow-black/20 backdrop-blur-xl">
-          <div className="flex items-center gap-2 px-2">
-            <Image src="/logo.svg" alt="Octopus" width={24} height={24} priority />
-            <span className="text-sm font-semibold tracking-tight text-white">Octopus</span>
-          </div>
-          <div className="flex items-center gap-1 whitespace-nowrap pl-4 text-sm text-[#777]">
-            <a href="#features" className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">Features</a>
-            <a href="#how-it-works" className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">How It Works</a>
-            <a href="#faq" className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">FAQ</a>
-            <TrackedLink href="/docs/getting-started" event="nav_click" eventParams={{ label: "docs" }} className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">Docs</TrackedLink>
-            <a href="https://github.com/octopusreview" target="_blank" rel="noopener noreferrer" className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">GitHub</a>
-          </div>
-          <div className="ml-2">
-            {session ? (
-              <Link href="/dashboard" className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-[#0c0c0c] transition-colors hover:bg-[#e0e0e0]">
-                Dashboard
-                <IconArrowRight className="size-3.5" />
-              </Link>
-            ) : (
-              <TrackedLink href="/login" event="cta_click" eventParams={{ location: "desktop_nav", label: "get_started" }} className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-[#0c0c0c] transition-colors hover:bg-[#e0e0e0]">
-                Get Started
-                <IconArrowRight className="size-3.5" />
-              </TrackedLink>
-            )}
-          </div>
-        </div>
-      </nav>
+      <LandingDesktopNav isLoggedIn={!!session} />
 
       {/* Hero — dark bg */}
       <section className="relative z-10 px-6 pb-20 pt-28 md:px-8 md:pb-28 md:pt-40">

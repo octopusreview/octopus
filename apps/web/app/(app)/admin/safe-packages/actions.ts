@@ -17,25 +17,25 @@ export async function approveRequest(requestId: string) {
     return { error: "Request not found or already reviewed" };
   }
 
-  // Add to safe packages
-  await prisma.safePackage.upsert({
-    where: { name: request.name },
-    create: {
-      name: request.name,
-      reason: request.reason,
-      approvedBy: session.user.id,
-    },
-    update: {
-      reason: request.reason,
-      approvedBy: session.user.id,
-    },
-  });
-
-  // Update request status
-  await prisma.safePackageRequest.update({
-    where: { id: requestId },
-    data: { status: "approved", reviewedBy: session.user.id, reviewedAt: new Date() },
-  });
+  // Atomically add to safe packages and update request status
+  await prisma.$transaction([
+    prisma.safePackage.upsert({
+      where: { name: request.name },
+      create: {
+        name: request.name,
+        reason: request.reason,
+        approvedBy: session.user.id,
+      },
+      update: {
+        reason: request.reason,
+        approvedBy: session.user.id,
+      },
+    }),
+    prisma.safePackageRequest.update({
+      where: { id: requestId },
+      data: { status: "approved", reviewedBy: session.user.id, reviewedAt: new Date() },
+    }),
+  ]);
 
   revalidatePath("/admin/safe-packages");
   return { success: true };

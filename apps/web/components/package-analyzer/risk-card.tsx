@@ -5,7 +5,7 @@ import type { DependencyRiskReport, RiskLevel } from "@octopus/package-analyzer"
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { IconAlertTriangle, IconShieldCheck, IconInfoCircle, IconMicroscope, IconLoader2, IconShield } from "@tabler/icons-react";
+import { IconShieldCheck, IconMicroscope, IconLoader2, IconShield } from "@tabler/icons-react";
 import { DeepDiveResult, type DeepDiveAnalysis } from "./deep-dive-result";
 
 const RISK_CONFIG: Record<

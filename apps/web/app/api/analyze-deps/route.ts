@@ -7,7 +7,6 @@ import type { AnalysisProgressEvent } from "@octopus/package-analyzer";
 import { getInstallationToken } from "@/lib/github";
 
 const GITHUB_API = "https://api.github.com/repos";
-const GITHUB_RAW = "https://raw.githubusercontent.com";
 
 function parseGitHubUrl(url: string): { owner: string; repo: string; branch?: string } | null {
   try {

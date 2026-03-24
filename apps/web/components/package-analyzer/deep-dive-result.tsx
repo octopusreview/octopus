@@ -1,6 +1,5 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
 import { IconAlertTriangle, IconShieldCheck, IconEye, IconInfoCircle } from "@tabler/icons-react";
 
 export interface DeepDiveFinding {

@@ -79,6 +79,24 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "packageName is required" }, { status: 400 });
   }
 
+  // Validate package name against npm spec to prevent SSRF/path traversal
+  const NPM_NAME_RE = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/i;
+  if (!NPM_NAME_RE.test(packageName)) {
+    return Response.json({ error: "Invalid package name" }, { status: 400 });
+  }
+
+  // Rate limit: max 20 deep-dives per org per hour
+  const recentDives = await prisma.packageDeepDive.count({
+    where: {
+      organizationId: orgId,
+      userId,
+      createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) },
+    },
+  });
+  if (recentDives >= 20) {
+    return Response.json({ error: "Rate limit exceeded. Try again later." }, { status: 429 });
+  }
+
   try {
     // 1. Fetch package source
     console.log(`[deep-dive] Fetching source for ${packageName}@${version ?? "latest"}`);
@@ -92,6 +110,15 @@ export async function POST(req: NextRequest) {
     const fileContents = source.files
       .map((f) => `--- ${f.path} (${f.size} bytes) ---\n${f.content}`)
       .join("\n\n");
+
+    // Guard against oversized prompts
+    const MAX_PROMPT_CHARS = 200_000; // ~50k tokens
+    if (fileContents.length > MAX_PROMPT_CHARS) {
+      return Response.json(
+        { error: "Package source too large for deep-dive analysis" },
+        { status: 422 },
+      );
+    }
 
     const userMessage = [
       `Analyze this npm package for malicious behavior:`,

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { headers, cookies } from "next/headers";
 import { prisma } from "@octopus/db";
@@ -78,13 +79,13 @@ export default async function PackageAnalysisDetailPage({
 
   return (
     <div className="mx-auto max-w-4xl p-6 md:p-10">
-      <a
+      <Link
         href="/package-analyzer"
         className="text-muted-foreground hover:text-foreground mb-6 inline-flex items-center gap-1 text-sm transition-colors"
       >
         <IconArrowLeft className="h-4 w-4" />
         Back to Package Analyzer
-      </a>
+      </Link>
 
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">{analysis.repoName}</h1>

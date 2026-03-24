@@ -108,14 +108,14 @@ export async function POST(req: NextRequest) {
           controller.close();
           return;
         }
-        const repoData = await repoResp.json() as Record<string, any>;
+        const repoData = await repoResp.json() as Record<string, unknown>;
         if (!ref) ref = repoData.default_branch ?? "main";
 
         // Get HEAD commit hash
         try {
           const commitResp = await fetch(`${GITHUB_API}/${owner}/${repo}/commits/${ref}`, { headers: ghHeaders });
           if (commitResp.ok) {
-            const commitData = await commitResp.json() as Record<string, any>;
+            const commitData = await commitResp.json() as Record<string, unknown>;
             commitHash = commitData.sha ?? null;
           }
         } catch { /* non-critical */ }
@@ -170,7 +170,7 @@ export async function POST(req: NextRequest) {
         if (!treeResp.ok) {
           throw new Error("Failed to fetch repository tree");
         }
-        const treeData = await treeResp.json() as Record<string, any>;
+        const treeData = await treeResp.json() as Record<string, unknown>;
         const packageJsonPaths: string[] = ((treeData.tree ?? []) as { type: string; path: string }[])
           .filter((f) => f.type === "blob" && (f.path === "package.json" || f.path.endsWith("/package.json")) && !f.path.includes("node_modules"))
           .map((f) => f.path);

@@ -131,7 +131,7 @@ export function PackageAnalyzerClient({ authenticated, history, defaultUrl, auto
         setIsLoading(false);
       }
     }
-  }, [authenticated, addProgress, router]);
+  }, [addProgress, router]);
 
   return (
     <div className="space-y-6">

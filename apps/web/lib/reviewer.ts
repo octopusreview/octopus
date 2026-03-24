@@ -1514,7 +1514,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
           changedFiles,
           getFileContent: providerGetFileContent,
           baseBranch: repo.defaultBranch,
-          headBranch: pr.headSha ?? repo.defaultBranch,
+          headBranch: pr.headSha ?? repo.defaultBranch, // GitHub API accepts SHAs as ref
           diff,
           onProgress: (event) => {
             pubby.trigger(`presence-org-${org.id}`, "dep-analysis-progress", event);

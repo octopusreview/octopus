@@ -235,12 +235,30 @@ function Scene() {
   );
 }
 
+function isWebGLAvailable(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    const gl =
+      canvas.getContext("webgl2") ||
+      canvas.getContext("webgl") ||
+      canvas.getContext("experimental-webgl");
+    return gl instanceof WebGLRenderingContext || gl instanceof WebGL2RenderingContext;
+  } catch {
+    return false;
+  }
+}
+
 export function FloatingOctopus() {
   const [mounted, setMounted] = useState(false);
   const [dimmed, setDimmed] = useState(false);
+  const [webglSupported, setWebglSupported] = useState(true);
 
   useEffect(() => {
     setMounted(true);
+    setWebglSupported(isWebGLAvailable());
+    const onToggle = () => setWebglSupported((v) => !v);
+    window.addEventListener("webgl-toggle", onToggle);
+    return () => window.removeEventListener("webgl-toggle", onToggle);
   }, []);
 
   useEffect(() => {
@@ -286,18 +304,24 @@ export function FloatingOctopus() {
     };
   }, [mounted]);
 
-  if (!mounted) return null;
+  if (!mounted || !webglSupported) return null;
 
   return (
     <div
       className="pointer-events-none fixed inset-0 z-30 hidden md:block"
       style={{ opacity: dimmed ? 0.15 : 1, transition: "opacity 0.4s ease" }}
+      aria-hidden="true"
     >
       <Canvas
         camera={{ position: [0, 0, 14], fov: 40 }}
         dpr={[1, 1.5]}
         gl={{ alpha: true, antialias: true }}
         style={{ background: "transparent", pointerEvents: "none" }}
+        onCreated={({ gl }) => {
+          gl.domElement.addEventListener("webglcontextlost", () => {
+            setWebglSupported(false);
+          });
+        }}
       >
         <Scene />
       </Canvas>

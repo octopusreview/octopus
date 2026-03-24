@@ -13,7 +13,7 @@ export function LandingMobileNav({ isLoggedIn }: { isLoggedIn: boolean }) {
     <nav className="fixed left-0 right-0 top-0 z-40 border-b border-white/[0.06] bg-[#0c0c0c]/80 backdrop-blur-xl lg:hidden">
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
-          <Image src="/logo.svg" alt="Octopus" width={22} height={22} />
+          <Image src="/logo.svg" alt="Octopus" width={22} height={22} priority />
           <span className="text-sm font-semibold text-white">Octopus</span>
         </div>
         <div className="flex items-center gap-2">
@@ -57,8 +57,22 @@ export function LandingMobileNav({ isLoggedIn }: { isLoggedIn: boolean }) {
               >
                 How It Works
               </a>
+              <a
+                href="#open-source"
+                onClick={() => setOpen(false)}
+                className="rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
+              >
+                Open Source
+              </a>
+              <a
+                href="#faq"
+                onClick={() => setOpen(false)}
+                className="rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
+              >
+                FAQ
+              </a>
               <TrackedLink
-                href="/docs/about"
+                href="/docs/getting-started"
                 event="nav_click"
                 eventParams={{ label: "docs" }}
                 onClick={() => setOpen(false)}

@@ -84,14 +84,46 @@ function Scene() {
   );
 }
 
+function isWebGLAvailable(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    const gl =
+      canvas.getContext("webgl2") ||
+      canvas.getContext("webgl") ||
+      canvas.getContext("experimental-webgl");
+    return gl instanceof WebGLRenderingContext || gl instanceof WebGL2RenderingContext;
+  } catch {
+    return false;
+  }
+}
+
 export function LoginOctopus() {
   const [mounted, setMounted] = useState(false);
+  const [webglSupported, setWebglSupported] = useState(true);
 
   useEffect(() => {
     setMounted(true);
+    setWebglSupported(isWebGLAvailable());
+    const onToggle = () => setWebglSupported((v) => !v);
+    window.addEventListener("webgl-toggle", onToggle);
+    return () => window.removeEventListener("webgl-toggle", onToggle);
   }, []);
 
   if (!mounted) return null;
+
+  if (!webglSupported) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/octor-tp.png"
+          alt="Octopus"
+          className="size-80 animate-float object-contain opacity-80"
+          loading="lazy"
+        />
+      </div>
+    );
+  }
 
   return (
     <Canvas
@@ -99,6 +131,11 @@ export function LoginOctopus() {
       dpr={[1, 1.5]}
       gl={{ alpha: true, antialias: true }}
       style={{ background: "transparent" }}
+      onCreated={({ gl }) => {
+        gl.domElement.addEventListener("webglcontextlost", () => {
+          setWebglSupported(false);
+        });
+      }}
     >
       <Scene />
     </Canvas>

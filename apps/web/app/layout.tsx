@@ -26,21 +26,23 @@ const SITE_URL = "https://octopus-review.ai";
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "Octopus — AI-Powered Code Review",
+    default:
+      "Octopus: AI-Powered Automated Code Review for GitHub & Bitbucket",
     template: "%s | Octopus",
   },
   description:
-    "AI-powered code review tool. Connects to GitHub & Bitbucket, indexes your codebase, and automatically reviews pull requests with severity-rated findings.",
+    "Automate pull request reviews with AI. Octopus indexes your codebase, analyzes diffs, and posts severity-rated findings directly on GitHub & Bitbucket PRs.",
   keywords: [
     "code review",
     "AI code review",
     "pull request review",
     "automated code review",
-    "GitHub",
-    "Bitbucket",
+    "GitHub code review",
+    "Bitbucket code review",
+    "codebase indexing",
+    "severity-rated findings",
     "Claude",
     "OpenAI",
-    "static analysis",
     "code quality",
   ],
   authors: [{ name: "Octopus" }],
@@ -50,23 +52,25 @@ export const metadata: Metadata = {
     locale: "en_US",
     url: SITE_URL,
     siteName: "Octopus",
-    title: "Octopus — AI-Powered Code Review",
+    title:
+      "Octopus: AI-Powered Automated Code Review for GitHub & Bitbucket",
     description:
-      "AI-powered code review tool. Connects to GitHub & Bitbucket, indexes your codebase, and automatically reviews pull requests with severity-rated findings.",
+      "Automate pull request reviews with AI. Octopus indexes your codebase, analyzes diffs, and posts severity-rated findings directly on your PRs.",
     images: [
       {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "Octopus — AI-Powered Code Review",
+        alt: "Octopus — AI-Powered Automated Code Review",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Octopus — AI-Powered Code Review",
+    title:
+      "Octopus: AI-Powered Automated Code Review for GitHub & Bitbucket",
     description:
-      "AI-powered code review tool. Connects to GitHub & Bitbucket, indexes your codebase, and automatically reviews pull requests.",
+      "Automate PR reviews with AI. Indexes your codebase, analyzes diffs, and posts severity-rated findings on GitHub & Bitbucket pull requests.",
     images: ["/og-image.png"],
   },
   robots: {

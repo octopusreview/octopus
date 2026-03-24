@@ -63,13 +63,18 @@ export function LaunchCountdown() {
   if (!timeLeft) {
     return (
       <div className="text-center">
-        <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.04] px-5 py-2.5 text-sm font-medium text-white">
+        <a
+          href="https://github.com/octopusreview/octopus"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.04] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white/[0.08]"
+        >
           <span className="relative flex size-2">
             <span className="absolute inline-flex size-full animate-ping rounded-full bg-green-400/60" />
             <span className="relative inline-flex size-2 rounded-full bg-green-400" />
           </span>
           We are live! Check us out on GitHub
-        </div>
+        </a>
       </div>
     );
   }

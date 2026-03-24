@@ -8,6 +8,7 @@ COPY apps/web/package.json ./apps/web/
 COPY packages/db/package.json ./packages/db/
 COPY packages/agent-helpers/package.json ./packages/agent-helpers/
 COPY packages/cli/package.json ./packages/cli/
+COPY packages/package-analyzer/package.json ./packages/package-analyzer/
 COPY tools/tsconfig/package.json ./tools/tsconfig/
 COPY tools/eslint-config/package.json ./tools/eslint-config/
 RUN bun install --frozen-lockfile
@@ -20,6 +21,7 @@ COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 COPY --from=deps /app/packages/db/node_modules ./packages/db/node_modules
 COPY tools ./tools
 COPY packages/db ./packages/db
+COPY packages/package-analyzer ./packages/package-analyzer
 COPY apps/web ./apps/web
 COPY package.json bun.lock turbo.json ./
 ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
@@ -43,8 +45,8 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
-COPY --from=builder /app/apps/web/public ./apps/web/public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
 
 USER nextjs

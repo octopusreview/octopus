@@ -243,7 +243,7 @@ export function InvitationsPanel({ orgId, isAdmin }: InvitationsPanelProps) {
       >
         <div className="flex items-center gap-3 min-w-0">
           {m.user.image ? (
-            <img src={m.user.image} alt="" className="size-8 rounded-full" />
+            <img src={m.user.image} alt={m.user.name || "Team member"} className="size-8 rounded-full" loading="lazy" />
           ) : (
             <div className="flex size-8 items-center justify-center rounded-full bg-muted text-xs font-medium">
               {getInitials(m.user.name, m.user.email)}

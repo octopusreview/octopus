@@ -1,15 +1,37 @@
 import { auth } from "@/lib/auth";
 import { pubby } from "@/lib/pubby";
+import { authenticateApiToken } from "@/lib/api-auth";
 import { prisma } from "@octopus/db";
 import { headers } from "next/headers";
 
 export async function POST(req: Request) {
+  // Clone request body since we may need to read it in both auth paths
+  const body = await req.json();
+  const { socket_id, channel_name } = body;
+
+  // Try API token auth first (for headless agents)
+  const apiAuth = await authenticateApiToken(req);
+  if (apiAuth) {
+    // Agents can only subscribe to their org's agent channel
+    const agentChannelMatch = channel_name.match(
+      /^private-agent-org-(.+)$/,
+    );
+    if (agentChannelMatch && agentChannelMatch[1] === apiAuth.org.id) {
+      const authResponse = pubby.authenticatePrivateChannel(
+        socket_id,
+        channel_name,
+      );
+      return Response.json(authResponse);
+    }
+
+    return new Response("Channel not allowed for API token", { status: 403 });
+  }
+
+  // Fall back to browser session auth
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return new Response("Unauthorized", { status: 401 });
   }
-
-  const { socket_id, channel_name } = await req.json();
 
   if (channel_name.startsWith("presence-")) {
     // Validate presence-chat-{conversationId} channels

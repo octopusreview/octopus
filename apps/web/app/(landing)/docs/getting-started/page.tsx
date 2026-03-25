@@ -214,6 +214,22 @@ export default function GettingStartedPage() {
           />
         </div>
         <Paragraph>
+          You can also run a <strong className="text-white">local agent</strong> on
+          your machine to supercharge Octopus Chat with real-time code search.
+          The agent searches your actual source code when someone asks a question
+          in chat — giving much more precise answers than embeddings alone.
+        </Paragraph>
+        <div className="mb-4 space-y-2">
+          <CommandRow
+            command="octopus agent watch"
+            description="Add the current repo to the agent's watch list. Detects the repo from the git remote URL."
+          />
+          <CommandRow
+            command="octopus agent start"
+            description="Start the local agent. Listens for search requests from Octopus Chat and responds with real-time code results."
+          />
+        </div>
+        <Paragraph>
           Install with{" "}
           <Code>npm install -g @octp/cli</Code> and run{" "}
           <Code>octopus login</Code> to get started. See the full{" "}

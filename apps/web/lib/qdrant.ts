@@ -920,3 +920,131 @@ export async function searchFeedbackPatterns(
 }
 
 export { FEEDBACK_COLLECTION_NAME };
+
+// --- Docs Chunks (public landing page & documentation content) ---
+
+const DOCS_COLLECTION_NAME = "docs_chunks";
+
+export async function ensureDocsCollection() {
+  const qdrant = getQdrantClient();
+  const collections = await qdrant.getCollections();
+  const exists = collections.collections.some(
+    (c) => c.name === DOCS_COLLECTION_NAME,
+  );
+
+  if (!exists) {
+    await qdrant.createCollection(DOCS_COLLECTION_NAME, {
+      vectors: { size: VECTOR_SIZE, distance: "Cosine" },
+      sparse_vectors: { [SPARSE_VECTOR_NAME]: {} },
+    });
+    await qdrant.createPayloadIndex(DOCS_COLLECTION_NAME, {
+      field_name: "section",
+      field_schema: "keyword",
+    });
+    await qdrant.createPayloadIndex(DOCS_COLLECTION_NAME, {
+      field_name: "page",
+      field_schema: "keyword",
+    });
+  } else {
+    try {
+      await qdrant.updateCollection(DOCS_COLLECTION_NAME, {
+        sparse_vectors: { [SPARSE_VECTOR_NAME]: {} },
+      });
+    } catch (err) {
+      console.debug(`[qdrant] sparse vector config already exists or update failed:`, err);
+    }
+  }
+}
+
+export async function upsertDocsChunks(
+  points: {
+    id: string;
+    vector: number[];
+    payload: Record<string, unknown>;
+    sparseVector?: { indices: number[]; values: number[] };
+  }[],
+) {
+  const qdrant = getQdrantClient();
+  for (let i = 0; i < points.length; i += 100) {
+    const batch = points.slice(i, i + 100).map((p) => ({
+      id: p.id,
+      vector: p.sparseVector
+        ? { "": p.vector, [SPARSE_VECTOR_NAME]: p.sparseVector }
+        : p.vector,
+      payload: p.payload,
+    }));
+    try {
+      await qdrant.upsert(DOCS_COLLECTION_NAME, { points: batch });
+    } catch (error) {
+      if (!isSparseVectorError(error)) throw error;
+      console.warn("[qdrant] Falling back to dense-only upsert", { collection: DOCS_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
+      const denseBatch = points.slice(i, i + 100).map((p) => ({
+        id: p.id,
+        vector: p.vector,
+        payload: p.payload,
+      }));
+      await qdrant.upsert(DOCS_COLLECTION_NAME, { points: denseBatch });
+    }
+  }
+}
+
+export async function deleteAllDocsChunks() {
+  const qdrant = getQdrantClient();
+  try {
+    await qdrant.delete(DOCS_COLLECTION_NAME, {
+      filter: { must: [{ key: "page", match: { any: ["landing", "getting-started", "cli", "pricing", "integrations", "self-hosting", "faq", "glossary", "skills", "about", "octopusignore"] } }] },
+    });
+  } catch {
+    // Collection may not exist yet
+  }
+}
+
+export async function searchDocsChunks(
+  queryVector: number[],
+  limit = 10,
+  queryText?: string,
+): Promise<{ title: string; text: string; page: string; section: string; score: number }[]> {
+  const qdrant = getQdrantClient();
+
+  let points: { payload?: Record<string, unknown> | null; score: number }[];
+
+  if (queryText) {
+    try {
+      const sparseQuery = generateSparseVector(queryText);
+      const result = await qdrant.query(DOCS_COLLECTION_NAME, {
+        prefetch: [
+          { query: queryVector, limit: limit * 2 },
+          { query: { indices: sparseQuery.indices, values: sparseQuery.values }, using: SPARSE_VECTOR_NAME, limit: limit * 2 },
+        ],
+        query: { fusion: "rrf" },
+        limit,
+        with_payload: true,
+      });
+      points = result.points;
+    } catch (error) {
+      if (!isSparseVectorError(error)) throw error;
+      console.warn("[qdrant] Falling back to dense-only search", { collection: DOCS_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
+      points = await qdrant.search(DOCS_COLLECTION_NAME, {
+        vector: queryVector,
+        limit,
+        with_payload: true,
+      });
+    }
+  } else {
+    points = await qdrant.search(DOCS_COLLECTION_NAME, {
+      vector: queryVector,
+      limit,
+      with_payload: true,
+    });
+  }
+
+  return points.map((point) => ({
+    title: (point.payload?.title as string) ?? "",
+    text: (point.payload?.text as string) ?? "",
+    page: (point.payload?.page as string) ?? "",
+    section: (point.payload?.section as string) ?? "",
+    score: point.score,
+  }));
+}
+
+export { DOCS_COLLECTION_NAME };

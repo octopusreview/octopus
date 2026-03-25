@@ -28,6 +28,7 @@ import {
   IconUsers,
   IconArrowDown,
   IconPlayerStop,
+  IconCpu,
 } from "@tabler/icons-react";
 
 function useIsMobile(breakpoint = 768) {
@@ -103,6 +104,9 @@ export function FloatingChat() {
     currentUserName,
     typingUsers,
     queuePosition,
+    lastUsage,
+    connectedAgents,
+    lastMessageAgentUsed,
   } = useChat();
 
   const isMobile = useIsMobile();
@@ -638,6 +642,12 @@ export function FloatingChat() {
           </Button>
           <IconMessageChatbot className="size-4 text-muted-foreground" />
           <span className="flex-1 truncate text-sm font-medium">Octopus Chat</span>
+          {connectedAgents.length > 0 && (
+            <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400" title={`${connectedAgents.length} local agent(s) connected`}>
+              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              {connectedAgents.length}
+            </span>
+          )}
           {activeConversationId && isOwnChat && !isSharedChat && (
             <Button variant="ghost" size="icon-xs" onClick={() => shareConversation(activeConversationId)} title="Share with team">
               <IconShare className="size-3.5" />
@@ -669,6 +679,27 @@ export function FloatingChat() {
             </div>
           )}
           {allMessages.map(renderMessage)}
+
+          {/* Token usage indicator + agent badge (mobile) */}
+          {lastUsage && !streamingContent && allMessages.length > 0 && allMessages[allMessages.length - 1]?.role === "assistant" && (
+            <div className="mb-2 flex items-center gap-2 justify-start px-1">
+              {lastMessageAgentUsed && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-900/30 px-2 py-0.5 text-[10px] text-emerald-700 dark:text-emerald-400">
+                  <IconCpu className="size-2.5" />
+                  Local agent
+                </span>
+              )}
+              <div className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 text-[10px] text-muted-foreground">
+                <span>{(lastUsage.inputTokens / 1000).toFixed(1)}K in</span>
+                <span className="text-muted-foreground/40">·</span>
+                <span>{(lastUsage.outputTokens / 1000).toFixed(1)}K out</span>
+                <span className="text-muted-foreground/40">·</span>
+                <span className={lastUsage.remainingTokens < 30000 ? "text-orange-400" : ""}>
+                  {(lastUsage.remainingTokens / 1000).toFixed(0)}K remaining
+                </span>
+              </div>
+            </div>
+          )}
 
           {showTyping && (
             <div className="mb-3">
@@ -782,6 +813,12 @@ export function FloatingChat() {
           <IconGripHorizontal className="size-3.5 text-muted-foreground/50" />
           <IconMessageChatbot className="size-4 text-muted-foreground" />
           <span className="flex-1 text-sm font-medium">Octopus Chat</span>
+          {connectedAgents.length > 0 && (
+            <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400" title={`${connectedAgents.length} local agent(s): ${connectedAgents.map((a) => a.name).join(", ")}`}>
+              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              {connectedAgents.length} agent{connectedAgents.length > 1 ? "s" : ""}
+            </span>
+          )}
           {activeConversationId && isOwnChat && !isSharedChat && (
             <Button variant="ghost" size="icon-xs" onClick={() => shareConversation(activeConversationId)} title="Share with team">
               <IconShare className="size-3.5" />
@@ -853,6 +890,33 @@ export function FloatingChat() {
             )}
             {allMessages.map(renderMessage)}
 
+            {/* Token usage indicator + agent badge — shown after last assistant message */}
+            {lastUsage && !streamingContent && allMessages.length > 0 && allMessages[allMessages.length - 1]?.role === "assistant" && (
+              <div className="mb-2 flex items-center gap-2 justify-start px-1">
+                {lastMessageAgentUsed && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-900/30 px-2 py-0.5 text-[10px] text-emerald-700 dark:text-emerald-400">
+                    <IconCpu className="size-2.5" />
+                    Local agent
+                  </span>
+                )}
+                <div className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 text-[10px] text-muted-foreground">
+                  <span>{(lastUsage.inputTokens / 1000).toFixed(1)}K in</span>
+                  <span className="text-muted-foreground/40">·</span>
+                  <span>{(lastUsage.outputTokens / 1000).toFixed(1)}K out</span>
+                  {lastUsage.cacheReadTokens > 0 && (
+                    <>
+                      <span className="text-muted-foreground/40">·</span>
+                      <span>{(lastUsage.cacheReadTokens / 1000).toFixed(1)}K cached</span>
+                    </>
+                  )}
+                  <span className="text-muted-foreground/40">·</span>
+                  <span className={lastUsage.remainingTokens < 30000 ? "text-orange-400" : ""}>
+                    {(lastUsage.remainingTokens / 1000).toFixed(0)}K remaining
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* Typing indicator (AI) */}
             {showTyping && (
               <div className="mb-3">
@@ -922,65 +986,114 @@ export function FloatingChat() {
   );
 }
 
-const MessageContent = memo(function MessageContent({ content, isStreaming }: { content: string; isStreaming?: boolean }) {
+const markdownComponents = {
+  pre({ children, ...props }: React.ComponentProps<"pre"> & { children?: React.ReactNode }) {
+    const child = Array.isArray(children) ? children[0] : children;
+    if (
+      child &&
+      typeof child === "object" &&
+      "props" in child &&
+      (child as React.ReactElement<{ className?: string }>).props?.className === "language-mermaid"
+    ) {
+      const code = String((child as React.ReactElement<{ children?: React.ReactNode }>).props.children ?? "").replace(/\n$/, "");
+      return <MermaidDiagram code={code} />;
+    }
+    return <pre className="overflow-x-auto rounded bg-background/50 p-2 text-xs">{children}</pre>;
+  },
+  code({ className, children, ...props }: React.ComponentProps<"code"> & { className?: string }) {
+    const isBlock = className?.startsWith("language-");
+    if (isBlock) {
+      return <code className={className} {...props}>{children}</code>;
+    }
+    return (
+      <code className="rounded bg-background/50 px-1 py-0.5 text-xs" {...props}>
+        {children}
+      </code>
+    );
+  },
+  a({ href, children }: React.ComponentProps<"a">) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline">
+        {children}
+      </a>
+    );
+  },
+  table({ children }: React.ComponentProps<"table">) {
+    return (
+      <div className="overflow-x-auto">
+        <table className="min-w-full border-collapse text-xs">{children}</table>
+      </div>
+    );
+  },
+  th({ children }: React.ComponentProps<"th">) {
+    return <th className="border border-border bg-muted px-2 py-1 text-left font-medium">{children}</th>;
+  },
+  td({ children }: React.ComponentProps<"td">) {
+    return <td className="border border-border px-2 py-1">{children}</td>;
+  },
+};
+
+const streamingMarkdownComponents = {
+  ...markdownComponents,
+  pre({ children, ...props }: React.ComponentProps<"pre"> & { children?: React.ReactNode }) {
+    const child = Array.isArray(children) ? children[0] : children;
+    if (
+      child &&
+      typeof child === "object" &&
+      "props" in child &&
+      (child as React.ReactElement<{ className?: string }>).props?.className === "language-mermaid"
+    ) {
+      return (
+        <div className="flex items-center gap-2 rounded bg-background/50 p-4 text-xs text-muted-foreground">
+          <IconLoader2 className="size-4 animate-spin" />
+          Diyagram oluşturuluyor...
+        </div>
+      );
+    }
+    return <pre className="overflow-x-auto rounded bg-background/50 p-2 text-xs">{children}</pre>;
+  },
+};
+
+function StreamingMessageContent({ content }: { content: string }) {
+  const [displayedLength, setDisplayedLength] = useState(0);
+  const targetLengthRef = useRef(content.length);
+  const animFrameRef = useRef<number>(0);
+
+  targetLengthRef.current = content.length;
+
+  useEffect(() => {
+    // Catch up animation — smoothly advances displayedLength toward content.length
+    const step = () => {
+      setDisplayedLength((prev) => {
+        const target = targetLengthRef.current;
+        if (prev >= target) return prev;
+        // Accelerate based on gap — bigger gap = faster catch-up
+        const gap = target - prev;
+        const increment = Math.max(1, Math.ceil(gap * 0.35));
+        return Math.min(prev + increment, target);
+      });
+      animFrameRef.current = requestAnimationFrame(step);
+    };
+    animFrameRef.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(animFrameRef.current);
+  }, []);
+
+  const displayedContent = content.slice(0, displayedLength);
+
   return (
-    <Markdown
-      remarkPlugins={[remarkGfm]}
-      components={{
-        pre({ children }) {
-          const child = Array.isArray(children) ? children[0] : children;
-          if (
-            child &&
-            typeof child === "object" &&
-            "props" in child &&
-            child.props?.className === "language-mermaid"
-          ) {
-            const code = String(child.props.children ?? "").replace(/\n$/, "");
-            if (isStreaming) {
-              return (
-                <div className="flex items-center gap-2 rounded bg-background/50 p-4 text-xs text-muted-foreground">
-                  <IconLoader2 className="size-4 animate-spin" />
-                  Diyagram oluşturuluyor...
-                </div>
-              );
-            }
-            return <MermaidDiagram code={code} />;
-          }
-          return <pre className="overflow-x-auto rounded bg-background/50 p-2 text-xs">{children}</pre>;
-        },
-        code({ className, children, ...props }) {
-          const isBlock = className?.startsWith("language-");
-          if (isBlock) {
-            return <code className={className} {...props}>{children}</code>;
-          }
-          return (
-            <code className="rounded bg-background/50 px-1 py-0.5 text-xs" {...props}>
-              {children}
-            </code>
-          );
-        },
-        a({ href, children }) {
-          return (
-            <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline">
-              {children}
-            </a>
-          );
-        },
-        table({ children }) {
-          return (
-            <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse text-xs">{children}</table>
-            </div>
-          );
-        },
-        th({ children }) {
-          return <th className="border border-border bg-muted px-2 py-1 text-left font-medium">{children}</th>;
-        },
-        td({ children }) {
-          return <td className="border border-border px-2 py-1">{children}</td>;
-        },
-      }}
-    >
+    <Markdown remarkPlugins={[remarkGfm]} components={streamingMarkdownComponents}>
+      {displayedContent}
+    </Markdown>
+  );
+}
+
+const MessageContent = memo(function MessageContent({ content, isStreaming }: { content: string; isStreaming?: boolean }) {
+  if (isStreaming) {
+    return <StreamingMessageContent content={content} />;
+  }
+
+  return (
+    <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
       {content}
     </Markdown>
   );

@@ -32,6 +32,13 @@ type Message = {
 type WindowSize = { width: number; height: number };
 type WindowPosition = { x: number; y: number };
 
+type ConnectedAgent = {
+  id: string;
+  name: string;
+  repos: string[];
+  capabilities: string[];
+};
+
 type ChatContextValue = {
   isOpen: boolean;
   toggle: () => void;
@@ -51,6 +58,7 @@ type ChatContextValue = {
   isSending: boolean;
   stopGeneration: () => void;
   streamingContent: string;
+  lastUsage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; totalTokens: number; maxContextTokens: number; remainingTokens: number } | null;
   windowSize: WindowSize;
   setWindowSize: (size: WindowSize) => void;
   windowPosition: WindowPosition;
@@ -62,6 +70,8 @@ type ChatContextValue = {
   currentUserName: string;
   typingUsers: string[];
   queuePosition: number | null;
+  connectedAgents: ConnectedAgent[];
+  lastMessageAgentUsed: boolean;
 };
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -104,6 +114,7 @@ export function ChatProvider({
   const [messages, setMessages] = useState<Message[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
+  const [lastUsage, setLastUsage] = useState<ChatContextValue["lastUsage"]>(null);
   const [windowSize, setWindowSizeState] = useState<WindowSize>(DEFAULT_SIZE);
   const [windowPosition, setWindowPositionState] = useState<WindowPosition>({ x: 0, y: 0 });
   const [isMaximized, setIsMaximized] = useState(false);
@@ -112,6 +123,9 @@ export function ChatProvider({
   const [typingUsersMap, setTypingUsersMap] = useState<Map<string, { name: string; timeout: NodeJS.Timeout }>>(new Map());
   // Track which conversation the current stream belongs to
   const [streamingConversationId, setStreamingConversationId] = useState<string | null>(null);
+  // Local agent state
+  const [connectedAgents, setConnectedAgents] = useState<ConnectedAgent[]>([]);
+  const [lastMessageAgentUsed, setLastMessageAgentUsed] = useState(false);
 
   // Track which conversation is currently subscribed to pubby
   const pubbyChannelRef = useRef<string | null>(null);
@@ -302,12 +316,23 @@ export function ChatProvider({
     };
   }, [activeConversationId, isSharedChat, userId]);
 
-  // Subscribe to org channel for chat-shared events
+  // Subscribe to org channel for chat-shared and agent events
   useEffect(() => {
     const pubbyClient = getPubbyClient();
     const orgChannel = pubbyClient.subscribe(`presence-org-${orgId}`);
     orgChannel.bind("chat-shared", () => {
       loadConversations();
+    });
+    orgChannel.bind("agent-online", (raw: unknown) => {
+      const data = raw as { agentId: string; name: string; repos: string[]; capabilities: string[] };
+      setConnectedAgents((prev) => {
+        if (prev.some((a) => a.id === data.agentId)) return prev;
+        return [...prev, { id: data.agentId, name: data.name, repos: data.repos, capabilities: data.capabilities }];
+      });
+    });
+    orgChannel.bind("agent-offline", (raw: unknown) => {
+      const data = raw as { agentId: string };
+      setConnectedAgents((prev) => prev.filter((a) => a.id !== data.agentId));
     });
     return () => {
       try {
@@ -315,6 +340,29 @@ export function ChatProvider({
       } catch {}
     };
   }, [orgId, loadConversations]);
+
+  // Fetch connected agents on mount and periodically
+  useEffect(() => {
+    const fetchAgents = async () => {
+      try {
+        const res = await fetch(`/api/agent/status?orgId=${orgId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setConnectedAgents(
+            data.agents.map((a: { id: string; name: string; repoFullNames: string[]; capabilities: string[] }) => ({
+              id: a.id,
+              name: a.name,
+              repos: a.repoFullNames,
+              capabilities: a.capabilities,
+            })),
+          );
+        }
+      } catch {}
+    };
+    fetchAgents();
+    const interval = setInterval(fetchAgents, 30_000);
+    return () => clearInterval(interval);
+  }, [orgId]);
 
   const createNewChat = useCallback(() => {
     // Abort any active stream
@@ -432,6 +480,7 @@ export function ChatProvider({
       setIsSending(true);
       setStreamingContent("");
       setQueuePosition(null);
+      setLastMessageAgentUsed(false);
 
       const userMsg: Message = {
         id: `temp-${Date.now()}`,
@@ -515,9 +564,20 @@ export function ChatProvider({
                 newConversationId = parsed.id;
                 setActiveConversationId(parsed.id);
                 setStreamingConversationId(parsed.id);
+              } else if (parsed.type === "agent_used") {
+                setLastMessageAgentUsed(true);
               } else if (parsed.type === "delta") {
                 fullContent += parsed.text;
                 setStreamingContent(fullContent);
+              } else if (parsed.type === "usage") {
+                setLastUsage({
+                  inputTokens: parsed.inputTokens,
+                  outputTokens: parsed.outputTokens,
+                  cacheReadTokens: parsed.cacheReadTokens,
+                  totalTokens: parsed.totalTokens,
+                  maxContextTokens: parsed.maxContextTokens,
+                  remainingTokens: parsed.remainingTokens,
+                });
               } else if (parsed.type === "title") {
                 setConversations((prev) =>
                   prev.map((c) =>
@@ -616,6 +676,7 @@ export function ChatProvider({
         streamingContent: streamingConversationId === activeConversationId || streamingConversationId === null
           ? streamingContent
           : "",
+        lastUsage,
         windowSize,
         setWindowSize,
         windowPosition,
@@ -627,6 +688,8 @@ export function ChatProvider({
         currentUserName: userName,
         typingUsers,
         queuePosition,
+        connectedAgents,
+        lastMessageAgentUsed,
       }}
     >
       {children}

@@ -126,6 +126,8 @@ model Organization {
   creditTransactions CreditTransaction[]
   autoReloadConfig   AutoReloadConfig?
   apiTokens          OrgApiToken[]
+  localAgents        LocalAgent[]
+  agentSearchTasks   AgentSearchTask[]
   packageAnalyses       PackageAnalysis[]
   safePackageRequests   SafePackageRequest[]
   packageDeepDives      PackageDeepDive[]
@@ -591,6 +593,8 @@ model OrgApiToken {
   createdById    String
   createdBy      User @relation("CreatedApiTokens", fields: [createdById], references: [id], onDelete: Cascade)
 
+  localAgents    LocalAgent[]
+
   @@index([tokenHash])
   @@map("org_api_tokens")
 }
@@ -777,4 +781,92 @@ model BlogApiToken {
 
   @@index([tokenHash])
   @@map("blog_api_tokens")
+}
+
+model LocalAgent {
+  id             String    @id @default(cuid())
+  name           String    // e.g. "gabo-macbook"
+  status         String    @default("offline") // "online" | "offline"
+  lastSeenAt     DateTime?
+  repoFullNames  Json      @default("[]") // string[] of repo fullNames this agent has locally
+  capabilities   Json      @default("[]") // string[] e.g. ["ripgrep", "claude-cli"]
+  machineInfo    Json?     // { os, hostname, nodeVersion }
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  apiTokenId     String
+  apiToken       OrgApiToken @relation(fields: [apiTokenId], references: [id], onDelete: Cascade)
+
+  agentSearchTasks AgentSearchTask[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, status])
+  @@map("local_agents")
+}
+
+model AgentSearchTask {
+  id             String    @id @default(cuid())
+  query          String
+  searchType     String    @default("semantic") // "grep" | "file-read" | "semantic" | "claude"
+  params         Json      @default("{}")
+  status         String    @default("pending") // "pending" | "claimed" | "completed" | "timeout" | "failed"
+  result         Json?
+  resultSummary  String?   @db.Text
+  errorMessage   String?
+  timeoutMs      Int       @default(10000)
+  claimedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  agentId        String?
+  agent          LocalAgent? @relation(fields: [agentId], references: [id], onDelete: SetNull)
+
+  repoFullName   String
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  conversationId String?
+
+  @@index([organizationId, status])
+  @@index([agentId, status])
+  @@index([repoFullName, status])
+  @@map("agent_search_tasks")
+}
+
+model AskOctopusSession {
+  id            String   @id @default(cuid())
+  fingerprint   String
+  ipAddress     String
+  userAgent     String?
+  country       String?
+  flagged       Boolean  @default(false)
+  flagReason    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  messages AskOctopusMessage[]
+
+  @@index([fingerprint])
+  @@index([ipAddress])
+  @@index([flagged])
+  @@index([createdAt])
+  @@map("ask_octopus_sessions")
+}
+
+model AskOctopusMessage {
+  id        String   @id @default(cuid())
+  sessionId String
+  role      String   // "user" | "assistant"
+  content   String
+  createdAt DateTime @default(now())
+
+  session AskOctopusSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([createdAt])
+  @@map("ask_octopus_messages")
 }

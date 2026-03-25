@@ -9,6 +9,7 @@ import {
 import { logAiUsage } from "@/lib/ai-usage";
 import { rerankDocuments } from "@/lib/reranker";
 import Anthropic from "@anthropic-ai/sdk";
+import { requestAgentSearch } from "@/lib/agent-search";
 
 let anthropicClient: Anthropic | null = null;
 
@@ -98,13 +99,18 @@ export async function POST(request: Request) {
     operation: "embedding",
   });
 
-  // Search relevant chunks
-  const [rawCodeChunks, rawKnowledgeChunks, rawReviewChunks] = await Promise.all([
+  // Search relevant chunks + local agent search in parallel
+  const [rawCodeChunks, rawKnowledgeChunks, rawReviewChunks, agentResult] = await Promise.all([
     repoIds.length > 0
       ? searchCodeChunksAcrossRepos(repoIds, queryVector, 20, embeddingInput)
       : Promise.resolve([]),
     searchKnowledgeChunks(orgId, queryVector, 10, embeddingInput),
     searchReviewChunks(orgId, queryVector, 6, embeddingInput),
+    requestAgentSearch({
+      orgId,
+      query: message,
+      conversationId: conversation.id,
+    }),
   ]);
 
   // Combine and rerank
@@ -150,7 +156,9 @@ ${codeContext || "No code context available."}
 
 <knowledge_context>
 ${knowledgeContext || "No knowledge context available."}
-</knowledge_context>`;
+</knowledge_context>
+
+${agentResult ? `<local_agent_context>\nREAL-TIME results from a local agent ("${agentResult.agentName ?? "unknown"}").\nThis reflects the actual current state of the code on disk. Prefer over codebase_context when they conflict.\n\n${agentResult.summary}\n</local_agent_context>` : ""}`;
 
   // Stream response
   const encoder = new TextEncoder();

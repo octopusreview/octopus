@@ -17,6 +17,7 @@ import { rerankDocuments } from "@/lib/reranker";
 import { pubby } from "@/lib/pubby";
 import { processNextInQueue } from "@/lib/chat-queue-processor";
 import { generateSparseVector } from "@/lib/sparse-vector";
+import { requestAgentSearch } from "@/lib/agent-search";
 
 let anthropicClient: Anthropic | null = null;
 
@@ -146,17 +147,53 @@ export async function POST(request: Request) {
     });
   }
 
-  // Build conversation history for Claude
-  const historyMessages = conversation.messages.map((m) => ({
+  // Build conversation history for Claude — keep last 40 messages to stay within token budget
+  const MAX_HISTORY_MESSAGES = 40;
+  const MAX_MESSAGE_LENGTH = 6000;
+  const recentMessages = conversation.messages.slice(-MAX_HISTORY_MESSAGES);
+  const historyMessages = recentMessages.map((m) => ({
     role: m.role as "user" | "assistant",
-    content: m.content,
+    content: m.content.length > MAX_MESSAGE_LENGTH
+      ? m.content.slice(0, MAX_MESSAGE_LENGTH) + "\n[...truncated]"
+      : m.content,
   }));
   historyMessages.push({ role: "user", content: message });
 
-  // Get ALL org repos (for listing) and indexed ones (for RAG)
-  const [allRepos, orgMembers, knowledgeDocs, recentPRs] = await Promise.all([
+  // Lightweight org data — only what's needed for RAG routing and minimal context
+  const [allRepos, orgMembers] = await Promise.all([
     prisma.repository.findMany({
       where: { organizationId: orgId, isActive: true },
+      select: {
+        id: true,
+        fullName: true,
+        name: true,
+        provider: true,
+        indexStatus: true,
+      },
+    }),
+    prisma.organizationMember.findMany({
+      where: { organizationId: orgId, deletedAt: null },
+      select: { role: true, user: { select: { name: true, email: true } } },
+    }),
+  ]);
+  const indexedRepos = allRepos.filter((r) => r.indexStatus === "indexed");
+  const repoIds = indexedRepos.map((r) => r.id);
+
+  // Detect if user is asking about a specific repo — check current message + recent history
+  const messageLower = message.toLowerCase();
+  const recentHistoryText = conversation.messages.slice(-10).map((m) => m.content).join(" ").toLowerCase();
+  const searchText = `${messageLower} ${recentHistoryText}`;
+  const mentionedRepos = indexedRepos.filter((r) => {
+    const name = r.name.toLowerCase();
+    const fullName = r.fullName.toLowerCase();
+    return searchText.includes(name) || searchText.includes(fullName);
+  });
+
+  // Fetch full details for mentioned repos
+  let mentionedRepoContext = "";
+  if (mentionedRepos.length > 0) {
+    const repoDetails = await prisma.repository.findMany({
+      where: { id: { in: mentionedRepos.map((r) => r.id) } },
       select: {
         id: true,
         fullName: true,
@@ -174,35 +211,106 @@ export async function POST(request: Request) {
         purpose: true,
         analysis: true,
         autoReview: true,
-        createdAt: true,
         _count: { select: { pullRequests: true } },
       },
-    }),
-    prisma.organizationMember.findMany({
-      where: { organizationId: orgId, deletedAt: null },
-      select: { role: true, user: { select: { name: true, email: true } } },
-    }),
-    prisma.knowledgeDocument.findMany({
-      where: { organizationId: orgId, status: "ready", deletedAt: null },
-      select: { title: true, sourceType: true, totalChunks: true },
-    }),
-    prisma.pullRequest.findMany({
-      where: { repository: { organizationId: orgId } },
+    });
+    mentionedRepoContext = repoDetails.map((r) => {
+      const contributors = Array.isArray(r.contributors) ? (r.contributors as { login: string; contributions: number }[]) : [];
+      const topContributors = contributors.slice(0, 10).map((c) => `${c.login} (${c.contributions})`).join(", ");
+      const lines = [
+        `### ${r.fullName}`,
+        `- Provider: ${r.provider} | Branch: ${r.defaultBranch} | Auto-review: ${r.autoReview ? "on" : "off"}`,
+        `- Index: ${r.indexStatus}${r.indexedAt ? ` (${r.indexedAt.toISOString().split("T")[0]})` : ""} | Files: ${r.indexedFiles}/${r.totalFiles} | Chunks: ${r.totalChunks}`,
+        `- PRs: ${r._count.pullRequests} | Contributors: ${r.contributorCount}${topContributors ? ` — ${topContributors}` : ""}`,
+      ];
+      if (r.purpose) lines.push(`- Purpose: ${r.purpose}`);
+      if (r.summary) lines.push(`- Summary: ${r.summary}`);
+      if (r.analysis) lines.push(`- Analysis: ${r.analysis}`);
+      return lines.join("\n");
+    }).join("\n\n");
+    console.log(`[chat] Detected mentioned repos: ${mentionedRepos.map((r) => r.fullName).join(", ")}`);
+  }
+
+  // Detect PR/activity related questions — fetch recent PRs for mentioned repos (or all if no repo mentioned)
+  const prKeywords = /\b(pr|pull request|merge|açm[ıi]ş|commit|deploy|release|son aktivite|aktivite|recent|latest|last)\b/i;
+  let recentPRsContext = "";
+  if (prKeywords.test(searchText)) {
+    const prRepoFilter = mentionedRepos.length > 0
+      ? { repositoryId: { in: mentionedRepos.map((r) => r.id) } }
+      : { repository: { organizationId: orgId } };
+    const recentPRs = await prisma.pullRequest.findMany({
+      where: prRepoFilter,
       orderBy: { createdAt: "desc" },
-      take: 20,
+      take: 15,
       select: {
         number: true,
         title: true,
         author: true,
         status: true,
         createdAt: true,
+        updatedAt: true,
         repository: { select: { fullName: true } },
         _count: { select: { reviewIssues: true } },
       },
-    }),
-  ]);
-  const indexedRepos = allRepos.filter((r) => r.indexStatus === "indexed");
-  const repoIds = indexedRepos.map((r) => r.id);
+    });
+    if (recentPRs.length > 0) {
+      recentPRsContext = recentPRs
+        .map(
+          (pr) =>
+            `- ${pr.repository.fullName}#${pr.number}: "${pr.title}" by ${pr.author} (${pr.status}) — created: ${pr.createdAt.toISOString().split("T")[0]}, updated: ${pr.updatedAt.toISOString().split("T")[0]}, issues: ${pr._count.reviewIssues}`,
+        )
+        .join("\n");
+      console.log(`[chat] Fetched ${recentPRs.length} recent PRs for context`);
+    }
+  }
+
+  // Detect issue/bug related questions — fetch review issues for mentioned repos
+  const issueKeywords = /\b(issue|bug|hata|sorun|problem|finding|bulgu|security|güvenlik|critical|kritik|severity)\b/i;
+  let reviewIssuesContext = "";
+  if (issueKeywords.test(searchText)) {
+    const issueRepoFilter = mentionedRepos.length > 0
+      ? { pullRequest: { repositoryId: { in: mentionedRepos.map((r) => r.id) } } }
+      : { pullRequest: { repository: { organizationId: orgId } } };
+    const recentIssues = await prisma.reviewIssue.findMany({
+      where: issueRepoFilter,
+      orderBy: { createdAt: "desc" },
+      take: 15,
+      include: {
+        pullRequest: {
+          select: {
+            number: true,
+            title: true,
+            repository: { select: { fullName: true } },
+          },
+        },
+      },
+    });
+    if (recentIssues.length > 0) {
+      reviewIssuesContext = recentIssues
+        .map(
+          (i) =>
+            `- [${i.severity}] ${i.pullRequest.repository.fullName}#${i.pullRequest.number} — ${i.title}${i.filePath ? ` (${i.filePath})` : ""} — ${i.feedback ?? "no feedback"} — ${i.createdAt.toISOString().split("T")[0]}\n  ${i.description?.slice(0, 200) ?? ""}`,
+        )
+        .join("\n");
+      console.log(`[chat] Fetched ${recentIssues.length} review issues for context`);
+    }
+  }
+
+  // Detect team/contributor related questions
+  const teamKeywords = /\b(who|kim|contributor|katk[ıi]|team|tak[ıi]m|developer|geliştirici|author|yazar|çalış|work)\b/i;
+  let contributorContext = "";
+  if (teamKeywords.test(searchText) && mentionedRepos.length > 0) {
+    const repoDetails = await prisma.repository.findMany({
+      where: { id: { in: mentionedRepos.map((r) => r.id) } },
+      select: { fullName: true, contributors: true, contributorCount: true },
+    });
+    contributorContext = repoDetails
+      .map((r) => {
+        const contributors = Array.isArray(r.contributors) ? (r.contributors as { login: string; contributions: number }[]) : [];
+        return `### ${r.fullName} (${r.contributorCount} contributors)\n${contributors.map((c) => `- ${c.login}: ${c.contributions} contributions`).join("\n")}`;
+      })
+      .join("\n\n");
+  }
 
   // Build contextual query for embedding — include recent conversation for better RAG
   const recentHistory = conversation.messages.slice(-6); // last 3 Q&A pairs
@@ -220,19 +328,45 @@ export async function POST(request: Request) {
   });
 
   // Over-fetch from all 5 Qdrant collections in parallel (2x for reranking)
-  const [rawCodeChunks, rawKnowledgeChunks, rawReviewChunks, rawChatChunks, rawDiagramChunks] = await Promise.all([
+  // If specific repos are mentioned, also fetch targeted chunks from those repos
+  // Also run local agent search in parallel if agents are online
+  const mentionedRepoIds = mentionedRepos.map((r) => r.id);
+
+  const [rawCodeChunks, rawTargetedCodeChunks, rawKnowledgeChunks, rawReviewChunks, rawChatChunks, rawDiagramChunks, agentResult] = await Promise.all([
     repoIds.length > 0
       ? searchCodeChunksAcrossRepos(repoIds, queryVector, 30, embeddingInput)
+      : Promise.resolve([]),
+    mentionedRepoIds.length > 0
+      ? searchCodeChunksAcrossRepos(mentionedRepoIds, queryVector, 20, embeddingInput)
       : Promise.resolve([]),
     searchKnowledgeChunks(orgId, queryVector, 16, embeddingInput),
     searchReviewChunks(orgId, queryVector, 10, embeddingInput),
     searchChatChunks(orgId, queryVector, 10, conversation.id, embeddingInput),
     searchDiagramChunks(orgId, queryVector, 6, embeddingInput),
+    requestAgentSearch({
+      orgId,
+      query: message,
+      conversationId: conversation.id,
+    }),
   ]);
+
+  const agentUsed = agentResult !== null;
+  if (agentUsed) {
+    console.log(`[chat] Local agent "${agentResult.agentName}" returned results for task ${agentResult.taskId}`);
+  }
+
+  // Merge and deduplicate code chunks — targeted repo chunks get priority
+  const seenChunkKeys = new Set<string>();
+  const mergedCodeChunks = [...rawTargetedCodeChunks, ...rawCodeChunks].filter((c) => {
+    const key = `${c.repoId}:${c.filePath}:${c.startLine}`;
+    if (seenChunkKeys.has(key)) return false;
+    seenChunkKeys.add(key);
+    return true;
+  });
 
   // Combine all chunks with _source tag for unified reranking
   const allDocs = [
-    ...rawCodeChunks.map((c) => ({ ...c, text: c.text, _source: "code" as const })),
+    ...mergedCodeChunks.map((c) => ({ ...c, text: c.text, _source: "code" as const })),
     ...rawKnowledgeChunks.map((c) => ({ ...c, text: c.text, _source: "knowledge" as const })),
     ...rawReviewChunks.map((c) => ({ ...c, text: c.text, _source: "review" as const })),
     ...rawChatChunks.map((c) => ({ ...c, text: `Q: ${c.question}\nA: ${c.answer}`, _source: "chat" as const })),
@@ -256,30 +390,31 @@ export async function POST(request: Request) {
 
   console.log(`[chat] Reranked: ${reranked.length}/${allDocs.length} total — code:${codeChunks.length} knowledge:${knowledgeChunks.length} review:${reviewChunks.length} chat:${chatChunks.length} diagram:${diagramChunks.length}`);
 
-  // Build context sections
+  // Build context sections with per-chunk truncation
+  const MAX_CHUNK_LENGTH = 3000;
   const repoMap = new Map(indexedRepos.map((r) => [r.id, r.fullName]));
   const codeContext = codeChunks
     .map(
       (c) =>
-        `### ${repoMap.get(c.repoId) ?? "unknown"}/${c.filePath}:L${c.startLine}-L${c.endLine}\n\`\`\`\n${c.text}\n\`\`\``,
+        `### ${repoMap.get(c.repoId) ?? "unknown"}/${c.filePath}:L${c.startLine}-L${c.endLine}\n\`\`\`\n${c.text.slice(0, MAX_CHUNK_LENGTH)}\n\`\`\``,
     )
     .join("\n\n");
 
   const knowledgeContext = knowledgeChunks
-    .map((c) => `### ${c.title}\n${c.text}`)
+    .map((c) => `### ${c.title}\n${c.text.slice(0, MAX_CHUNK_LENGTH)}`)
     .join("\n\n");
 
   const reviewContext = reviewChunks
     .map(
       (c) =>
-        `### ${c.repoFullName} PR #${c.prNumber}: ${c.prTitle} (by ${c.author}, ${c.reviewDate})\n${c.text}`,
+        `### ${c.repoFullName} PR #${c.prNumber}: ${c.prTitle} (by ${c.author}, ${c.reviewDate})\n${c.text.slice(0, MAX_CHUNK_LENGTH)}`,
     )
     .join("\n\n");
 
   const diagramContext = diagramChunks
     .map(
       (c) =>
-        `### [${(c.diagramType ?? "flowchart").toUpperCase()}] ${c.repoFullName} PR #${c.prNumber}: ${c.prTitle} (by ${c.author}, ${c.reviewDate})\n\`\`\`mermaid\n${c.mermaidCode}\n\`\`\``,
+        `### [${(c.diagramType ?? "flowchart").toUpperCase()}] ${c.repoFullName} PR #${c.prNumber}: ${c.prTitle} (by ${c.author}, ${c.reviewDate})\n\`\`\`mermaid\n${c.mermaidCode.slice(0, MAX_CHUNK_LENGTH)}\n\`\`\``,
     )
     .join("\n\n");
 
@@ -287,45 +422,19 @@ export async function POST(request: Request) {
     ? chatChunks
         .map(
           (c) =>
-            `### From: "${c.conversationTitle}"\n**Q:** ${c.question}\n**A:** ${c.answer}`,
+            `### From: "${c.conversationTitle}"\n**Q:** ${c.question.slice(0, 1000)}\n**A:** ${c.answer.slice(0, 2000)}`,
         )
         .join("\n\n")
     : "";
 
-  // Build rich context for system prompt
+  // Minimal static context — repo names and team only, everything else comes from RAG
   const repoList = allRepos
-    .map((r) => {
-      const contributors = Array.isArray(r.contributors) ? r.contributors as { login: string; contributions: number }[] : [];
-      const topContributors = contributors.slice(0, 10).map((c) => `${c.login} (${c.contributions})`).join(", ");
-      const lines = [
-        `### ${r.fullName}`,
-        `- Provider: ${r.provider} | Branch: ${r.defaultBranch} | Auto-review: ${r.autoReview ? "on" : "off"}`,
-        `- Index: ${r.indexStatus}${r.indexedAt ? ` (${r.indexedAt.toISOString().split("T")[0]})` : ""} | Files: ${r.indexedFiles}/${r.totalFiles} | Chunks: ${r.totalChunks}`,
-        `- PRs: ${r._count.pullRequests} | Contributors: ${r.contributorCount}${topContributors ? ` — ${topContributors}` : ""}`,
-      ];
-      if (r.purpose) lines.push(`- Purpose: ${r.purpose}`);
-      if (r.summary) lines.push(`- Summary: ${r.summary}`);
-      if (r.analysis) lines.push(`- Analysis: ${r.analysis}`);
-      return lines.join("\n");
-    })
-    .join("\n\n");
+    .map((r) => `- ${r.fullName} (${r.provider}, ${r.indexStatus})`)
+    .join("\n");
 
   const memberList = orgMembers
     .map((m) => `- ${m.user.name} (${m.user.email}) — ${m.role}`)
     .join("\n");
-
-  const knowledgeList = knowledgeDocs.length > 0
-    ? knowledgeDocs.map((d) => `- ${d.title} (${d.sourceType}, ${d.totalChunks} chunks)`).join("\n")
-    : "No knowledge documents uploaded yet.";
-
-  const prList = recentPRs.length > 0
-    ? recentPRs
-        .map(
-          (pr) =>
-            `- ${pr.repository.fullName}#${pr.number}: ${pr.title} (by ${pr.author}, ${pr.status}, ${pr._count.reviewIssues} issues) — ${pr.createdAt.toISOString().split("T")[0]}`,
-        )
-        .join("\n")
-    : "No pull requests yet.";
 
   // Static instructions (cached across turns for the same user)
   const sharedNote = conversation.isShared
@@ -336,46 +445,60 @@ You help developers understand their code, find patterns, debug issues, and answ
 The current user is: ${session.user.name} (${session.user.email})${sharedNote}
 
 RULES:
-- Answer questions about the organization, repositories, team, and code using ALL provided context
+- Answer questions using ONLY the provided context sections below
+- The context is dynamically retrieved based on the user's query:
+  - codebase_context: source code from indexed repositories (via semantic search)
+  - mentioned_repository_details: full info about repos the user asked about
+  - recent_pull_requests: live PR data from the database (when the user asks about PRs, activity, merges)
+  - review_issues: code review findings and bugs (when the user asks about issues, bugs, security)
+  - contributors: contributor details (when the user asks about who works on what)
+  - local_agent_context: REAL-TIME search results from a local agent on a developer machine — most up-to-date source, prefer over codebase_context when they conflict
+  - knowledge_context, review_context, diagram_context, previous_conversations: RAG results
 - Cite file paths: \`path/to/file.ts:L42\`
 - Be concise and technical
 - Use fenced code blocks with language tags
-- If context is insufficient, say so honestly`;
+- If no relevant context was retrieved for a question, say "I couldn't find relevant code for this query. Try rephrasing or being more specific." Do NOT make up or guess code, endpoints, or file structures.
+- NEVER say "I don't have access to the code" — you DO have access via the retrieved context. If context is empty, the search simply didn't match.
+- For PR/activity questions, use the recent_pull_requests section which contains LIVE data from the database — this is always up to date.
+- ALWAYS respond in the same language the user writes in. If the user writes in Turkish, respond in Turkish. If in English, respond in English. Match the user's language exactly.`;
 
-  // Dynamic RAG context (changes each turn based on query)
-  const systemContext = `<organization_info>
-## Team Members (${orgMembers.length})
+  // Dynamic RAG context — only relevant retrieved content, minimal static info
+  const systemContext = `<organization_overview>
+## Team (${orgMembers.length} members)
 ${memberList}
 
 ## Repositories (${allRepos.length})
 ${repoList || "No repositories connected yet."}
+</organization_overview>
 
-## Knowledge Base (${knowledgeDocs.length} documents)
-${knowledgeList}
+${mentionedRepoContext ? `<mentioned_repository_details>\n${mentionedRepoContext}\n</mentioned_repository_details>` : ""}
 
-## Recent Pull Requests (last ${recentPRs.length})
-${prList}
-</organization_info>
+${recentPRsContext ? `<recent_pull_requests>\n${recentPRsContext}\n</recent_pull_requests>` : ""}
 
-<codebase_context>
-${codeContext || "No code context available for this query."}
-</codebase_context>
+${reviewIssuesContext ? `<review_issues>\n${reviewIssuesContext}\n</review_issues>` : ""}
 
-<knowledge_context>
-${knowledgeContext || "No matching knowledge documents for this query."}
-</knowledge_context>
+${contributorContext ? `<contributors>\n${contributorContext}\n</contributors>` : ""}
 
-<review_context>
-${reviewContext || "No matching review history for this query."}
-</review_context>
+${codeContext ? `<codebase_context>\n${codeContext}\n</codebase_context>` : ""}
 
-<diagram_context>
-${diagramContext || "No matching diagrams for this query."}
-</diagram_context>
+${knowledgeContext ? `<knowledge_context>\n${knowledgeContext}\n</knowledge_context>` : ""}
 
-<previous_conversations>
-${chatHistoryContext || "No relevant previous conversations found."}
-</previous_conversations>`;
+${reviewContext ? `<review_context>\n${reviewContext}\n</review_context>` : ""}
+
+${diagramContext ? `<diagram_context>\n${diagramContext}\n</diagram_context>` : ""}
+
+${chatHistoryContext ? `<previous_conversations>\n${chatHistoryContext}\n</previous_conversations>` : ""}
+
+${agentResult ? `<local_agent_context>\nREAL-TIME results from a local agent running on a developer machine ("${agentResult.agentName ?? "unknown"}").\nThis reflects the actual current state of the code on disk. Prefer this over codebase_context when they conflict.\n\n${agentResult.summary}\n</local_agent_context>` : ""}`;
+
+  // Safety net: trim context if it still exceeds token budget (~4 chars per token)
+  const MAX_CONTEXT_CHARS = 140_000 * 4; // ~560K chars ≈ 140K tokens
+  let finalSystemContext = systemContext;
+  if (finalSystemContext.length > MAX_CONTEXT_CHARS) {
+    // Truncate from the end — least relevant RAG sections get cut
+    finalSystemContext = finalSystemContext.slice(0, MAX_CONTEXT_CHARS);
+    console.log(`[chat] Context trimmed: ${systemContext.length} -> ${finalSystemContext.length} chars`);
+  }
 
   const isFirstMessage = conversation.messages.length === 0;
   const chatChannel = conversation.isShared ? `presence-chat-${conversation.id}` : null;
@@ -391,6 +514,15 @@ ${chatHistoryContext || "No relevant previous conversations found."}
             `data: ${JSON.stringify({ type: "conversation_id", id: conversation.id })}\n\n`,
           ),
         );
+
+        // Send agent search status
+        if (agentUsed) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "agent_used", agentName: agentResult?.agentName })}\n\n`,
+            ),
+          );
+        }
 
         // Broadcast stream start for shared chats
         if (chatChannel) {
@@ -415,7 +547,7 @@ ${chatHistoryContext || "No relevant previous conversations found."}
             },
             {
               type: "text" as const,
-              text: systemContext,
+              text: finalSystemContext,
             },
           ],
           messages: historyMessages,
@@ -457,16 +589,40 @@ ${chatHistoryContext || "No relevant previous conversations found."}
 
         // Log streaming chat usage
         const finalMessage = await anthropicStream.finalMessage();
+        const inputTokens = finalMessage.usage.input_tokens;
+        const outputTokens = finalMessage.usage.output_tokens;
+        const cacheRead = finalMessage.usage.cache_read_input_tokens ?? 0;
+        const cacheWrite = finalMessage.usage.cache_creation_input_tokens ?? 0;
+        const totalTokens = inputTokens + outputTokens;
+        const maxTokens = 200_000;
+        const remainingTokens = maxTokens - inputTokens;
+
         await logAiUsage({
           provider: "anthropic",
           model: "claude-sonnet-4-20250514",
           operation: "chat",
-          inputTokens: finalMessage.usage.input_tokens,
-          outputTokens: finalMessage.usage.output_tokens,
-          cacheReadTokens: finalMessage.usage.cache_read_input_tokens ?? 0,
-          cacheWriteTokens: finalMessage.usage.cache_creation_input_tokens ?? 0,
+          inputTokens,
+          outputTokens,
+          cacheReadTokens: cacheRead,
+          cacheWriteTokens: cacheWrite,
           organizationId: orgId,
         });
+
+        // Send token usage info to client
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({
+              type: "usage",
+              inputTokens,
+              outputTokens,
+              cacheReadTokens: cacheRead,
+              cacheWriteTokens: cacheWrite,
+              totalTokens,
+              maxContextTokens: maxTokens,
+              remainingTokens,
+            })}\n\n`,
+          ),
+        );
 
         // Save assistant response
         const savedAssistantMsg = await prisma.chatMessage.create({

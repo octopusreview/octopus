@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { TrackedLink } from "@/components/tracked-link";
-import { IconArrowRight, IconBook, IconBrandGithub, IconPalette, IconCoin, IconNews } from "@tabler/icons-react";
+import { IconArrowRight, IconBook, IconBrandGithub, IconPalette, IconCoin, IconNews, IconMessageCircle } from "@tabler/icons-react";
 
 export function LandingDesktopNav({ isLoggedIn }: { isLoggedIn: boolean }) {
   const [resourcesOpen, setResourcesOpen] = useState(false);
@@ -102,7 +102,14 @@ export function LandingDesktopNav({ isLoggedIn }: { isLoggedIn: boolean }) {
             </div>
           </div>
         </div>
-        <div className="ml-2 shrink-0">
+        <button
+          onClick={() => window.dispatchEvent(new Event("ask-octopus-open"))}
+          className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-sm text-[#777] transition-colors hover:bg-white/[0.06] hover:text-white"
+        >
+          <IconMessageCircle className="size-3.5 text-[#10D8BE]" />
+          Ask AI
+        </button>
+        <div className="shrink-0">
           {isLoggedIn ? (
             <Link href="/dashboard" className="inline-flex items-center gap-2 whitespace-nowrap rounded-full bg-white px-4 py-2 text-sm font-medium text-[#0c0c0c] transition-colors hover:bg-[#e0e0e0]">
               Dashboard

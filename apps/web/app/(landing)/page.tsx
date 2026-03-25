@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
+import { AskOctopus } from "@/components/ask-octopus";
 import { FloatingOctopus } from "@/components/landing-unicorn-section";
 import { LandingFeatures } from "@/components/landing-features";
 import { TrackedLink, TrackedAnchor } from "@/components/tracked-link";
@@ -452,6 +453,9 @@ export default async function LandingPage() {
       </section>
 
       <LandingFooter />
+
+      {/* Ask Octopus floating chat */}
+      <AskOctopus />
     </div>
   );
 }

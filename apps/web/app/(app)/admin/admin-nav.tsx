@@ -13,6 +13,8 @@ import {
   IconRobot,
   IconPackage,
   IconNews,
+  IconDatabase,
+  IconMessageCircle,
 } from "@tabler/icons-react";
 
 const items = [
@@ -25,6 +27,8 @@ const items = [
   { href: "/admin/blocked-authors", label: "Blocked Authors", icon: IconRobot },
   { href: "/admin/safe-packages", label: "Safe Packages", icon: IconPackage },
   { href: "/admin/blog", label: "Blog Posts", icon: IconNews },
+  { href: "/admin/seed-docs", label: "Seed Docs", icon: IconDatabase },
+  { href: "/admin/ask-octopus-logs", label: "Ask Octopus Logs", icon: IconMessageCircle },
 ];
 
 export function AdminNav() {

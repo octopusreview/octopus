@@ -122,6 +122,65 @@ octopus pr review https://github.com/owner/repo/pull/42`}</CodeBlock>
         />
       </Section>
 
+      {/* Local Agent */}
+      <Section title="Local Agent">
+        <Paragraph>
+          Run a local agent on your machine to supercharge Octopus Chat with
+          real-time code search. When someone asks a question in chat, the agent
+          searches your actual source code (via ripgrep or Claude CLI) and returns
+          precise results — much more accurate than embeddings alone.
+        </Paragraph>
+
+        <CommandCard
+          command="octopus agent watch [path]"
+          description="Add a directory to the agent's watch list. Detects the repository from the git remote URL."
+        />
+        <CodeBlock>{`# Watch current directory
+octopus agent watch
+
+# Watch a specific path
+octopus agent watch ~/Repos/api
+
+# List all watched directories
+octopus agent watch --list
+
+# Remove a directory from the watch list
+octopus agent watch --remove`}</CodeBlock>
+
+        <CommandCard
+          command="octopus agent start"
+          description="Start the local agent daemon. Registers with Octopus and listens for search requests from chat."
+        />
+        <CodeBlock>{`# Start with ripgrep (fast, default)
+octopus agent start
+
+# Enable Claude CLI for deep semantic search
+octopus agent start --with-claude
+
+# Verbose mode for debugging
+octopus agent start --verbose`}</CodeBlock>
+
+        <Paragraph>
+          The agent identifies repositories by their <Mono>git remote URL</Mono>,
+          not the folder name — so you can clone a repo to any directory and the
+          agent will still match it correctly. When chat receives a question, the
+          server dispatches a search request to any online agent that has the
+          relevant repo. Results are merged with RAG context for more accurate
+          answers.
+        </Paragraph>
+
+        <div className="mb-3 space-y-1.5">
+          <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
+            <span className="text-sm text-[#888]">Ripgrep mode: </span>
+            <span className="text-sm text-[#ccc]">Fast keyword search, 8s timeout, no extra dependencies</span>
+          </div>
+          <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
+            <span className="text-sm text-[#888]">Claude CLI mode: </span>
+            <span className="text-sm text-[#ccc]">Semantic search with <Mono>--with-claude</Mono>, 30s timeout, requires Claude CLI</span>
+          </div>
+        </div>
+      </Section>
+
       {/* Skills */}
       <Section title="Skills">
         <Paragraph>

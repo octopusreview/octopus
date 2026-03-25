@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { TrackedLink } from "@/components/tracked-link";
-import { IconArrowRight, IconBook, IconBrandGithub, IconPalette, IconCoin } from "@tabler/icons-react";
+import { IconArrowRight, IconBook, IconBrandGithub, IconPalette, IconCoin, IconNews } from "@tabler/icons-react";
 
 export function LandingDesktopNav({ isLoggedIn }: { isLoggedIn: boolean }) {
   const [resourcesOpen, setResourcesOpen] = useState(false);
@@ -70,6 +70,15 @@ export function LandingDesktopNav({ isLoggedIn }: { isLoggedIn: boolean }) {
                 >
                   <IconPalette className="size-4 shrink-0 text-[#555]" />
                   Brand Guidelines
+                </TrackedLink>
+                <TrackedLink
+                  href="/blog"
+                  event="nav_click"
+                  eventParams={{ label: "blog" }}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
+                >
+                  <IconNews className="size-4 shrink-0 text-[#555]" />
+                  Blog
                 </TrackedLink>
                 <TrackedLink
                   href="/docs/pricing"

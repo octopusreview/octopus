@@ -731,3 +731,35 @@ model PackageDeepDive {
   @@index([analysisId])
   @@map("package_deep_dives")
 }
+
+model BlogPost {
+  id            String    @id @default(cuid())
+  title         String
+  slug          String    @unique
+  excerpt       String?
+  content       String    @db.Text
+  coverImageUrl String?
+  status        String    @default("draft") // "draft" | "published"
+  publishedAt   DateTime?
+  authorId      String
+  authorName    String
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, publishedAt])
+  @@map("blog_posts")
+}
+
+model BlogApiToken {
+  id          String    @id @default(cuid())
+  name        String
+  tokenHash   String    @unique
+  tokenPrefix String
+  lastUsedAt  DateTime?
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([tokenHash])
+  @@map("blog_api_tokens")
+}

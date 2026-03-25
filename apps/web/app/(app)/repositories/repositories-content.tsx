@@ -670,12 +670,14 @@ function AnalysisSection({
             )}
           </div>
           <div className="flex items-center gap-2">
-            <Link href={`/package-analyzer?repo=${encodeURIComponent(`https://github.com/${repo.fullName}`)}&repoId=${repo.id}`}>
-              <Button size="sm" variant="outline" className="h-7 text-xs">
-                <IconPackage className="mr-1 size-3" />
-                Package Analyzer
-              </Button>
-            </Link>
+            {repo.provider !== "bitbucket" && (
+              <Link href={`/package-analyzer?repo=${encodeURIComponent(`https://github.com/${repo.fullName}`)}&repoId=${repo.id}`}>
+                <Button size="sm" variant="outline" className="h-7 text-xs">
+                  <IconPackage className="mr-1 size-3" />
+                  Package Analyzer
+                </Button>
+              </Link>
+            )}
             <Button
               size="sm"
               variant="ghost"

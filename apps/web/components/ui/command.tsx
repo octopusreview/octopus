@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Command as CommandPrimitive } from "cmdk"
-import { Dialog as DialogPrimitive } from "radix-ui"
+import { Dialog as DialogPrimitive, VisuallyHidden } from "radix-ui"
 import { cn } from "@/lib/utils"
 import { IconSearch } from "@tabler/icons-react"
 
@@ -31,6 +31,9 @@ function CommandDialog({
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs fixed inset-0 z-50" />
         <DialogPrimitive.Content className="data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 fixed top-[20%] left-1/2 z-50 w-full max-w-lg -translate-x-1/2 rounded-xl border bg-popover shadow-lg duration-100 outline-none">
+          <VisuallyHidden.Root>
+            <DialogPrimitive.Title>Command Menu</DialogPrimitive.Title>
+          </VisuallyHidden.Root>
           <Command className="[&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]]:border-b">
             {children}
           </Command>

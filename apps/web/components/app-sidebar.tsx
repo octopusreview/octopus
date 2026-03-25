@@ -378,6 +378,7 @@ export function AppSidebar(props: SidebarProps) {
 
 export function MobileHeader(props: SidebarProps) {
   const [open, setOpen] = useState(false);
+  const chat = useChat();
 
   return (
     <>
@@ -391,6 +392,18 @@ export function MobileHeader(props: SidebarProps) {
           <IconMenu2 className="size-5" />
         </Button>
         <span className="text-sm font-semibold">Octopus</span>
+        <button
+          onClick={() => chat.toggle()}
+          className={cn(
+            "ml-auto flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+            chat.isOpen
+              ? "bg-primary/10 text-primary"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground"
+          )}
+        >
+          <IconMessageChatbot className="size-4" />
+          Chat
+        </button>
       </header>
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="left" className="w-64 p-0" showCloseButton={false}>

@@ -16,13 +16,21 @@ function isWebGLAvailable(): boolean {
   }
 }
 
+const STORAGE_KEY = "octopus-3d-hidden";
+
 export function WebGLToggleButton() {
   const [hidden, setHidden] = useState(false);
   const [supported, setSupported] = useState(false);
 
   useEffect(() => {
     setSupported(isWebGLAvailable());
-    const onToggle = () => setHidden((v) => !v);
+    setHidden(localStorage.getItem(STORAGE_KEY) === "true");
+    const onToggle = () =>
+      setHidden((v) => {
+        const next = !v;
+        localStorage.setItem(STORAGE_KEY, String(next));
+        return next;
+      });
     window.addEventListener("webgl-toggle", onToggle);
     return () => window.removeEventListener("webgl-toggle", onToggle);
   }, []);
@@ -38,7 +46,7 @@ export function WebGLToggleButton() {
       <button
         type="button"
         onClick={() => window.dispatchEvent(new Event("webgl-toggle"))}
-        className="flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-xs text-[#555] transition-colors hover:border-white/[0.15] hover:text-[#888]"
+        className="flex items-center gap-1.5 rounded-full border border-teal-500/40 bg-teal-500/[0.06] px-3 py-1.5 text-xs text-teal-400/70 transition-colors hover:border-teal-400/60 hover:text-teal-300/90"
       >
         {hidden ? (
           <IconEyeOff className="size-3.5" />

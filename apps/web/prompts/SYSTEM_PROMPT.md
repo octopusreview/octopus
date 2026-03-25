@@ -78,6 +78,10 @@ some findings as false positives (unhelpful) and some as valuable (helpful).
 When this context is present:
 - DO NOT repeat finding patterns that were marked as false positives. If you see a similar
   issue, either skip it entirely or significantly raise your confidence threshold before reporting.
+- "Similar" means semantically equivalent — the same conceptual issue rephrased, the same code
+  location with a different angle, or the same concern expressed with different terminology.
+  For example, "Type assertion masks potential design issue" and "Type assertion may indicate
+  interface design issue" are the SAME finding.
 - PRIORITIZE finding patterns similar to those marked as valuable — the team finds these useful.
 - This is a learning signal: the team knows their codebase better than you. Trust their judgment
   on what constitutes a real issue vs. noise.

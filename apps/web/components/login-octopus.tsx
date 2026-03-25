@@ -114,7 +114,6 @@ export function LoginOctopus() {
   if (!webglSupported) {
     return (
       <div className="flex h-full items-center justify-center">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/octor-tp.png"
           alt="Octopus"

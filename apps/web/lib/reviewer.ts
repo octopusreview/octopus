@@ -535,7 +535,7 @@ async function emitReviewStatus(orgId: string, event: ReviewEvent) {
 
 // --- LLM-based reply intent classification ---
 
-const FEEDBACK_CLASSIFICATION_MODEL = "claude-haiku-4-5-20251001";
+const FEEDBACK_CLASSIFICATION_MODEL = "claude-sonnet-4-6";
 
 type ReplyIntent = "dismissed" | "accepted" | "unclear";
 

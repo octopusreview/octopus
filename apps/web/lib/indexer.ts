@@ -172,18 +172,26 @@ export async function indexRepository(
 
     // 1. Shallow clone the repo
     const cloneDir = join(tmpdir(), `octopus-bb-${repoId}-${Date.now()}`);
-    const cloneUrl = `https://x-token-auth:${token}@bitbucket.org/${workspace}/${repoSlug}.git`;
+    const cloneUrl = `https://bitbucket.org/${workspace}/${repoSlug}.git`;
 
     try {
       onLog(`Cloning ${fullName}@${defaultBranch}...`);
+      const cloneController = new AbortController();
+      if (signal) {
+        signal.addEventListener("abort", () => cloneController.abort(), { once: true });
+      }
       await execFileAsync("git", [
+        "-c", `http.extraHeader=Authorization: Bearer ${token}`,
         "clone",
         "--depth", "1",
         "--branch", defaultBranch,
         "--single-branch",
         cloneUrl,
         cloneDir,
-      ], { timeout: 120_000 });
+      ], {
+        timeout: 120_000,
+        signal: cloneController.signal,
+      });
       onLog("Repository cloned successfully", "success");
 
       // 2. Walk the cloned directory to get all file paths
@@ -194,6 +202,7 @@ export async function indexRepository(
         const entries = await readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
           if (entry.name === ".git") continue;
+          if (entry.isSymbolicLink()) continue; // skip symlinks to avoid infinite loops
           const relPath = prefix ? `${prefix}/${entry.name}` : entry.name;
           if (entry.isDirectory()) {
             await walkDir(join(dir, entry.name), relPath);

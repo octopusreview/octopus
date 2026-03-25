@@ -346,7 +346,7 @@ export async function getRepositoryTree(
   }
 
   // BFS with bounded concurrency
-  let queue: string[] = [
+  const queue: string[] = [
     `${BITBUCKET_API}/repositories/${workspace}/${repoSlug}/src/${encodeURIComponent(branch)}/?pagelen=100`,
   ];
 

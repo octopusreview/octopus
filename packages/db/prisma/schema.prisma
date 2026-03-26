@@ -148,6 +148,8 @@ model OrganizationMember {
   removedById String?
   removedBy   User?  @relation("RemovedByUser", fields: [removedById], references: [id], onDelete: SetNull)
 
+  emailNotificationPreferences EmailNotificationPreference[]
+
   @@unique([organizationId, userId])
   @@map("organization_members")
 }
@@ -367,6 +369,19 @@ model ChatQueue {
 
   @@index([conversationId, status])
   @@map("chat_queue")
+}
+
+model EmailNotificationPreference {
+  id        String  @id @default(cuid())
+  eventType String
+  enabled   Boolean @default(true)
+
+  memberId String
+  member   OrganizationMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, eventType])
+  @@index([memberId])
+  @@map("email_notification_preferences")
 }
 
 model SlackIntegration {

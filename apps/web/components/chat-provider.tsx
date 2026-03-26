@@ -379,27 +379,6 @@ export function ChatProvider({
     setIsSending(false);
   }, []);
 
-  const openWithRepoContext = useCallback(
-    (repoFullName: string) => {
-      // Reset to new chat state
-      if (streamAbortRef.current) {
-        streamAbortRef.current.abort();
-        streamAbortRef.current = null;
-      }
-      setActiveConversationId(null);
-      setMessages([]);
-      setStreamingContent("");
-      setStreamingConversationId(null);
-      setQueuePosition(null);
-      setIsSending(false);
-      setIsOpen(true);
-      const msg = `Tell me about the ${repoFullName} repository. Give me an overview of its purpose, architecture, tech stack, recent activity, and any notable patterns or issues you can find.`;
-      // Defer by one tick so React flushes the state resets above first
-      Promise.resolve().then(() => sendMessage(msg));
-    },
-    [sendMessage],
-  );
-
   const selectConversation = useCallback(
     async (id: string) => {
       // Abort any active stream when switching conversations
@@ -674,6 +653,27 @@ export function ChatProvider({
       setStreamingConversationId(null);
     }
   }, []);
+
+  const openWithRepoContext = useCallback(
+    (repoFullName: string) => {
+      // Reset to new chat state
+      if (streamAbortRef.current) {
+        streamAbortRef.current.abort();
+        streamAbortRef.current = null;
+      }
+      setActiveConversationId(null);
+      setMessages([]);
+      setStreamingContent("");
+      setStreamingConversationId(null);
+      setQueuePosition(null);
+      setIsSending(false);
+      setIsOpen(true);
+      const msg = `Tell me about the ${repoFullName} repository. Give me an overview of its purpose, architecture, tech stack, recent activity, and any notable patterns or issues you can find.`;
+      // Defer by one tick so React flushes the state resets above first
+      Promise.resolve().then(() => sendMessage(msg));
+    },
+    [sendMessage],
+  );
 
   return (
     <ChatContext.Provider

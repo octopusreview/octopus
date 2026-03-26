@@ -198,26 +198,54 @@ function sortAndCapFindings(
   return { kept: sorted.slice(0, max), truncatedCount: sorted.length - max };
 }
 
-/** Build a collapsed summary block for findings that won't get inline comments. */
+/** Build summary block for findings that won't get inline comments.
+ *  Critical and High severity findings are shown prominently (not collapsed).
+ *  Lower severity findings are placed in a collapsed <details> section.
+ */
 function buildLowSeveritySummary(findings: InlineFinding[]): string {
   if (findings.length === 0) return "";
-  const rows = findings.map(
-    (f) => `| ${f.severity} | \`${f.filePath}:L${f.startLine}\` | ${f.title} | ${f.description.slice(0, 120)}${f.description.length > 120 ? "…" : ""} |`,
-  );
-  const uniqueSeverities = [...new Set(findings.map((f) => f.severity))];
-  const severityIcons = uniqueSeverities.join("");
-  return [
-    "",
-    "<details>",
-    `<summary>${severityIcons} Additional findings</summary>`,
-    "",
+
+  const HIGH_SEVERITIES = ["🔴", "🟠"];
+  const highFindings = findings.filter((f) => HIGH_SEVERITIES.includes(f.severity));
+  const lowFindings = findings.filter((f) => !HIGH_SEVERITIES.includes(f.severity));
+
+  const buildTable = (rows: string[]) => [
     "| Severity | File | Title | Description |",
     "|----------|------|-------|-------------|",
     ...rows,
-    "",
-    "</details>",
-    "",
   ].join("\n");
+
+  const toRow = (f: InlineFinding) =>
+    `| ${f.severity} | \`${f.filePath}:L${f.startLine}\` | ${f.title} | ${f.description.slice(0, 120)}${f.description.length > 120 ? "…" : ""} |`;
+
+  const parts: string[] = [];
+
+  // Critical/High findings are shown prominently (not collapsed)
+  if (highFindings.length > 0) {
+    const highRows = highFindings.map(toRow);
+    parts.push("");
+    parts.push(`**${highFindings.map((f) => f.severity).join("")} Findings that could not be mapped to diff lines:**`);
+    parts.push("");
+    parts.push(buildTable(highRows));
+    parts.push("");
+  }
+
+  // Lower severity findings go in a collapsed section
+  if (lowFindings.length > 0) {
+    const lowRows = lowFindings.map(toRow);
+    const uniqueSeverities = [...new Set(lowFindings.map((f) => f.severity))];
+    const severityIcons = uniqueSeverities.join("");
+    parts.push("");
+    parts.push("<details>");
+    parts.push(`<summary>${severityIcons} Additional findings</summary>`);
+    parts.push("");
+    parts.push(buildTable(lowRows));
+    parts.push("");
+    parts.push("</details>");
+    parts.push("");
+  }
+
+  return parts.join("\n");
 }
 
 const FINDINGS_START_MARKER = "<!-- OCTOPUS_FINDINGS_START -->";
@@ -1786,6 +1814,20 @@ export async function processReview(pullRequestId: string): Promise<void> {
     // 2. ``` merged with next line: "```### Checklist" → "```\n\n### Checklist"
     //    Only match ``` followed by non-language-tag chars to preserve ```mermaid etc.
     reviewBody = reviewBody.replace(/```([^`\n\sa-z])/g, "```\n\n$1");
+
+    // Strip empty diagram sections: remove "### Diagram" when there's no meaningful mermaid content.
+    // Matches from "### Diagram" up to the next ### heading or end of string.
+    reviewBody = reviewBody.replace(
+      /### Diagram\s*\n[\s\S]*?(?=\n### |\n## |$)/,
+      (match) => {
+        // Check if there's a non-empty mermaid block inside
+        const mermaidMatch = match.match(/```mermaid\s*\n([\s\S]*?)```/);
+        const mermaidContent = mermaidMatch?.[1]?.trim() ?? "";
+        // Keep the section only if there's meaningful mermaid content (at least one diagram keyword)
+        if (mermaidContent.length > 10) return match;
+        return "";
+      },
+    );
 
     // Prepend build artifact warning if bad files were detected in the diff
     if (badFiles.length > 0) {

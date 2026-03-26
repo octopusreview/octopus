@@ -23,6 +23,10 @@ ACCURACY & CITATIONS:
 SCOPE FINDINGS TO VISIBLE CONTEXT:
 - The vector context contains relevant snippets, NOT the entire codebase — absence of evidence
   is not evidence of absence
+- The diff shows only CHANGED HUNKS, not the full file. Security controls (rate limiting,
+  auth checks, input validation) often exist in unchanged portions of the same file. NEVER
+  flag "missing X" in a file when you only see partial diff hunks — the feature may exist
+  in the lines not shown.
 - Use conditional language for cross-boundary assumptions: "Recommend verifying...",
   "No evidence of X visible in the provided context", "Consider confirming..."
 - Exception: Use direct language for issues clearly visible in the diff (syntax errors,
@@ -280,6 +284,15 @@ SCORING RULES:
 19. Precision over recall — only report findings you are highly confident about. A clean review with zero findings is better than one padded with speculative issues.
 20. When in doubt, skip the finding. If you are not sure whether something is a real issue, do not report it.
 21. Only flag "missing" code (missing error handling, missing validation, missing tests) when there is strong evidence in the diff or codebase context that it is required. Do not flag missing things based on general best practices alone.
+22. CRITICAL — "Missing security feature" findings require extra diligence: Before flagging
+    that a file is missing rate limiting, authentication, input validation, or other security
+    controls, remember that you only see DIFF HUNKS, not the full file. The security control
+    may exist in a part of the file not shown in the diff. Check the codebase context and
+    file tree for evidence before raising the finding. If you cannot confirm the control is
+    truly absent, do NOT flag it — use conditional language in a NIT at most.
+23. Always verify file paths before including them in findings. If you reference a file path,
+    it MUST match an entry in the file tree or a path visible in the diff. Never invent or
+    guess file paths.
 </review_rules>
 
 {{CONFLICT_DETECTION}}

@@ -181,7 +181,6 @@ export async function indexRepository(
         signal.addEventListener("abort", () => cloneController.abort(), { once: true });
       }
       await execFileAsync("git", [
-        "-c", `http.extraHeader=Authorization: Bearer ${token}`,
         "clone",
         "--depth", "1",
         "--branch", defaultBranch,
@@ -191,6 +190,12 @@ export async function indexRepository(
       ], {
         timeout: 120_000,
         signal: cloneController.signal,
+        env: {
+          ...process.env,
+          GIT_CONFIG_COUNT: "1",
+          GIT_CONFIG_KEY_0: "http.extraHeader",
+          GIT_CONFIG_VALUE_0: `Authorization: Bearer ${token}`,
+        },
       });
       onLog("Repository cloned successfully", "success");
 

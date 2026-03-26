@@ -333,7 +333,7 @@ export async function getRepositoryTree(
         paths.push(item.path);
       } else if (item.type === "commit_directory") {
         subDirs.push(
-          `${BITBUCKET_API}/repositories/${workspace}/${repoSlug}/src/${encodeURIComponent(branch)}/${item.path}/?pagelen=100`,
+          `${BITBUCKET_API}/repositories/${workspace}/${repoSlug}/src/${encodeURIComponent(branch)}/${encodeURIComponent(item.path)}/?pagelen=100`,
         );
       }
     }

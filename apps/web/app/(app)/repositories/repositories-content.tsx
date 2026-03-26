@@ -50,6 +50,7 @@ import {
   IconFilterOff,
   IconSettings,
   IconPackage,
+  IconMessageCircle,
 } from "@tabler/icons-react";
 import {
   Dialog,
@@ -74,6 +75,7 @@ import { IndexingLogs } from "@/components/indexing-logs";
 import { AnalysisLogs } from "@/components/analysis-logs";
 import { Label } from "@/components/ui/label";
 import { getPubbyClient } from "@/lib/pubby-client";
+import { useChat } from "@/components/chat-provider";
 
 type AvailableModel = {
   modelId: string;
@@ -946,6 +948,7 @@ function RepoDetail({
   otherOrgs?: OtherOrg[];
   onDetailRefresh: () => void;
 }) {
+  const { openWithRepoContext } = useChat();
   const provider = providerConfig[repo.provider];
   const repoUrl = provider?.repoUrl(repo.fullName);
   const [indexPending, startIndexTransition] = useTransition();
@@ -1042,44 +1045,55 @@ function RepoDetail({
               <IndexStatusBadge status={repo.indexStatus} />
             </div>
           </div>
-          {isIndexing ? (
+          <div className="flex items-center gap-2">
             <Button
               size="sm"
-              variant="destructive"
-              onClick={handleCancel}
-              disabled={cancelPending}
+              variant="outline"
+              onClick={() => openWithRepoContext(repo.fullName)}
+              title="Chat about this repository"
             >
-              {cancelPending ? (
-                <>
-                  <IconLoader2 className="mr-1 size-3 animate-spin" />
-                  Cancelling...
-                </>
-              ) : (
-                <>
-                  <IconX className="mr-1 size-3" />
-                  Cancel
-                </>
-              )}
+              <IconMessageCircle className="mr-1 size-3" />
+              Chat
             </Button>
-          ) : (
-            <Button
-              size="sm"
-              variant="cta"
-              onClick={handleIndex}
-            >
-              {repo.indexStatus === "indexed" ? (
-                <>
-                  <IconRefresh className="mr-1 size-3" />
-                  Re-index
-                </>
-              ) : (
-                <>
-                  <IconDatabaseImport className="mr-1 size-3" />
-                  Create Index
-                </>
-              )}
-            </Button>
-          )}
+            {isIndexing ? (
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={handleCancel}
+                disabled={cancelPending}
+              >
+                {cancelPending ? (
+                  <>
+                    <IconLoader2 className="mr-1 size-3 animate-spin" />
+                    Cancelling...
+                  </>
+                ) : (
+                  <>
+                    <IconX className="mr-1 size-3" />
+                    Cancel
+                  </>
+                )}
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="cta"
+                onClick={handleIndex}
+              >
+                {repo.indexStatus === "indexed" ? (
+                  <>
+                    <IconRefresh className="mr-1 size-3" />
+                    Re-index
+                  </>
+                ) : (
+                  <>
+                    <IconDatabaseImport className="mr-1 size-3" />
+                    Create Index
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 

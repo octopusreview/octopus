@@ -72,6 +72,7 @@ type ChatContextValue = {
   queuePosition: number | null;
   connectedAgents: ConnectedAgent[];
   lastMessageAgentUsed: boolean;
+  openWithRepoContext: (repoFullName: string) => void;
 };
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -377,6 +378,37 @@ export function ChatProvider({
     setQueuePosition(null);
     setIsSending(false);
   }, []);
+
+  const pendingRepoMessageRef = useRef<string | null>(null);
+
+  const openWithRepoContext = useCallback(
+    (repoFullName: string) => {
+      // Reset to new chat state
+      if (streamAbortRef.current) {
+        streamAbortRef.current.abort();
+        streamAbortRef.current = null;
+      }
+      setActiveConversationId(null);
+      setMessages([]);
+      setStreamingContent("");
+      setStreamingConversationId(null);
+      setQueuePosition(null);
+      setIsSending(false);
+      // Open the chat window and queue the initial message
+      setIsOpen(true);
+      pendingRepoMessageRef.current = `Tell me about the ${repoFullName} repository. Give me an overview of its purpose, architecture, tech stack, recent activity, and any notable patterns or issues you can find.`;
+    },
+    [],
+  );
+
+  // Send the pending repo message once state is reset
+  useEffect(() => {
+    if (pendingRepoMessageRef.current && !isSending && !activeConversationId && messages.length === 0) {
+      const msg = pendingRepoMessageRef.current;
+      pendingRepoMessageRef.current = null;
+      sendMessage(msg);
+    }
+  }, [isSending, activeConversationId, messages.length, sendMessage]);
 
   const selectConversation = useCallback(
     async (id: string) => {
@@ -690,6 +722,7 @@ export function ChatProvider({
         queuePosition,
         connectedAgents,
         lastMessageAgentUsed,
+        openWithRepoContext,
       }}
     >
       {children}

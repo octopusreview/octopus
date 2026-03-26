@@ -987,7 +987,7 @@ export function FloatingChat() {
 }
 
 const markdownComponents = {
-  pre({ children, ...props }: React.ComponentProps<"pre"> & { children?: React.ReactNode }) {
+  pre({ children, ..._props }: React.ComponentProps<"pre"> & { children?: React.ReactNode }) {
     const child = Array.isArray(children) ? children[0] : children;
     if (
       child &&
@@ -1035,7 +1035,7 @@ const markdownComponents = {
 
 const streamingMarkdownComponents = {
   ...markdownComponents,
-  pre({ children, ...props }: React.ComponentProps<"pre"> & { children?: React.ReactNode }) {
+  pre({ children, ..._props }: React.ComponentProps<"pre"> & { children?: React.ReactNode }) {
     const child = Array.isArray(children) ? children[0] : children;
     if (
       child &&
@@ -1059,7 +1059,9 @@ function StreamingMessageContent({ content }: { content: string }) {
   const targetLengthRef = useRef(content.length);
   const animFrameRef = useRef<number>(0);
 
-  targetLengthRef.current = content.length;
+  useEffect(() => {
+    targetLengthRef.current = content.length;
+  }, [content.length]);
 
   useEffect(() => {
     // Catch up animation — smoothly advances displayedLength toward content.length

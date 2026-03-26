@@ -199,7 +199,7 @@ export function AskOctopus() {
         abortRef.current = null;
       }
     },
-    [isStreaming, messages],
+    [isStreaming, messages, sessionId],
   );
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

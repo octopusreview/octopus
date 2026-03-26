@@ -232,9 +232,15 @@ export default async function DashboardPage({
     (pr) => pr.updatedAt < currentPeriodStart && pr.updatedAt >= previousPeriodStart
   );
 
-  // All issues severity distribution
+  // Issues severity distribution (filtered by period, repo, author)
   const allIssues = await prisma.reviewIssue.findMany({
-    where: { pullRequest: { repository: { organizationId: org.id } } },
+    where: {
+      createdAt: { gte: currentPeriodStart },
+      pullRequest: {
+        repository: { organizationId: org.id, ...repoFilter },
+        ...(filterAuthor ? { author: filterAuthor } : {}),
+      },
+    },
     select: { severity: true },
   });
 

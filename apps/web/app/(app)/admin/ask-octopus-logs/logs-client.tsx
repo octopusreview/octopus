@@ -68,7 +68,10 @@ export function AskOctopusLogsClient({
   async function handleFlag(sessionId: string, flag: boolean) {
     setFlaggingId(sessionId);
     const reason = flag ? prompt("Flag reason (optional):") ?? undefined : undefined;
-    await toggleFlag(sessionId, flag, reason);
+    const result = await toggleFlag(sessionId, flag, reason);
+    if (result && "error" in result) {
+      alert(`Failed to update flag: ${result.error}`);
+    }
     setFlaggingId(null);
   }
 
@@ -190,6 +193,12 @@ export function AskOctopusLogsClient({
                           <span className="text-muted-foreground">User Agent: </span>
                           <span>{s.userAgent || "N/A"}</span>
                         </div>
+                        {s.country && (
+                          <div>
+                            <span className="text-muted-foreground">Country: </span>
+                            <span>{s.country}</span>
+                          </div>
+                        )}
                         {s.flagReason && (
                           <div>
                             <span className="text-red-500">Flag reason: </span>

@@ -17,6 +17,20 @@ const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT = 10;
 const RATE_WINDOW_MS = 60_000;
 
+// Global daily spend cap to prevent abuse from botnets/distributed attacks
+const dailyMessageCount = { count: 0, date: "" };
+const DAILY_MESSAGE_CAP = 500;
+
+function isDailyCapReached(): boolean {
+  const today = new Date().toISOString().slice(0, 10);
+  if (dailyMessageCount.date !== today) {
+    dailyMessageCount.count = 0;
+    dailyMessageCount.date = today;
+  }
+  dailyMessageCount.count++;
+  return dailyMessageCount.count > DAILY_MESSAGE_CAP;
+}
+
 function isRateLimited(ip: string): boolean {
   const now = Date.now();
   const entry = rateLimitMap.get(ip);
@@ -61,6 +75,13 @@ export async function POST(request: Request) {
     return Response.json(
       { error: "Too many requests. Please wait a moment." },
       { status: 429 },
+    );
+  }
+
+  if (isDailyCapReached()) {
+    return Response.json(
+      { error: "Service is temporarily unavailable. Please try again later." },
+      { status: 503 },
     );
   }
 

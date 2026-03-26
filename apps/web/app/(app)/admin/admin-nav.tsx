@@ -12,6 +12,7 @@ import {
   IconEye,
   IconRobot,
   IconPackage,
+  IconNews,
 } from "@tabler/icons-react";
 
 const items = [
@@ -23,6 +24,7 @@ const items = [
   { href: "/admin/review-defaults", label: "Review Defaults", icon: IconEye },
   { href: "/admin/blocked-authors", label: "Blocked Authors", icon: IconRobot },
   { href: "/admin/safe-packages", label: "Safe Packages", icon: IconPackage },
+  { href: "/admin/blog", label: "Blog Posts", icon: IconNews },
 ];
 
 export function AdminNav() {

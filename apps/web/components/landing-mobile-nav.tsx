@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { TrackedLink } from "@/components/tracked-link";
-import { IconMenu2, IconX, IconBrandGithub, IconBook, IconPalette, IconCoin } from "@tabler/icons-react";
+import { IconMenu2, IconX, IconBrandGithub, IconBook, IconPalette, IconCoin, IconNews } from "@tabler/icons-react";
 
 export function LandingMobileNav({ isLoggedIn }: { isLoggedIn: boolean }) {
   const [open, setOpen] = useState(false);
@@ -87,6 +87,16 @@ export function LandingMobileNav({ isLoggedIn }: { isLoggedIn: boolean }) {
                 >
                   <IconPalette className="size-4 text-[#555]" />
                   Brand Guidelines
+                </TrackedLink>
+                <TrackedLink
+                  href="/blog"
+                  event="nav_click"
+                  eventParams={{ label: "blog" }}
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
+                >
+                  <IconNews className="size-4 text-[#555]" />
+                  Blog
                 </TrackedLink>
                 <TrackedLink
                   href="/docs/pricing"

@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
+import { prisma } from "@octopus/db";
 import { FloatingOctopus } from "@/components/landing-unicorn-section";
 import { LandingFeatures } from "@/components/landing-features";
 import { TrackedLink, TrackedAnchor } from "@/components/tracked-link";
@@ -94,7 +95,15 @@ const faqJsonLd = {
 };
 
 export default async function LandingPage() {
-  const session = await auth.api.getSession({ headers: await headers() });
+  const [session, blogPosts] = await Promise.all([
+    auth.api.getSession({ headers: await headers() }),
+    prisma.blogPost.findMany({
+      where: { status: "published", deletedAt: null },
+      orderBy: { publishedAt: "desc" },
+      take: 3,
+      select: { title: true, slug: true, excerpt: true, publishedAt: true, authorName: true },
+    }),
+  ]);
   return (
     <div className="dark relative min-h-screen bg-[#0c0c0c] text-[#a0a0a0] selection:bg-white/20">
       <script
@@ -300,6 +309,67 @@ export default async function LandingPage() {
           </div>
         </div>
       </section>
+
+      {/* Blog */}
+      {blogPosts.length > 0 && (
+        <section className="relative z-10 px-4 py-8 sm:px-8 md:px-12">
+          <div className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-white/[0.06] bg-[#161616] px-6 py-20 md:px-12 md:py-28">
+            <div className="mx-auto max-w-5xl">
+              <div className="mx-auto max-w-2xl text-center">
+                <span className="text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">Blog</span>
+                <h2 className="mt-4 text-3xl font-bold tracking-tight text-white sm:text-4xl">
+                  From the blog
+                </h2>
+                <p className="mt-4 text-[#888]">
+                  Engineering insights and lessons from building Octopus.
+                </p>
+              </div>
+
+              <div className="mt-14 grid gap-4 md:grid-cols-3">
+                {blogPosts.map((post) => (
+                  <Link
+                    key={post.slug}
+                    href={`/blog/${post.slug}`}
+                    className="group rounded-xl border border-white/[0.06] p-6 transition-colors hover:border-white/[0.12] hover:bg-white/[0.02]"
+                  >
+                    <h3 className="font-semibold text-white transition-colors group-hover:text-[#10D8BE]">
+                      {post.title}
+                    </h3>
+                    {post.excerpt && (
+                      <p className="mt-2 text-sm text-[#888] line-clamp-2">{post.excerpt}</p>
+                    )}
+                    <div className="mt-4 flex items-center gap-2 text-xs text-[#555]">
+                      <span>{post.authorName}</span>
+                      <span>·</span>
+                      <time>
+                        {post.publishedAt
+                          ? new Date(post.publishedAt).toLocaleDateString("en-US", {
+                              year: "numeric",
+                              month: "short",
+                              day: "numeric",
+                            })
+                          : ""}
+                      </time>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+
+              <div className="mt-10 text-center">
+                <TrackedLink
+                  href="/blog"
+                  event="blog_click"
+                  eventParams={{ label: "view_all_posts" }}
+                  className="inline-flex items-center gap-2 text-sm text-[#666] transition-colors hover:text-white"
+                >
+                  View all posts
+                  <IconArrowRight className="size-3.5" />
+                </TrackedLink>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* FAQ */}
       <section id="faq" className="relative z-10 scroll-mt-20 px-4 py-8 sm:px-8 md:px-12">

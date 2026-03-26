@@ -7,7 +7,6 @@ COPY package.json bun.lock ./
 COPY apps/web/package.json ./apps/web/
 COPY packages/db/package.json ./packages/db/
 COPY packages/agent-helpers/package.json ./packages/agent-helpers/
-COPY packages/cli/package.json ./packages/cli/
 COPY packages/package-analyzer/package.json ./packages/package-analyzer/
 COPY tools/tsconfig/package.json ./tools/tsconfig/
 COPY tools/eslint-config/package.json ./tools/eslint-config/

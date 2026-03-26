@@ -72,6 +72,7 @@ type ChatContextValue = {
   queuePosition: number | null;
   connectedAgents: ConnectedAgent[];
   lastMessageAgentUsed: boolean;
+  openWithRepoContext: (repoFullName: string) => void;
 };
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -653,6 +654,27 @@ export function ChatProvider({
     }
   }, []);
 
+  const openWithRepoContext = useCallback(
+    (repoFullName: string) => {
+      // Reset to new chat state
+      if (streamAbortRef.current) {
+        streamAbortRef.current.abort();
+        streamAbortRef.current = null;
+      }
+      setActiveConversationId(null);
+      setMessages([]);
+      setStreamingContent("");
+      setStreamingConversationId(null);
+      setQueuePosition(null);
+      setIsSending(false);
+      setIsOpen(true);
+      const msg = `Tell me about the ${repoFullName} repository. Give me an overview of its purpose, architecture, tech stack, recent activity, and any notable patterns or issues you can find.`;
+      // Defer by one tick so React flushes the state resets above first
+      Promise.resolve().then(() => sendMessage(msg));
+    },
+    [sendMessage],
+  );
+
   return (
     <ChatContext.Provider
       value={{
@@ -690,6 +712,7 @@ export function ChatProvider({
         queuePosition,
         connectedAgents,
         lastMessageAgentUsed,
+        openWithRepoContext,
       }}
     >
       {children}

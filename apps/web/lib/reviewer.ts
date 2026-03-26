@@ -1505,25 +1505,6 @@ export async function processReview(pullRequestId: string): Promise<void> {
       }
     }
 
-    // Strip prompt/agent definition files from the diff to prevent prompt injection.
-    // If a PR modifies SYSTEM_PROMPT.md or similar files, the LLM could interpret the
-    // diff content as instructions rather than code to review.
-    const PROMPT_INJECTION_PATHS = [
-      "prompts/",
-      ".claude/",
-    ];
-    const diffSections = diff.split(/(?=^diff --git )/m);
-    const filteredSections = diffSections.filter((section) => {
-      const match = section.match(/^diff --git a\/(.+?) b\/(.+)/);
-      if (!match) return true;
-      return !PROMPT_INJECTION_PATHS.some((p) => match[2].includes(p));
-    });
-    if (filteredSections.length < diffSections.length) {
-      const removed = diffSections.length - filteredSections.length;
-      console.log(`[reviewer] Stripped ${removed} prompt/agent file(s) from diff to prevent prompt injection`);
-      diff = filteredSections.join("");
-    }
-
     const diffFiles = extractDiffFiles(diff);
     const filesChanged = diffFiles.size;
 

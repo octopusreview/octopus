@@ -11,6 +11,6 @@
   "devDependencies": {
     "@octopus/tsconfig": "workspace:*",
     "@types/node": "^20",
-    "typescript": "^5"
+    "typescript": "^6"
   }
 }

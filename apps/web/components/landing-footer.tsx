@@ -8,8 +8,8 @@ import {
   IconBrandYoutube,
 } from "@tabler/icons-react";
 import { TrackedLink, TrackedAnchor } from "@/components/tracked-link";
-
-const DISCORD_INVITE_URL = "https://discord.gg/qyuWTXghbS";
+import { GetInTouchModal } from "@/components/get-in-touch-modal";
+import { DISCORD_INVITE_URL } from "@/lib/constants";
 const LINKEDIN_URL = "https://www.linkedin.com/company/octopus-review";
 const REDDIT_URL = "https://www.reddit.com/r/octopusreview/";
 
@@ -141,16 +141,6 @@ export function LandingFooter() {
                   className="text-sm text-[#666] transition-colors hover:text-white"
                 >
                   Blog
-                </TrackedLink>
-              </li>
-              <li>
-                <TrackedLink
-                  href="/login"
-                  event="footer_click"
-                  eventParams={{ label: "get_started" }}
-                  className="text-sm text-[#666] transition-colors hover:text-white"
-                >
-                  Get Started
                 </TrackedLink>
               </li>
               <li>
@@ -296,16 +286,9 @@ export function LandingFooter() {
                 </TrackedAnchor>
               </li>
               <li>
-                <TrackedAnchor
-                  href="https://github.com/octopusreview/octopus/blob/master/LICENSE.md"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  event="footer_click"
-                  eventParams={{ label: "license" }}
-                  className="text-sm text-[#666] transition-colors hover:text-white"
-                >
-                  Modified MIT License
-                </TrackedAnchor>
+                <GetInTouchModal className="text-sm text-[#666] transition-colors hover:text-white">
+                  Get in Touch
+                </GetInTouchModal>
               </li>
             </ul>
             <div className="shimmer-border mt-4 inline-block">

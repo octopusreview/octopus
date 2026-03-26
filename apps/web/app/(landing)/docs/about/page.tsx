@@ -6,6 +6,7 @@ import {
   IconEye,
   IconRocket,
 } from "@tabler/icons-react";
+import { GetInTouchModal } from "@/components/get-in-touch-modal";
 import { TrackedAnchor } from "@/components/tracked-link";
 
 export const metadata = {
@@ -153,6 +154,15 @@ export default function AboutPage() {
             </TrackedAnchor>
           </div>
         </div>
+      </Section>
+      {/* Contact */}
+      <Section title="Get in Touch">
+        <Paragraph>
+          Have a question, partnership inquiry, or just want to say hi?
+        </Paragraph>
+        <GetInTouchModal className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] px-4 py-2 text-sm text-[#888] transition-colors hover:border-white/[0.15] hover:text-white">
+          Get in Touch
+        </GetInTouchModal>
       </Section>
     </article>
   );

@@ -376,7 +376,7 @@ model ChatQueue {
 model EmailNotificationPreference {
   id        String  @id @default(cuid())
   eventType String
-  enabled   Boolean @default(true)
+  enabled   Boolean @default(false)
 
   memberId String
   member   OrganizationMember @relation(fields: [memberId], references: [id], onDelete: Cascade)

@@ -133,6 +133,8 @@ export default async function BrandPage() {
             label="Logomark"
             sublabel="Primary — use wherever possible"
             bg="bg-[#0c0c0c]"
+            svgHref="/logo.svg"
+            pngHref="/octopus-logo.png"
           >
             <Image src="/logo.svg" alt="Octopus logomark" width={64} height={68} />
           </LogoCard>
@@ -140,6 +142,8 @@ export default async function BrandPage() {
             label="Logomark on light"
             sublabel="For light backgrounds"
             bg="bg-white"
+            svgHref="/logo.svg"
+            pngHref="/octopus-logo.png"
           >
             <Image src="/logo.svg" alt="Octopus logomark on light" width={64} height={68} />
           </LogoCard>
@@ -147,6 +151,8 @@ export default async function BrandPage() {
             label="Wordmark"
             sublabel="Logo + text lockup"
             bg="bg-[#0c0c0c]"
+            svgHref="/logo-w-text.svg"
+            pngHref="/logo-w-text.png"
           >
             <div className="flex items-center gap-3">
               <Image src="/logo.svg" alt="Octopus" width={40} height={42} />
@@ -288,16 +294,44 @@ function LogoCard({
   label,
   sublabel,
   bg,
+  svgHref,
+  pngHref,
   children,
 }: {
   label: string;
   sublabel: string;
   bg: string;
+  svgHref?: string;
+  pngHref?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-white/[0.06]">
-      <div className={`flex h-48 items-center justify-center ${bg}`}>{children}</div>
+    <div className="group relative overflow-hidden rounded-xl border border-white/[0.06]">
+      <div className={`relative flex h-48 items-center justify-center ${bg}`}>
+        {(svgHref || pngHref) && (
+          <div className="absolute right-3 top-3 flex gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+            {svgHref && (
+              <a
+                href={svgHref}
+                download
+                className="rounded-lg border border-white/[0.1] bg-black/60 px-2.5 py-1.5 text-xs font-medium text-[#999] backdrop-blur-sm transition-colors hover:border-white/[0.2] hover:text-white"
+              >
+                SVG
+              </a>
+            )}
+            {pngHref && (
+              <a
+                href={pngHref}
+                download
+                className="rounded-lg border border-white/[0.1] bg-black/60 px-2.5 py-1.5 text-xs font-medium text-[#999] backdrop-blur-sm transition-colors hover:border-white/[0.2] hover:text-white"
+              >
+                PNG
+              </a>
+            )}
+          </div>
+        )}
+        {children}
+      </div>
       <div className="border-t border-white/[0.06] px-5 py-4">
         <p className="text-sm font-medium text-white">{label}</p>
         <p className="mt-0.5 text-xs text-[#666]">{sublabel}</p>

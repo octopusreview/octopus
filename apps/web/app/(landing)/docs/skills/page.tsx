@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import {
   IconWand,
   IconGitPullRequest,
@@ -16,7 +18,20 @@ export const metadata = {
     "AI-powered automation skills that streamline your development workflow, from code review to shipping PRs, fully automated.",
 };
 
+function readSkillFile(filename: string): string {
+  const filePath = path.join(process.cwd(), "public", "skills", filename);
+  try {
+    return fs.readFileSync(filePath, "utf-8").trim();
+  } catch {
+    console.error(`[skills] Could not read skill file: ${filePath}`);
+    return "";
+  }
+}
+
 export default function SkillsPage() {
+  const octopusFixMd = readSkillFile("octopus-fix.md");
+  const splitAndShipMd = readSkillFile("split-and-ship.md");
+
   return (
     <article className="max-w-3xl">
       <div className="mb-8">
@@ -69,7 +84,7 @@ export default function SkillsPage() {
           title="Split and Ship"
           subtitle="Analyze, categorize, and ship all your changes as separate PRs"
           filename="split-and-ship.md"
-          content={SPLIT_AND_SHIP_MD}
+          content={splitAndShipMd}
         >
           <Paragraph>
             You&apos;ve been working on multiple things at once. Your working
@@ -137,7 +152,7 @@ export default function SkillsPage() {
             title="split-and-ship.md"
             filename="split-and-ship.md"
           >
-            {SPLIT_AND_SHIP_MD}
+            {splitAndShipMd}
           </SkillCodeBlock>
         </SkillCard>
 
@@ -147,7 +162,7 @@ export default function SkillsPage() {
           title="Octopus Fix"
           subtitle="Check open PRs for review comments, apply fixes, and push updates"
           filename="octopus-fix.md"
-          content={OCTOPUS_FIX_MD}
+          content={octopusFixMd}
         >
           <Paragraph>
             After Octopus reviews your PRs, this skill checks all open PRs for
@@ -166,7 +181,7 @@ export default function SkillsPage() {
             <StepCard
               step={2}
               title="Check Reviews"
-              description="Fetches review comments, inline suggestions, and conversation threads for each PR."
+              description="Fetches review comments, inline suggestions, and conversation threads for each PR. Automatically skips PRs where the latest bot review shows 0 findings."
             />
             <StepCard
               step={3}
@@ -187,6 +202,7 @@ export default function SkillsPage() {
 
           <SubHeading>Review handling</SubHeading>
           <ul className="mb-6 space-y-2">
+            <RuleItem text="PRs where the latest bot review shows 0 findings are automatically skipped — nothing to fix." />
             <RuleItem text="Valid suggestions get a thumbs up reaction and are fixed with a reply describing the change." />
             <RuleItem text="False positives get a thumbs down reaction with an explanation." />
             <RuleItem text="Review threads are resolved after fixes are applied." />
@@ -212,7 +228,7 @@ export default function SkillsPage() {
             title="octopus-fix.md"
             filename="octopus-fix.md"
           >
-            {OCTOPUS_FIX_MD}
+            {octopusFixMd}
           </SkillCodeBlock>
         </SkillCard>
       </Section>
@@ -228,195 +244,6 @@ export default function SkillsPage() {
     </article>
   );
 }
-
-/* ------------------------------------------------------------------ */
-/* Skill markdown content                                              */
-/* ------------------------------------------------------------------ */
-
-const SPLIT_AND_SHIP_MD = `# Split and Ship
-
-Analyze all current changes in the working tree, categorize them, create GitHub issues, and ship each category as a separate PR.
-
-## Instructions
-
-Follow these steps carefully and in order:
-
-### Step 1: Analyze Changes
-
-1. Run \`git status\` and \`git diff\` (both staged and unstaged) to see all modifications.
-2. Run \`git diff --name-only HEAD\` and \`git ls-files --others --exclude-standard\` to get the full list of changed and untracked files.
-3. Read the relevant changed files to understand what each change does.
-
-### Step 2: Categorize Changes
-
-Group the changed files into logical categories based on what they do. Examples of categories:
-- A new feature (e.g., "Add multi-prompt field component")
-- A bug fix (e.g., "Fix credit calculation in generate API")
-- A refactor (e.g., "Refactor provider factory for failover support")
-- Translation updates (e.g., "Update i18n translations for new features")
-
-Each category should be a coherent, independently shippable unit of work. Present the categories to the user and get confirmation before proceeding.
-
-### Step 3: Create GitHub Issues
-
-For each category, create a GitHub issue using \`gh issue create\`:
-- Title: Clear, descriptive title for the category
-- Body: Description listing the files and summarizing the changes
-- Labels: Use appropriate labels (e.g., \`enhancement\`, \`bug\`, \`refactor\`)
-
-Record each created issue number. You will need it for branch names and PR references.
-
-### Step 4: For Each Issue, Create Branch, Commit, Push, and Open PR
-
-Remember the current branch name before starting. For each issue/category:
-
-1. **Start from the base branch**: \`git checkout master && git pull origin master\`
-2. **Create a new branch** using conventional naming: \`git checkout -b <type>/<short-description>\` where type is \`feat\`, \`fix\`, \`refactor\`, \`chore\`, \`docs\`, etc.
-3. **Stage only the files belonging to this category**: \`git add <file1> <file2> ...\`
-4. **Commit** with a descriptive message referencing the issue.
-5. **Push** the branch: \`git push -u origin <branch-name>\`
-6. **Create a PR** using \`gh pr create\` with a summary and \`Closes #<issue-number>\`.
-
-### Step 5: Return to Original Branch
-
-After all PRs are created, checkout back to the branch the user was originally on.
-
-### Step 6: Report Summary
-
-Print a summary table showing:
-- Category name
-- Issue number (e.g., #42)
-- Branch name
-- PR URL
-- Number of files in that category
-
-## Important Rules
-
-- Branch names must follow conventional naming: \`<type>/<short-kebab-case-description>\`
-- Each category must be independently committable. No file should appear in multiple categories.
-- If a file logically belongs to multiple categories, ask the user which category it should go in.
-- Always confirm the categorization with the user before creating issues and branches.
-- If there are no changes to categorize, inform the user and stop.
-`.trim();
-
-const OCTOPUS_FIX_MD = `---
-allowed-tools: Bash(git:*), Bash(gh:*), Read, Edit, Write, Glob, Grep
-description: Check open PRs for review comments, apply fixes, and push updates
----
-
-# Octopus Fix
-
-Review all open PRs for pending reviews and requested changes from Octopus Review bot. Apply the necessary fixes, commit them, and push the updates.
-
-Rules:
-- Ignore false-positive feedback.
-- For each false positive, react to the comment with 👎 and explain.
-- For each valid and useful suggestion, react to the comment with 👍.
-- After fixing a valid issue, reply in the relevant review thread with a brief note describing the fix.
-- Resolve the thread/conversation after replying, if resolving is supported.
-- If thread resolution is not supported, leave a reply clearly stating that the issue has been addressed.
-
-Once all fixes are applied and pushed, post a final PR comment tagging @octopus to notify it that the updates are ready for review.
-
-## Instructions
-
-Follow these steps carefully and in order:
-
-### Step 1: Discover Open PRs
-
-1. Save the current branch name: \`git branch --show-current\`
-2. List open PRs authored by the current user:
-   \`\`\`
-   gh pr list --author "@me" --state open --json number,title,headRefName,reviewDecision,url
-   \`\`\`
-3. If no open PRs exist, inform the user and stop.
-4. Display the list of open PRs with their review status to the user.
-
-### Step 2: Check Reviews for Each PR
-
-For each open PR (or a specific PR if the user provided a number as argument \`$ARGUMENTS\`):
-
-1. Fetch review comments and review threads:
-   \`\`\`
-   gh pr view <number> --json reviews,reviewRequests,comments,title,headRefName,url
-   gh api repos/{owner}/{repo}/pulls/<number>/comments --jq '.[] | {id, path, line, body, user: .user.login, created_at}'
-   gh api repos/{owner}/{repo}/pulls/<number>/reviews --jq '.[] | {id, state, body, user: .user.login}'
-   \`\`\`
-2. Also check for inline review comments (conversation threads):
-   \`\`\`
-   gh pr view <number> --comments --json comments
-   \`\`\`
-3. Filter for actionable feedback:
-   - Reviews with state \`CHANGES_REQUESTED\`
-   - Unresolved review comments (inline code suggestions, requested changes)
-   - General PR comments that contain action items
-4. Skip PRs that have no actionable feedback (state is \`APPROVED\` or no reviews).
-
-### Step 3: Present Review Summary
-
-Before making any changes, present a summary to the user:
-
-For each PR with actionable feedback, show:
-- PR title and number
-- Branch name
-- Reviewer(s) who requested changes
-- List of each review comment with:
-  - File path and line number (if inline)
-  - The comment text
-  - Your proposed fix or action
-
-**Ask the user to confirm** which reviews to address before proceeding.
-
-### Step 4: Apply Fixes
-
-For each confirmed PR:
-
-1. **Checkout the PR branch**:
-   \`\`\`
-   git checkout <branch-name> && git pull origin <branch-name>
-   \`\`\`
-2. **Read the relevant files** mentioned in the review comments.
-3. **Apply the requested changes**:
-   - For code suggestions: apply the suggested code change exactly
-   - For style/refactor requests: make the minimal change that addresses the feedback
-   - For bug reports: fix the bug as described
-   - For questions/clarifications: if a code change is needed, make it; otherwise note it for the summary
-4. **Stage and commit** the fixes:
-   \`\`\`
-   git add <changed-files>
-   git commit -m "fix: address review feedback on #<PR-number>
-
-   <bullet list of changes made in response to reviews>
-   "
-   \`\`\`
-5. **Push** the changes:
-   \`\`\`
-   git push origin <branch-name>
-   \`\`\`
-
-### Step 5: Return to Original Branch
-
-After all fixes are pushed, checkout back to the branch the user was originally on.
-
-### Step 6: Report Summary
-
-Print a summary table showing:
-- PR number and title
-- Branch name
-- Number of review comments addressed
-- What was changed (brief description)
-- PR URL
-
-## Important Rules
-
-- **Never force-push**. Always use regular \`git push\`.
-- **Always show the proposed fixes to the user** and get confirmation before committing.
-- **Make minimal changes**. Only fix what the reviewer asked for, do not refactor surrounding code.
-- **If a review comment is unclear or ambiguous**, present it to the user and ask how to proceed rather than guessing.
-- **If the review is just a question** (no code change needed), note it in the summary but don't make unnecessary changes.
-- **If there are merge conflicts** when pulling the branch, inform the user and stop. Do not attempt to resolve conflicts automatically.
-- **Preserve the existing commit history**. Do not squash, rebase, or amend existing commits.
-`.trim();
 
 /* ------------------------------------------------------------------ */
 /* Sub-components                                                      */
@@ -448,14 +275,6 @@ function SubHeading({ children }: { children: React.ReactNode }) {
     <h3 className="mb-3 mt-6 text-sm font-semibold uppercase tracking-[0.15em] text-[#555]">
       {children}
     </h3>
-  );
-}
-
-function Code({ children }: { children: React.ReactNode }) {
-  return (
-    <code className="rounded bg-white/[0.06] px-1.5 py-0.5 text-xs text-white">
-      {children}
-    </code>
   );
 }
 
@@ -500,6 +319,14 @@ function StepCard({
         </div>
       </div>
     </div>
+  );
+}
+
+function Code({ children }: { children: React.ReactNode }) {
+  return (
+    <code className="rounded bg-white/[0.06] px-1.5 py-0.5 text-xs text-white">
+      {children}
+    </code>
   );
 }
 

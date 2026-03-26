@@ -14,6 +14,7 @@ import {
   IconFileText,
   IconTerminal2,
   IconBell,
+  IconScale,
 } from "@tabler/icons-react";
 
 const sections = [
@@ -23,7 +24,6 @@ const sections = [
       { href: "/settings", label: "General", icon: IconSettings },
       { href: "/settings/team", label: "Team", icon: IconUsers },
       { href: "/settings/billing", label: "Billing", icon: IconCreditCard },
-      { href: "/settings/documents", label: "Documents", icon: IconFileText },
       { href: "/settings/notifications", label: "Notifications", icon: IconBell },
     ],
   },
@@ -40,6 +40,12 @@ const sections = [
     items: [
       { href: "/settings/integrations", label: "Integrations", icon: IconPlug },
       { href: "/settings/api-tokens", label: "Auth Tokens", icon: IconTerminal2 },
+    ],
+  },
+  {
+    label: "Legal",
+    items: [
+      { href: "/settings/documents", label: "Documents", icon: IconFileText },
     ],
   },
 ];

@@ -14,7 +14,6 @@ import {
   IconFileText,
   IconTerminal2,
   IconBell,
-  IconScale,
 } from "@tabler/icons-react";
 
 const sections = [

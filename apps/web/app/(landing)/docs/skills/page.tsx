@@ -20,7 +20,12 @@ export const metadata = {
 
 function readSkillFile(filename: string): string {
   const filePath = path.join(process.cwd(), "public", "skills", filename);
-  return fs.readFileSync(filePath, "utf-8").trim();
+  try {
+    return fs.readFileSync(filePath, "utf-8").trim();
+  } catch {
+    console.error(`[skills] Could not read skill file: ${filePath}`);
+    return "";
+  }
 }
 
 export default function SkillsPage() {

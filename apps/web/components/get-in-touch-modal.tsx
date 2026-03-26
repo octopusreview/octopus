@@ -13,8 +13,7 @@ import {
 } from "@tabler/icons-react";
 import { ObfuscatedEmail } from "@/components/obfuscated-email";
 import Link from "next/link";
-
-const DISCORD_INVITE_URL = "https://discord.gg/qyuWTXghbS";
+import { DISCORD_INVITE_URL } from "@/lib/constants";
 
 function useIsMobile(breakpoint = 768) {
   const [isMobile, setIsMobile] = useState(false);
@@ -135,14 +134,19 @@ function ModalPortal({
   useEffect(() => {
     if (open) {
       setMounted(true);
+      document.body.style.overflow = "hidden";
       requestAnimationFrame(() => {
         requestAnimationFrame(() => setVisible(true));
       });
     } else {
       setVisible(false);
+      document.body.style.overflow = "";
       const timer = setTimeout(() => setMounted(false), 200);
       return () => clearTimeout(timer);
     }
+    return () => {
+      document.body.style.overflow = "";
+    };
   }, [open]);
 
   useEffect(() => {

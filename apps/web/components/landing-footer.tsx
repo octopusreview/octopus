@@ -9,8 +9,7 @@ import {
 } from "@tabler/icons-react";
 import { TrackedLink, TrackedAnchor } from "@/components/tracked-link";
 import { GetInTouchModal } from "@/components/get-in-touch-modal";
-
-const DISCORD_INVITE_URL = "https://discord.gg/qyuWTXghbS";
+import { DISCORD_INVITE_URL } from "@/lib/constants";
 const LINKEDIN_URL = "https://www.linkedin.com/company/octopus-review";
 const REDDIT_URL = "https://www.reddit.com/r/octopusreview/";
 

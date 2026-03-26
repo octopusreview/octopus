@@ -533,32 +533,98 @@ async function emitReviewStatus(orgId: string, event: ReviewEvent) {
 
 // --- Pre-review feedback sync helpers ---
 
-const DISMISSAL_PATTERNS = [
-  /\bfalse\s*positive\b/i,
-  /\bnot\s*(a\s*)?bug\b/i,
-  /\bintentional(ly)?\b/i,
-  /\bnot\s*applicable\b/i,
-  /\bn\/?a\b/i,
-  /\bby\s*design\b/i,
-  /\bwon'?t\s*fix\b/i,
-  /\bignore\s*this\b/i,
-  /\bnot\s*(an?\s*)?issue\b/i,
-  /\bworking\s*as\s*(intended|expected|designed)\b/i,
-  /👎/,
-  /:-1:/,
-];
+// --- LLM-based reply intent classification ---
 
-const ACCEPTANCE_PATTERNS = [
-  /👍/,
-  /:\+1:/,
-];
+const FEEDBACK_CLASSIFICATION_MODEL = "claude-sonnet-4-6";
 
-function isDismissalReply(body: string): boolean {
-  return DISMISSAL_PATTERNS.some((p) => p.test(body));
+type ReplyIntent = "dismissed" | "accepted" | "unclear";
+
+/**
+ * Quick emoji-only check. Returns a definitive intent if the reply is just
+ * an emoji reaction, or null if LLM classification is needed.
+ */
+function checkEmojiIntent(body: string): ReplyIntent | null {
+  const stripped = body.trim();
+  if (/^(👎|:-1:)$/.test(stripped)) return "dismissed";
+  if (/^(👍|:\+1:)$/.test(stripped)) return "accepted";
+  // Emoji present alongside text — still check but don't short-circuit
+  if (/👎|:-1:/.test(stripped) && stripped.length < 10) return "dismissed";
+  if (/👍|:\+1:/.test(stripped) && stripped.length < 10) return "accepted";
+  return null;
 }
 
-function isAcceptanceReply(body: string): boolean {
-  return ACCEPTANCE_PATTERNS.some((p) => p.test(body));
+/**
+ * Classify one or more author replies to a code review finding using a lightweight LLM call.
+ * Each entry pairs the finding context with the author's reply text.
+ * Returns one intent per entry, in the same order.
+ *
+ * On LLM failure, falls back to "unclear" for all entries.
+ */
+async function classifyReplyIntents(
+  entries: { findingTitle: string; replyText: string }[],
+  orgId: string,
+): Promise<ReplyIntent[]> {
+  if (entries.length === 0) return [];
+
+  // Fast path: if all entries resolve via emoji, skip the LLM call entirely
+  const emojiResults = entries.map((e) => checkEmojiIntent(e.replyText));
+  if (emojiResults.every((r) => r !== null)) return emojiResults as ReplyIntent[];
+
+  // Build a batch prompt — one entry per line, ask for JSON array response
+  const lines = entries.map((e, i) =>
+    `[${i}] Finding: "${e.findingTitle}" | Reply: "${e.replyText.slice(0, 500)}"`,
+  );
+
+  const systemPrompt = `You classify author replies to automated code review comments.
+For each numbered entry, determine the author's intent:
+- "dismissed": The author disagrees with the finding, says it's a false positive, explains why it's fine as-is, or otherwise rejects the suggestion.
+- "accepted": The author agrees with the finding and indicates they will fix it, or thanks the reviewer for catching it.
+- "unclear": The reply doesn't clearly indicate agreement or disagreement, or is ambiguous.
+
+Reply ONLY with a JSON array of strings, one per entry, in order. Example: ["dismissed","accepted","unclear"]`;
+
+  const userMessage = lines.join("\n");
+
+  try {
+    const response = await createAiMessage(
+      {
+        model: FEEDBACK_CLASSIFICATION_MODEL,
+        maxTokens: 256,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userMessage }],
+      },
+      orgId,
+    );
+
+    await logAiUsage({
+      provider: response.provider,
+      model: FEEDBACK_CLASSIFICATION_MODEL,
+      operation: "feedback-classification",
+      inputTokens: response.usage.inputTokens,
+      outputTokens: response.usage.outputTokens,
+      cacheReadTokens: response.usage.cacheReadTokens,
+      cacheWriteTokens: response.usage.cacheWriteTokens,
+      organizationId: orgId,
+    });
+
+    // Parse the JSON array from the response
+    const match = response.text.match(/\[[\s\S]*\]/);
+    if (!match) {
+      console.warn("[reviewer] LLM reply classification returned no JSON array, falling back to unclear");
+      return entries.map(() => "unclear");
+    }
+
+    const parsed = JSON.parse(match[0]) as string[];
+    const validIntents = new Set<string>(["dismissed", "accepted", "unclear"]);
+
+    return entries.map((_, i) => {
+      const val = parsed[i];
+      return validIntents.has(val) ? (val as ReplyIntent) : "unclear";
+    });
+  } catch (err) {
+    console.error("[reviewer] LLM reply classification failed, falling back to unclear:", err);
+    return entries.map(() => "unclear");
+  }
 }
 
 /**
@@ -572,6 +638,92 @@ function normalizeFindingTitle(title: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
+}
+
+/**
+ * Extract significant keywords from a finding title/description for dedup matching.
+ * Removes common stop words and returns a set of meaningful tokens.
+ */
+function extractKeywords(text: string): Set<string> {
+  const STOP_WORDS = new Set([
+    "a", "an", "the", "in", "on", "at", "to", "for", "of", "with", "by", "from",
+    "is", "are", "was", "were", "be", "been", "being", "has", "have", "had",
+    "do", "does", "did", "will", "would", "could", "should", "may", "might",
+    "not", "no", "and", "or", "but", "if", "then", "than", "so", "that", "this",
+    "it", "its", "can", "into", "over", "such", "too", "very", "just",
+  ]);
+  return new Set(
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !STOP_WORDS.has(w)),
+  );
+}
+
+/**
+ * Compute Jaccard similarity between two sets of keywords (0 to 1).
+ */
+function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 && b.size === 0) return 1;
+  let intersection = 0;
+  for (const word of a) {
+    if (b.has(word)) intersection++;
+  }
+  const union = a.size + b.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+type PriorFinding = {
+  filePath: string;
+  line: number;
+  title: string;
+  keywords: Set<string>;
+};
+
+/**
+ * Hard dedup filter: removes findings from LLM output that duplicate prior bot comments.
+ * Uses file proximity (same file + nearby line) combined with keyword similarity.
+ * This catches cases where the LLM rephrases the same finding with different wording.
+ */
+function deduplicateAgainstPrior(
+  findings: InlineFinding[],
+  priorFindings: PriorFinding[],
+): { kept: InlineFinding[]; removed: InlineFinding[] } {
+  if (priorFindings.length === 0) return { kept: findings, removed: [] };
+
+  const LINE_PROXIMITY = 10; // findings within 10 lines of a prior finding on the same file
+  const KEYWORD_THRESHOLD = 0.30; // 30% keyword overlap is enough to consider a duplicate
+
+  const kept: InlineFinding[] = [];
+  const removed: InlineFinding[] = [];
+
+  for (const finding of findings) {
+    const findingKeywords = extractKeywords(`${finding.title} ${finding.description}`);
+
+    const isDuplicate = priorFindings.some((prior) => {
+      // Must be the same file
+      if (prior.filePath !== finding.filePath) return false;
+
+      // Check line proximity
+      const lineClose =
+        Math.abs(prior.line - finding.startLine) <= LINE_PROXIMITY ||
+        Math.abs(prior.line - finding.endLine) <= LINE_PROXIMITY;
+      if (!lineClose) return false;
+
+      // Check keyword similarity
+      const similarity = jaccardSimilarity(findingKeywords, prior.keywords);
+      return similarity >= KEYWORD_THRESHOLD;
+    });
+
+    if (isDuplicate) {
+      removed.push(finding);
+    } else {
+      kept.push(finding);
+    }
+  }
+
+  return { kept, removed };
 }
 
 /**
@@ -595,9 +747,10 @@ function parsePerFindingFeedback(body: string): { title: string; feedback: "up" 
     // Check the part after the title for feedback signals
     const afterTitle = line.slice(line.indexOf(titleMatch[0]) + titleMatch[0].length);
 
-    if (DISMISSAL_PATTERNS.some((p) => p.test(afterTitle))) {
+    // Check for emoji-based feedback signals in structured per-finding comments
+    if (/👎|:-1:/.test(afterTitle)) {
       results.push({ title, feedback: "down" });
-    } else if (ACCEPTANCE_PATTERNS.some((p) => p.test(afterTitle))) {
+    } else if (/👍|:\+1:/.test(afterTitle)) {
       results.push({ title, feedback: "up" });
     }
   }
@@ -691,11 +844,13 @@ async function syncReactionsForPR(
 
 /**
  * Scan reply comments on previous review inline comments for dismissal/acceptance signals.
- * If a reply says "false positive", "👎", etc., mark as "down". If "👍", mark as "up".
+ * Uses an LLM call (Haiku) to classify author intent — handles nuanced replies that
+ * simple pattern matching would miss. Emoji-only replies (👍/👎) are fast-pathed
+ * without an LLM call.
  *
  * Also scans general PR issue comments for per-finding feedback (lines like
  * "**Title** — 👎 reason" or "**Title** — 👍 addressed"). Falls back to bulk
- * dismiss if no per-finding format is detected but dismissal keywords exist.
+ * dismiss if no per-finding format is detected but LLM classifies as dismissal.
  */
 async function syncTextDismissalsForPR(
   installationId: number,
@@ -736,38 +891,62 @@ async function syncTextDismissalsForPR(
   if (issuesWithCommentId.length > 0) {
     const allReviewComments = await ghListPullRequestReviewComments(installationId, owner, repoName, prNumber);
 
-    // Build map: parent comment ID → reply bodies
-    const repliesByParent = new Map<number, string[]>();
+    // Build map: parent comment ID → reply bodies (only from PR author, not from the bot)
+    const repliesByParent = new Map<number, { body: string; isAuthor: boolean }[]>();
     for (const comment of allReviewComments) {
       if (comment.inReplyToId) {
         const replies = repliesByParent.get(comment.inReplyToId) ?? [];
-        replies.push(comment.body);
+        replies.push({ body: comment.body, isAuthor: comment.user === prAuthor });
         repliesByParent.set(comment.inReplyToId, replies);
       }
     }
+
+    // Collect issues that have replies, so we can batch-classify them via LLM
+    const issuesToClassify: {
+      issue: typeof issuesWithCommentId[number];
+      replyText: string;
+    }[] = [];
 
     for (const issue of issuesWithCommentId) {
       const commentId = Number(issue.githubCommentId);
       if (isNaN(commentId)) continue;
 
       const replies = repliesByParent.get(commentId);
-      if (!replies) continue;
+      if (!replies || replies.length === 0) continue;
 
-      const hasDismissal = replies.some(isDismissalReply);
-      const hasAcceptance = !hasDismissal && replies.some(isAcceptanceReply);
-      if (!hasDismissal && !hasAcceptance) continue;
+      // Combine all reply bodies for classification context
+      const combinedReply = replies.map((r) => r.body).join("\n---\n");
+      issuesToClassify.push({ issue, replyText: combinedReply });
+    }
 
-      const vote = hasDismissal ? "down" : "up";
-      try {
-        await prisma.reviewIssue.update({
-          where: { id: issue.id },
-          data: { feedback: vote, feedbackAt: new Date(), feedbackBy: "github-reply-dismissal" },
-        });
-        await embedFeedbackPattern(issue, vote);
-        dismissedIds.add(issue.id);
-        synced++;
-      } catch (err) {
-        console.error(`[reviewer] Failed to record text feedback for issue ${issue.id}:`, err);
+    if (issuesToClassify.length > 0) {
+      const orgId = issuesToClassify[0].issue.pullRequest.repository.organizationId;
+      const intents = await classifyReplyIntents(
+        issuesToClassify.map((e) => ({
+          findingTitle: e.issue.title,
+          replyText: e.replyText,
+        })),
+        orgId,
+      );
+
+      for (let i = 0; i < issuesToClassify.length; i++) {
+        const intent = intents[i];
+        if (intent === "unclear") continue;
+
+        const { issue } = issuesToClassify[i];
+        const vote = intent === "dismissed" ? "down" : "up";
+        const feedbackSource = intent === "dismissed" ? "github-reply-dismissal" : "github-reply-acceptance";
+        try {
+          await prisma.reviewIssue.update({
+            where: { id: issue.id },
+            data: { feedback: vote, feedbackAt: new Date(), feedbackBy: feedbackSource },
+          });
+          await embedFeedbackPattern(issue, vote);
+          dismissedIds.add(issue.id);
+          synced++;
+        } catch (err) {
+          console.error(`[reviewer] Failed to record text feedback for issue ${issue.id}:`, err);
+        }
       }
     }
   }
@@ -835,7 +1014,20 @@ async function syncTextDismissalsForPR(
     // Fallback: bulk dismiss for comments that didn't have per-finding format
     {
       const stillRemaining = remainingIssues.filter((i) => !dismissedIds.has(i.id));
-      const hasDismissalComment = bulkDismissComments.some((c) => isDismissalReply(c.body));
+
+      // Classify bulk comments via LLM to detect dismissal intent
+      let hasDismissalComment = false;
+      if (bulkDismissComments.length > 0 && stillRemaining.length > 0) {
+        const orgId = stillRemaining[0].pullRequest.repository.organizationId;
+        const intents = await classifyReplyIntents(
+          bulkDismissComments.map((c) => ({
+            findingTitle: "(all findings)",
+            replyText: c.body,
+          })),
+          orgId,
+        );
+        hasDismissalComment = intents.some((i) => i === "dismissed");
+      }
 
       if (hasDismissalComment && stillRemaining.length > 0) {
         const remainingIds = stillRemaining.map((i) => i.id);
@@ -1431,28 +1623,98 @@ export async function processReview(pullRequestId: string): Promise<void> {
     // Detect re-review: if the bot already has inline comments or a previous reviewBody,
     // this is a follow-up review. Inject prior findings and change the review strategy.
     let priorReviewContext = "";
+    let dismissedDbFindings: { title: string; description: string | null; severity: string; filePath: string | null; lineNumber: number | null }[] = [];
     const botComments = allPriorReviewComments.filter((c) => !c.inReplyToId && c.user === botLogin && c.line != null);
     const isReReview = botComments.length > 0 || !!pr.reviewBody;
 
     if (isReReview) {
       const parts: string[] = [
-        "RE-REVIEW MODE: This PR has already been reviewed. Your priority is to verify whether previously raised findings have been addressed. Follow these rules strictly:",
-        "1. Do NOT raise new findings unless they are critical severity (🔴) or were clearly introduced by changes made since the last review.",
-        "2. Do NOT rephrase, reframe, or re-raise previously dismissed findings from a different angle.",
-        "3. Focus on confirming fixes: check if the code changes actually resolve the issues you previously raised.",
-        "4. If all previous findings are addressed and no critical new issues exist, keep the findings list empty.",
+        "⚠️ RE-REVIEW MODE — STRICT DEDUPLICATION REQUIRED ⚠️",
+        "",
+        "This PR has already been reviewed. Your ONLY job is to verify whether previously raised findings have been addressed. Follow these rules with ZERO exceptions:",
+        "",
+        "RULE 1 — NO NEW FINDINGS: Do NOT raise any new findings UNLESS they are 🔴 CRITICAL severity AND were clearly introduced by code changes made AFTER the last review. If the code existed in the prior review, you already had your chance to flag it.",
+        "",
+        "RULE 2 — NO REPEATS: Do NOT rephrase, reframe, re-angle, or re-raise ANY previously raised finding. This applies even if you use completely different wording. Examples of PROHIBITED repeats:",
+        '  - Prior: "Inefficient blob buffering" → New: "Memory inefficient blob buffering" (SAME finding, different adjective)',
+        '  - Prior: "Console.error in production" → New: "Console.log in production" (SAME concept)',
+        '  - Prior: "Missing auth check" → New: "No authentication verification" (SAME issue rephrased)',
+        "  A finding is a repeat if it targets the same file, nearby lines (±10), and the same conceptual issue.",
+        "",
+        "RULE 3 — AUTHOR RESPONSES MEAN DISMISSED: When the author has replied to a finding with an explanation, that finding is DISMISSED. Do not re-raise it, even if you disagree with the author's reasoning. The author knows their codebase better than you.",
+        "",
+        "RULE 4 — EMPTY IS GOOD: If all previous findings are addressed and no critical new issues exist, the findings list MUST be empty. An empty findings list on re-review is the EXPECTED outcome.",
+        "",
+        "RULE 5 — SELF-CHECK: Before including ANY finding in your output, ask yourself: 'Does this finding overlap with ANY item in PRIOR INLINE COMMENTS or DISMISSED FINDINGS below?' If yes, EXCLUDE it.",
       ];
+
+      // Build a map of bot comment ID → author reply bodies for inline dismissals
+      const repliesByBotComment = new Map<number, string[]>();
+      for (const c of allPriorReviewComments) {
+        if (c.inReplyToId && c.user !== botLogin) {
+          const replies = repliesByBotComment.get(c.inReplyToId) ?? [];
+          replies.push(c.body);
+          repliesByBotComment.set(c.inReplyToId, replies);
+        }
+      }
 
       if (botComments.length > 0) {
         const summaries = botComments.map((c) => {
-          const firstLine = c.body.split("\n")[0].replace(/\*\*/g, "").trim();
-          return `- ${c.path}:${c.line} — ${firstLine}`;
+          // Include first two lines for better context (title + description start)
+          const bodyLines = c.body.split("\n").filter((l) => l.trim());
+          const summary = bodyLines.slice(0, 2).map((l) => l.replace(/\*\*/g, "").trim()).join(" — ");
+          let entry = `- ${c.path}:${c.line} — ${summary}`;
+
+          // Include author replies (especially dismissals) so the LLM understands why it was rejected
+          const replies = repliesByBotComment.get(c.id);
+          if (replies && replies.length > 0) {
+            const replyTexts = replies.map((r) => r.trim().slice(0, 200)).join("; ");
+            entry += `\n  Author response: ${replyTexts}`;
+          }
+
+          return entry;
         });
         parts.push(
           "",
-          "PRIOR INLINE COMMENTS (already posted — do NOT repeat):",
+          "═══ PRIOR INLINE COMMENTS (BLOCKED — every item below is BANNED from your output, even with different wording) ═══",
           ...summaries,
         );
+      }
+
+      // Fetch this PR's dismissed findings from the database for explicit dedup
+      try {
+        const dismissedFindings = await prisma.reviewIssue.findMany({
+          where: {
+            pullRequestId: pr.id,
+            feedback: "down",
+          },
+          select: {
+            title: true,
+            description: true,
+            severity: true,
+            filePath: true,
+            lineNumber: true,
+            feedbackBy: true,
+          },
+          orderBy: { feedbackAt: "desc" },
+          take: 30,
+        });
+
+        // Store for hard dedup filter later
+        dismissedDbFindings = dismissedFindings;
+
+        if (dismissedFindings.length > 0) {
+          parts.push(
+            "",
+            "═══ DISMISSED FINDINGS (BANNED — the author explicitly rejected these, do NOT repeat or rephrase) ═══",
+            ...dismissedFindings.map((f) => {
+              const desc = f.description ? ` — ${f.description.slice(0, 150)}` : "";
+              return `- [${f.severity}] ${f.filePath ?? "unknown"}: "${f.title}"${desc}`;
+            }),
+          );
+        }
+      } catch (err) {
+        console.warn("[reviewer] Failed to fetch dismissed findings for re-review context:", err);
       }
 
       priorReviewContext = parts.join("\n");
@@ -1760,6 +2022,46 @@ Rules:
       }
     }
 
+    // Hard dedup: remove findings that match prior bot comments or dismissed DB findings
+    // by file proximity + keyword overlap. This catches the LLM rephrasing the same issues.
+    if (isReReview && (botComments.length > 0 || dismissedDbFindings.length > 0)) {
+      const priorFromComments: PriorFinding[] = botComments.map((c) => ({
+        filePath: c.path,
+        line: c.line ?? 0,
+        title: c.body.split("\n").filter((l) => l.trim())[0] ?? "",
+        keywords: extractKeywords(c.body),
+      }));
+      const priorFromDb: PriorFinding[] = dismissedDbFindings
+        .filter((f) => f.filePath)
+        .map((f) => ({
+          filePath: f.filePath!,
+          line: f.lineNumber ?? 0,
+          title: f.title,
+          keywords: extractKeywords(`${f.title} ${f.description ?? ""}`),
+        }));
+      // Merge and deduplicate prior findings by file+line
+      const seenPriorKeys = new Set<string>();
+      const priorForDedup: PriorFinding[] = [];
+      for (const p of [...priorFromComments, ...priorFromDb]) {
+        const key = `${p.filePath}:${p.line}`;
+        if (!seenPriorKeys.has(key)) {
+          seenPriorKeys.add(key);
+          priorForDedup.push(p);
+        }
+      }
+
+      const dedupResultAll = deduplicateAgainstPrior(allParsedFindings, priorForDedup);
+      const dedupResultInline = deduplicateAgainstPrior(findings, priorForDedup);
+
+      if (dedupResultAll.removed.length > 0) {
+        allParsedFindings = dedupResultAll.kept;
+        findings = dedupResultInline.kept;
+        console.log(
+          `[reviewer] Hard dedup removed ${dedupResultAll.removed.length} findings that duplicated prior bot comments: ${dedupResultAll.removed.map((f) => `"${f.title}" (${f.filePath}:${f.startLine})`).join(", ")}`,
+        );
+      }
+    }
+
     // Re-review filter: only keep critical findings on follow-up reviews.
     // This is a hard filter — prompt instructions alone are not reliable enough.
     if (isReReview) {
@@ -1814,13 +2116,19 @@ Rules:
     const inlineComments = buildInlineComments(inlineFindings, diffLines, repo.provider);
     console.log(`[reviewer] Built ${inlineComments.length} inline comments from ${inlineFindings.length} inline findings`);
 
-    // Use findings.length as the authoritative count (accounts for follow-up recovery)
-    // Fall back to findings summary table count if both parsed findings and regex count are 0
-    // When re-review filter is active, allParsedFindings is authoritative (may be 0)
-    const tableFindingsCount = countFindingsFromTable(reviewBody);
-    const effectiveFindingsCount = isReReview
-      ? allParsedFindings.length
-      : (allParsedFindings.length || findingsCount || tableFindingsCount);
+    // Identify inline findings that were dropped because they couldn't map to valid diff lines.
+    // These "unmappable" findings should be shown in the summary table instead of vanishing.
+    const inlineCommentPaths = new Set(inlineComments.map((c) => `${c.path}:${c.line}`));
+    const unmappableFindings = inlineFindings.filter((f) => {
+      // A finding is unmappable if none of its lines ended up in an inline comment
+      for (let l = f.startLine; l <= f.endLine; l++) {
+        if (inlineCommentPaths.has(`${f.filePath}:${l}`)) return false;
+      }
+      return true;
+    });
+    if (unmappableFindings.length > 0) {
+      console.log(`[reviewer] ${unmappableFindings.length} inline findings couldn't map to valid diff lines, will include in summary table`);
+    }
 
     console.log(`[reviewer] Parsed ${allParsedFindings.length} total, ${findings.length} after filters, ${inlineComments.length} inline comments`);
 
@@ -1837,9 +2145,13 @@ Rules:
       );
     const reviewEvent = shouldRequestChanges ? "REQUEST_CHANGES" : "COMMENT";
 
+    // Track the actual number of findings visible to the user (inline + summary table)
+    // This gets set by the GitHub/Bitbucket posting logic below
+    let effectiveFindingsCount = 0;
+
     // Build the review summary body with non-inline findings embedded
-    const buildReviewSummary = (findingsBlock: string) => {
-      const header = `${filesChanged} file${filesChanged !== 1 ? "s" : ""} reviewed, ${effectiveFindingsCount} finding${effectiveFindingsCount !== 1 ? "s" : ""}`;
+    const buildReviewSummary = (findingsBlock: string, visibleCount: number) => {
+      const header = `${filesChanged} file${filesChanged !== 1 ? "s" : ""} reviewed, ${visibleCount} finding${visibleCount !== 1 ? "s" : ""}`;
       const parts = [header];
       if (findingsBlock) parts.push(findingsBlock);
       parts.push("[Octopus Review](https://github.com/apps/octopus-review)");
@@ -1872,8 +2184,16 @@ Rules:
           }
           return true;
         });
-        const findingsBlock = buildLowSeveritySummary(nonInlineFindings);
-        const summaryLine = buildReviewSummary(findingsBlock);
+        // Add unmappable findings (inline-severity but couldn't map to valid diff lines) to summary
+        const nonInlineWithUnmappable = [...nonInlineFindings, ...unmappableFindings.filter((uf) =>
+          // Avoid duplicates: only add if not already in nonInlineFindings
+          !nonInlineFindings.some((nf) => nf.filePath === uf.filePath && nf.startLine === uf.startLine && nf.title === uf.title),
+        )];
+        const findingsBlock = buildLowSeveritySummary(nonInlineWithUnmappable);
+        // Count = inline comments that will actually be posted + findings in summary table
+        const visibleFindingsCount = dedupedComments.length + nonInlineWithUnmappable.length;
+        effectiveFindingsCount = visibleFindingsCount;
+        const summaryLine = buildReviewSummary(findingsBlock, visibleFindingsCount);
 
         try {
           const reviewId = await ghCreatePullRequestReview(
@@ -1881,7 +2201,7 @@ Rules:
             summaryLine, reviewEvent as "COMMENT" | "REQUEST_CHANGES", dedupedComments,
           );
           inlineReviewSucceeded = true;
-          console.log(`[reviewer] PR review submitted with ${dedupedComments.length} inline comments, ${nonInlineFindings.length} in summary (${reviewEvent}), reviewId: ${reviewId}`);
+          console.log(`[reviewer] PR review submitted with ${dedupedComments.length} inline comments, ${nonInlineWithUnmappable.length} in summary (${reviewEvent}), reviewId: ${reviewId}`);
 
           // Match GitHub review comments to ReviewIssue records by file+line
           try {
@@ -1916,14 +2236,18 @@ Rules:
 
       if (!inlineReviewSucceeded) {
         // All findings go into the summary since none were posted inline
-        const findingsBlock = buildLowSeveritySummary(allParsedFindings);
-        const summaryBody = buildReviewSummary(findingsBlock);
+        const allSummaryFindings = [...allParsedFindings, ...unmappableFindings.filter((uf) =>
+          !allParsedFindings.some((af) => af.filePath === uf.filePath && af.startLine === uf.startLine && af.title === uf.title),
+        )];
+        const findingsBlock = buildLowSeveritySummary(allSummaryFindings);
+        effectiveFindingsCount = allSummaryFindings.length;
+        const summaryBody = buildReviewSummary(findingsBlock, allSummaryFindings.length);
         try {
           await ghCreatePullRequestReview(
             installationId, owner, repoName, pr.number,
             summaryBody, reviewEvent as "COMMENT" | "REQUEST_CHANGES", [],
           );
-          console.log(`[reviewer] PR review submitted without inline comments, ${allParsedFindings.length} in summary (${reviewEvent})`);
+          console.log(`[reviewer] PR review submitted without inline comments, ${allSummaryFindings.length} in summary (${reviewEvent})`);
         } catch (err) {
           console.error("[reviewer] Failed to submit PR review, falling back to comment:", err);
           await ghCreatePullRequestComment(installationId, owner, repoName, pr.number, summaryBody);
@@ -1931,6 +2255,7 @@ Rules:
       }
     } else if (isBitbucket) {
       // Bitbucket: post inline comments individually, then a summary comment
+      const bbFailedInlineComments: ReviewComment[] = [];
       for (const comment of inlineComments) {
         try {
           await bitbucket.createInlineComment(
@@ -1939,6 +2264,7 @@ Rules:
           );
         } catch (err) {
           console.error(`[reviewer] Failed to post Bitbucket inline comment on ${comment.path}:${comment.line}:`, err);
+          bbFailedInlineComments.push(comment);
         }
       }
       const bbInlinePaths = new Set(inlineComments.map((c) => `${c.path}:${c.line}`));
@@ -1948,10 +2274,32 @@ Rules:
         }
         return true;
       });
-      const findingsBlock = buildLowSeveritySummary(bbNonInlineFindings);
-      const summaryBody = `${filesChanged} file${filesChanged !== 1 ? "s" : ""} reviewed, ${effectiveFindingsCount} finding${effectiveFindingsCount !== 1 ? "s" : ""}${findingsBlock ? "\n\n" + findingsBlock : ""}`;
+      // Add unmappable findings to summary (inline-severity but couldn't map to diff lines)
+      // Also add findings whose inline comments failed to post
+      const bbFailedInlinePaths = new Set(bbFailedInlineComments.map((c) => `${c.path}:${c.line}`));
+      const bbFailedInlineFindings = bbFailedInlineComments.length > 0
+        ? inlineFindings.filter((f) => {
+            for (let l = f.startLine; l <= f.endLine; l++) {
+              if (bbFailedInlinePaths.has(`${f.filePath}:${l}`)) return true;
+            }
+            return false;
+          })
+        : [];
+      const bbNonInlineWithUnmappable = [
+        ...bbNonInlineFindings,
+        ...unmappableFindings.filter((uf) =>
+          !bbNonInlineFindings.some((nf) => nf.filePath === uf.filePath && nf.startLine === uf.startLine && nf.title === uf.title),
+        ),
+        ...bbFailedInlineFindings,
+      ];
+      // Count only actually-posted inline comments + summary table findings
+      const bbSuccessfulInline = inlineComments.length - bbFailedInlineComments.length;
+      const bbVisibleCount = bbSuccessfulInline + bbNonInlineWithUnmappable.length;
+      effectiveFindingsCount = bbVisibleCount;
+      const findingsBlock = buildLowSeveritySummary(bbNonInlineWithUnmappable);
+      const summaryBody = `${filesChanged} file${filesChanged !== 1 ? "s" : ""} reviewed, ${bbVisibleCount} finding${bbVisibleCount !== 1 ? "s" : ""}${findingsBlock ? "\n\n" + findingsBlock : ""}`;
       await providerCreateComment(pr.number, summaryBody);
-      console.log(`[reviewer] Bitbucket review posted with ${inlineComments.length} inline comments, ${bbNonInlineFindings.length} in summary`);
+      console.log(`[reviewer] Bitbucket review posted with ${inlineComments.length} inline comments, ${bbNonInlineWithUnmappable.length} in summary`);
     }
 
     // Step 6: Persist parsed findings as ReviewIssue records (ALL findings, not just capped/inline)

@@ -103,7 +103,7 @@ export function LoginOctopus() {
 
   useEffect(() => {
     setMounted(true);
-    setWebglSupported(isWebGLAvailable());
+    setWebglSupported(isWebGLAvailable() && localStorage.getItem("octopus-3d-hidden") !== "true");
     const onToggle = () => setWebglSupported((v) => !v);
     window.addEventListener("webgl-toggle", onToggle);
     return () => window.removeEventListener("webgl-toggle", onToggle);
@@ -114,7 +114,6 @@ export function LoginOctopus() {
   if (!webglSupported) {
     return (
       <div className="flex h-full items-center justify-center">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/octor-tp.png"
           alt="Octopus"

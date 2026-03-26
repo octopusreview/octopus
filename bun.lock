@@ -87,7 +87,6 @@
         "octopus": "./bin/octopus.js",
       },
       "dependencies": {
-        "@octopus/package-analyzer": "workspace:*",
         "chalk": "^5.4.1",
         "commander": "^13.1.0",
         "ora": "^8.2.0",

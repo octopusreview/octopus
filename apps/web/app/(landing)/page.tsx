@@ -1,5 +1,3 @@
-import Link from "next/link";
-import Image from "next/image";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { FloatingOctopus } from "@/components/landing-unicorn-section";

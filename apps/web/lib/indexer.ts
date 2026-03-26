@@ -1,9 +1,16 @@
 import crypto from "node:crypto";
+import { execFile } from "node:child_process";
+import { readFile, readdir, stat, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { promisify } from "node:util";
 import { getInstallationToken, getFileContent as ghGetFileContent } from "@/lib/github";
 import * as bitbucketLib from "@/lib/bitbucket";
 import { ensureCollection, upsertChunks, deleteRepoChunks } from "@/lib/qdrant";
 import { generateSparseVectors } from "@/lib/sparse-vector";
 import { parseOctopusIgnore, type Ignore } from "@/lib/octopus-ignore";
+
+const execFileAsync = promisify(execFile);
 
 const GITHUB_API = "https://api.github.com";
 const MAX_FILE_SIZE = 100_000; // 100KB — skip larger files
@@ -157,75 +164,131 @@ export async function indexRepository(
   let contributors: Contributor[] = [];
 
   if (provider === "bitbucket" && organizationId) {
-    // ── Bitbucket indexing flow ──
+    // ── Bitbucket indexing flow (clone-based) ──
     onLog("Authenticating with Bitbucket...");
     const [workspace, repoSlug] = fullName.split("/");
+    const token = await bitbucketLib.getAccessToken(organizationId);
     onLog("Bitbucket authentication successful", "success");
 
-    // 1. Get repo tree
-    onLog(`Fetching repository tree for ${fullName}@${defaultBranch}...`);
-    const allPaths = await bitbucketLib.getRepositoryTree(organizationId, workspace, repoSlug, defaultBranch);
+    // 1. Shallow clone the repo
+    const cloneDir = join(tmpdir(), `octopus-bb-${repoId}-${Date.now()}`);
+    const cloneUrl = `https://bitbucket.org/${workspace}/${repoSlug}.git`;
 
-    // Check for .octopusignore
-    let ig: Ignore | undefined;
-    if (allPaths.includes(".octopusignore")) {
-      try {
-        const ignoreContent = await bitbucketLib.getFileContent(organizationId, workspace, repoSlug, defaultBranch, ".octopusignore");
-        ig = parseOctopusIgnore(ignoreContent);
-        onLog("Found .octopusignore — applying custom ignore rules", "info");
-      } catch {
-        onLog("Failed to fetch .octopusignore, continuing without it", "warning");
+    try {
+      onLog(`Cloning ${fullName}@${defaultBranch}...`);
+      const cloneController = new AbortController();
+      if (signal) {
+        signal.addEventListener("abort", () => cloneController.abort(), { once: true });
       }
-    }
+      await execFileAsync("git", [
+        "clone",
+        "--depth", "1",
+        "--branch", defaultBranch,
+        "--single-branch",
+        cloneUrl,
+        cloneDir,
+      ], {
+        timeout: 120_000,
+        signal: cloneController.signal,
+        env: {
+          ...process.env,
+          GIT_CONFIG_COUNT: "1",
+          GIT_CONFIG_KEY_0: "http.extraHeader",
+          GIT_CONFIG_VALUE_0: `Authorization: Bearer ${token}`,
+        },
+      });
+      onLog("Repository cloned successfully", "success");
 
-    const filePaths = allPaths.filter((p) => shouldIndex(p, undefined, ig));
-    totalFileCount = allPaths.length;
+      // 2. Walk the cloned directory to get all file paths
+      onLog(`Scanning repository files...`);
+      const allPaths: string[] = [];
 
-    onLog(`Found ${allPaths.length} total files, ${filePaths.length} eligible for indexing`, "success");
+      const MAX_DEPTH = 50;
+      async function walkDir(dir: string, prefix: string, depth = 0) {
+        if (depth > MAX_DEPTH) return;
+        const entries = await readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.name === ".git") continue;
+          if (entry.isSymbolicLink()) continue; // skip symlinks to avoid infinite loops
+          const relPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+          if (entry.isDirectory()) {
+            await walkDir(join(dir, entry.name), relPath, depth + 1);
+          } else if (entry.isFile()) {
+            allPaths.push(relPath);
+          }
+        }
+      }
 
-    // 2. Fetch file contents
-    onLog("Fetching and chunking file contents...");
-    const CONCURRENCY = 10;
+      await walkDir(cloneDir, "");
 
-    async function fetchBitbucketFile(filePath: string): Promise<void> {
-      try {
-        const content = await bitbucketLib.getFileContent(organizationId!, workspace, repoSlug, defaultBranch, filePath);
+      // Check for .octopusignore
+      let ig: Ignore | undefined;
+      if (allPaths.includes(".octopusignore")) {
+        try {
+          const ignoreContent = await readFile(join(cloneDir, ".octopusignore"), "utf-8");
+          ig = parseOctopusIgnore(ignoreContent);
+          onLog("Found .octopusignore — applying custom ignore rules", "info");
+        } catch {
+          onLog("Failed to read .octopusignore, continuing without it", "warning");
+        }
+      }
 
-        if (content.length > MAX_FILE_SIZE) {
+      const filePaths = allPaths.filter((p) => shouldIndex(p, undefined, ig));
+      totalFileCount = allPaths.length;
+
+      onLog(`Found ${allPaths.length} total files, ${filePaths.length} eligible for indexing`, "success");
+
+      // 3. Read file contents from disk
+      onLog("Processing file contents...");
+
+      for (let i = 0; i < filePaths.length; i++) {
+        if (signal?.aborted) throw new Error("Indexing cancelled");
+
+        const filePath = filePaths[i];
+        try {
+          const fullPath = join(cloneDir, filePath);
+          const fileStat = await stat(fullPath);
+
+          if (fileStat.size > MAX_FILE_SIZE) {
+            skipped++;
+            continue;
+          }
+
+          const content = await readFile(fullPath, "utf-8");
+
+          if (content.includes("\0")) {
+            skipped++;
+            continue;
+          }
+
+          const chunks = chunkText(content, filePath);
+          for (const chunk of chunks) {
+            allChunks.push({
+              text: chunk.text,
+              filePath,
+              startLine: chunk.startLine,
+              endLine: chunk.endLine,
+            });
+          }
+          processed++;
+        } catch {
           skipped++;
-          return;
         }
 
-        if (content.includes("\0")) {
-          skipped++;
-          return;
+        if (processed > 0 && i % 100 === 0) {
+          onLog(`Processing files... ${processed}/${filePaths.length}`);
         }
+      }
 
-        const chunks = chunkText(content, filePath);
-        for (const chunk of chunks) {
-          allChunks.push({
-            text: chunk.text,
-            filePath,
-            startLine: chunk.startLine,
-            endLine: chunk.endLine,
-          });
-        }
-        processed++;
+      onLog(`Processed ${processed} files, skipped ${skipped}, created ${allChunks.length} chunks`, "success");
+    } finally {
+      // Clean up cloned directory
+      try {
+        await rm(cloneDir, { recursive: true, force: true });
       } catch {
-        skipped++;
+        console.warn(`[indexer] Failed to clean up clone dir: ${cloneDir}`);
       }
     }
-
-    for (let i = 0; i < filePaths.length; i += CONCURRENCY) {
-      if (signal?.aborted) throw new Error("Indexing cancelled");
-      const batch = filePaths.slice(i, i + CONCURRENCY);
-      await Promise.all(batch.map(fetchBitbucketFile));
-      if (processed > 0) {
-        onLog(`Processing files... ${processed}/${filePaths.length}`);
-      }
-    }
-
-    onLog(`Processed ${processed} files, skipped ${skipped}, created ${allChunks.length} chunks`, "success");
   } else {
     // ── GitHub indexing flow ──
     onLog("Authenticating with GitHub...");

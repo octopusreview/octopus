@@ -278,41 +278,82 @@ export async function getRepositoryTree(
 ): Promise<string[]> {
   const token = await getAccessToken(organizationId);
   const paths: string[] = [];
-  const url: string | null =
-    `${BITBUCKET_API}/repositories/${workspace}/${repoSlug}/src/${encodeURIComponent(branch)}/?pagelen=100&max_depth=10`;
-
-  // Bitbucket returns directory listing; we need to recursively traverse
   const visited = new Set<string>();
+  const CONCURRENCY = 5;
+  const TIMEOUT_MS = 15_000;
+  const MAX_RETRIES = 3;
 
-  async function fetchDir(dirUrl: string) {
-    if (visited.has(dirUrl)) return;
+  async function fetchWithRetry(url: string): Promise<Response | null> {
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      try {
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        });
+
+        if (res.status === 429) {
+          const retryAfter = res.headers.get("retry-after");
+          const waitMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : 2000 * (attempt + 1);
+          console.warn(`[bitbucket] Rate limited, waiting ${waitMs}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          await new Promise((r) => setTimeout(r, waitMs));
+          continue;
+        }
+
+        return res;
+      } catch (err) {
+        if (attempt === MAX_RETRIES - 1) {
+          console.warn(`[bitbucket] Failed after ${MAX_RETRIES} attempts: ${url}`, err);
+          return null;
+        }
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    return null;
+  }
+
+  async function fetchDir(dirUrl: string): Promise<string[]> {
+    if (visited.has(dirUrl)) return [];
     visited.add(dirUrl);
 
-    const res = await fetch(dirUrl, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const subDirs: string[] = [];
 
-    if (!res.ok) return;
+    const res = await fetchWithRetry(dirUrl);
+    if (!res || !res.ok) {
+      if (res) console.warn(`[bitbucket] Failed to fetch ${dirUrl}: ${res.status}`);
+      return [];
+    }
 
     const data = await res.json();
     for (const item of data.values ?? []) {
       if (item.type === "commit_file") {
         paths.push(item.path);
       } else if (item.type === "commit_directory") {
-        const subUrl = `${BITBUCKET_API}/repositories/${workspace}/${repoSlug}/src/${encodeURIComponent(branch)}/${encodeURIComponent(item.path)}/?pagelen=100&max_depth=10`;
-        await fetchDir(subUrl);
+        subDirs.push(
+          `${BITBUCKET_API}/repositories/${workspace}/${repoSlug}/src/${encodeURIComponent(branch)}/${encodeURIComponent(item.path)}/?pagelen=100`,
+        );
       }
     }
 
     if (data.next) {
-      await fetchDir(data.next);
+      subDirs.push(data.next);
     }
+
+    return subDirs;
   }
 
-  try {
-    await fetchDir(url);
-  } catch (err) {
-    console.error("[bitbucket] Failed to fetch repository tree:", err);
+  // BFS with bounded concurrency
+  const queue: string[] = [
+    `${BITBUCKET_API}/repositories/${workspace}/${repoSlug}/src/${encodeURIComponent(branch)}/?pagelen=100`,
+  ];
+
+  while (queue.length > 0) {
+    const batch = queue.splice(0, CONCURRENCY);
+    const results = await Promise.all(batch.map((url) => fetchDir(url)));
+    queue.push(...results.flat());
   }
 
   return paths;

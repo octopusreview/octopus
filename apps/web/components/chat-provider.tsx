@@ -379,8 +379,6 @@ export function ChatProvider({
     setIsSending(false);
   }, []);
 
-  const pendingRepoMessageRef = useRef<string | null>(null);
-
   const openWithRepoContext = useCallback(
     (repoFullName: string) => {
       // Reset to new chat state
@@ -394,21 +392,13 @@ export function ChatProvider({
       setStreamingConversationId(null);
       setQueuePosition(null);
       setIsSending(false);
-      // Open the chat window and queue the initial message
       setIsOpen(true);
-      pendingRepoMessageRef.current = `Tell me about the ${repoFullName} repository. Give me an overview of its purpose, architecture, tech stack, recent activity, and any notable patterns or issues you can find.`;
+      const msg = `Tell me about the ${repoFullName} repository. Give me an overview of its purpose, architecture, tech stack, recent activity, and any notable patterns or issues you can find.`;
+      // Defer by one tick so React flushes the state resets above first
+      Promise.resolve().then(() => sendMessage(msg));
     },
-    [],
+    [sendMessage],
   );
-
-  // Send the pending repo message once state is reset
-  useEffect(() => {
-    if (pendingRepoMessageRef.current && !isSending && !activeConversationId && messages.length === 0) {
-      const msg = pendingRepoMessageRef.current;
-      pendingRepoMessageRef.current = null;
-      sendMessage(msg);
-    }
-  }, [isSending, activeConversationId, messages.length, sendMessage]);
 
   const selectConversation = useCallback(
     async (id: string) => {

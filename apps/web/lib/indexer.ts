@@ -203,14 +203,16 @@ export async function indexRepository(
       onLog(`Scanning repository files...`);
       const allPaths: string[] = [];
 
-      async function walkDir(dir: string, prefix: string) {
+      const MAX_DEPTH = 50;
+      async function walkDir(dir: string, prefix: string, depth = 0) {
+        if (depth > MAX_DEPTH) return;
         const entries = await readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
           if (entry.name === ".git") continue;
           if (entry.isSymbolicLink()) continue; // skip symlinks to avoid infinite loops
           const relPath = prefix ? `${prefix}/${entry.name}` : entry.name;
           if (entry.isDirectory()) {
-            await walkDir(join(dir, entry.name), relPath);
+            await walkDir(join(dir, entry.name), relPath, depth + 1);
           } else if (entry.isFile()) {
             allPaths.push(relPath);
           }

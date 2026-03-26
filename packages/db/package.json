@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "@octopus/tsconfig": "workspace:*",
-    "@types/pg": "^8.16.0",
+    "@types/pg": "^8.20.0",
     "prisma": "^7.4.1",
     "typescript": "^5"
   }

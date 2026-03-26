@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { TrackedLink } from "@/components/tracked-link";
-import { IconMenu2, IconX, IconBrandGithub, IconBook, IconPalette, IconCoin, IconNews } from "@tabler/icons-react";
+import { IconMenu2, IconX, IconBrandGithub, IconBook, IconPalette, IconCoin, IconNews, IconMessageCircle } from "@tabler/icons-react";
 
 export function LandingMobileNav({ isLoggedIn }: { isLoggedIn: boolean }) {
   const [open, setOpen] = useState(false);
@@ -17,6 +17,13 @@ export function LandingMobileNav({ isLoggedIn }: { isLoggedIn: boolean }) {
           <span className="text-sm font-semibold text-white">Octopus</span>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => window.dispatchEvent(new Event("ask-octopus-open"))}
+            className="flex items-center gap-1 rounded-full border border-white/[0.08] px-3 py-1.5 text-xs text-[#888] transition-colors hover:border-[#10D8BE]/30 hover:text-white"
+          >
+            <IconMessageCircle className="size-3 text-[#10D8BE]" />
+            Ask AI
+          </button>
           {isLoggedIn ? (
             <Link href="/dashboard" className="rounded-full bg-white px-4 py-1.5 text-xs font-medium text-[#0c0c0c]">
               Dashboard

@@ -104,7 +104,6 @@ export default async function BlogPage({
                     className="group block rounded-xl border border-white/[0.06] p-6 transition-colors hover:border-white/[0.12] hover:bg-white/[0.02]"
                   >
                     {featured.coverImageUrl && (
-                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={featured.coverImageUrl}
                         alt={featured.title}
@@ -143,7 +142,6 @@ export default async function BlogPage({
                           className="group flex items-center gap-5 px-6 py-5 transition-colors hover:bg-white/[0.02]"
                         >
                           {post.coverImageUrl && (
-                            // eslint-disable-next-line @next/next/no-img-element
                             <img
                               src={post.coverImageUrl}
                               alt={post.title}

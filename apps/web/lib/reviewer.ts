@@ -30,6 +30,7 @@ import {
   listReviewComments as ghListReviewComments,
   listPullRequestReviewComments as ghListPullRequestReviewComments,
   listPullRequestIssueComments as ghListPullRequestIssueComments,
+  listPullRequestReviews as ghListPullRequestReviews,
   getCommentReactions as ghGetCommentReactions,
 } from "@/lib/github";
 import * as bitbucket from "@/lib/bitbucket";
@@ -797,6 +798,30 @@ function deduplicateAgainstPrior(
   }
 
   return { kept, removed };
+}
+
+/**
+ * Parse findings from a review summary table (the collapsed "Additional findings" block).
+ * Matches rows like: | 🟡 | `file.ts:L42` | Title | Description... |
+ */
+function parseFindingsFromSummaryTable(reviewBody: string): PriorFinding[] {
+  const results: PriorFinding[] = [];
+  // Match table rows: | EMOJI | `filepath:LNNN` | title | description |
+  const rowRegex = /\|\s*(🔴|🟠|🟡|🔵|💡)\s*\|\s*`([^`]+?):L(\d+)`\s*\|\s*([^|]+)\|\s*([^|]*)\|/g;
+  let match;
+  while ((match = rowRegex.exec(reviewBody)) !== null) {
+    const filePath = match[2];
+    const line = parseInt(match[3], 10);
+    const title = match[4].trim();
+    const description = match[5].trim();
+    results.push({
+      filePath,
+      line,
+      title,
+      keywords: extractKeywords(`${title} ${description}`),
+    });
+  }
+  return results;
 }
 
 /**
@@ -1685,20 +1710,38 @@ export async function processReview(pullRequestId: string): Promise<void> {
     const appSlug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG ?? "octopus-review";
     const botLogin = `${appSlug}[bot]`;
     let allPriorReviewComments: import("@/lib/github").PRReviewComment[] = [];
+    let priorSummaryTableFindings: PriorFinding[] = [];
     if (isGitHub && installationId) {
       try {
         allPriorReviewComments = await ghListPullRequestReviewComments(installationId, owner, repoName, pr.number);
       } catch (err) {
         console.warn("[reviewer] Failed to fetch prior review comments:", err);
       }
+
+      // Fetch prior review bodies to extract findings from summary tables.
+      // This catches findings that were posted in the collapsed "Additional findings"
+      // table rather than as inline comments (e.g., when inline threshold is high).
+      try {
+        const priorReviews = await ghListPullRequestReviews(installationId, owner, repoName, pr.number);
+        const botReviews = priorReviews.filter((r) => r.user === botLogin && r.body);
+        for (const review of botReviews) {
+          const tableFindings = parseFindingsFromSummaryTable(review.body);
+          priorSummaryTableFindings.push(...tableFindings);
+        }
+        if (priorSummaryTableFindings.length > 0) {
+          console.log(`[reviewer] Found ${priorSummaryTableFindings.length} prior findings from ${botReviews.length} review summary tables`);
+        }
+      } catch (err) {
+        console.warn("[reviewer] Failed to fetch prior review bodies:", err);
+      }
     }
 
-    // Detect re-review: if the bot already has inline comments or a previous reviewBody,
-    // this is a follow-up review. Inject prior findings and change the review strategy.
+    // Detect re-review: if the bot already has inline comments, summary table findings,
+    // or a previous reviewBody, this is a follow-up review.
     let priorReviewContext = "";
     let dismissedDbFindings: { title: string; description: string | null; severity: string; filePath: string | null; lineNumber: number | null }[] = [];
     const botComments = allPriorReviewComments.filter((c) => !c.inReplyToId && c.user === botLogin && c.line != null);
-    const isReReview = botComments.length > 0 || !!pr.reviewBody;
+    const isReReview = botComments.length > 0 || priorSummaryTableFindings.length > 0 || !!pr.reviewBody;
 
     if (isReReview) {
       const parts: string[] = [
@@ -1752,6 +1795,23 @@ export async function processReview(pullRequestId: string): Promise<void> {
           "═══ PRIOR INLINE COMMENTS (BLOCKED — every item below is BANNED from your output, even with different wording) ═══",
           ...summaries,
         );
+      }
+
+      // Include findings from prior review summary tables (catches findings that
+      // were never posted as inline comments — e.g. when inline threshold is high)
+      if (priorSummaryTableFindings.length > 0) {
+        // Deduplicate against inline comments already listed above
+        const inlineKeys = new Set(botComments.map((c) => `${c.path}:${c.line}`));
+        const uniqueTableFindings = priorSummaryTableFindings.filter(
+          (f) => !inlineKeys.has(`${f.filePath}:${f.line}`),
+        );
+        if (uniqueTableFindings.length > 0) {
+          parts.push(
+            "",
+            "═══ PRIOR SUMMARY TABLE FINDINGS (BLOCKED — these were raised in previous reviews, do NOT repeat) ═══",
+            ...uniqueTableFindings.map((f) => `- ${f.filePath}:${f.line} — "${f.title}"`),
+          );
+        }
       }
 
       // Fetch this PR's dismissed findings from the database for explicit dedup
@@ -2109,9 +2169,9 @@ Rules:
       }
     }
 
-    // Hard dedup: remove findings that match prior bot comments or dismissed DB findings
-    // by file proximity + keyword overlap. This catches the LLM rephrasing the same issues.
-    if (isReReview && (botComments.length > 0 || dismissedDbFindings.length > 0)) {
+    // Hard dedup: remove findings that match prior bot comments, summary table findings,
+    // or dismissed DB findings by file proximity + keyword overlap.
+    if (isReReview && (botComments.length > 0 || priorSummaryTableFindings.length > 0 || dismissedDbFindings.length > 0)) {
       const priorFromComments: PriorFinding[] = botComments.map((c) => ({
         filePath: c.path,
         line: c.line ?? 0,
@@ -2129,7 +2189,7 @@ Rules:
       // Merge and deduplicate prior findings by file+line
       const seenPriorKeys = new Set<string>();
       const priorForDedup: PriorFinding[] = [];
-      for (const p of [...priorFromComments, ...priorFromDb]) {
+      for (const p of [...priorFromComments, ...priorSummaryTableFindings, ...priorFromDb]) {
         const key = `${p.filePath}:${p.line}`;
         if (!seenPriorKeys.has(key)) {
           seenPriorKeys.add(key);

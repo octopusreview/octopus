@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/web/public/branding-banner.png" alt="Octopus — Your AI code reviewer that never sleeps" width="600" />
+  <img width="157" height="58" alt="image" src="https://github.com/user-attachments/assets/1b786c2d-7910-4f07-8868-6403166ffa6f" />
 </p>
 
 <p align="center">

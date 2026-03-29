@@ -1,5 +1,6 @@
 import { prisma } from "@octopus/db";
 import { sendEmail } from "@/lib/email";
+import { escapeHtml } from "@/lib/html";
 import { eventBus } from "../bus";
 import type {
   RepoIndexedEvent,
@@ -9,16 +10,6 @@ import type {
   ReviewFailedEvent,
   KnowledgeReadyEvent,
 } from "../types";
-
-/** Escape user-controlled strings before interpolating into HTML email templates. */
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#x27;");
-}
 
 async function getEligibleRecipients(
   orgId: string,

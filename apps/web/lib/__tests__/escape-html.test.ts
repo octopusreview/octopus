@@ -1,14 +1,5 @@
 import { describe, it, expect } from "bun:test";
-
-// Inline the same escapeHtml implementation to test the logic
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#x27;");
-}
+import { escapeHtml } from "@/lib/html";
 
 describe("escapeHtml", () => {
   it("escapes ampersands", () => {
@@ -32,7 +23,7 @@ describe("escapeHtml", () => {
   });
 
   it("escapes all special characters together", () => {
-    expect(escapeHtml(`<img src="x" onerror='alert(1)'>&`)).toBe(
+    expect(escapeHtml('<img src="x" onerror=\'alert(1)\'>&')).toBe(
       "&lt;img src=&quot;x&quot; onerror=&#x27;alert(1)&#x27;&gt;&amp;",
     );
   });

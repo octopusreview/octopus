@@ -871,6 +871,73 @@ model AskOctopusMessage {
   @@map("ask_octopus_messages")
 }
 
+// ── Status Page ─────────────────────────────────────────────────────────────
+
+model StatusComponent {
+  id          String   @id @default(cuid())
+  name        String   @unique // e.g. "System", "RAG", "Chat", "Reviews", "Webhooks"
+  description String?
+  status      String   @default("operational") // "operational" | "degraded" | "partial_outage" | "major_outage" | "maintenance"
+  sortOrder   Int      @default(0)
+  isVisible   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  incidents StatusIncident[]
+
+  @@index([sortOrder])
+  @@map("status_components")
+}
+
+model StatusIncident {
+  id            String    @id @default(cuid())
+  title         String
+  severity      String    // "critical" | "major" | "minor" | "maintenance"
+  status        String    @default("investigating") // "investigating" | "identified" | "monitoring" | "resolved"
+  message       String    @db.Text
+  componentId   String?
+  resolvedAt    DateTime?
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  component StatusComponent? @relation(fields: [componentId], references: [id], onDelete: SetNull)
+  updates   StatusIncidentUpdate[]
+
+  @@index([status, createdAt])
+  @@index([componentId])
+  @@map("status_incidents")
+}
+
+model StatusIncidentUpdate {
+  id            String   @id @default(cuid())
+  status        String   // same as incident status options
+  message       String   @db.Text
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime @default(now())
+
+  incidentId String
+  incident   StatusIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([incidentId])
+  @@map("status_incident_updates")
+}
+
+model StatusApiToken {
+  id          String    @id @default(cuid())
+  name        String
+  tokenHash   String    @unique
+  tokenPrefix String
+  lastUsedAt  DateTime?
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([tokenHash])
+  @@map("status_api_tokens")
+}
+
 model AuditLog {
   id             String   @id @default(cuid())
   action         String   // e.g. "user.login", "email.sent", "review.completed"

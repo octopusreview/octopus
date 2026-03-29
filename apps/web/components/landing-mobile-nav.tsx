@@ -12,10 +12,10 @@ export function LandingMobileNav({ isLoggedIn }: { isLoggedIn: boolean }) {
   return (
     <nav className="fixed left-0 right-0 top-0 z-40 border-b border-white/[0.06] bg-[#0c0c0c]/80 backdrop-blur-xl lg:hidden">
       <div className="flex items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-2">
+        <Link href="/" className="flex items-center gap-2">
           <Image src="/logo.svg" alt="Octopus" width={22} height={22} priority />
           <span className="text-sm font-semibold text-white">Octopus</span>
-        </div>
+        </Link>
         <div className="flex items-center gap-2">
           <button
             onClick={() => window.dispatchEvent(new Event("ask-octopus-open"))}

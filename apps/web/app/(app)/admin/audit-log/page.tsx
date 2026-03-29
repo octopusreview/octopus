@@ -33,7 +33,8 @@ function formatMetadata(metadata: Record<string, unknown>): string {
   for (const [key, value] of Object.entries(metadata)) {
     if (value === null || value === undefined || value === "") continue;
     const label = key.replace(/([A-Z])/g, " $1").replace(/_/g, " ").trim();
-    parts.push(`${label}: ${String(value)}`);
+    const formatted = typeof value === "object" ? JSON.stringify(value) : String(value);
+    parts.push(`${label}: ${formatted}`);
   }
   return parts.join(" | ");
 }
@@ -53,11 +54,14 @@ export default async function AdminAuditLogPage({
   if (category) where.category = category;
   if (action) where.action = { contains: action, mode: "insensitive" };
   if (search) {
-    where.OR = [
+    const orConditions = [
       { actorEmail: { contains: search, mode: "insensitive" } },
-      { action: { contains: search, mode: "insensitive" } },
       { targetId: { contains: search, mode: "insensitive" } },
     ];
+    if (!action) {
+      orConditions.push({ action: { contains: search, mode: "insensitive" } } as Record<string, unknown>);
+    }
+    where.OR = orConditions;
   }
 
   const [logs, total, categories, actions] = await Promise.all([
@@ -72,11 +76,13 @@ export default async function AdminAuditLogPage({
       distinct: ["category"],
       select: { category: true },
       orderBy: { category: "asc" },
+      take: 50,
     }),
     prisma.auditLog.findMany({
       distinct: ["action"],
       select: { action: true },
       orderBy: { action: "asc" },
+      take: 200,
     }),
   ]);
 

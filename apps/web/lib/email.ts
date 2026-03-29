@@ -31,6 +31,6 @@ export async function sendEmail({
   writeAuditLog({
     action: "email.sent",
     category: "email",
-    metadata: { recipient: to, subject },
+    metadata: { recipient: to, subject: subject.slice(0, 100) },
   }).catch(() => {});
 }

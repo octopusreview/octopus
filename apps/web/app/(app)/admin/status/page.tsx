@@ -1,27 +1,41 @@
 import { prisma } from "@octopus/db";
 import { StatusAdmin } from "./status-admin";
 
-export default async function AdminStatusPage() {
-  const [components, incidents, tokens] = await Promise.all([
+export default async function AdminStatusPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
+  const params = await searchParams;
+  const page = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
+  const pageSize = 20;
+
+  const [components, incidents, totalIncidents, tokens] = await Promise.all([
     prisma.statusComponent.findMany({
       orderBy: { sortOrder: "asc" },
     }),
     prisma.statusIncident.findMany({
       orderBy: { createdAt: "desc" },
-      take: 50,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
       include: {
         component: { select: { name: true } },
         updates: { orderBy: { createdAt: "asc" } },
       },
     }),
+    prisma.statusIncident.count(),
     prisma.statusApiToken.findMany({
       where: { deletedAt: null },
       orderBy: { createdAt: "desc" },
     }),
   ]);
 
+  const totalPages = Math.ceil(totalIncidents / pageSize);
+
   return (
     <StatusAdmin
+      currentPage={page}
+      totalPages={totalPages}
       components={components.map((c) => ({
         id: c.id,
         name: c.name,

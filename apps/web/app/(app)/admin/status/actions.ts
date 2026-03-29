@@ -28,7 +28,7 @@ export async function createComponent(formData: FormData) {
 
   const name = formData.get("name") as string;
   const description = (formData.get("description") as string) || null;
-  const sortOrder = parseInt((formData.get("sortOrder") as string) || "0", 10);
+  const sortOrder = parseInt((formData.get("sortOrder") as string) || "0", 10) || 0;
 
   if (!name?.trim()) {
     return { error: "Component name is required" };
@@ -60,7 +60,7 @@ export async function updateComponent(id: string, formData: FormData) {
 
   const name = formData.get("name") as string;
   const description = (formData.get("description") as string) || null;
-  const sortOrder = parseInt((formData.get("sortOrder") as string) || "0", 10);
+  const sortOrder = parseInt((formData.get("sortOrder") as string) || "0", 10) || 0;
   const isVisible = formData.get("isVisible") === "true";
 
   if (!name?.trim()) {
@@ -295,9 +295,12 @@ export async function generateIncidentMessage(
 ) {
   await requireAdmin();
 
-  if (!summary.trim()) {
+  const trimmedSummary = summary.trim().slice(0, 500);
+  if (!trimmedSummary) {
     return { error: "Please provide a brief summary first" };
   }
+
+  const safeSeverity = ["critical", "major", "minor", "maintenance"].includes(severity) ? severity : "minor";
 
   const client = new Anthropic();
   const response = await client.messages.create({
@@ -306,10 +309,10 @@ export async function generateIncidentMessage(
     messages: [
       {
         role: "user",
-        content: `You are writing a status page incident for a SaaS product called Octopus (AI-powered code review tool). Generate both a title and a message body in English based on this summary.
+        content: `You are writing a status page incident for a SaaS product called Octopus (AI-powered code review tool). Generate both a title and a message body in English based on the user-provided summary below.
 
-Summary (may be in any language): ${summary}
-Severity: ${severity}
+<summary>${trimmedSummary}</summary>
+Severity: ${safeSeverity}
 ${componentName ? `Affected component: ${componentName}` : ""}
 
 Rules:

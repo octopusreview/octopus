@@ -13,9 +13,21 @@ import {
   IconApi,
   IconChevronDown,
   IconChevronRight,
+  IconChevronLeft,
   IconPencil,
   IconSparkles,
 } from "@tabler/icons-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   createComponent,
   updateComponent,
@@ -147,10 +159,14 @@ export function StatusAdmin({
   components,
   incidents,
   tokens,
+  currentPage,
+  totalPages,
 }: {
   components: ComponentItem[];
   incidents: IncidentItem[];
   tokens: TokenItem[];
+  currentPage: number;
+  totalPages: number;
 }) {
   const [isPending, startTransition] = useTransition();
 
@@ -198,12 +214,12 @@ export function StatusAdmin({
     });
   }
 
-  function handleUpdateComponent(id: string) {
+  function handleUpdateComponent(id: string, currentIsVisible: boolean) {
     const fd = new FormData();
     fd.set("name", compName);
     fd.set("description", compDesc);
     fd.set("sortOrder", compOrder);
-    fd.set("isVisible", "true");
+    fd.set("isVisible", String(currentIsVisible));
     startTransition(async () => {
       const result = await updateComponent(id, fd);
       if ("error" in result) toast.error(String(result.error));
@@ -226,7 +242,6 @@ export function StatusAdmin({
   }
 
   function handleDeleteComponent(id: string) {
-    if (!confirm("Are you sure you want to delete this component?")) return;
     startTransition(async () => {
       const result = await deleteComponent(id);
       if ("error" in result) toast.error(String(result.error));
@@ -318,7 +333,6 @@ export function StatusAdmin({
   }
 
   function handleDeleteIncident(id: string) {
-    if (!confirm("Are you sure you want to delete this incident?")) return;
     startTransition(async () => {
       const result = await deleteIncident(id);
       if ("error" in result) toast.error(String(result.error));
@@ -343,7 +357,6 @@ export function StatusAdmin({
   }
 
   function handleDeleteToken(id: string) {
-    if (!confirm("Are you sure you want to revoke this token?")) return;
     startTransition(async () => {
       const result = await deleteStatusApiToken(id);
       if ("error" in result) toast.error(String(result.error));
@@ -449,7 +462,7 @@ export function StatusAdmin({
                             <Button
                               size="sm"
                               disabled={isPending}
-                              onClick={() => handleUpdateComponent(comp.id)}
+                              onClick={() => handleUpdateComponent(comp.id, comp.isVisible)}
                             >
                               Save
                             </Button>
@@ -508,14 +521,25 @@ export function StatusAdmin({
                             >
                               <IconPencil className="size-4" />
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              disabled={isPending}
-                              onClick={() => handleDeleteComponent(comp.id)}
-                            >
-                              <IconTrash className="size-4" />
-                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="ghost" size="icon" disabled={isPending}>
+                                  <IconTrash className="size-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete component?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    This will permanently delete &quot;{comp.name}&quot; and disassociate it from any incidents.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => handleDeleteComponent(comp.id)}>Delete</AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                           </div>
                         </td>
                       </>
@@ -612,7 +636,7 @@ export function StatusAdmin({
           <p className="text-muted-foreground">No incidents.</p>
         ) : (
           <div className="space-y-3">
-            {incidents.map((inc) => (
+            {incidents.map((inc: IncidentItem) => (
               <div key={inc.id} className="rounded-lg border">
                 <div
                   className="flex cursor-pointer items-center gap-3 px-4 py-3"
@@ -651,16 +675,29 @@ export function StatusAdmin({
                   <span className="text-sm text-muted-foreground">
                     {new Date(inc.createdAt).toLocaleDateString()}
                   </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteIncident(inc.id);
-                    }}
-                  >
-                    <IconTrash className="size-4" />
-                  </Button>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <IconTrash className="size-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete incident?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will permanently delete &quot;{inc.title}&quot; and all its updates.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => handleDeleteIncident(inc.id)}>Delete</AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
 
                 {expandedIncident === inc.id && (
@@ -747,6 +784,30 @@ export function StatusAdmin({
             ))}
           </div>
         )}
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2 pt-2">
+            <a
+              href={`?page=${currentPage - 1}`}
+              className={currentPage <= 1 ? "pointer-events-none opacity-40" : ""}
+            >
+              <Button variant="outline" size="icon" disabled={currentPage <= 1}>
+                <IconChevronLeft className="size-4" />
+              </Button>
+            </a>
+            <span className="text-sm text-muted-foreground">
+              Page {currentPage} of {totalPages}
+            </span>
+            <a
+              href={`?page=${currentPage + 1}`}
+              className={currentPage >= totalPages ? "pointer-events-none opacity-40" : ""}
+            >
+              <Button variant="outline" size="icon" disabled={currentPage >= totalPages}>
+                <IconChevronRight className="size-4" />
+              </Button>
+            </a>
+          </div>
+        )}
       </div>
 
       {/* ── API Tokens Section ────────────────────────────────────────── */}
@@ -830,14 +891,25 @@ export function StatusAdmin({
                       {new Date(t.createdAt).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        disabled={isPending}
-                        onClick={() => handleDeleteToken(t.id)}
-                      >
-                        <IconTrash className="size-4" />
-                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" disabled={isPending}>
+                            <IconTrash className="size-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Revoke token?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will permanently revoke &quot;{t.name}&quot;. Any systems using this token will stop working.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleDeleteToken(t.id)}>Revoke</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </td>
                   </tr>
                 ))}

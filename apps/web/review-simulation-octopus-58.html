@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Review Simulation — octopus #58</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --text-muted: #8b949e; --accent: #2dd4bf;
+    --red: #ef4444; --orange: #f97316; --yellow: #eab308;
+    --blue: #3b82f6; --purple: #8b5cf6; --green: #22c55e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.6; padding: 2rem; max-width: 1200px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; color: var(--accent); margin-bottom: 0.25rem; }
+  h2 { font-size: 1.2rem; margin: 2rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+  h3 { font-size: 1rem; margin: 1.5rem 0 0.75rem; }
+  a { color: var(--accent); text-decoration: none; }
+  .meta { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 2rem; }
+  .meta span { margin-right: 1.5rem; }
+
+  /* Summary cards */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin: 1rem 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; text-align: center; }
+  .card .number { font-size: 2rem; font-weight: 700; }
+  .card .label { color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .card.green .number { color: var(--green); }
+  .card.red .number { color: var(--red); }
+  .card.yellow .number { color: var(--yellow); }
+  .card.accent .number { color: var(--accent); }
+
+  /* Timeline */
+  .timeline { position: relative; padding-left: 2rem; margin: 1rem 0; }
+  .timeline::before { content: ''; position: absolute; left: 0.6rem; top: 0; bottom: 0; width: 2px; background: var(--border); }
+  .trigger { position: relative; margin-bottom: 1.5rem; }
+  .trigger::before { content: ''; position: absolute; left: -1.65rem; top: 0.35rem; width: 12px; height: 12px;
+    border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); }
+  .trigger.first::before { background: var(--green); }
+  .trigger-header { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+  .badge { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 999px; font-weight: 600; text-transform: uppercase; }
+  .badge.opened { background: rgba(34,197,94,0.15); color: var(--green); }
+  .badge.mention { background: rgba(45,212,191,0.15); color: var(--accent); }
+  .sha { font-family: monospace; font-size: 0.8rem; color: var(--text-muted); }
+  .date { font-size: 0.8rem; color: var(--text-muted); }
+  .stats { font-size: 0.8rem; color: var(--text-muted); }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin: 0.5rem 0; }
+  th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  td.severity { width: 40px; text-align: center; font-size: 1.1rem; }
+  td.file { font-family: monospace; font-size: 0.8rem; color: var(--text-muted); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Side-by-side */
+  .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin: 1rem 0; }
+  @media (max-width: 768px) { .comparison { grid-template-columns: 1fr; } }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; overflow-x: auto; }
+  .panel h4 { font-size: 0.85rem; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; }
+  .panel h4 .count { background: var(--border); color: var(--text); padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.75rem; }
+
+  /* Dedup highlight */
+  .dedup-section { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+  .dedup-section h4 { font-size: 0.85rem; margin-bottom: 0.5rem; color: var(--green); }
+  tr.removed { background: rgba(239,68,68,0.08); }
+  tr.removed td { color: var(--red); text-decoration: line-through; opacity: 0.7; }
+  tr.kept td { color: var(--green); }
+
+  /* Severity bars */
+  .severity-bars { display: flex; gap: 0.5rem; margin: 1rem 0; flex-wrap: wrap; }
+  .sev-bar { display: flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; }
+  .sev-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  /* Details */
+  details { margin: 0.5rem 0; }
+  summary { cursor: pointer; color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem 0; }
+  details pre { background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+    padding: 1rem; overflow-x: auto; font-size: 0.75rem; max-height: 300px; overflow-y: auto; margin-top: 0.5rem; }
+
+  .empty { color: var(--text-muted); font-style: italic; padding: 1rem; text-align: center; }
+  .footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
+    color: var(--text-muted); font-size: 0.75rem; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>Review Lifecycle Simulation</h1>
+<div class="meta">
+  <span><strong>PR:</strong> <a href="https://github.com/octopusreview/octopus/pull/58">octopus #58</a></span>
+  <span><strong>Title:</strong> feat: review engine improvements, Bitbucket clone indexing, and UI enhancements</span>
+  <span><strong>Author:</strong> redoh</span>
+  <span><strong>Mode:</strong> Dedup-Only Replay</span>
+  <span><strong>Generated:</strong> 2026-03-27</span>
+</div>
+
+<h2>Summary</h2>
+<div class="cards">
+  <div class="card accent"><div class="number">4</div><div class="label">Trigger Points</div></div>
+  <div class="card yellow"><div class="number">31</div><div class="label">Actual Findings</div></div>
+  <div class="card accent"><div class="number">31</div><div class="label">Simulated (Raw)</div></div>
+  <div class="card green"><div class="number">8</div><div class="label">Caught by Dedup</div></div>
+  <div class="card"><div class="number">14</div><div class="label">After Dedup</div></div>
+</div>
+
+<h2>Timeline</h2>
+<div class="timeline">
+  <div class="trigger first">
+    <div class="trigger-header">
+      <span class="badge opened">PR Opened</span>
+      <span class="sha">8eae6db</span>
+      <span class="date">Mar 25 at 10:52 PM</span>
+      <span class="stats">9 actual / 9 simulated / 0 deduped</span>
+    </div>
+  </div>
+  <div class="trigger">
+    <div class="trigger-header">
+      <span class="badge mention">@octopus</span>
+      <span class="sha">e33296c</span>
+      <span class="date">Mar 25 at 11:17 PM</span>
+      <span class="stats">6 actual / 6 simulated / 2 deduped</span>
+    </div>
+  </div>
+  <div class="trigger">
+    <div class="trigger-header">
+      <span class="badge mention">@octopus</span>
+      <span class="sha">906f12d</span>
+      <span class="date">Mar 26 at 07:00 AM</span>
+      <span class="stats">8 actual / 8 simulated / 3 deduped</span>
+    </div>
+  </div>
+  <div class="trigger">
+    <div class="trigger-header">
+      <span class="badge mention">@octopus</span>
+      <span class="sha">21fddb7</span>
+      <span class="date">Mar 26 at 07:06 AM</span>
+      <span class="stats">8 actual / 8 simulated / 3 deduped</span>
+    </div>
+  </div>
+</div>
+
+
+<h2>Trigger #1: PR Opened <span class="sha" style="font-weight:normal">8eae6db</span></h2>
+
+<p style="color:var(--text-muted);font-size:0.85rem;">14 files changed, 1174 diff lines | LLM skipped (--skip-llm)</p>
+
+<div class="comparison">
+  <div class="panel">
+    <h4>Actual Findings <span class="count">9</span></h4>
+    
+    <table>
+      <tr><th>Sev</th><th>File</th><th>Title</th></tr>
+      
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/indexer.ts:185</td>
+        <td>OAuth token exposed in process list via git clone URL</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/indexer.ts:202</td>
+        <td>walkDir does not handle symlinks — potential infinite loop or path traversal</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/reviewer.ts:540</td>
+        <td>FEEDBACK_CLASSIFICATION_MODEL hardcoded to a potentially non-existent model ID</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/reviewer.ts:717</td>
+        <td>Jaccard dedup threshold of 0.30 may be too aggressive — risk of suppressing valid new findings</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/indexer.ts:184</td>
+        <td>git clone timeout does not propagate cancellation to the abort signal</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/bitbucket.ts:287</td>
+        <td>fetchWithRetry leaks the AbortController timer if res.status === 429 and retry succeeds</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/components/hero-octopus.tsx:331</td>
+        <td>WebGL localStorage reads duplicated across three components without abstraction</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/app/(app)/repositories/repositories-content.tsx:671</td>
+        <td>Package Analyzer link hardcodes github.com even for gitlab provider</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/indexer.ts:256</td>
+        <td>progress log at i % 100 skips reporting when i === 0</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h4>Simulated Findings <span class="count">9</span></h4>
+    <div class="empty">No findings (or LLM skipped)</div>
+  </div>
+</div>
+
+
+
+
+<details>
+  <summary>Actual review body (2455 chars)</summary>
+  <pre>11 files reviewed, 9 findings
+
+
+&lt;details&gt;
+&lt;summary&gt;🔴🟠🟡🔵💡 Additional findings&lt;/summary&gt;
+
+| Severity | File | Title | Description |
+|----------|------|-------|-------------|
+| 🔴 | `apps/web/lib/indexer.ts:L185` | OAuth token exposed in process list via git clone URL | The clone URL embeds the OAuth access token directly as a URL credential: `https://x-token-auth:${token}@bitbucket.org/.… |
+| 🟠 | `apps/web/lib/indexer.ts:L202` | walkDir does not handle symlinks — potential infinite loop or path traversal | The `walkDir` function checks `entry.isDirectory()` and `entry.isFile()` but does not guard against symlinks. A maliciou… |
+| 🟡 | `apps/web/lib/reviewer.ts:L540` | FEEDBACK_CLASSIFICATION_MODEL hardcoded to a potentially non-existent model ID | The model `claude-haiku-4-5-20251001` is hardcoded as a string constant. If this model ID is incorrect, deprecated, or n… |
+| 🟡 | `apps/web/lib/reviewer.ts:L717` | Jaccard dedup threshold of 0.30 may be too aggressive — risk of suppressing valid new findings | The `KEYWORD_THRESHOLD` of 0.30 with a `LINE_PROXIMITY` of 10 lines is quite permissive. With a small keyword set (e.g.,… |
+| 🟡 | `apps/web/lib/indexer.ts:L184` | git clone timeout does not propagate cancellation to the abort signal | The `signal?.aborted` check happens only between file processing iterations (after the clone). If indexing is cancelled … |
+| 🔵 | `apps/web/lib/bitbucket.ts:L287` | fetchWithRetry leaks the AbortController timer if res.status === 429 and retry succeeds | The `finally { clearTimeout(timer) }` block correctly handles most cases, but when `res.status === 429` is hit, the code… |
+| 🔵 | `apps/web/components/hero-octopus.tsx:L331` | WebGL localStorage reads duplicated across three components without abstraction | The pattern `isWebGLAvailable() &amp;&amp; localStorage.getItem('octopus-3d-hidden') !== 'true'` is now copy-pasted into `hero-o… |
+| 💡 | `apps/web/app/(app)/repositories/repositories-content.tsx:L671` | Package Analyzer link hardcodes github.com even for gitlab provider | The guard `repo.provider !== 'bitbucket'` hides the Package Analyzer button for Bitbucket repos, but the link still cons… |
+| 💡 | `apps/web/lib/indexer.ts:L256` | progress log at i % 100 skips reporting when i === 0 | The condition `processed &gt; 0 &amp;&amp; i % 100 === 0` means progress is logged at indices 100, 200, 300... but never at index 0… |
+
+&lt;/details&gt;
+
+
+[Octopus Review](https://github.com/apps/octopus-review)</pre>
+</details>
+
+<h2>Trigger #2: @octopus <span class="sha" style="font-weight:normal">e33296c</span></h2>
+<p style="color:var(--text-muted);font-size:0.85rem;">Instruction: <em>ready for re-review</em></p>
+<p style="color:var(--text-muted);font-size:0.85rem;">14 files changed, 1174 diff lines | LLM skipped (--skip-llm)</p>
+
+<div class="comparison">
+  <div class="panel">
+    <h4>Actual Findings <span class="count">6</span></h4>
+    
+    <table>
+      <tr><th>Sev</th><th>File</th><th>Title</th></tr>
+      
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/indexer.ts:190</td>
+        <td>OAuth token exposed in process argument list via git CLI</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/indexer.ts:185</td>
+        <td>AbortSignal forwarded to execFileAsync may cause unhandled rejection on abort</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/bitbucket.ts:338</td>
+        <td>directory path not URL-encoded in Bitbucket recursive fetch</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/reviewer.ts:539</td>
+        <td>FEEDBACK_CLASSIFICATION_MODEL hardcoded to a specific Claude version string</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/indexer.ts:213</td>
+        <td>walkDir defined inside try block — consider hoisting</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/indexer.ts:261</td>
+        <td>Progress log condition skips first 100 files when processed starts at 0</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h4>Simulated Findings <span class="count">6</span></h4>
+    
+    <table>
+      <tr><th>Sev</th><th>File</th><th>Title</th></tr>
+      
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/lib/indexer.ts:190</td>
+        <td>OAuth token exposed in process argument list via git CLI</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/lib/indexer.ts:185</td>
+        <td>AbortSignal forwarded to execFileAsync may cause unhandled rejection on abort</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/lib/bitbucket.ts:338</td>
+        <td>directory path not URL-encoded in Bitbucket recursive fetch</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/lib/reviewer.ts:539</td>
+        <td>FEEDBACK_CLASSIFICATION_MODEL hardcoded to a specific Claude version string</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/lib/indexer.ts:213</td>
+        <td>walkDir defined inside try block — consider hoisting</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/lib/indexer.ts:261</td>
+        <td>Progress log condition skips first 100 files when processed starts at 0</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+
+<div class="dedup-section">
+  <h4>Dedup Results — 2 findings caught</h4>
+  <table>
+    <tr><th>Status</th><th>Sev</th><th>File</th><th>Title</th></tr>
+    
+    <tr class="removed">
+      <td>REMOVED</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/lib/indexer.ts:190</td>
+      <td>OAuth token exposed in process argument list via git CLI</td>
+    </tr>
+    <tr class="removed">
+      <td>REMOVED</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/lib/indexer.ts:261</td>
+      <td>Progress log condition skips first 100 files when processed starts at 0</td>
+    </tr>
+    
+    <tr class="kept">
+      <td>KEPT</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/lib/indexer.ts:185</td>
+      <td>AbortSignal forwarded to execFileAsync may cause unhandled rejection on abort</td>
+    </tr>
+    <tr class="kept">
+      <td>KEPT</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/lib/bitbucket.ts:338</td>
+      <td>directory path not URL-encoded in Bitbucket recursive fetch</td>
+    </tr>
+    <tr class="kept">
+      <td>KEPT</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/lib/reviewer.ts:539</td>
+      <td>FEEDBACK_CLASSIFICATION_MODEL hardcoded to a specific Claude version string</td>
+    </tr>
+    <tr class="kept">
+      <td>KEPT</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/lib/indexer.ts:213</td>
+      <td>walkDir defined inside try block — consider hoisting</td>
+    </tr>
+  </table>
+</div>
+
+
+<details>
+  <summary>Actual review body (1640 chars)</summary>
+  <pre>12 files reviewed, 6 findings
+
+
+&lt;details&gt;
+&lt;summary&gt;🔴🟠🟡💡 Additional findings&lt;/summary&gt;
+
+| Severity | File | Title | Description |
+|----------|------|-------|-------------|
+| 🔴 | `apps/web/lib/indexer.ts:L190` | OAuth token exposed in process argument list via git CLI | The Bitbucket OAuth token is passed as a git config value via `-c http.extraHeader=Authorization: Bearer &lt;token&gt;`. On Li… |
+| 🟠 | `apps/web/lib/indexer.ts:L185` | AbortSignal forwarded to execFileAsync may cause unhandled rejection on abort | A separate `cloneController` is created and wired to the outer `signal` via an event listener. However, `execFileAsync` … |
+| 🟡 | `apps/web/lib/bitbucket.ts:L338` | directory path not URL-encoded in Bitbucket recursive fetch | The original code used `encodeURIComponent(item.path)` when constructing sub-directory URLs. The refactored version drop… |
+| 🟡 | `apps/web/lib/reviewer.ts:L539` | FEEDBACK_CLASSIFICATION_MODEL hardcoded to a specific Claude version string | The model is hardcoded as `&quot;claude-sonnet-4-6&quot;` rather than using the org's configured model or the shared model constan… |
+| 💡 | `apps/web/lib/indexer.ts:L213` | walkDir defined inside try block — consider hoisting | The `walkDir` async function is declared inside the `try` block. While functionally fine, hoisting it outside or refacto… |
+| 💡 | `apps/web/lib/indexer.ts:L261` | Progress log condition skips first 100 files when processed starts at 0 | The condition `if (processed &gt; 0 &amp;&amp; i % 100 === 0)` means no progress log fires until index 100. For repos with fewer th… |
+
+&lt;/details&gt;
+
+
+[Octopus Review](https://github.com/apps/octopus-review)</pre>
+</details>
+
+<h2>Trigger #3: @octopus <span class="sha" style="font-weight:normal">906f12d</span></h2>
+<p style="color:var(--text-muted);font-size:0.85rem;">Instruction: <em>ready for re-review</em></p>
+<p style="color:var(--text-muted);font-size:0.85rem;">14 files changed, 1174 diff lines | LLM skipped (--skip-llm)</p>
+
+<div class="comparison">
+  <div class="panel">
+    <h4>Actual Findings <span class="count">8</span></h4>
+    
+    <table>
+      <tr><th>Sev</th><th>File</th><th>Title</th></tr>
+      
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/indexer.ts:185</td>
+        <td>OAuth token leaked in git error output and process listing</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/indexer.ts:214</td>
+        <td>walkDir has no recursion depth guard — potential stack overflow on pathological repos</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/reviewer.ts:537</td>
+        <td>Hard-coded model name FEEDBACK_CLASSIFICATION_MODEL will silently fail if model is unavailable</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/reviewer.ts:704</td>
+        <td>KEYWORD_THRESHOLD of 0.30 may cause false-positive deduplication on short titles</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/bitbucket.ts:293</td>
+        <td>fetchWithRetry leaks the AbortController timer if the loop exits via the early return</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/reviewer.ts:553</td>
+        <td>checkEmojiIntent length&lt;10 heuristic is fragile</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/components/hero-octopus.tsx:331</td>
+        <td>setWebglSupported reads localStorage synchronously during useEffect — consistent across components but worth abstracting</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/Dockerfile:43</td>
+        <td>git is added to runner image but not pinned — consider version or digest pinning</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h4>Simulated Findings <span class="count">8</span></h4>
+    
+    <table>
+      <tr><th>Sev</th><th>File</th><th>Title</th></tr>
+      
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/lib/indexer.ts:185</td>
+        <td>OAuth token leaked in git error output and process listing</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/lib/indexer.ts:214</td>
+        <td>walkDir has no recursion depth guard — potential stack overflow on pathological repos</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/lib/reviewer.ts:537</td>
+        <td>Hard-coded model name FEEDBACK_CLASSIFICATION_MODEL will silently fail if model is unavailable</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/lib/reviewer.ts:704</td>
+        <td>KEYWORD_THRESHOLD of 0.30 may cause false-positive deduplication on short titles</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/lib/bitbucket.ts:293</td>
+        <td>fetchWithRetry leaks the AbortController timer if the loop exits via the early return</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/lib/reviewer.ts:553</td>
+        <td>checkEmojiIntent length&lt;10 heuristic is fragile</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/components/hero-octopus.tsx:331</td>
+        <td>setWebglSupported reads localStorage synchronously during useEffect — consistent across components but worth abstracting</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/Dockerfile:43</td>
+        <td>git is added to runner image but not pinned — consider version or digest pinning</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+
+<div class="dedup-section">
+  <h4>Dedup Results — 3 findings caught</h4>
+  <table>
+    <tr><th>Status</th><th>Sev</th><th>File</th><th>Title</th></tr>
+    
+    <tr class="removed">
+      <td>REMOVED</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/lib/indexer.ts:185</td>
+      <td>OAuth token leaked in git error output and process listing</td>
+    </tr>
+    <tr class="removed">
+      <td>REMOVED</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/lib/bitbucket.ts:293</td>
+      <td>fetchWithRetry leaks the AbortController timer if the loop exits via the early return</td>
+    </tr>
+    <tr class="removed">
+      <td>REMOVED</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/components/hero-octopus.tsx:331</td>
+      <td>setWebglSupported reads localStorage synchronously during useEffect — consistent across components but worth abstracting</td>
+    </tr>
+    
+    <tr class="kept">
+      <td>KEPT</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/lib/indexer.ts:214</td>
+      <td>walkDir has no recursion depth guard — potential stack overflow on pathological repos</td>
+    </tr>
+    <tr class="kept">
+      <td>KEPT</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/lib/reviewer.ts:537</td>
+      <td>Hard-coded model name FEEDBACK_CLASSIFICATION_MODEL will silently fail if model is unavailable</td>
+    </tr>
+    <tr class="kept">
+      <td>KEPT</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/lib/reviewer.ts:704</td>
+      <td>KEYWORD_THRESHOLD of 0.30 may cause false-positive deduplication on short titles</td>
+    </tr>
+    <tr class="kept">
+      <td>KEPT</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/lib/reviewer.ts:553</td>
+      <td>checkEmojiIntent length&lt;10 heuristic is fragile</td>
+    </tr>
+    <tr class="kept">
+      <td>KEPT</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/Dockerfile:43</td>
+      <td>git is added to runner image but not pinned — consider version or digest pinning</td>
+    </tr>
+  </table>
+</div>
+
+
+<details>
+  <summary>Actual review body (2243 chars)</summary>
+  <pre>12 files reviewed, 8 findings
+
+
+&lt;details&gt;
+&lt;summary&gt;🟠🟡🔵💡 Additional findings&lt;/summary&gt;
+
+| Severity | File | Title | Description |
+|----------|------|-------|-------------|
+| 🟠 | `apps/web/lib/indexer.ts:L185` | OAuth token leaked in git error output and process listing | The Bitbucket OAuth token is passed via GIT_CONFIG_VALUE_0 as an HTTP extra header. While this avoids embedding it in th… |
+| 🟡 | `apps/web/lib/indexer.ts:L214` | walkDir has no recursion depth guard — potential stack overflow on pathological repos | The nested async `walkDir` function recurses without a depth limit. While symlinks are explicitly skipped (good), a repo… |
+| 🟡 | `apps/web/lib/reviewer.ts:L537` | Hard-coded model name FEEDBACK_CLASSIFICATION_MODEL will silently fail if model is unavailable | FEEDBACK_CLASSIFICATION_MODEL is hardcoded as 'claude-sonnet-4-6'. If this model identifier is renamed, deprecated, or u… |
+| 🟡 | `apps/web/lib/reviewer.ts:L704` | KEYWORD_THRESHOLD of 0.30 may cause false-positive deduplication on short titles | The Jaccard threshold of 0.30 combined with the line proximity window of 10 lines can incorrectly suppress genuinely dis… |
+| 🔵 | `apps/web/lib/bitbucket.ts:L293` | fetchWithRetry leaks the AbortController timer if the loop exits via the early return | In fetchWithRetry, when res.status === 429 triggers a `continue`, the `clearTimeout(timer)` in the finally block correct… |
+| 🔵 | `apps/web/lib/reviewer.ts:L553` | checkEmojiIntent length&lt;10 heuristic is fragile | The fallback heuristic `stripped.length &lt; 10` for emoji+text replies is arbitrary. A reply like '👎 no' (4 chars) gets f… |
+| 💡 | `apps/web/components/hero-octopus.tsx:L331` | setWebglSupported reads localStorage synchronously during useEffect — consistent across components but worth abstracting | The same localStorage read pattern `isWebGLAvailable() &amp;&amp; localStorage.getItem('octopus-3d-hidden') !== 'true'` is now d… |
+| 💡 | `apps/web/Dockerfile:L43` | git is added to runner image but not pinned — consider version or digest pinning | apk add --no-cache git installs whatever git version is current in the Alpine edge/stable repos at build time. For repro… |
+
+&lt;/details&gt;
+
+
+[Octopus Review](https://github.com/apps/octopus-review)</pre>
+</details>
+
+<h2>Trigger #4: @octopus <span class="sha" style="font-weight:normal">21fddb7</span></h2>
+<p style="color:var(--text-muted);font-size:0.85rem;">Instruction: <em>ready for re-review</em></p>
+<p style="color:var(--text-muted);font-size:0.85rem;">14 files changed, 1174 diff lines | LLM skipped (--skip-llm)</p>
+
+<div class="comparison">
+  <div class="panel">
+    <h4>Actual Findings <span class="count">8</span></h4>
+    
+    <table>
+      <tr><th>Sev</th><th>File</th><th>Title</th></tr>
+      
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/indexer.ts:196</td>
+        <td>Git clone token exposed via environment variable inheritance</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/indexer.ts:228</td>
+        <td>walkDir allocates stat object but stat() is redundant after readdir withFileTypes</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/reviewer.ts:537</td>
+        <td>FEEDBACK_CLASSIFICATION_MODEL hardcoded to non-standard model name</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/indexer.ts:188</td>
+        <td>AbortSignal forwarding to cloneController is one-directional — parent signal not checked after clone</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/components/hero-octopus.tsx:331</td>
+        <td>localStorage access in useEffect not guarded for SSR</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/app/(app)/repositories/repositories-content.tsx:671</td>
+        <td>Package Analyzer link hardcodes github.com even for non-GitHub providers</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/bitbucket.ts:340</td>
+        <td>BFS queue processes next-page URLs as if they were directory URLs</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">apps/web/lib/indexer.ts:234</td>
+        <td>walkDir skips symlinks silently — could miss valid file symlinks</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h4>Simulated Findings <span class="count">8</span></h4>
+    
+    <table>
+      <tr><th>Sev</th><th>File</th><th>Title</th></tr>
+      
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/lib/indexer.ts:196</td>
+        <td>Git clone token exposed via environment variable inheritance</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/lib/indexer.ts:228</td>
+        <td>walkDir allocates stat object but stat() is redundant after readdir withFileTypes</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/lib/reviewer.ts:537</td>
+        <td>FEEDBACK_CLASSIFICATION_MODEL hardcoded to non-standard model name</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/lib/indexer.ts:188</td>
+        <td>AbortSignal forwarding to cloneController is one-directional — parent signal not checked after clone</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/components/hero-octopus.tsx:331</td>
+        <td>localStorage access in useEffect not guarded for SSR</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/app/(app)/repositories/repositories-content.tsx:671</td>
+        <td>Package Analyzer link hardcodes github.com even for non-GitHub providers</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/lib/bitbucket.ts:340</td>
+        <td>BFS queue processes next-page URLs as if they were directory URLs</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">apps/web/lib/indexer.ts:234</td>
+        <td>walkDir skips symlinks silently — could miss valid file symlinks</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+
+<div class="dedup-section">
+  <h4>Dedup Results — 3 findings caught</h4>
+  <table>
+    <tr><th>Status</th><th>Sev</th><th>File</th><th>Title</th></tr>
+    
+    <tr class="removed">
+      <td>REMOVED</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/lib/indexer.ts:196</td>
+      <td>Git clone token exposed via environment variable inheritance</td>
+    </tr>
+    <tr class="removed">
+      <td>REMOVED</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/lib/reviewer.ts:537</td>
+      <td>FEEDBACK_CLASSIFICATION_MODEL hardcoded to non-standard model name</td>
+    </tr>
+    <tr class="removed">
+      <td>REMOVED</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/app/(app)/repositories/repositories-content.tsx:671</td>
+      <td>Package Analyzer link hardcodes github.com even for non-GitHub providers</td>
+    </tr>
+    
+    <tr class="kept">
+      <td>KEPT</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/lib/indexer.ts:228</td>
+      <td>walkDir allocates stat object but stat() is redundant after readdir withFileTypes</td>
+    </tr>
+    <tr class="kept">
+      <td>KEPT</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/lib/indexer.ts:188</td>
+      <td>AbortSignal forwarding to cloneController is one-directional — parent signal not checked after clone</td>
+    </tr>
+    <tr class="kept">
+      <td>KEPT</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/components/hero-octopus.tsx:331</td>
+      <td>localStorage access in useEffect not guarded for SSR</td>
+    </tr>
+    <tr class="kept">
+      <td>KEPT</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/lib/bitbucket.ts:340</td>
+      <td>BFS queue processes next-page URLs as if they were directory URLs</td>
+    </tr>
+    <tr class="kept">
+      <td>KEPT</td>
+      <td class="severity">🟡</td>
+      <td class="file">apps/web/lib/indexer.ts:234</td>
+      <td>walkDir skips symlinks silently — could miss valid file symlinks</td>
+    </tr>
+  </table>
+</div>
+
+
+<details>
+  <summary>Actual review body (2190 chars)</summary>
+  <pre>12 files reviewed, 8 findings
+
+
+&lt;details&gt;
+&lt;summary&gt;🟠🟡🔵💡 Additional findings&lt;/summary&gt;
+
+| Severity | File | Title | Description |
+|----------|------|-------|-------------|
+| 🟠 | `apps/web/lib/indexer.ts:L196` | Git clone token exposed via environment variable inheritance | The Bitbucket OAuth token is passed to `git clone` via `GIT_CONFIG_VALUE_0` in the child process environment. This envir… |
+| 🟡 | `apps/web/lib/indexer.ts:L228` | walkDir allocates stat object but stat() is redundant after readdir withFileTypes | The `walkDir` function uses `readdir(dir, { withFileTypes: true })` which already provides `Dirent` objects with `isDire… |
+| 🟡 | `apps/web/lib/reviewer.ts:L537` | FEEDBACK_CLASSIFICATION_MODEL hardcoded to non-standard model name | The model `&quot;claude-sonnet-4-6&quot;` is hardcoded as `FEEDBACK_CLASSIFICATION_MODEL`. The standard Anthropic model identifier… |
+| 🟡 | `apps/web/lib/indexer.ts:L188` | AbortSignal forwarding to cloneController is one-directional — parent signal not checked after clone | The abort signal is wired to `cloneController` for the clone step, and `signal?.aborted` is checked at each file iterati… |
+| 🔵 | `apps/web/components/hero-octopus.tsx:L331` | localStorage access in useEffect not guarded for SSR | The call `localStorage.getItem('octopus-3d-hidden')` is inside a `useEffect`, which only runs client-side and won't caus… |
+| 🔵 | `apps/web/app/(app)/repositories/repositories-content.tsx:L671` | Package Analyzer link hardcodes github.com even for non-GitHub providers | The guard `repo.provider !== 'bitbucket'` correctly hides the Package Analyzer button for Bitbucket repos. However, the … |
+| 💡 | `apps/web/lib/bitbucket.ts:L340` | BFS queue processes next-page URLs as if they were directory URLs | In `fetchDir`, pagination (`data.next`) is pushed into `subDirs` alongside actual subdirectory URLs. This means `data.ne… |
+| 💡 | `apps/web/lib/indexer.ts:L234` | walkDir skips symlinks silently — could miss valid file symlinks | The comment says `// skip symlinks to avoid infinite loops` — this is correct for directory symlinks, but the current co… |
+
+&lt;/details&gt;
+
+
+[Octopus Review](https://github.com/apps/octopus-review)</pre>
+</details>
+
+<div class="footer">
+  Generated by Octopus Review Simulator
+</div>
+
+</body>
+</html>

@@ -62,7 +62,7 @@ import {
 } from "@/components/ui/dialog";
 import { MermaidDiagram } from "@/components/mermaid-diagram";
 import { extractAllMermaidBlocks, DIAGRAM_TYPE_LABELS, type DiagramType, type MermaidBlock } from "@/lib/mermaid-utils";
-import { analyzeRepository, cancelAnalysis, toggleAutoReview, toggleFavoriteRepository, deletePullRequestReview, updateRepoModels, transferRepository, getRepoDetail, updateReviewConfig, type RepoDetailData } from "./actions";
+import { analyzeRepository, cancelAnalysis, toggleAutoReview, toggleFavoriteRepository, deletePullRequestReview, cancelPullRequestReview, updateRepoModels, transferRepository, getRepoDetail, updateReviewConfig, type RepoDetailData } from "./actions";
 import { indexRepository, cancelIndexing, syncRepos } from "../actions";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -531,7 +531,35 @@ function DiagramButton({ pr, onDeleted }: { pr: PullRequestItem; onDeleted?: (pr
   );
 }
 
+function CancelReviewButton({ prId, onCancelled }: { prId: string; onCancelled?: () => void }) {
+  const [cancelling, startTransition] = useTransition();
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className="shrink-0 text-muted-foreground hover:text-destructive"
+      title="Cancel review"
+      disabled={cancelling}
+      onClick={() => {
+        startTransition(async () => {
+          await cancelPullRequestReview(prId);
+          onCancelled?.();
+        });
+      }}
+    >
+      {cancelling ? (
+        <IconLoader2 className="size-3.5 animate-spin" />
+      ) : (
+        <IconX className="size-3.5" />
+      )}
+    </Button>
+  );
+}
+
 function PullRequestRow({ pr, onPrDeleted }: { pr: PullRequestItem; onPrDeleted?: (prId: string) => void }) {
+  const isReviewing = pr.status === "reviewing" || pr.status === "pending";
+
   return (
     <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
       <a
@@ -546,6 +574,7 @@ function PullRequestRow({ pr, onPrDeleted }: { pr: PullRequestItem; onPrDeleted?
       </a>
       <DiagramButton pr={pr} onDeleted={onPrDeleted} />
       <span className="text-xs text-muted-foreground shrink-0">{pr.author}</span>
+      {isReviewing && <CancelReviewButton prId={pr.id} />}
       <ReviewStatusBadge status={pr.status} mergedAt={pr.mergedAt} />
     </div>
   );

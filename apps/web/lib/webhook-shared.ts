@@ -67,15 +67,25 @@ export async function startReviewFlow(params: {
     where: {
       repositoryId_number: { repositoryId: repoId, number: prNumber },
     },
-    select: { id: true, status: true, headSha: true },
+    select: { id: true, status: true, headSha: true, updatedAt: true },
   });
 
   if (existingPr && existingPr.status === "reviewing") {
-    if (existingPr.headSha === headSha) {
+    const stuckThresholdMs = 3 * 60 * 1000; // 3 minutes
+    const isStuck = Date.now() - existingPr.updatedAt.getTime() > stuckThresholdMs;
+
+    if (isStuck) {
+      console.log(`[webhook] Review for PR #${prNumber} stuck for >3min, marking as failed and restarting`);
+      await prisma.pullRequest.update({
+        where: { id: existingPr.id },
+        data: { status: "failed", errorMessage: "Review timed out after 3 minutes" },
+      });
+    } else if (existingPr.headSha === headSha) {
       console.log(`[webhook] Review already in progress for PR #${prNumber} (same SHA), skipping`);
       return;
+    } else {
+      console.log(`[webhook] New SHA detected for PR #${prNumber}, restarting review`);
     }
-    console.log(`[webhook] New SHA detected for PR #${prNumber}, restarting review`);
   }
 
   // Check if PR author is blocked from triggering reviews

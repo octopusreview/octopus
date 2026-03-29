@@ -369,6 +369,119 @@ export async function deletePullRequestReview(
   return {};
 }
 
+export async function cancelPullRequestReview(
+  pullRequestId: string,
+): Promise<{ error?: string }> {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+  if (!session) redirect("/login");
+
+  const pr = await prisma.pullRequest.findUnique({
+    where: { id: pullRequestId },
+    select: {
+      id: true,
+      number: true,
+      title: true,
+      status: true,
+      headSha: true,
+      repository: {
+        select: {
+          fullName: true,
+          installationId: true,
+          provider: true,
+          organizationId: true,
+          organization: {
+            select: {
+              githubInstallationId: true,
+              members: {
+                where: { userId: session.user.id, deletedAt: null },
+                select: { id: true },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!pr || pr.repository.organization.members.length === 0) {
+    return { error: "Pull request not found" };
+  }
+
+  if (pr.status !== "reviewing" && pr.status !== "pending") {
+    return { error: "Review is not in progress" };
+  }
+
+  // Update PR status to failed
+  await prisma.pullRequest.update({
+    where: { id: pullRequestId },
+    data: {
+      status: "failed",
+      errorMessage: "Review cancelled by user",
+    },
+  });
+
+  // Update GitHub check run if applicable
+  const installationId =
+    pr.repository.installationId ?? pr.repository.organization.githubInstallationId;
+
+  if (pr.headSha && pr.repository.provider === "github" && installationId) {
+    try {
+      const [owner, repo] = pr.repository.fullName.split("/");
+      const { getInstallationToken } = await import("@/lib/github");
+
+      const token = await getInstallationToken(installationId);
+
+      // List check runs for this commit to find the in-progress one
+      const listRes = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/commits/${pr.headSha}/check-runs`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+          },
+        },
+      );
+
+      if (listRes.ok) {
+        const data = await listRes.json();
+        const octopusRun = data.check_runs?.find(
+          (cr: { name: string; status: string }) =>
+            cr.name === "Octopus Review" && cr.status === "in_progress",
+        );
+
+        if (octopusRun) {
+          await fetch(
+            `https://api.github.com/repos/${owner}/${repo}/check-runs/${octopusRun.id}`,
+            {
+              method: "PATCH",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/vnd.github+json",
+              },
+              body: JSON.stringify({
+                status: "completed",
+                conclusion: "cancelled",
+                completed_at: new Date().toISOString(),
+                output: {
+                  title: "Review Cancelled",
+                  summary: `Review cancelled by ${session.user.name ?? session.user.email}.`,
+                },
+              }),
+            },
+          );
+        }
+      }
+    } catch (e) {
+      console.error("[cancel-review] Failed to update GitHub check run:", e);
+    }
+  }
+
+  revalidatePath("/repositories");
+  return {};
+}
+
 export async function updateRepoModels(
   repoId: string,
   reviewModelId: string | null,

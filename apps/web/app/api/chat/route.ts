@@ -39,8 +39,10 @@ function getOpenAIClient(): OpenAI {
 }
 
 async function translateToEnglish(text: string): Promise<string> {
-  const nonLatinOrAccented = /[^\x00-\x7F]/.test(text);
-  if (!nonLatinOrAccented) return text;
+  // Skip translation for ASCII-only and Latin-extended text (accented chars like é, ñ, ü).
+  // Only translate when non-Latin scripts are detected (Cyrillic, CJK, Arabic, Turkish İ/ı, etc.)
+  const hasNonLatinScript = /[^\u0000-\u024F\u1E00-\u1EFF]/.test(text);
+  if (!hasNonLatinScript) return text;
 
   try {
     const res = await getOpenAIClient().chat.completions.create({

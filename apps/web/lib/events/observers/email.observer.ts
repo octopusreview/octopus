@@ -10,6 +10,16 @@ import type {
   KnowledgeReadyEvent,
 } from "../types";
 
+/** Escape user-controlled strings before interpolating into HTML email templates. */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
+}
+
 async function getEligibleRecipients(
   orgId: string,
   eventType: string,
@@ -76,6 +86,7 @@ async function sendEventEmail(
 }
 
 function onRepoIndexed(event: RepoIndexedEvent): Promise<void> {
+  const repo = escapeHtml(event.repoFullName);
   if (event.success) {
     const details = event.indexedFiles != null
       ? `<p style="color: #555;">${event.indexedFiles} files indexed, ${event.totalVectors ?? 0} vectors created${event.durationMs != null ? ` in ${Math.round(event.durationMs / 1000)}s` : ""}</p>`
@@ -83,59 +94,66 @@ function onRepoIndexed(event: RepoIndexedEvent): Promise<void> {
     return sendEventEmail(
       event.orgId,
       "repo-indexed",
-      `Repository Indexed: ${event.repoFullName}`,
+      `Repository Indexed: ${repo}`,
       `Repository Indexed`,
-      `<p><strong>${event.repoFullName}</strong> has been successfully indexed.</p>${details}`,
+      `<p><strong>${repo}</strong> has been successfully indexed.</p>${details}`,
     );
   }
+  const error = escapeHtml(event.error ?? "Unknown error");
   return sendEventEmail(
     event.orgId,
     "repo-indexed",
-    `Repository Indexing Failed: ${event.repoFullName}`,
+    `Repository Indexing Failed: ${repo}`,
     `Repository Indexing Failed`,
-    `<p><strong>${event.repoFullName}</strong> indexing failed.</p><p style="color: #c00;">${event.error ?? "Unknown error"}</p>`,
+    `<p><strong>${repo}</strong> indexing failed.</p><p style="color: #c00;">${error}</p>`,
   );
 }
 
 function onRepoAnalyzed(event: RepoAnalyzedEvent): Promise<void> {
+  const repo = escapeHtml(event.repoFullName);
   return sendEventEmail(
     event.orgId,
     "repo-analyzed",
-    `Repository Analyzed: ${event.repoFullName}`,
+    `Repository Analyzed: ${repo}`,
     `Repository Analyzed`,
-    `<p><strong>${event.repoFullName}</strong> analysis is complete.</p>`,
+    `<p><strong>${repo}</strong> analysis is complete.</p>`,
   );
 }
 
 function onReviewRequested(event: ReviewRequestedEvent): Promise<void> {
+  const title = escapeHtml(event.prTitle);
+  const author = escapeHtml(event.prAuthor);
   return sendEventEmail(
     event.orgId,
     "review-requested",
-    `Review Requested: PR #${event.prNumber} ${event.prTitle}`,
+    `Review Requested: PR #${event.prNumber} ${title}`,
     `Review Requested`,
-    `<p>PR <a href="${event.prUrl}" style="color: #0366d6;">#${event.prNumber}: ${event.prTitle}</a></p><p style="color: #555;">Author: ${event.prAuthor}</p>`,
+    `<p>PR <a href="${escapeHtml(event.prUrl)}" style="color: #0366d6;">#${event.prNumber}: ${title}</a></p><p style="color: #555;">Author: ${author}</p>`,
   );
 }
 
 function onReviewCompleted(event: ReviewCompletedEvent): Promise<void> {
+  const title = escapeHtml(event.prTitle);
   const findings = `${event.findingsCount} finding${event.findingsCount !== 1 ? "s" : ""}`;
   const files = `${event.filesChanged} file${event.filesChanged !== 1 ? "s" : ""} reviewed`;
   return sendEventEmail(
     event.orgId,
     "review-completed",
-    `Review Completed: PR #${event.prNumber} ${event.prTitle}`,
+    `Review Completed: PR #${event.prNumber} ${title}`,
     `Review Completed`,
-    `<p>PR <a href="${event.prUrl}" style="color: #0366d6;">#${event.prNumber}: ${event.prTitle}</a></p><p style="color: #555;">${findings}, ${files}</p>`,
+    `<p>PR <a href="${escapeHtml(event.prUrl)}" style="color: #0366d6;">#${event.prNumber}: ${title}</a></p><p style="color: #555;">${findings}, ${files}</p>`,
   );
 }
 
 function onReviewFailed(event: ReviewFailedEvent): Promise<void> {
+  const title = escapeHtml(event.prTitle);
+  const error = escapeHtml(event.error);
   return sendEventEmail(
     event.orgId,
     "review-failed",
-    `Review Failed: PR #${event.prNumber} ${event.prTitle}`,
+    `Review Failed: PR #${event.prNumber} ${title}`,
     `Review Failed`,
-    `<p>PR #${event.prNumber}: <strong>${event.prTitle}</strong></p><p style="color: #c00;">Error: ${event.error}</p>`,
+    `<p>PR #${event.prNumber}: <strong>${title}</strong></p><p style="color: #c00;">Error: ${error}</p>`,
   );
 }
 
@@ -144,12 +162,13 @@ function onKnowledgeReady(event: KnowledgeReadyEvent): Promise<void> {
     event.action === "created" ? "Ready" :
     event.action === "updated" ? "Updated" :
     "Restored";
+  const docTitle = escapeHtml(event.documentTitle);
   return sendEventEmail(
     event.orgId,
     "knowledge-ready",
-    `Knowledge Document ${actionLabel}: ${event.documentTitle}`,
+    `Knowledge Document ${actionLabel}: ${docTitle}`,
     `Knowledge Document ${actionLabel}`,
-    `<p>"<strong>${event.documentTitle}</strong>" is now available.</p><p style="color: #555;">${event.totalChunks} chunks, ${event.totalVectors} vectors</p>`,
+    `<p>"<strong>${docTitle}</strong>" is now available.</p><p style="color: #555;">${event.totalChunks} chunks, ${event.totalVectors} vectors</p>`,
   );
 }
 

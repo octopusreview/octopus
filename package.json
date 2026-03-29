@@ -16,7 +16,8 @@
     "db:migrate": "bun --filter @octopus/db db:migrate",
     "db:push": "bun --filter @octopus/db db:push",
     "db:studio": "bun --filter @octopus/db db:studio",
-    "skills:generate": "bun run apps/web/scripts/generate-skills-json.ts"
+    "skills:generate": "bun run apps/web/scripts/generate-skills-json.ts",
+    "simulate:review": "bun run --cwd apps/web scripts/review-simulator.ts"
   },
   "trustedDependencies": [
     "@prisma/engines",

@@ -147,6 +147,8 @@ export async function indexRepository(
   signal?: AbortSignal,
   provider: string = "github",
   organizationId?: string,
+  /** Pre-resolved token (e.g. GITHUB_TOKEN from Actions). Skips getInstallationToken when provided. */
+  providedToken?: string,
 ): Promise<IndexStats> {
   const startTime = Date.now();
 
@@ -292,7 +294,7 @@ export async function indexRepository(
   } else {
     // ── GitHub indexing flow ──
     onLog("Authenticating with GitHub...");
-    const token = await getInstallationToken(installationId);
+    const token = providedToken ?? await getInstallationToken(installationId);
     const headers = {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github+json",

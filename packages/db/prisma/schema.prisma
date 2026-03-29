@@ -105,6 +105,9 @@ model Organization {
   creditBalance           Decimal  @default(0) @db.Decimal(12, 4)
   freeCreditBalance       Decimal  @default(150) @db.Decimal(12, 4)
   billingEmail            String?
+  type                 Int      @default(1) // 1=standard, 2=community, 3=friendly
+  communityDailyReviewLimit Int  @default(5)
+  typeChanges          OrgTypeChange[]
   bannedAt             DateTime?
   bannedReason         String?
   deletedAt            DateTime?
@@ -869,4 +872,20 @@ model AskOctopusMessage {
   @@index([sessionId])
   @@index([createdAt])
   @@map("ask_octopus_messages")
+}
+
+// ── Organization Type History ────────────────────────────────────────────────
+
+model OrgTypeChange {
+  id             String   @id @default(cuid())
+  fromType       Int      // previous type (1=standard, 2=community, 3=friendly)
+  toType         Int      // new type
+  reason         String?  // optional note
+  changedById    String?  // admin user who made the change (null for system changes)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@map("org_type_changes")
 }

@@ -22,7 +22,7 @@ COPY tools ./tools
 COPY packages/db ./packages/db
 COPY packages/package-analyzer ./packages/package-analyzer
 COPY apps/web ./apps/web
-COPY package.json bun.lock turbo.json ./
+COPY package.json bun.lock turbo.json CHANGELOG.md ./
 ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
 ENV BETTER_AUTH_SECRET="build-time-dummy-secret"
 ENV BETTER_AUTH_URL="http://localhost:3000"
@@ -48,6 +48,7 @@ RUN apk add --no-cache git && \
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/CHANGELOG.md ./CHANGELOG.md
 
 USER nextjs
 EXPOSE 3000

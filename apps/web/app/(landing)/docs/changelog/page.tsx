@@ -142,16 +142,23 @@ const sectionMeta: Record<
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
 
-export default function ChangelogPage() {
-  let raw = "";
-  try {
-    raw = fs.readFileSync(
-      path.join(process.cwd(), "../../CHANGELOG.md"),
-      "utf-8",
-    );
-  } catch {
-    // CHANGELOG.md not found — render empty state
+function readChangelog(): string {
+  const candidates = [
+    path.join(process.cwd(), "../../CHANGELOG.md"),  // dev (cwd = apps/web)
+    path.join(process.cwd(), "CHANGELOG.md"),         // standalone (cwd = /app)
+  ];
+  for (const p of candidates) {
+    try {
+      return fs.readFileSync(p, "utf-8");
+    } catch {
+      // try next
+    }
   }
+  return "";
+}
+
+export default function ChangelogPage() {
+  const raw = readChangelog();
   const entries = parseChangelog(raw);
 
   return (

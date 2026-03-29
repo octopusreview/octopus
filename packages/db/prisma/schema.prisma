@@ -937,3 +937,25 @@ model StatusApiToken {
   @@index([tokenHash])
   @@map("status_api_tokens")
 }
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  action         String   // e.g. "user.login", "email.sent", "review.completed"
+  category       String   // "auth" | "email" | "review" | "repo" | "knowledge" | "billing" | "admin" | "system"
+  actorId        String?  // userId who triggered the action (null for system events)
+  actorEmail     String?  // denormalized for quick display
+  targetType     String?  // e.g. "user", "organization", "repository", "pr"
+  targetId       String?  // ID of the target entity
+  organizationId String?  // org scope (null for platform-level events)
+  metadata       Json     @default("{}") // extra context (prNumber, repoName, recipient, etc.)
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  @@index([category, createdAt])
+  @@index([actorId, createdAt])
+  @@index([organizationId, createdAt])
+  @@index([action, createdAt])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

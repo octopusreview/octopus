@@ -9,8 +9,6 @@
 
 # Infrastructure and CI
 /.github/ @redoh
-/Dockerfile @redoh
-/docker-compose*.yml @redoh
 
 # Review engine
 /apps/web/lib/reviewer.ts @redoh

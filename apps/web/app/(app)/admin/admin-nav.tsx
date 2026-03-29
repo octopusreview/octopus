@@ -15,12 +15,16 @@ import {
   IconNews,
   IconDatabase,
   IconMessageCircle,
+  IconHistory,
+  IconHeartbeat,
+  IconWorld,
 } from "@tabler/icons-react";
 
 const items = [
   { href: "/admin", label: "Overview", icon: IconLayoutDashboard },
   { href: "/admin/users", label: "Users", icon: IconUsers },
   { href: "/admin/organizations", label: "Organizations", icon: IconBuilding },
+  { href: "/admin/community", label: "Community", icon: IconWorld },
   { href: "/admin/usage", label: "AI Usage", icon: IconChartBar },
   { href: "/admin/models", label: "Models", icon: IconBrain },
   { href: "/admin/review-defaults", label: "Review Defaults", icon: IconEye },
@@ -29,6 +33,8 @@ const items = [
   { href: "/admin/blog", label: "Blog Posts", icon: IconNews },
   { href: "/admin/seed-docs", label: "Seed Docs", icon: IconDatabase },
   { href: "/admin/ask-octopus-logs", label: "Ask Octopus Logs", icon: IconMessageCircle },
+  { href: "/admin/audit-log", label: "Audit Log", icon: IconHistory },
+  { href: "/admin/status", label: "Status Page", icon: IconHeartbeat },
 ];
 
 export function AdminNav() {

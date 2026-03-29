@@ -38,6 +38,19 @@ import { parseOctopusIgnore, filterDiff, detectBadCommits } from "@/lib/octopus-
 import type { ReviewComment } from "@/lib/github";
 import { eventBus } from "@/lib/events";
 import { indexRepository } from "@/lib/indexer";
+import {
+  type InlineFinding,
+  type PriorFinding,
+  FINDINGS_START_MARKER,
+  FINDINGS_END_MARKER,
+  extractDiffFiles,
+  parseFindingsFromJson,
+  parseFindingsFromMarkdown,
+  parseFindings,
+  extractKeywords,
+  deduplicateAgainstPrior,
+  parseFindingsFromSummaryTable,
+} from "@/lib/review-dedup";
 import type { LogLevel } from "@/lib/indexer";
 import { summarizeRepository } from "@/lib/summarizer";
 import { analyzeRepository } from "@/lib/analyzer";
@@ -94,14 +107,7 @@ function extractUserInstruction(commentBody: string): string {
 }
 
 
-/** Extract all file paths touched by a unified diff (using the "b/" side). */
-function extractDiffFiles(diff: string): Set<string> {
-  const files = new Set<string>();
-  for (const match of diff.matchAll(/^diff --git a\/(.+?) b\/(.+)$/gm)) {
-    files.add(match[2]);
-  }
-  return files;
-}
+// extractDiffFiles — imported from @/lib/review-dedup
 
 /** Count findings in the review body (JSON format first, legacy markdown fallback) */
 function countFindings(reviewBody: string): number {
@@ -165,17 +171,7 @@ function parseDiffLines(diff: string): Map<string, Set<number>> {
   return fileLines;
 }
 
-type InlineFinding = {
-  severity: string;
-  title: string;
-  filePath: string;
-  startLine: number;
-  endLine: number;
-  category: string;
-  description: string;
-  suggestion: string;
-  confidence: string;
-};
+// InlineFinding type — imported from @/lib/review-dedup
 
 const MAX_FINDINGS_PER_REVIEW = 30;
 
@@ -249,111 +245,8 @@ function buildLowSeveritySummary(findings: InlineFinding[]): string {
   return parts.join("\n");
 }
 
-const FINDINGS_START_MARKER = "<!-- OCTOPUS_FINDINGS_START -->";
-const FINDINGS_END_MARKER = "<!-- OCTOPUS_FINDINGS_END -->";
-
-/** Parse findings from JSON block (new format). Returns null if not found or unparseable. */
-function parseFindingsFromJson(reviewBody: string): InlineFinding[] | null {
-  const startIdx = reviewBody.indexOf(FINDINGS_START_MARKER);
-  const endIdx = reviewBody.indexOf(FINDINGS_END_MARKER);
-  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) return null;
-
-  let block = reviewBody.slice(startIdx + FINDINGS_START_MARKER.length, endIdx).trim();
-
-  // Strip markdown code fences if present
-  const fenceMatch = block.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
-  if (fenceMatch) {
-    block = fenceMatch[1].trim();
-  }
-
-  try {
-    const parsed = JSON.parse(block);
-    if (!Array.isArray(parsed)) return null;
-
-    const findings: InlineFinding[] = [];
-    for (const item of parsed) {
-      if (
-        typeof item.severity !== "string" ||
-        typeof item.title !== "string" ||
-        typeof item.filePath !== "string" ||
-        typeof item.startLine !== "number" ||
-        typeof item.description !== "string"
-      ) {
-        continue;
-      }
-
-      findings.push({
-        severity: item.severity,
-        title: item.title,
-        filePath: item.filePath.replace(/^`|`$/g, "").replace(/:L\d+.*$/, ""),
-        startLine: item.startLine,
-        endLine: typeof item.endLine === "number" ? item.endLine : item.startLine,
-        category: item.category ?? "",
-        description: item.description,
-        suggestion: item.suggestion ?? "",
-        confidence: (item.confidence ?? "MEDIUM").toUpperCase(),
-      });
-    }
-
-    return findings.length > 0 ? findings : null;
-  } catch {
-    console.warn("[reviewer] JSON findings block found but failed to parse");
-    return null;
-  }
-}
-
-/** Parse findings from legacy markdown format (#### emoji headings). */
-function parseFindingsFromMarkdown(reviewBody: string): InlineFinding[] {
-  const findings: InlineFinding[] = [];
-  const parts = reviewBody.split(/^####\s+/m);
-
-  for (const part of parts) {
-    if (!part.trim()) continue;
-
-    const severityMatch = part.match(/^(🔴|🟠|🟡|🔵|💡)\s+(.+)/);
-    if (!severityMatch) continue;
-
-    const severity = severityMatch[1];
-    const title = severityMatch[2].split("\n")[0].trim();
-
-    const fileMatch = part.match(/\*\*File:\*\*\s*`([^`:]+):L(\d+)(?:-L(\d+))?`/);
-    if (!fileMatch) continue;
-
-    const filePath = fileMatch[1];
-    const startLine = parseInt(fileMatch[2], 10);
-    const endLine = fileMatch[3] ? parseInt(fileMatch[3], 10) : startLine;
-
-    const catMatch = part.match(/\*\*Category:\*\*\s*(.+)/);
-    const category = catMatch?.[1]?.trim() ?? "";
-
-    const descMatch = part.match(/\*\*Description:\*\*\s*([\s\S]+?)(?=\n-\s*\*\*|$)/);
-    const description = descMatch?.[1]?.trim() ?? "";
-
-    const suggMatch = part.match(/\*\*Suggestion:\*\*\s*\n```\w*\n([\s\S]+?)```/);
-    const suggestion = suggMatch?.[1]?.trimEnd() ?? "";
-
-    const confMatch = part.match(/\*\*Confidence:\*\*\s*(HIGH|MEDIUM|LOW)/i);
-    const confidence = confMatch?.[1]?.toUpperCase() ?? "MEDIUM";
-
-    findings.push({ severity, title, filePath, startLine, endLine, category, description, suggestion, confidence });
-  }
-
-  return findings;
-}
-
-/** Parse findings: try JSON format first, fall back to legacy markdown. */
-function parseFindings(reviewBody: string): InlineFinding[] {
-  const jsonFindings = parseFindingsFromJson(reviewBody);
-  if (jsonFindings !== null) {
-    console.log(`[reviewer] Parsed ${jsonFindings.length} findings from JSON block`);
-    return jsonFindings;
-  }
-  const mdFindings = parseFindingsFromMarkdown(reviewBody);
-  if (mdFindings.length > 0) {
-    console.log(`[reviewer] Parsed ${mdFindings.length} findings from legacy markdown format`);
-  }
-  return mdFindings;
-}
+// FINDINGS_START_MARKER, FINDINGS_END_MARKER, parseFindingsFromJson,
+// parseFindingsFromMarkdown, parseFindings — imported from @/lib/review-dedup
 
 /**
  * Strip ALL finding-related content from the review body so the main comment
@@ -718,111 +611,8 @@ function normalizeFindingTitle(title: string): string {
  * Extract significant keywords from a finding title/description for dedup matching.
  * Removes common stop words and returns a set of meaningful tokens.
  */
-function extractKeywords(text: string): Set<string> {
-  const STOP_WORDS = new Set([
-    "a", "an", "the", "in", "on", "at", "to", "for", "of", "with", "by", "from",
-    "is", "are", "was", "were", "be", "been", "being", "has", "have", "had",
-    "do", "does", "did", "will", "would", "could", "should", "may", "might",
-    "not", "no", "and", "or", "but", "if", "then", "than", "so", "that", "this",
-    "it", "its", "can", "into", "over", "such", "too", "very", "just",
-  ]);
-  return new Set(
-    text
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, " ")
-      .split(/\s+/)
-      .filter((w) => w.length > 2 && !STOP_WORDS.has(w)),
-  );
-}
-
-/**
- * Compute Jaccard similarity between two sets of keywords (0 to 1).
- */
-function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 && b.size === 0) return 1;
-  let intersection = 0;
-  for (const word of a) {
-    if (b.has(word)) intersection++;
-  }
-  const union = a.size + b.size - intersection;
-  return union === 0 ? 0 : intersection / union;
-}
-
-type PriorFinding = {
-  filePath: string;
-  line: number;
-  title: string;
-  keywords: Set<string>;
-};
-
-/**
- * Hard dedup filter: removes findings from LLM output that duplicate prior bot comments.
- * Uses file proximity (same file + nearby line) combined with keyword similarity.
- * This catches cases where the LLM rephrases the same finding with different wording.
- */
-function deduplicateAgainstPrior(
-  findings: InlineFinding[],
-  priorFindings: PriorFinding[],
-): { kept: InlineFinding[]; removed: InlineFinding[] } {
-  if (priorFindings.length === 0) return { kept: findings, removed: [] };
-
-  const LINE_PROXIMITY = 10; // findings within 10 lines of a prior finding on the same file
-  const KEYWORD_THRESHOLD = 0.30; // 30% keyword overlap is enough to consider a duplicate
-
-  const kept: InlineFinding[] = [];
-  const removed: InlineFinding[] = [];
-
-  for (const finding of findings) {
-    const findingKeywords = extractKeywords(`${finding.title} ${finding.description}`);
-
-    const isDuplicate = priorFindings.some((prior) => {
-      // Must be the same file
-      if (prior.filePath !== finding.filePath) return false;
-
-      // Check line proximity
-      const lineClose =
-        Math.abs(prior.line - finding.startLine) <= LINE_PROXIMITY ||
-        Math.abs(prior.line - finding.endLine) <= LINE_PROXIMITY;
-      if (!lineClose) return false;
-
-      // Check keyword similarity
-      const similarity = jaccardSimilarity(findingKeywords, prior.keywords);
-      return similarity >= KEYWORD_THRESHOLD;
-    });
-
-    if (isDuplicate) {
-      removed.push(finding);
-    } else {
-      kept.push(finding);
-    }
-  }
-
-  return { kept, removed };
-}
-
-/**
- * Parse findings from a review summary table (the collapsed "Additional findings" block).
- * Matches rows like: | 🟡 | `file.ts:L42` | Title | Description... |
- */
-function parseFindingsFromSummaryTable(reviewBody: string): PriorFinding[] {
-  const results: PriorFinding[] = [];
-  // Match table rows: | EMOJI | `filepath:LNNN` | title | description |
-  const rowRegex = /\|\s*(🔴|🟠|🟡|🔵|💡)\s*\|\s*`([^`]+?):L(\d+)`\s*\|\s*([^|]+)\|\s*([^|]*)\|/g;
-  let match;
-  while ((match = rowRegex.exec(reviewBody)) !== null) {
-    const filePath = match[2];
-    const line = parseInt(match[3], 10);
-    const title = match[4].trim();
-    const description = match[5].trim();
-    results.push({
-      filePath,
-      line,
-      title,
-      keywords: extractKeywords(`${title} ${description}`),
-    });
-  }
-  return results;
-}
+// extractKeywords, jaccardSimilarity, PriorFinding, deduplicateAgainstPrior,
+// parseFindingsFromSummaryTable — imported from @/lib/review-dedup
 
 /**
  * Parse per-finding feedback from a structured comment body.

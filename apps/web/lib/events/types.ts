@@ -57,6 +57,25 @@ export type CreditLowEvent = {
   remainingBalance: number;
 };
 
+export type OrgTypeChangedEvent = {
+  type: "org-type-changed";
+  orgId: string;
+  orgName: string;
+  fromType: number;
+  toType: number;
+  reason?: string;
+  changedById: string;
+  changedByEmail?: string;
+};
+
+export type CommunityReviewEvent = {
+  type: "community-review";
+  orgId: string;
+  repoFullName: string;
+  prNumber?: number;
+  findingsCount: number;
+};
+
 export type AppEvent =
   | RepoIndexedEvent
   | RepoAnalyzedEvent
@@ -64,6 +83,8 @@ export type AppEvent =
   | ReviewCompletedEvent
   | ReviewFailedEvent
   | KnowledgeReadyEvent
-  | CreditLowEvent;
+  | CreditLowEvent
+  | OrgTypeChangedEvent
+  | CommunityReviewEvent;
 
 export type AppEventType = AppEvent["type"];

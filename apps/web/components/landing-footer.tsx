@@ -153,6 +153,16 @@ export function LandingFooter() {
                   About
                 </TrackedLink>
               </li>
+              <li>
+                <TrackedLink
+                  href="/status"
+                  event="footer_click"
+                  eventParams={{ label: "status" }}
+                  className="text-sm text-[#666] transition-colors hover:text-white"
+                >
+                  System Status
+                </TrackedLink>
+              </li>
             </ul>
           </div>
 

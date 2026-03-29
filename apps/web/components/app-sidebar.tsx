@@ -31,9 +31,7 @@ import {
   IconSearch,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
-  IconShieldCog,
   IconBug,
-  IconCreditCard,
   IconPackage,
 } from "@tabler/icons-react";
 import { CommandPalette } from "@/components/command-palette";
@@ -47,7 +45,6 @@ const mainNavItems = [
 ];
 
 const bottomNavItems = [
-  { href: "/settings/billing", label: "Billing", icon: IconCreditCard },
   { href: "/usage", label: "Usage", icon: IconChartBar },
 ];
 
@@ -163,12 +160,11 @@ function SidebarContent({
         })}
 
         {collapsed ? (
-          <SidebarTooltip label={chat.isOpen ? "Close Chat" : "Open Chat"}>
+          <SidebarTooltip label={chat.isOpen ? "Close Ask Octopus" : "Ask Octopus"}>
             <button
               onClick={() => { chat.toggle(); onNavigate?.(); }}
               className={cn(
-                "flex w-full items-center justify-center rounded-md px-2 py-2 transition-colors hover:bg-sidebar-accent/50",
-                chat.isOpen ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground"
+                "flex w-full items-center justify-center rounded-md px-2 py-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50"
               )}
             >
               <IconMessageChatbot className="size-4" />
@@ -178,12 +174,11 @@ function SidebarContent({
           <button
             onClick={() => { chat.toggle(); onNavigate?.(); }}
             className={cn(
-              "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-sidebar-accent/50",
-              chat.isOpen ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground"
+              "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50"
             )}
           >
             <IconMessageChatbot className="size-4 shrink-0" />
-            Chat
+            Ask Octopus
             {chat.isOpen && (
               <span className="ml-auto size-1.5 rounded-full bg-primary" />
             )}
@@ -212,33 +207,6 @@ function SidebarContent({
           ) : knowledgeLink;
         })()}
 
-        {isAdmin && (
-          <>
-            <div className={cn("my-2 border-t", collapsed ? "mx-1" : "mx-2")} />
-            {(() => {
-              const adminActive = pathname.startsWith("/admin");
-              const adminLink = (
-                <Link
-                  href="/admin"
-                  onClick={onNavigate}
-                  className={cn(
-                    "flex items-center rounded-md text-sm font-medium transition-colors",
-                    collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-2",
-                    adminActive
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-sidebar-foreground hover:bg-sidebar-accent/50"
-                  )}
-                >
-                  <IconShieldCog className="size-4 shrink-0" />
-                  {!collapsed && "Admin"}
-                </Link>
-              );
-              return collapsed ? (
-                <SidebarTooltip label="Admin">{adminLink}</SidebarTooltip>
-              ) : adminLink;
-            })()}
-          </>
-        )}
       </nav>
 
       <div className={cn("space-y-1 py-2", collapsed ? "px-2" : "px-3")}>
@@ -281,7 +249,7 @@ function SidebarContent({
                 onClick={onNavigate}
                 className={cn(
                   "flex w-full items-center justify-center rounded-md px-2 py-2 text-sm font-medium transition-colors",
-                  pathname.startsWith("/settings") && !pathname.startsWith("/settings/billing")
+                  pathname.startsWith("/settings")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground hover:bg-sidebar-accent/50"
                 )}
@@ -307,7 +275,7 @@ function SidebarContent({
               onClick={onNavigate}
               className={cn(
                 "flex flex-1 items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                pathname.startsWith("/settings") && !pathname.startsWith("/settings/billing")
+                pathname.startsWith("/settings")
                   ? "bg-sidebar-accent text-sidebar-accent-foreground"
                   : "text-sidebar-foreground hover:bg-sidebar-accent/50"
               )}
@@ -332,7 +300,7 @@ function SidebarContent({
         {collapsed ? (
           <SidebarTooltip label={user.name}>
             <div>
-              <UserMenu name={user.name} email={user.email}>
+              <UserMenu name={user.name} email={user.email} isAdmin={isAdmin}>
                 <button className="flex w-full items-center justify-center rounded-md px-2 py-2 transition-colors hover:bg-sidebar-accent/50">
                   <UserAvatar value={user.email} size={20} />
                 </button>
@@ -340,7 +308,7 @@ function SidebarContent({
             </div>
           </SidebarTooltip>
         ) : (
-          <UserMenu name={user.name} email={user.email}>
+          <UserMenu name={user.name} email={user.email} isAdmin={isAdmin}>
             <button className="flex w-full items-center gap-3 rounded-md px-1 py-1 transition-colors hover:bg-sidebar-accent/50">
               <UserAvatar value={user.email} size={32} />
               <div className="min-w-0 flex-1 text-left">
@@ -402,7 +370,7 @@ export function MobileHeader(props: SidebarProps) {
           )}
         >
           <IconMessageChatbot className="size-4" />
-          Chat
+          Ask Octopus
         </button>
       </header>
       <Sheet open={open} onOpenChange={setOpen}>

@@ -73,6 +73,8 @@ type ChatContextValue = {
   connectedAgents: ConnectedAgent[];
   lastMessageAgentUsed: boolean;
   openWithRepoContext: (repoFullName: string) => void;
+  repoContext: string | null;
+  clearRepoContext: () => void;
 };
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -126,6 +128,8 @@ export function ChatProvider({
   const [streamingConversationId, setStreamingConversationId] = useState<string | null>(null);
   // Local agent state
   const [connectedAgents, setConnectedAgents] = useState<ConnectedAgent[]>([]);
+  const [repoContext, setRepoContext] = useState<string | null>(null);
+  const repoContextRef = useRef<string | null>(null);
   const [lastMessageAgentUsed, setLastMessageAgentUsed] = useState(false);
 
   // Track which conversation is currently subscribed to pubby
@@ -496,7 +500,6 @@ export function ChatProvider({
       // Create abort controller for this stream
       const abortController = new AbortController();
       streamAbortRef.current = abortController;
-
       try {
         const res = await fetch("/api/chat", {
           method: "POST",
@@ -505,6 +508,7 @@ export function ChatProvider({
             message: content.trim(),
             conversationId: activeConversationId,
             orgId,
+            ...(repoContextRef.current ? { repoContext: repoContextRef.current } : {}),
           }),
           signal: abortController.signal,
         });
@@ -590,6 +594,8 @@ export function ChatProvider({
           }
         }
 
+        setStreamingContent(fullContent);
+
         if (fullContent) {
           setMessages((prev) => [
             ...prev,
@@ -667,13 +673,17 @@ export function ChatProvider({
       setStreamingConversationId(null);
       setQueuePosition(null);
       setIsSending(false);
+      setRepoContext(repoFullName);
+      repoContextRef.current = repoFullName;
       setIsOpen(true);
-      const msg = `Tell me about the ${repoFullName} repository. Give me an overview of its purpose, architecture, tech stack, recent activity, and any notable patterns or issues you can find.`;
-      // Defer by one tick so React flushes the state resets above first
-      Promise.resolve().then(() => sendMessage(msg));
     },
-    [sendMessage],
+    [],
   );
+
+  const clearRepoContext = useCallback(() => {
+    setRepoContext(null);
+    repoContextRef.current = null;
+  }, []);
 
   return (
     <ChatContext.Provider
@@ -713,6 +723,8 @@ export function ChatProvider({
         connectedAgents,
         lastMessageAgentUsed,
         openWithRepoContext,
+        repoContext,
+        clearRepoContext,
       }}
     >
       {children}

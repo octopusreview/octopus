@@ -110,6 +110,9 @@ model Organization {
   githubMarketplaceAccountId Int?     @unique
   githubMarketplaceOnFreeTrial Boolean @default(false)
   githubMarketplaceFreeTrialEndsOn DateTime?
+  type                 Int      @default(1) // 1=standard, 2=community, 3=friendly
+  communityDailyReviewLimit Int  @default(5)
+  typeChanges          OrgTypeChange[]
   bannedAt             DateTime?
   bannedReason         String?
   deletedAt            DateTime?
@@ -874,4 +877,109 @@ model AskOctopusMessage {
   @@index([sessionId])
   @@index([createdAt])
   @@map("ask_octopus_messages")
+}
+
+// ── Status Page ─────────────────────────────────────────────────────────────
+
+model StatusComponent {
+  id          String   @id @default(cuid())
+  name        String   @unique // e.g. "System", "RAG", "Chat", "Reviews", "Webhooks"
+  description String?
+  status      String   @default("operational") // "operational" | "degraded" | "partial_outage" | "major_outage" | "maintenance"
+  sortOrder   Int      @default(0)
+  isVisible   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  incidents StatusIncident[]
+
+  @@index([sortOrder])
+  @@map("status_components")
+}
+
+model StatusIncident {
+  id            String    @id @default(cuid())
+  title         String
+  severity      String    // "critical" | "major" | "minor" | "maintenance"
+  status        String    @default("investigating") // "investigating" | "identified" | "monitoring" | "resolved"
+  message       String    @db.Text
+  componentId   String?
+  resolvedAt    DateTime?
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  component StatusComponent? @relation(fields: [componentId], references: [id], onDelete: SetNull)
+  updates   StatusIncidentUpdate[]
+
+  @@index([status, createdAt])
+  @@index([componentId])
+  @@map("status_incidents")
+}
+
+model StatusIncidentUpdate {
+  id            String   @id @default(cuid())
+  status        String   // same as incident status options
+  message       String   @db.Text
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime @default(now())
+
+  incidentId String
+  incident   StatusIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([incidentId])
+  @@map("status_incident_updates")
+}
+
+model StatusApiToken {
+  id          String    @id @default(cuid())
+  name        String
+  tokenHash   String    @unique
+  tokenPrefix String
+  lastUsedAt  DateTime?
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([tokenHash])
+  @@map("status_api_tokens")
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  action         String   // e.g. "user.login", "email.sent", "review.completed"
+  category       String   // "auth" | "email" | "review" | "repo" | "knowledge" | "billing" | "admin" | "system"
+  actorId        String?  // userId who triggered the action (null for system events)
+  actorEmail     String?  // denormalized for quick display
+  targetType     String?  // e.g. "user", "organization", "repository", "pr"
+  targetId       String?  // ID of the target entity
+  organizationId String?  // org scope (null for platform-level events)
+  metadata       Json     @default("{}") // extra context (prNumber, repoName, recipient, etc.)
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  @@index([category, createdAt])
+  @@index([actorId, createdAt])
+  @@index([organizationId, createdAt])
+  @@index([action, createdAt])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ── Organization Type History ────────────────────────────────────────────────
+
+model OrgTypeChange {
+  id             String   @id @default(cuid())
+  fromType       Int      // previous type (1=standard, 2=community, 3=friendly)
+  toType         Int      // new type
+  reason         String?  // optional note
+  changedById    String?  // admin user who made the change (null for system changes)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@map("org_type_changes")
 }

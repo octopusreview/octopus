@@ -29,6 +29,7 @@ import {
   IconArrowDown,
   IconPlayerStop,
   IconCpu,
+  IconGitBranch,
 } from "@tabler/icons-react";
 
 function useIsMobile(breakpoint = 768) {
@@ -107,6 +108,8 @@ export function FloatingChat() {
     lastUsage,
     connectedAgents,
     lastMessageAgentUsed,
+    repoContext,
+    clearRepoContext,
   } = useChat();
 
   const isMobile = useIsMobile();
@@ -641,7 +644,7 @@ export function FloatingChat() {
             <IconClock className="size-4" />
           </Button>
           <IconMessageChatbot className="size-4 text-muted-foreground" />
-          <span className="flex-1 truncate text-sm font-medium">Octopus Chat</span>
+          <span className="flex-1 truncate text-sm font-medium">Octopus Chat{repoContext && <> <span className="text-muted-foreground">—</span> <IconGitBranch className="inline size-3 text-muted-foreground" /> {repoContext}</>}</span>
           {connectedAgents.length > 0 && (
             <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400" title={`${connectedAgents.length} local agent(s) connected`}>
               <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -674,8 +677,24 @@ export function FloatingChat() {
         >
           {allMessages.length === 0 && !showTyping && (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
-              <IconMessageChatbot className="size-10 opacity-50" />
-              <p className="text-sm">Ask anything about your codebase</p>
+              {repoContext ? (
+                <>
+                  <IconGitBranch className="size-10 opacity-50" />
+                  <p className="text-sm font-medium text-foreground">{repoContext}</p>
+                  <p className="text-xs">Ask anything about this repository</p>
+                  <button
+                    onClick={clearRepoContext}
+                    className="mt-2 rounded-md border border-teal-500 px-3 py-1.5 text-xs font-medium text-teal-500 transition-colors hover:bg-teal-500/10"
+                  >
+                    Or ask about all repositories
+                  </button>
+                </>
+              ) : (
+                <>
+                  <IconMessageChatbot className="size-10 opacity-50" />
+                  <p className="text-sm">Ask anything about your codebase</p>
+                </>
+              )}
             </div>
           )}
           {allMessages.map(renderMessage)}
@@ -742,13 +761,22 @@ export function FloatingChat() {
 
         {/* Mobile input */}
         <div className="border-t px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+          {repoContext && (
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <IconGitBranch className="size-3" />
+              <span className="truncate">Asking about <span className="font-medium text-foreground">{repoContext}</span></span>
+              <button onClick={clearRepoContext} className="ml-auto shrink-0 rounded p-0.5 hover:bg-muted">
+                <IconX className="size-3" />
+              </button>
+            </div>
+          )}
           <div className="flex items-end gap-2">
             <textarea
               ref={textareaRef}
               value={input}
               onChange={(e) => handleInputChange(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask about your code..."
+              placeholder={repoContext ? `Ask about ${repoContext}...` : "Ask about your code..."}
               rows={1}
               className="max-h-24 min-h-[36px] flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
             />
@@ -812,7 +840,7 @@ export function FloatingChat() {
           </Button>
           <IconGripHorizontal className="size-3.5 text-muted-foreground/50" />
           <IconMessageChatbot className="size-4 text-muted-foreground" />
-          <span className="flex-1 text-sm font-medium">Octopus Chat</span>
+          <span className="flex-1 truncate text-sm font-medium">Octopus Chat{repoContext && <> <span className="text-muted-foreground">—</span> <IconGitBranch className="inline size-3 text-muted-foreground" /> {repoContext}</>}</span>
           {connectedAgents.length > 0 && (
             <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400" title={`${connectedAgents.length} local agent(s): ${connectedAgents.map((a) => a.name).join(", ")}`}>
               <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -884,8 +912,24 @@ export function FloatingChat() {
           >
             {allMessages.length === 0 && !showTyping && (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
-                <IconMessageChatbot className="size-8 opacity-50" />
-                <p className="text-sm">Ask anything about your codebase</p>
+                {repoContext ? (
+                  <>
+                    <IconGitBranch className="size-8 opacity-50" />
+                    <p className="text-sm font-medium text-foreground">{repoContext}</p>
+                    <p className="text-xs">Ask anything about this repository</p>
+                    <button
+                      onClick={clearRepoContext}
+                      className="mt-2 rounded-md border border-teal-500 px-3 py-1.5 text-xs font-medium text-teal-500 transition-colors hover:bg-teal-500/10"
+                    >
+                      Switch to all repos
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <IconMessageChatbot className="size-8 opacity-50" />
+                    <p className="text-sm">Ask anything about your codebase</p>
+                  </>
+                )}
               </div>
             )}
             {allMessages.map(renderMessage)}
@@ -959,13 +1003,22 @@ export function FloatingChat() {
 
           {/* Input */}
           <div className="border-t px-3 py-2">
+            {repoContext && (
+              <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <IconGitBranch className="size-3" />
+                <span className="truncate">Asking about <span className="font-medium text-foreground">{repoContext}</span></span>
+                <button onClick={clearRepoContext} className="ml-auto shrink-0 rounded p-0.5 hover:bg-muted">
+                  <IconX className="size-3" />
+                </button>
+              </div>
+            )}
             <div className="flex items-end gap-2">
               <textarea
                 ref={textareaRef}
                 value={input}
                 onChange={(e) => handleInputChange(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask about your code..."
+                placeholder={repoContext ? `Ask about ${repoContext}...` : "Ask about your code..."}
                 rows={1}
                 className="max-h-24 min-h-[36px] flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
               />
@@ -1046,7 +1099,7 @@ const streamingMarkdownComponents = {
       return (
         <div className="flex items-center gap-2 rounded bg-background/50 p-4 text-xs text-muted-foreground">
           <IconLoader2 className="size-4 animate-spin" />
-          Diyagram oluşturuluyor...
+          Generating diagram...
         </div>
       );
     }

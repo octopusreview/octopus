@@ -324,11 +324,11 @@ function isWebGLAvailable(): boolean {
 
 export function HeroOctopus({ className }: { className?: string }) {
   const [mounted, setMounted] = useState(false);
-  const [webglSupported, setWebglSupported] = useState(true);
+  const [webglSupported, setWebglSupported] = useState(false);
 
   useEffect(() => {
     setMounted(true);
-    setWebglSupported(isWebGLAvailable() && localStorage.getItem("octopus-3d-hidden") !== "true");
+    setWebglSupported(isWebGLAvailable() && localStorage.getItem("octopus-3d-hidden") === "false");
     const onToggle = () => setWebglSupported((v) => !v);
     window.addEventListener("webgl-toggle", onToggle);
     return () => window.removeEventListener("webgl-toggle", onToggle);

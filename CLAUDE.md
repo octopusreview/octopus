@@ -14,6 +14,11 @@ AI-powered PR review tool. Analyzes code via GitHub/Bitbucket webhooks, creates 
 - **tools/tsconfig** — Shared TypeScript configs (`@octopus/tsconfig`)
 - **tools/eslint-config** — Shared ESLint config
 
+## Related Projects and Path
+
+- CLI (../octopus-cli)
+- VSCode Extension (../octopus-vscode)
+
 ## Commands
 
 ```bash

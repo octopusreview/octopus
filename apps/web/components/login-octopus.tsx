@@ -103,7 +103,7 @@ export function LoginOctopus() {
 
   useEffect(() => {
     setMounted(true);
-    setWebglSupported(isWebGLAvailable() && localStorage.getItem("octopus-3d-hidden") !== "true");
+    setWebglSupported(isWebGLAvailable());
     const onToggle = () => setWebglSupported((v) => !v);
     window.addEventListener("webgl-toggle", onToggle);
     return () => window.removeEventListener("webgl-toggle", onToggle);

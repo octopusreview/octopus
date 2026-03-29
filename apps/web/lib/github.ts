@@ -671,8 +671,10 @@ export async function getRepositoryTree(
   owner: string,
   repo: string,
   branch: string,
+  /** Pre-resolved token. Skips getInstallationToken when provided. */
+  providedToken?: string,
 ): Promise<string[]> {
-  const token = await getInstallationToken(installationId);
+  const token = providedToken ?? await getInstallationToken(installationId);
   const res = await fetchWithRetry(
     `${GITHUB_API}/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,
     {
@@ -700,8 +702,10 @@ export async function getFileContent(
   repo: string,
   branch: string,
   filePath: string,
+  /** Pre-resolved token. Skips getInstallationToken when provided. */
+  providedToken?: string,
 ): Promise<string | null> {
-  const token = await getInstallationToken(installationId);
+  const token = providedToken ?? await getInstallationToken(installationId);
   const res = await fetchWithRetry(
     `${GITHUB_API}/repos/${owner}/${repo}/contents/${filePath}?ref=${encodeURIComponent(branch)}`,
     {

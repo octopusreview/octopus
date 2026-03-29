@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { signOut } from "@/lib/auth-client";
@@ -11,6 +12,9 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -19,15 +23,19 @@ import {
   IconSun,
   IconMoon,
   IconDeviceDesktop,
+  IconPalette,
+  IconShieldCog,
 } from "@tabler/icons-react";
 
 export function UserMenu({
   name,
   email,
+  isAdmin,
   children,
 }: {
   name: string;
   email: string;
+  isAdmin?: boolean;
   children?: React.ReactNode;
 }) {
   const router = useRouter();
@@ -48,18 +56,34 @@ export function UserMenu({
           <div className="text-muted-foreground font-normal">{email}</div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => setTheme("light")}>
-          <IconSun className="size-4" />
-          Light
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme("dark")}>
-          <IconMoon className="size-4" />
-          Dark
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme("system")}>
-          <IconDeviceDesktop className="size-4" />
-          System
-        </DropdownMenuItem>
+        {isAdmin && (
+          <DropdownMenuItem asChild>
+            <Link href="/admin">
+              <IconShieldCog className="size-4" />
+              Admin
+            </Link>
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <IconPalette className="size-4" />
+            Theme
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuItem onClick={() => setTheme("light")}>
+              <IconSun className="size-4" />
+              Light
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setTheme("dark")}>
+              <IconMoon className="size-4" />
+              Dark
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setTheme("system")}>
+              <IconDeviceDesktop className="size-4" />
+              System
+            </DropdownMenuItem>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={async () => {

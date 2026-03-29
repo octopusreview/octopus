@@ -80,7 +80,7 @@ export function MermaidDiagram({ code }: { code: string }) {
   if (!svg) {
     return (
       <div className="flex items-center justify-center rounded bg-background/50 p-4 text-xs text-muted-foreground">
-        Diyagram yükleniyor...
+        Loading diagram...
       </div>
     );
   }

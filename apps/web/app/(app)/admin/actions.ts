@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { isAdminEmail } from "@/lib/admin";
+import { eventBus } from "@/lib/events/bus";
 
 async function requireAdmin() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -73,6 +74,53 @@ export async function toggleOrgBan(orgId: string) {
       data: { bannedAt: new Date() },
     });
   }
+
+  revalidatePath("/admin");
+  return { success: true };
+}
+
+export async function changeOrgType(orgId: string, newType: number, reason?: string) {
+  const session = await requireAdmin();
+
+  if (![1, 2, 3].includes(newType)) {
+    return { error: "Invalid type" };
+  }
+
+  const target = await prisma.organization.findUniqueOrThrow({
+    where: { id: orgId },
+    select: { type: true, name: true },
+  });
+
+  if (target.type === newType) {
+    return { error: "Already this type" };
+  }
+
+  await prisma.$transaction([
+    prisma.orgTypeChange.create({
+      data: {
+        organizationId: orgId,
+        fromType: target.type,
+        toType: newType,
+        reason: reason || null,
+        changedById: session.user.id,
+      },
+    }),
+    prisma.organization.update({
+      where: { id: orgId },
+      data: { type: newType },
+    }),
+  ]);
+
+  eventBus.emit({
+    type: "org-type-changed",
+    orgId,
+    orgName: target.name,
+    fromType: target.type,
+    toType: newType,
+    reason,
+    changedById: session.user.id,
+    changedByEmail: session.user.email,
+  });
 
   revalidatePath("/admin");
   return { success: true };

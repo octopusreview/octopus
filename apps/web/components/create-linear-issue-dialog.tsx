@@ -83,7 +83,7 @@ export function CreateLinearIssueButton({ issueId }: { issueId: string }) {
     setTitle(result.title);
     setDescription(result.description);
     setStep("preview");
-  }, [issueId]);
+  }, [issueId, setErrorWithAuthCheck]);
 
   const init = useCallback(async () => {
     reset();
@@ -101,7 +101,7 @@ export function CreateLinearIssueButton({ issueId }: { issueId: string }) {
       setRepoName(result.repoName);
       setStep("select_team");
     }
-  }, [issueId, reset, startGeneration]);
+  }, [issueId, reset, startGeneration, setErrorWithAuthCheck]);
 
   useEffect(() => {
     if (open) {

@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
   );
 
   // Try to find org by marketplace account ID first, then by slug
-  let org: { id: string } | null = await prisma.organization.findUnique({
+  const org: { id: string } | null = await prisma.organization.findUnique({
     where: { githubMarketplaceAccountId: account.id },
     select: { id: true },
   });

@@ -186,7 +186,7 @@ export function buildTimeline(
   meta: PrMeta,
   commits: Commit[],
   comments: IssueComment[],
-  reviews: Review[],
+  _reviews: Review[],
 ): TriggerPoint[] {
   const triggers: TriggerPoint[] = [];
 

@@ -1500,7 +1500,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
     const appSlug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG ?? "octopus-review";
     const botLogin = `${appSlug}[bot]`;
     let allPriorReviewComments: import("@/lib/github").PRReviewComment[] = [];
-    let priorSummaryTableFindings: PriorFinding[] = [];
+    const priorSummaryTableFindings: PriorFinding[] = [];
     if (isGitHub && installationId) {
       try {
         allPriorReviewComments = await ghListPullRequestReviewComments(installationId, owner, repoName, pr.number);

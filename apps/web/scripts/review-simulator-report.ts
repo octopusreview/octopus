@@ -180,7 +180,7 @@ ${results.map((r, idx) => renderTriggerDetail(r, idx, results.slice(0, idx))).jo
 </html>`;
 }
 
-function renderTriggerDetail(result: SimulationResult, idx: number, priorResults: SimulationResult[]): string {
+function renderTriggerDetail(result: SimulationResult, idx: number, _priorResults: SimulationResult[]): string {
   const t = result.trigger;
   const isFirst = t.type === "pr_opened";
 

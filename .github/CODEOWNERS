@@ -1,0 +1,22 @@
+# Default owners for everything
+* @redoh @ogulcanaydogan
+
+# Web application
+/apps/web/ @redoh @ogulcanaydogan
+
+# Database schema and migrations
+/packages/db/ @redoh
+
+# Infrastructure and CI
+/.github/ @redoh
+/Dockerfile @redoh
+/docker-compose*.yml @redoh
+
+# Review engine
+/apps/web/lib/reviewer.ts @redoh
+/apps/web/lib/review-core.ts @redoh
+/apps/web/lib/review-dedup.ts @redoh
+
+# Tests
+/apps/web/lib/__tests__/ @ogulcanaydogan
+

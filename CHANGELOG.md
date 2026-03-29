@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] - 2026-03-29
+
+### Added
+- Changelog docs page with timeline UI, colored section cards, and PR links (#93)
+- CODEOWNERS for automated review assignment (#94)
+- Octopus Changelog skill for automated CHANGELOG.md updates (#95)
+
+### Fixed
+- Mobile navbar logo now navigates to home page (#96)
+- React/react-dom version mismatch (19.2.3 → 19.2.4) (#96)
+
 ## [1.0.5] - 2026-03-29
 
 ### Added
@@ -87,6 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Suppress dismissed findings in Additional findings summary (#25)
 - CI lint failures across all packages (#36)
 
+[1.0.6]: https://github.com/octopusreview/octopus/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/octopusreview/octopus/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/octopusreview/octopus/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/octopusreview/octopus/compare/v1.0.2...v1.0.3

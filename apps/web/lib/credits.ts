@@ -122,8 +122,8 @@ export async function deductCredits(
     });
   });
 
-  // Emit credit-low event when balance drops below $10
-  if (totalAfter > 0 && totalAfter < 10) {
+  const CREDIT_LOW_THRESHOLD = 10; // dollars
+  if (totalAfter > 0 && totalAfter < CREDIT_LOW_THRESHOLD) {
     eventBus.emit({
       type: "credit-low",
       orgId,

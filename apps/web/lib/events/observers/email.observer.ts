@@ -154,7 +154,9 @@ async function getAdminRecipients(
     },
   });
 
-  return members.map((m) => ({ email: m.user.email, name: m.user.name }));
+  return members
+    .filter((m) => m.user.email)
+    .map((m) => ({ email: m.user.email, name: m.user.name }));
 }
 
 // Track last credit-low email per org to avoid spamming (24h cooldown)

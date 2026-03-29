@@ -80,17 +80,9 @@ export async function POST(request: NextRequest) {
     select: { id: true },
   });
 
-  if (!org) {
-    // First-time marketplace purchase: try to match by org slug
-    // GitHub account login often matches the org slug
-    org = await prisma.organization.findFirst({
-      where: {
-        slug: account.login.toLowerCase(),
-        deletedAt: null,
-      },
-      select: { id: true },
-    });
-  }
+  // Note: We intentionally do NOT fall back to slug matching here.
+  // A malicious actor could create a GitHub account matching an existing org's slug
+  // and trigger a marketplace event to hijack the org's plan data.
 
   switch (action) {
     case "purchased": {

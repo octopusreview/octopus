@@ -1,5 +1,14 @@
 const LINEAR_API = "https://api.linear.app/graphql";
 
+export class LinearAuthError extends Error {
+  constructor() {
+    super(
+      "Linear access token has been revoked or expired. Please reconnect Linear in Settings → Integrations.",
+    );
+    this.name = "LinearAuthError";
+  }
+}
+
 async function linearRequest<T>(
   token: string,
   query: string,
@@ -15,6 +24,9 @@ async function linearRequest<T>(
   });
 
   if (!res.ok) {
+    if (res.status === 401 || res.status === 403) {
+      throw new LinearAuthError();
+    }
     const text = await res.text().catch(() => "");
     throw new Error(`Linear API error (${res.status}): ${text}`);
   }

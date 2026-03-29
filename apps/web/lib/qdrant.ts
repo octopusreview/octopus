@@ -3,7 +3,9 @@ import { generateSparseVector } from "@/lib/sparse-vector";
 
 function isSparseVectorError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return message.includes("named vector") || message.includes("sparse") || message.includes("Wrong input");
+  const errorData = typeof error === "object" && error !== null && "data" in error ? JSON.stringify((error as Record<string, unknown>).data) : "";
+  const combined = `${message} ${errorData}`;
+  return combined.includes("named vector") || combined.includes("sparse") || combined.includes("Wrong input") || combined.includes("Not existing vector name") || combined.includes("Bad Request");
 }
 
 const COLLECTION_NAME = "code_chunks";

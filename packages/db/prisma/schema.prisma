@@ -105,6 +105,11 @@ model Organization {
   creditBalance           Decimal  @default(0) @db.Decimal(12, 4)
   freeCreditBalance       Decimal  @default(150) @db.Decimal(12, 4)
   billingEmail            String?
+  githubMarketplacePlanId   Int?
+  githubMarketplacePlanName String?
+  githubMarketplaceAccountId Int?     @unique
+  githubMarketplaceOnFreeTrial Boolean @default(false)
+  githubMarketplaceFreeTrialEndsOn DateTime?
   type                 Int      @default(1) // 1=standard, 2=community, 3=friendly
   communityDailyReviewLimit Int  @default(5)
   typeChanges          OrgTypeChange[]

@@ -51,6 +51,12 @@ export type KnowledgeReadyEvent = {
   totalVectors: number;
 };
 
+export type CreditLowEvent = {
+  type: "credit-low";
+  orgId: string;
+  remainingBalance: number;
+};
+
 export type OrgTypeChangedEvent = {
   type: "org-type-changed";
   orgId: string;
@@ -77,6 +83,7 @@ export type AppEvent =
   | ReviewCompletedEvent
   | ReviewFailedEvent
   | KnowledgeReadyEvent
+  | CreditLowEvent
   | OrgTypeChangedEvent
   | CommunityReviewEvent;
 

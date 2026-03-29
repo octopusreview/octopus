@@ -8,6 +8,7 @@ import type {
   ReviewCompletedEvent,
   ReviewFailedEvent,
   KnowledgeReadyEvent,
+  CreditLowEvent,
 } from "../types";
 
 async function getEligibleRecipients(
@@ -48,7 +49,7 @@ function wrapHtml(title: string, body: string): string {
   <h2 style="font-size: 18px; margin: 0 0 12px;">${title}</h2>
   ${body}
   <div style="border-top: 1px solid #f0f0f0; margin-top: 24px; padding-top: 12px; font-size: 12px; color: #888;">
-    You can manage your email notification preferences in <a href="${process.env.NEXT_PUBLIC_APP_URL ?? ""}/settings/notifications" style="color: #666;">Settings</a>.
+    You can manage your email notification preferences in <a href="${process.env.NEXT_PUBLIC_APP_URL ?? "https://octopus-review.ai"}/settings/notifications" style="color: #666;">Settings</a>.
   </div>
 </body>
 </html>`;
@@ -139,6 +140,59 @@ function onReviewFailed(event: ReviewFailedEvent): Promise<void> {
   );
 }
 
+async function getAdminRecipients(
+  orgId: string,
+): Promise<{ email: string; name: string }[]> {
+  const members = await prisma.organizationMember.findMany({
+    where: {
+      organizationId: orgId,
+      deletedAt: null,
+      role: { in: ["owner", "admin"] },
+    },
+    select: {
+      user: { select: { email: true, name: true } },
+    },
+  });
+
+  return members
+    .filter((m) => m.user.email)
+    .map((m) => ({ email: m.user.email, name: m.user.name }));
+}
+
+// Track last credit-low email per org to avoid spamming (24h cooldown)
+const creditLowLastSent = new Map<string, number>();
+
+async function onCreditLow(event: CreditLowEvent): Promise<void> {
+  const now = Date.now();
+  const lastSent = creditLowLastSent.get(event.orgId);
+
+  if (lastSent && now - lastSent < 24 * 60 * 60 * 1000) return;
+
+  const recipients = await getAdminRecipients(event.orgId);
+  if (recipients.length === 0) return;
+
+  creditLowLastSent.set(event.orgId, now);
+
+  const balanceFormatted = `$${event.remainingBalance.toFixed(2)}`;
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://octopus-review.ai";
+
+  const subject = `Credit Balance Low — ${balanceFormatted} remaining`;
+  const html = wrapHtml(
+    "Credit Balance Low",
+    `<p>Your organization's credit balance has dropped to <strong>${balanceFormatted}</strong>.</p>
+     <p style="color: #555;">When credits run out, PR reviews and other AI-powered features will stop working.</p>
+     <p><a href="${appUrl}/settings/billing" style="display: inline-block; padding: 10px 20px; background: #0366d6; color: #fff; text-decoration: none; border-radius: 6px;">Add Credits</a></p>`,
+  );
+
+  await Promise.allSettled(
+    recipients.map((r) =>
+      sendEmail({ to: r.email, subject, html }).catch((err) =>
+        console.error(`[email-observer] Failed to send credit-low to ${r.email}:`, err),
+      ),
+    ),
+  );
+}
+
 function onKnowledgeReady(event: KnowledgeReadyEvent): Promise<void> {
   const actionLabel =
     event.action === "created" ? "Ready" :
@@ -162,4 +216,5 @@ export function registerEmailObserver(): void {
   eventBus.on<ReviewCompletedEvent>("review-completed", onReviewCompleted);
   eventBus.on<ReviewFailedEvent>("review-failed", onReviewFailed);
   eventBus.on<KnowledgeReadyEvent>("knowledge-ready", onKnowledgeReady);
+  eventBus.on<CreditLowEvent>("credit-low", onCreditLow);
 }

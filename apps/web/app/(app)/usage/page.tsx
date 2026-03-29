@@ -15,8 +15,11 @@ import {
   IconCurrencyDollar,
   IconChevronLeft,
   IconChevronRight,
+  IconWallet,
+  IconArrowRight,
 } from "@tabler/icons-react";
 import { getModelPricing, calcCost, formatUsd, formatNumber } from "@/lib/cost";
+import { getOrgBalance } from "@/lib/credits";
 import Link from "next/link";
 
 // ── Month helpers ────────────────────────────────────────────────────
@@ -99,7 +102,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
   const isFutureNext = new Date(next.year, next.month, 1) > now;
 
   // Run all queries in parallel
-  const [totals, byModel, byOperation, byModelOperation, dailyTrend, pricing] = await Promise.all([
+  const [totals, byModel, byOperation, byModelOperation, dailyTrend, pricing, balance] = await Promise.all([
     prisma.aiUsage.aggregate({
       where: { organizationId: orgId, createdAt: { gte: periodStart, lt: periodEnd } },
       _sum: { inputTokens: true, outputTokens: true, cacheReadTokens: true, cacheWriteTokens: true },
@@ -144,6 +147,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
       ORDER BY day ASC
     `,
     getModelPricing(),
+    getOrgBalance(orgId),
   ]);
 
   const totalInput = totals._sum.inputTokens ?? 0;
@@ -218,6 +222,32 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
             </Link>
           )}
         </div>
+      </div>
+
+      {/* Credit balance banner */}
+      <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-5 py-4">
+        <div className="flex items-center gap-3">
+          <div className="flex size-9 items-center justify-center rounded-full bg-primary/10">
+            <IconWallet className="size-4 text-primary" />
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Credit Balance</p>
+            <p className="text-lg font-semibold">{formatUsd(balance.total)}</p>
+          </div>
+          {(balance.free > 0 || balance.purchased > 0) && (
+            <div className="ml-4 flex gap-3 text-xs text-muted-foreground">
+              {balance.free > 0 && <span>Free: {formatUsd(balance.free)}</span>}
+              {balance.purchased > 0 && <span>Purchased: {formatUsd(balance.purchased)}</span>}
+            </div>
+          )}
+        </div>
+        <Link
+          href="/settings/billing"
+          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          Manage Billing
+          <IconArrowRight className="size-3.5" />
+        </Link>
       </div>
 
       {/* Stat cards */}

@@ -50,19 +50,19 @@ export default async function AdminAuditLogPage({
   const action = typeof params.action === "string" ? params.action : undefined;
   const search = typeof params.search === "string" ? params.search : undefined;
 
-  const where: Record<string, unknown> = {};
-  if (category) where.category = category;
-  if (action) where.action = { contains: action, mode: "insensitive" };
-  if (search) {
-    const orConditions = [
-      { actorEmail: { contains: search, mode: "insensitive" } },
-      { targetId: { contains: search, mode: "insensitive" } },
-    ];
-    if (!action) {
-      orConditions.push({ action: { contains: search, mode: "insensitive" } } as Record<string, unknown>);
-    }
-    where.OR = orConditions;
-  }
+  const where = {
+    ...(category ? { category } : {}),
+    ...(action ? { action: { contains: action, mode: "insensitive" as const } } : {}),
+    ...(search
+      ? {
+          OR: [
+            { actorEmail: { contains: search, mode: "insensitive" as const } },
+            { targetId: { contains: search, mode: "insensitive" as const } },
+            ...(!action ? [{ action: { contains: search, mode: "insensitive" as const } }] : []),
+          ],
+        }
+      : {}),
+  };
 
   const [logs, total, categories, actions] = await Promise.all([
     prisma.auditLog.findMany({
@@ -73,13 +73,13 @@ export default async function AdminAuditLogPage({
     }),
     prisma.auditLog.count({ where }),
     prisma.auditLog.findMany({
-      distinct: ["category"],
+      distinct: ["category"] as const,
       select: { category: true },
       orderBy: { category: "asc" },
       take: 50,
     }),
     prisma.auditLog.findMany({
-      distinct: ["action"],
+      distinct: ["action"] as const,
       select: { action: true },
       orderBy: { action: "asc" },
       take: 200,
@@ -91,8 +91,8 @@ export default async function AdminAuditLogPage({
   return (
     <div className="space-y-4">
       <AuditLogFilters
-        categories={categories.map((c) => c.category)}
-        actions={actions.map((a) => a.action)}
+        categories={categories.map((c: { category: string }) => c.category)}
+        actions={actions.map((a: { action: string }) => a.action)}
         currentCategory={category}
         currentAction={action}
         currentSearch={search}
@@ -117,7 +117,7 @@ export default async function AdminAuditLogPage({
             </p>
           ) : (
             <div className="space-y-0 divide-y">
-              {logs.map((log) => {
+              {logs.map((log: { id: string; action: string; category: string; actorEmail: string | null; targetType: string | null; targetId: string | null; ipAddress: string | null; metadata: unknown; createdAt: Date }) => {
                 const meta = (log.metadata ?? {}) as Record<string, unknown>;
                 const metaStr = formatMetadata(meta);
 

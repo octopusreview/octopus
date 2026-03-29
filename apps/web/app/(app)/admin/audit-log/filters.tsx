@@ -20,7 +20,7 @@ export function AuditLogFilters({
   currentSearch,
   page,
   totalPages,
-  total,
+  total: _total,
 }: {
   categories: string[];
   actions: string[];

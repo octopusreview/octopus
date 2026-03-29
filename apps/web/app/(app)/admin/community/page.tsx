@@ -6,7 +6,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { getModelPricing, calcCost, formatUsd, formatNumber } from "@/lib/cost";
+import { getModelPricing, calcCost, formatUsd } from "@/lib/cost";
 
 export default async function AdminCommunityPage() {
   const startOfDay = new Date();
@@ -100,11 +100,6 @@ export default async function AdminCommunityPage() {
     const cacheWrite = row._sum?.cacheWriteTokens ?? 0;
     totalCost += calcCost(pricing, row.model, input, output, cacheRead, cacheWrite);
   }
-
-  // Conversion count (community → standard)
-  const conversions = recentTypeChanges.filter(
-    (c) => c.fromType === 2 && c.toType === 1,
-  ).length;
 
   const TYPE_LABELS: Record<number, string> = {
     1: "Standard",

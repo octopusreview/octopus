@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select";
 import { changeOrgType } from "./actions";
 import { ORG_TYPE_LABELS } from "./org-types";
+import { toast } from "sonner";
 
 export function OrgTypeSelector({
   orgId,
@@ -24,7 +25,10 @@ export function OrgTypeSelector({
     const newType = parseInt(value, 10);
     if (newType === currentType) return;
     startTransition(async () => {
-      await changeOrgType(orgId, newType);
+      const result = await changeOrgType(orgId, newType);
+      if (result && "error" in result) {
+        toast.error(String(result.error));
+      }
     });
   }
 

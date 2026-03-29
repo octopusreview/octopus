@@ -1,6 +1,6 @@
 import { prisma } from "@octopus/db";
 import { sendEmail } from "@/lib/email";
-import { escapeHtml } from "@/lib/html";
+import { escapeHtml, sanitizeUrl } from "@/lib/html";
 import { eventBus } from "../bus";
 import type {
   RepoIndexedEvent,
@@ -119,7 +119,7 @@ function onReviewRequested(event: ReviewRequestedEvent): Promise<void> {
     "review-requested",
     `Review Requested: PR #${event.prNumber} ${title}`,
     `Review Requested`,
-    `<p>PR <a href="${escapeHtml(event.prUrl)}" style="color: #0366d6;">#${event.prNumber}: ${title}</a></p><p style="color: #555;">Author: ${author}</p>`,
+    `<p>PR <a href="${escapeHtml(sanitizeUrl(event.prUrl))}" style="color: #0366d6;">#${event.prNumber}: ${title}</a></p><p style="color: #555;">Author: ${author}</p>`,
   );
 }
 
@@ -132,7 +132,7 @@ function onReviewCompleted(event: ReviewCompletedEvent): Promise<void> {
     "review-completed",
     `Review Completed: PR #${event.prNumber} ${title}`,
     `Review Completed`,
-    `<p>PR <a href="${escapeHtml(event.prUrl)}" style="color: #0366d6;">#${event.prNumber}: ${title}</a></p><p style="color: #555;">${findings}, ${files}</p>`,
+    `<p>PR <a href="${escapeHtml(sanitizeUrl(event.prUrl))}" style="color: #0366d6;">#${event.prNumber}: ${title}</a></p><p style="color: #555;">${findings}, ${files}</p>`,
   );
 }
 

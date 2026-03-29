@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { escapeHtml } from "@/lib/html";
+import { escapeHtml, sanitizeUrl } from "@/lib/html";
 
 describe("escapeHtml", () => {
   it("escapes ampersands", () => {
@@ -41,5 +41,33 @@ describe("escapeHtml", () => {
     expect(escapeHtml(malicious)).toBe(
       "fix: update &lt;iframe src=&quot;evil.com&quot;&gt; handler",
     );
+  });
+});
+
+describe("sanitizeUrl", () => {
+  it("allows https URLs", () => {
+    expect(sanitizeUrl("https://github.com/org/repo/pull/1")).toBe(
+      "https://github.com/org/repo/pull/1",
+    );
+  });
+
+  it("allows http URLs", () => {
+    expect(sanitizeUrl("http://example.com")).toBe("http://example.com");
+  });
+
+  it("blocks javascript: URLs", () => {
+    expect(sanitizeUrl("javascript:alert(document.cookie)")).toBe("#");
+  });
+
+  it("blocks data: URLs", () => {
+    expect(sanitizeUrl("data:text/html,<script>alert(1)</script>")).toBe("#");
+  });
+
+  it("returns # for invalid URLs", () => {
+    expect(sanitizeUrl("not a url")).toBe("#");
+  });
+
+  it("returns # for empty string", () => {
+    expect(sanitizeUrl("")).toBe("#");
   });
 });

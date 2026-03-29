@@ -15,6 +15,7 @@ import {
   IconQuestionMark,
   IconWand,
   IconBook2,
+  IconHistory,
 } from "@tabler/icons-react";
 import { trackEvent } from "@/lib/analytics";
 import { DocsSearch } from "./docs-search";
@@ -29,6 +30,7 @@ const sidebarItems = [
   { href: "/docs/about", label: "About", icon: IconInfoCircle, description: "The story behind Octopus" },
   { href: "/docs/glossary", label: "Glossary", icon: IconBook2, description: "Key terms & definitions" },
   { href: "/docs/faq", label: "FAQ", icon: IconQuestionMark, description: "Frequently asked questions" },
+  { href: "/docs/changelog", label: "Changelog", icon: IconHistory, description: "What's new in each release" },
 ];
 
 const legalItems = [

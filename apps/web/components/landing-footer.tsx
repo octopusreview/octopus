@@ -222,6 +222,16 @@ export function LandingFooter() {
                   Pricing
                 </TrackedLink>
               </li>
+              <li>
+                <TrackedLink
+                  href="/docs/changelog"
+                  event="footer_click"
+                  eventParams={{ label: "docs_changelog" }}
+                  className="text-sm text-[#666] transition-colors hover:text-white"
+                >
+                  Changelog
+                </TrackedLink>
+              </li>
             </ul>
           </div>
 

@@ -2,6 +2,13 @@
   "version": 1,
   "skills": [
     {
+      "name": "octopus-changelog",
+      "title": "Octopus Changelog",
+      "description": "Update CHANGELOG.md for a new release based on git history",
+      "filename": "octopus-changelog.md",
+      "hash": "8234b53878834a59e6776274c6dacae182cb5be56d397b5cfdd54038a81f3c69"
+    },
+    {
       "name": "octopus-fix",
       "title": "Octopus Fix",
       "description": "Check open PRs for review comments, apply fixes, and push updates",

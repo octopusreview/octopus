@@ -8,6 +8,7 @@ import {
   IconReportAnalytics,
   IconArrowsSplit,
   IconBugOff,
+  IconFileText,
 } from "@tabler/icons-react";
 import { SkillCodeBlock } from "./skill-code-block";
 import { SkillCard } from "./skill-card";
@@ -31,6 +32,7 @@ function readSkillFile(filename: string): string {
 export default function SkillsPage() {
   const octopusFixMd = readSkillFile("octopus-fix.md");
   const splitAndShipMd = readSkillFile("split-and-ship.md");
+  const octopusChangelogMd = readSkillFile("octopus-changelog.md");
 
   return (
     <article className="max-w-3xl">
@@ -229,6 +231,72 @@ export default function SkillsPage() {
             filename="octopus-fix.md"
           >
             {octopusFixMd}
+          </SkillCodeBlock>
+        </SkillCard>
+
+        {/* Skill: Octopus Changelog */}
+        <SkillCard
+          icon={<IconFileText className="size-5" />}
+          title="Octopus Changelog"
+          subtitle="Update CHANGELOG.md for a new release based on git history"
+          filename="octopus-changelog.md"
+          content={octopusChangelogMd}
+        >
+          <Paragraph>
+            Keeping a changelog up to date is tedious but essential. This skill
+            reads your git history since the last tag, categorizes commits using
+            the Keep a Changelog standard, and updates your CHANGELOG.md
+            automatically.
+          </Paragraph>
+
+          <SubHeading>How it works</SubHeading>
+          <div className="mb-6 space-y-3">
+            <StepCard
+              step={1}
+              title="Determine Version"
+              description="Detects the latest git tag and suggests the next version, or uses the version you provide."
+            />
+            <StepCard
+              step={2}
+              title="Gather Commits"
+              description="Collects all commits since the last tag and parses conventional commit prefixes."
+            />
+            <StepCard
+              step={3}
+              title="Categorize"
+              description="Groups commits into Added, Fixed, Changed, and more. Skips dependency bumps and trivial changes."
+            />
+            <StepCard
+              step={4}
+              title="Review Draft"
+              description="Presents the formatted changelog entries for your approval before writing anything."
+            />
+            <StepCard
+              step={5}
+              title="Update File"
+              description="Inserts the new version section into CHANGELOG.md with proper formatting and comparison links."
+            />
+          </div>
+
+          <SubHeading>Rules</SubHeading>
+          <ul className="mb-6 space-y-2">
+            <RuleItem text="Never commits or pushes — only updates the file. You commit when ready." />
+            <RuleItem text="Always shows a draft and gets your confirmation before writing." />
+            <RuleItem text="Uses Keep a Changelog format: Added, Fixed, Changed, Removed, Deprecated, Security." />
+            <RuleItem text="Skips dependency bumps, trivial refactors, and CI-only changes." />
+            <RuleItem text="Groups related commits into single entries for readability." />
+          </ul>
+
+          <SubHeading>Skill file</SubHeading>
+          <Paragraph>
+            Copy or download the markdown file below and add it to your project
+            to use this skill with Claude Code.
+          </Paragraph>
+          <SkillCodeBlock
+            title="octopus-changelog.md"
+            filename="octopus-changelog.md"
+          >
+            {octopusChangelogMd}
           </SkillCodeBlock>
         </SkillCard>
       </Section>

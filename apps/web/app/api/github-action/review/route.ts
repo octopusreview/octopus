@@ -63,6 +63,15 @@ async function getCommunityReviewCountToday(orgId: string): Promise<number> {
 // ─── Main handler ───────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
+  // Validate action secret
+  const actionSecret = process.env.OCTOPUS_ACTION_SECRET;
+  if (actionSecret) {
+    const headerSecret = request.headers.get("x-octopus-action-secret");
+    if (!headerSecret || headerSecret !== actionSecret) {
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
   let body: Record<string, unknown>;
   try {
     body = await request.json();
@@ -76,8 +85,6 @@ export async function POST(request: NextRequest) {
     prNumber,
     prTitle,
     prAuthor,
-    headSha,
-    baseBranch,
     diff,
     githubToken,
     forceReindex,

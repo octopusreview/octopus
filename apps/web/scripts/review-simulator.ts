@@ -169,7 +169,7 @@ async function main() {
   const commits = fetchPrCommits(owner, repo, number);
   const issueComments = fetchIssueComments(owner, repo, number);
   const reviews = fetchReviews(owner, repo, number);
-  const reviewComments = fetchReviewComments(owner, repo, number);
+  fetchReviewComments(owner, repo, number);
 
   console.log(`   ${commits.length} commits, ${issueComments.length} comments, ${reviews.length} reviews`);
 

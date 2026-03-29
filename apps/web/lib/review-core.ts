@@ -240,7 +240,7 @@ const MAX_TREE_FILES = 2000;
 // ─── Main function ───────────────────────────────────────────────────────────
 
 export async function generateLocalReview(params: LocalReviewParams): Promise<LocalReviewResult> {
-  const { diff, repoId, orgId, title, author, fileTree } = params;
+  const { diff, repoId, title, author, fileTree } = params;
 
   // Load repo + org
   const repo = await prisma.repository.findUnique({

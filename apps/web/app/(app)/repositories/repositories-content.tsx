@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition, useEffect, useMemo } from "react";
+import { toast } from "sonner";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -543,8 +544,12 @@ function CancelReviewButton({ prId, onCancelled }: { prId: string; onCancelled?:
       disabled={cancelling}
       onClick={() => {
         startTransition(async () => {
-          await cancelPullRequestReview(prId);
-          onCancelled?.();
+          const result = await cancelPullRequestReview(prId);
+          if (result.error) {
+            toast.error(result.error);
+          } else {
+            onCancelled?.();
+          }
         });
       }}
     >

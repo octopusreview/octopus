@@ -413,14 +413,22 @@ export async function cancelPullRequestReview(
     return { error: "Review is not in progress" };
   }
 
-  // Update PR status to failed
-  await prisma.pullRequest.update({
-    where: { id: pullRequestId },
-    data: {
-      status: "failed",
-      errorMessage: "Review cancelled by user",
-    },
-  });
+  // Update PR status to failed — use conditional where to avoid race condition
+  try {
+    await prisma.pullRequest.update({
+      where: {
+        id: pr.id,
+        status: { in: ["reviewing", "pending"] },
+      },
+      data: {
+        status: "failed",
+        errorMessage: "Review cancelled by user",
+      },
+    });
+  } catch {
+    // Status already changed (race condition) — not an error
+    return { error: "Review status has already changed" };
+  }
 
   // Update GitHub check run if applicable
   const installationId =

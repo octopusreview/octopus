@@ -36,41 +36,10 @@ function esc(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function severityColor(severity: string): string {
-  const map: Record<string, string> = {
-    "🔴": "#ef4444",
-    "🟠": "#f97316",
-    "🟡": "#eab308",
-    "🔵": "#3b82f6",
-    "💡": "#8b5cf6",
-  };
-  return map[severity] ?? "#6b7280";
-}
-
-function severityLabel(severity: string): string {
-  const map: Record<string, string> = {
-    "🔴": "Critical",
-    "🟠": "High",
-    "🟡": "Medium",
-    "🔵": "Low",
-    "💡": "Nit",
-  };
-  return map[severity] ?? severity;
-}
-
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString("en-US", {
     month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
   });
-}
-
-function countBySeverity(findings: Array<{ severity?: string }>): Record<string, number> {
-  const counts: Record<string, number> = {};
-  for (const f of findings) {
-    const sev = (f as { severity?: string }).severity ?? "?";
-    counts[sev] = (counts[sev] ?? 0) + 1;
-  }
-  return counts;
 }
 
 // ─── Report Generation ───────────────────────────────────────────────────────
@@ -214,8 +183,6 @@ ${results.map((r, idx) => renderTriggerDetail(r, idx, results.slice(0, idx))).jo
 function renderTriggerDetail(result: SimulationResult, idx: number, priorResults: SimulationResult[]): string {
   const t = result.trigger;
   const isFirst = t.type === "pr_opened";
-
-  const actualSevCounts = countBySeverity(result.actualFindings.map((f) => ({ severity: f.title.match(/^(🔴|🟠|🟡|🔵|💡)/)?.[1] ?? "?" })));
 
   return `
 <h2>Trigger #${idx + 1}: ${isFirst ? "PR Opened" : "@octopus"} <span class="sha" style="font-weight:normal">${t.sha.slice(0, 7)}</span></h2>

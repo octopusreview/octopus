@@ -48,7 +48,6 @@ import {
   parseFindingsFromMarkdown,
   parseFindings,
   extractKeywords,
-  jaccardSimilarity,
   deduplicateAgainstPrior,
   parseFindingsFromSummaryTable,
 } from "@/lib/review-dedup";

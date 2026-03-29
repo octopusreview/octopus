@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { writeAuditLog } from "./audit";
 
 export const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
@@ -25,4 +26,11 @@ export async function sendEmail({
     subject,
     html,
   });
+
+  // Fire-and-forget audit log for every email sent
+  writeAuditLog({
+    action: "email.sent",
+    category: "email",
+    metadata: { recipient: to, subject },
+  }).catch(() => {});
 }

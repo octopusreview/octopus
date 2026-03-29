@@ -51,12 +51,19 @@ export type KnowledgeReadyEvent = {
   totalVectors: number;
 };
 
+export type CreditLowEvent = {
+  type: "credit-low";
+  orgId: string;
+  remainingBalance: number;
+};
+
 export type AppEvent =
   | RepoIndexedEvent
   | RepoAnalyzedEvent
   | ReviewRequestedEvent
   | ReviewCompletedEvent
   | ReviewFailedEvent
-  | KnowledgeReadyEvent;
+  | KnowledgeReadyEvent
+  | CreditLowEvent;
 
 export type AppEventType = AppEvent["type"];

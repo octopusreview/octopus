@@ -24,8 +24,8 @@ async function getOwnerOrgId(): Promise<{ orgId: string } | { error: string }> {
     select: { role: true },
   });
 
-  if (!member || member.role !== "owner") {
-    return { error: "Only organization owners can manage billing." };
+  if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    return { error: "Only organization owners and admins can manage billing." };
   }
 
   return { orgId };

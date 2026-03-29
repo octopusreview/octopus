@@ -39,7 +39,7 @@ export default async function BillingPage() {
   if (!member) redirect("/dashboard");
 
   const org = member.organization;
-  const isOwner = member.role === "owner";
+  const isOwner = member.role === "owner" || member.role === "admin";
 
   const [autoReloadConfig, transactions, monthlySpend, paymentMethods] = await Promise.all([
     prisma.autoReloadConfig.findUnique({

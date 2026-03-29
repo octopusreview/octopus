@@ -21,7 +21,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { IconLoader2, IconPlus, IconCheck } from "@tabler/icons-react";
+import { IconLoader2, IconPlus, IconCheck, IconPlugConnected } from "@tabler/icons-react";
+import Link from "next/link";
 import {
   initLinearIssueCreation,
   saveLinearTeamMapping,
@@ -38,6 +39,7 @@ export function CreateLinearIssueButton({ issueId }: { issueId: string }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>("loading");
   const [error, setError] = useState("");
+  const [isAuthError, setIsAuthError] = useState(false);
 
   // select_team state
   const [teams, setTeams] = useState<Team[]>([]);
@@ -50,9 +52,17 @@ export function CreateLinearIssueButton({ issueId }: { issueId: string }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
 
+  const AUTH_ERROR_MARKER = "revoked or expired";
+
+  const setErrorWithAuthCheck = useCallback((message: string) => {
+    setError(message);
+    setIsAuthError(message.includes(AUTH_ERROR_MARKER));
+  }, []);
+
   const reset = useCallback(() => {
     setStep("loading");
     setError("");
+    setIsAuthError(false);
     setTeams([]);
     setSelectedTeamId("");
     setRepoId("");
@@ -66,7 +76,7 @@ export function CreateLinearIssueButton({ issueId }: { issueId: string }) {
     setStep("generating");
     const result = await generateIssueContent(issueId);
     if ("error" in result) {
-      setError(result.error);
+      setErrorWithAuthCheck(result.error);
       setStep("error");
       return;
     }
@@ -79,7 +89,7 @@ export function CreateLinearIssueButton({ issueId }: { issueId: string }) {
     reset();
     const result = await initLinearIssueCreation(issueId);
     if ("error" in result) {
-      setError(result.error);
+      setErrorWithAuthCheck(result.error);
       setStep("error");
       return;
     }
@@ -107,7 +117,7 @@ export function CreateLinearIssueButton({ issueId }: { issueId: string }) {
     setIsSaving(true);
     const result = await saveLinearTeamMapping(repoId, team.id, team.name, team.key);
     if (result.error) {
-      setError(result.error);
+      setErrorWithAuthCheck(result.error);
       setStep("error");
       setIsSaving(false);
       return;
@@ -121,7 +131,7 @@ export function CreateLinearIssueButton({ issueId }: { issueId: string }) {
     setStep("creating");
     const result = await createLinearIssueFromReview(issueId, title.trim(), description.trim());
     if (result.error) {
-      setError(result.error);
+      setErrorWithAuthCheck(result.error);
       setStep("error");
       return;
     }
@@ -270,12 +280,25 @@ export function CreateLinearIssueButton({ issueId }: { issueId: string }) {
           {/* Error */}
           {step === "error" && (
             <>
-              <p className="text-sm text-destructive">{error}</p>
+              <p className="text-sm text-destructive">
+                {isAuthError
+                  ? "Your Linear connection has expired or been revoked."
+                  : error}
+              </p>
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setOpen(false)}>
                   Close
                 </Button>
-                <Button onClick={init}>Retry</Button>
+                {isAuthError ? (
+                  <Button asChild>
+                    <Link href="/settings/integrations">
+                      <IconPlugConnected className="size-3.5" />
+                      Reconnect Linear
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button onClick={init}>Retry</Button>
+                )}
               </div>
             </>
           )}

@@ -1,5 +1,6 @@
 import { prisma } from "@octopus/db";
 import { getStripe } from "./stripe";
+import { eventBus } from "./events/bus";
 
 export async function getOrgBalance(orgId: string) {
   const org = await prisma.organization.findUniqueOrThrow({
@@ -120,6 +121,15 @@ export async function deductCredits(
       },
     });
   });
+
+  // Emit credit-low event when balance drops below $10
+  if (totalAfter > 0 && totalAfter < 10) {
+    eventBus.emit({
+      type: "credit-low",
+      orgId,
+      remainingBalance: totalAfter,
+    });
+  }
 
   // Check auto-reload after deduction (fire-and-forget)
   triggerAutoReloadIfNeeded(orgId, totalAfter).catch((err) =>

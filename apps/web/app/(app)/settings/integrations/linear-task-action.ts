@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
-import { getLinearTeams, createLinearIssue } from "@/lib/linear";
+import { getLinearTeams, createLinearIssue, LinearAuthError } from "@/lib/linear";
 
 // ── Helpers ──
 
@@ -90,6 +90,9 @@ export async function initLinearIssueCreation(issueId: string): Promise<InitResu
       repoName: repo.fullName,
     };
   } catch (err) {
+    if (err instanceof LinearAuthError) {
+      return { error: err.message };
+    }
     const message = err instanceof Error ? err.message : "Failed to fetch Linear teams";
     console.error("[linear-task] Failed to list teams:", err);
     return { error: message };
@@ -201,6 +204,9 @@ export async function createLinearIssueFromReview(
     revalidatePath("/timeline");
     return { linearIssueId: result.id, linearIssueUrl: result.url };
   } catch (err) {
+    if (err instanceof LinearAuthError) {
+      return { error: err.message };
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     console.error("[linear-task] Failed to create Linear issue:", err);
     return { error: message };

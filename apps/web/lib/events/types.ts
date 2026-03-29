@@ -51,12 +51,33 @@ export type KnowledgeReadyEvent = {
   totalVectors: number;
 };
 
+export type OrgTypeChangedEvent = {
+  type: "org-type-changed";
+  orgId: string;
+  orgName: string;
+  fromType: number;
+  toType: number;
+  reason?: string;
+  changedById: string;
+  changedByEmail?: string;
+};
+
+export type CommunityReviewEvent = {
+  type: "community-review";
+  orgId: string;
+  repoFullName: string;
+  prNumber?: number;
+  findingsCount: number;
+};
+
 export type AppEvent =
   | RepoIndexedEvent
   | RepoAnalyzedEvent
   | ReviewRequestedEvent
   | ReviewCompletedEvent
   | ReviewFailedEvent
-  | KnowledgeReadyEvent;
+  | KnowledgeReadyEvent
+  | OrgTypeChangedEvent
+  | CommunityReviewEvent;
 
 export type AppEventType = AppEvent["type"];

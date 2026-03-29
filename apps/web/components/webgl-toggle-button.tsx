@@ -19,20 +19,31 @@ function isWebGLAvailable(): boolean {
 const STORAGE_KEY = "octopus-3d-hidden";
 
 export function WebGLToggleButton() {
-  const [hidden, setHidden] = useState(false);
+  const [hidden, setHidden] = useState(true);
   const [supported, setSupported] = useState(false);
 
   useEffect(() => {
     setSupported(isWebGLAvailable());
-    setHidden(localStorage.getItem(STORAGE_KEY) === "true");
+    setHidden(localStorage.getItem(STORAGE_KEY) !== "false");
     const onToggle = () =>
       setHidden((v) => {
         const next = !v;
         localStorage.setItem(STORAGE_KEY, String(next));
         return next;
       });
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "h" || e.key === "H") {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable) return;
+        window.dispatchEvent(new Event("webgl-toggle"));
+      }
+    };
     window.addEventListener("webgl-toggle", onToggle);
-    return () => window.removeEventListener("webgl-toggle", onToggle);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("webgl-toggle", onToggle);
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, []);
 
   // Don't show the toggle if WebGL isn't available — there's nothing to toggle

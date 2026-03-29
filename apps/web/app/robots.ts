@@ -6,7 +6,7 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: "*",
         allow: "/",
-        disallow: ["/api/", "/login", "/blocked"],
+        disallow: ["/api/", "/blocked"],
       },
     ],
     sitemap: "https://octopus-review.ai/sitemap.xml",

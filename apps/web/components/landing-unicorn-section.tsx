@@ -251,11 +251,11 @@ function isWebGLAvailable(): boolean {
 export function FloatingOctopus() {
   const [mounted, setMounted] = useState(false);
   const [dimmed, setDimmed] = useState(false);
-  const [webglSupported, setWebglSupported] = useState(true);
+  const [webglSupported, setWebglSupported] = useState(false);
 
   useEffect(() => {
     setMounted(true);
-    setWebglSupported(isWebGLAvailable() && localStorage.getItem("octopus-3d-hidden") !== "true");
+    setWebglSupported(isWebGLAvailable() && localStorage.getItem("octopus-3d-hidden") === "false");
     const onToggle = () => setWebglSupported((v) => !v);
     window.addEventListener("webgl-toggle", onToggle);
     return () => window.removeEventListener("webgl-toggle", onToggle);

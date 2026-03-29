@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { createEmbeddings } from "@/lib/embeddings";
@@ -28,13 +29,45 @@ function getAnthropicClient(): Anthropic {
   return anthropicClient;
 }
 
+let openaiClient: OpenAI | null = null;
+
+function getOpenAIClient(): OpenAI {
+  if (!openaiClient) {
+    openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+  }
+  return openaiClient;
+}
+
+async function translateToEnglish(text: string): Promise<string> {
+  const nonLatinOrAccented = /[^\x00-\x7F]/.test(text);
+  if (!nonLatinOrAccented) return text;
+
+  try {
+    const res = await getOpenAIClient().chat.completions.create({
+      model: "gpt-4o-mini",
+      max_tokens: 1024,
+      messages: [
+        {
+          role: "system",
+          content:
+            "If the following text is already in English, return it as-is. Otherwise translate it to English. Return ONLY the translated text, nothing else.",
+        },
+        { role: "user", content: text },
+      ],
+    });
+    return res.choices[0]?.message?.content?.trim() || text;
+  } catch {
+    return text;
+  }
+}
+
 export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const { message, conversationId, orgId } = await request.json();
+  const { message, conversationId, orgId, repoContext } = await request.json();
   if (!message || !orgId) {
     return new Response("Missing message or orgId", { status: 400 });
   }
@@ -179,10 +212,11 @@ export async function POST(request: Request) {
   const indexedRepos = allRepos.filter((r) => r.indexStatus === "indexed");
   const repoIds = indexedRepos.map((r) => r.id);
 
-  // Detect if user is asking about a specific repo — check current message + recent history
+  // Detect if user is asking about a specific repo — check current message + recent history + explicit repo context
   const messageLower = message.toLowerCase();
   const recentHistoryText = conversation.messages.slice(-10).map((m) => m.content).join(" ").toLowerCase();
-  const searchText = `${messageLower} ${recentHistoryText}`;
+  const repoContextLower = repoContext ? repoContext.toLowerCase() : "";
+  const searchText = `${messageLower} ${recentHistoryText} ${repoContextLower}`;
   const mentionedRepos = indexedRepos.filter((r) => {
     const name = r.name.toLowerCase();
     const fullName = r.fullName.toLowerCase();
@@ -231,10 +265,14 @@ export async function POST(request: Request) {
     console.log(`[chat] Detected mentioned repos: ${mentionedRepos.map((r) => r.fullName).join(", ")}`);
   }
 
+  // Translate user message to English for keyword detection (handles any language)
+  const englishMessage = await translateToEnglish(message);
+  const englishSearchText = `${englishMessage.toLowerCase()} ${recentHistoryText} ${repoContextLower}`;
+
   // Detect PR/activity related questions — fetch recent PRs for mentioned repos (or all if no repo mentioned)
-  const prKeywords = /\b(pr|pull request|merge|açm[ıi]ş|commit|deploy|release|son aktivite|aktivite|recent|latest|last)\b/i;
+  const prKeywords = /\b(pr|pull request|merge|commit|deploy|release|recent|latest|last|activity)\b/i;
   let recentPRsContext = "";
-  if (prKeywords.test(searchText)) {
+  if (prKeywords.test(englishSearchText)) {
     const prRepoFilter = mentionedRepos.length > 0
       ? { repositoryId: { in: mentionedRepos.map((r) => r.id) } }
       : { repository: { organizationId: orgId } };
@@ -265,9 +303,9 @@ export async function POST(request: Request) {
   }
 
   // Detect issue/bug related questions — fetch review issues for mentioned repos
-  const issueKeywords = /\b(issue|bug|hata|sorun|problem|finding|bulgu|security|güvenlik|critical|kritik|severity)\b/i;
+  const issueKeywords = /\b(issue|bug|problem|finding|security|critical|severity|vulnerability|error)\b/i;
   let reviewIssuesContext = "";
-  if (issueKeywords.test(searchText)) {
+  if (issueKeywords.test(englishSearchText)) {
     const issueRepoFilter = mentionedRepos.length > 0
       ? { pullRequest: { repositoryId: { in: mentionedRepos.map((r) => r.id) } } }
       : { pullRequest: { repository: { organizationId: orgId } } };
@@ -297,9 +335,9 @@ export async function POST(request: Request) {
   }
 
   // Detect team/contributor related questions
-  const teamKeywords = /\b(who|kim|contributor|katk[ıi]|team|tak[ıi]m|developer|geliştirici|author|yazar|çalış|work)\b/i;
+  const teamKeywords = /\b(who|contributor|team|developer|author|member|work|engineer)\b/i;
   let contributorContext = "";
-  if (teamKeywords.test(searchText) && mentionedRepos.length > 0) {
+  if (teamKeywords.test(englishSearchText) && mentionedRepos.length > 0) {
     const repoDetails = await prisma.repository.findMany({
       where: { id: { in: mentionedRepos.map((r) => r.id) } },
       select: { fullName: true, contributors: true, contributorCount: true },
@@ -460,7 +498,7 @@ RULES:
 - If no relevant context was retrieved for a question, say "I couldn't find relevant code for this query. Try rephrasing or being more specific." Do NOT make up or guess code, endpoints, or file structures.
 - NEVER say "I don't have access to the code" — you DO have access via the retrieved context. If context is empty, the search simply didn't match.
 - For PR/activity questions, use the recent_pull_requests section which contains LIVE data from the database — this is always up to date.
-- ALWAYS respond in the same language the user writes in. If the user writes in Turkish, respond in Turkish. If in English, respond in English. Match the user's language exactly.`;
+- ALWAYS respond in the same language the user writes in. If the user writes in Turkish, respond in Turkish. If in English, respond in English. Match the user's language exactly.${repoContext ? `\n- IMPORTANT: This conversation is specifically about the **${repoContext}** repository. Focus all answers on this repository unless the user explicitly asks about something else. When the user says "this", "it", "the repo", etc., they mean ${repoContext}.` : ""}`;
 
   // Dynamic RAG context — only relevant retrieved content, minimal static info
   const systemContext = `<organization_overview>
@@ -768,8 +806,9 @@ ${agentResult ? `<local_agent_context>\nREAL-TIME results from a local agent run
   return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
+      "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     },
   });
 }

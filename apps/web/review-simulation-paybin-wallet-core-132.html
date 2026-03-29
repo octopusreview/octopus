@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Review Simulation — paybin-wallet-core #132</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --text-muted: #8b949e; --accent: #2dd4bf;
+    --red: #ef4444; --orange: #f97316; --yellow: #eab308;
+    --blue: #3b82f6; --purple: #8b5cf6; --green: #22c55e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.6; padding: 2rem; max-width: 1200px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; color: var(--accent); margin-bottom: 0.25rem; }
+  h2 { font-size: 1.2rem; margin: 2rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+  h3 { font-size: 1rem; margin: 1.5rem 0 0.75rem; }
+  a { color: var(--accent); text-decoration: none; }
+  .meta { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 2rem; }
+  .meta span { margin-right: 1.5rem; }
+
+  /* Summary cards */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin: 1rem 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; text-align: center; }
+  .card .number { font-size: 2rem; font-weight: 700; }
+  .card .label { color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .card.green .number { color: var(--green); }
+  .card.red .number { color: var(--red); }
+  .card.yellow .number { color: var(--yellow); }
+  .card.accent .number { color: var(--accent); }
+
+  /* Timeline */
+  .timeline { position: relative; padding-left: 2rem; margin: 1rem 0; }
+  .timeline::before { content: ''; position: absolute; left: 0.6rem; top: 0; bottom: 0; width: 2px; background: var(--border); }
+  .trigger { position: relative; margin-bottom: 1.5rem; }
+  .trigger::before { content: ''; position: absolute; left: -1.65rem; top: 0.35rem; width: 12px; height: 12px;
+    border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); }
+  .trigger.first::before { background: var(--green); }
+  .trigger-header { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+  .badge { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 999px; font-weight: 600; text-transform: uppercase; }
+  .badge.opened { background: rgba(34,197,94,0.15); color: var(--green); }
+  .badge.mention { background: rgba(45,212,191,0.15); color: var(--accent); }
+  .sha { font-family: monospace; font-size: 0.8rem; color: var(--text-muted); }
+  .date { font-size: 0.8rem; color: var(--text-muted); }
+  .stats { font-size: 0.8rem; color: var(--text-muted); }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin: 0.5rem 0; }
+  th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  td.severity { width: 40px; text-align: center; font-size: 1.1rem; }
+  td.file { font-family: monospace; font-size: 0.8rem; color: var(--text-muted); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Side-by-side */
+  .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin: 1rem 0; }
+  @media (max-width: 768px) { .comparison { grid-template-columns: 1fr; } }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; overflow-x: auto; }
+  .panel h4 { font-size: 0.85rem; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; }
+  .panel h4 .count { background: var(--border); color: var(--text); padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.75rem; }
+
+  /* Dedup highlight */
+  .dedup-section { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+  .dedup-section h4 { font-size: 0.85rem; margin-bottom: 0.5rem; color: var(--green); }
+  tr.removed { background: rgba(239,68,68,0.08); }
+  tr.removed td { color: var(--red); text-decoration: line-through; opacity: 0.7; }
+  tr.kept td { color: var(--green); }
+
+  /* Severity bars */
+  .severity-bars { display: flex; gap: 0.5rem; margin: 1rem 0; flex-wrap: wrap; }
+  .sev-bar { display: flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; }
+  .sev-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  /* Details */
+  details { margin: 0.5rem 0; }
+  summary { cursor: pointer; color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem 0; }
+  details pre { background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+    padding: 1rem; overflow-x: auto; font-size: 0.75rem; max-height: 300px; overflow-y: auto; margin-top: 0.5rem; }
+
+  .empty { color: var(--text-muted); font-style: italic; padding: 1rem; text-align: center; }
+  .footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
+    color: var(--text-muted); font-size: 0.75rem; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>Review Lifecycle Simulation</h1>
+<div class="meta">
+  <span><strong>PR:</strong> <a href="https://github.com/flopays/paybin-wallet-core/pull/132">paybin-wallet-core #132</a></span>
+  <span><strong>Title:</strong> fix(balance): prevent negative balances from duplicate miner fee dedu…</span>
+  <span><strong>Author:</strong> eneszrn</span>
+  <span><strong>Mode:</strong> Full Simulation (claude-sonnet-4-6)</span>
+  <span><strong>Generated:</strong> 2026-03-27</span>
+</div>
+
+<h2>Summary</h2>
+<div class="cards">
+  <div class="card accent"><div class="number">7</div><div class="label">Trigger Points</div></div>
+  <div class="card yellow"><div class="number">19</div><div class="label">Actual Findings</div></div>
+  <div class="card accent"><div class="number">10</div><div class="label">Simulated (Raw)</div></div>
+  <div class="card green"><div class="number">0</div><div class="label">Caught by Dedup</div></div>
+  <div class="card"><div class="number">10</div><div class="label">After Dedup</div></div>
+</div>
+
+<h2>Timeline</h2>
+<div class="timeline">
+  <div class="trigger first">
+    <div class="trigger-header">
+      <span class="badge opened">PR Opened</span>
+      <span class="sha">be662d8</span>
+      <span class="date">Mar 25 at 01:48 PM</span>
+      <span class="stats">4 actual / 9 simulated / 0 deduped</span>
+    </div>
+  </div>
+  <div class="trigger">
+    <div class="trigger-header">
+      <span class="badge mention">@octopus</span>
+      <span class="sha">194fefb</span>
+      <span class="date">Mar 25 at 02:17 PM</span>
+      <span class="stats">3 actual / 0 simulated / 0 deduped</span>
+    </div>
+  </div>
+  <div class="trigger">
+    <div class="trigger-header">
+      <span class="badge mention">@octopus</span>
+      <span class="sha">004a9e7</span>
+      <span class="date">Mar 25 at 03:51 PM</span>
+      <span class="stats">3 actual / 0 simulated / 0 deduped</span>
+    </div>
+  </div>
+  <div class="trigger">
+    <div class="trigger-header">
+      <span class="badge mention">@octopus</span>
+      <span class="sha">89598ed</span>
+      <span class="date">Mar 27 at 10:04 AM</span>
+      <span class="stats">3 actual / 1 simulated / 0 deduped</span>
+    </div>
+  </div>
+  <div class="trigger">
+    <div class="trigger-header">
+      <span class="badge mention">@octopus</span>
+      <span class="sha">ba87dfa</span>
+      <span class="date">Mar 27 at 11:18 AM</span>
+      <span class="stats">1 actual / 0 simulated / 0 deduped</span>
+    </div>
+  </div>
+  <div class="trigger">
+    <div class="trigger-header">
+      <span class="badge mention">@octopus</span>
+      <span class="sha">ba87dfa</span>
+      <span class="date">Mar 27 at 12:24 PM</span>
+      <span class="stats">5 actual / 0 simulated / 0 deduped</span>
+    </div>
+  </div>
+  <div class="trigger">
+    <div class="trigger-header">
+      <span class="badge mention">@octopus</span>
+      <span class="sha">1f87136</span>
+      <span class="date">Mar 27 at 12:43 PM</span>
+      <span class="stats">0 actual / 0 simulated / 0 deduped</span>
+    </div>
+  </div>
+</div>
+
+
+<h2>Trigger #1: PR Opened <span class="sha" style="font-weight:normal">be662d8</span></h2>
+
+<p style="color:var(--text-muted);font-size:0.85rem;">11 files changed, 422 diff lines | LLM: 78.5s</p>
+
+<div class="comparison">
+  <div class="panel">
+    <h4>Actual Findings <span class="count">4</span></h4>
+    
+    <table>
+      <tr><th>Sev</th><th>File</th><th>Title</th></tr>
+      
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/ScheduledService.cs:3750</td>
+        <td>Significant code duplication in transaction ID normalization logic</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/ScheduledService.cs:4105</td>
+        <td>Inconsistent variable naming in duplicated code blocks</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/EVMCollectorService.cs:183</td>
+        <td>Unused tuple element in multiple InternalTransfer calls</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/Network/AvalancheNetworkService.cs:183</td>
+        <td>Console.WriteLine used for logging in production code</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h4>Simulated Findings <span class="count">9</span></h4>
+    
+    <table>
+      <tr><th>Sev</th><th>File</th><th>Title</th></tr>
+      
+      <tr>
+        <td class="severity">🟠</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/Network/TRONNetworkService.cs:198</td>
+        <td>TRON InternalTransfer returns pre-fee amount, EVM returns post-fee — semantic inconsistency in tuple contract</td>
+      </tr>
+      <tr>
+        <td class="severity">🟠</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/Network/TRONNetworkService.cs:198</td>
+        <td>NormalizeTxIdPrefixes called on potentially null txId from TRON Withdraw</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/AssetCollectionService.cs:336</td>
+        <td>Silent accounting discrepancy when actualAmount &lt;= 0: member balance decremented but main wallet not credited</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/MemberWalletBalanceService.cs:127</td>
+        <td>Negative balance clamp to zero silently absorbs accounting errors</td>
+      </tr>
+      <tr>
+        <td class="severity">🟡</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/ScheduledService.cs:3771</td>
+        <td>Dual-prefix normalization strategy is asymmetric between build and lookup</td>
+      </tr>
+      <tr>
+        <td class="severity">🔵</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/Network/EthereumNetworkService.cs:181</td>
+        <td>Console.WriteLine left in production network service implementations</td>
+      </tr>
+      <tr>
+        <td class="severity">🔵</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/AssetCollectionService.cs:341</td>
+        <td>recordedAmount in UpdateAssetCollectionRequest uses 0 fallback without explanation in stored record</td>
+      </tr>
+      <tr>
+        <td class="severity">💡</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/ScheduledService.cs:4083</td>
+        <td>NormalizeTxIdPrefixes inconsistently applied — inline normalization still used in one branch</td>
+      </tr>
+      <tr>
+        <td class="severity">💡</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/AssetCollectionService.cs:346</td>
+        <td>withdrawAmount vs baseCryptoBalance decrease — implicit assumption not validated</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+
+
+
+<details>
+  <summary>Actual review body (1295 chars)</summary>
+  <pre>11 files reviewed, 4 findings
+
+
+&lt;details&gt;
+&lt;summary&gt;🟡🔵💡 Additional findings&lt;/summary&gt;
+
+| Severity | File | Title | Description |
+|----------|------|-------|-------------|
+| 🟡 | `source/WalletCoreAPI.Service/Services/ScheduledService.cs:L3750` | Significant code duplication in transaction ID normalization logic | The transaction ID normalization logic (handling both 0x-prefixed and non-prefixed formats) is duplicated across multipl… |
+| 🟡 | `source/WalletCoreAPI.Service/Services/ScheduledService.cs:L4105` | Inconsistent variable naming in duplicated code blocks | Variables are named 'withoutPrefix2' and 'withPrefix2' in one block while 'withoutPrefix' and 'withPrefix' in another, d… |
+| 🔵 | `source/WalletCoreAPI.Service/Services/EVMCollectorService.cs:L183` | Unused tuple element in multiple InternalTransfer calls | Multiple calls to InternalTransfer use '(txId, _)' pattern, discarding the actualAmount. While this is intentional for l… |
+| 💡 | `source/WalletCoreAPI.Service/Services/Network/AvalancheNetworkService.cs:L183` | Console.WriteLine used for logging in production code | Console.WriteLine is used for transaction ID logging, which is inconsistent with the structured logging used elsewhere i… |
+
+&lt;/details&gt;
+
+
+[Octopus Review](https://github.com/apps/octopus-review)</pre>
+</details>
+
+<h2>Trigger #2: @octopus <span class="sha" style="font-weight:normal">194fefb</span></h2>
+<p style="color:var(--text-muted);font-size:0.85rem;">Instruction: <em>:
+
+### 🟡 Finding 1 — Code duplication in transaction ID normalization (ScheduledService.cs:L3750)
+👍 **Valid** — Extracted a `NormalizeTxIdPrefixes` private static helper method that returns both `withoutPrefix` and `withPrefix` variants. Both normalization sites now use this shared method, eliminating the duplication.
+
+### 🟡 Finding 2 — Inconsistent variable naming `withoutPrefix2`/`withPrefix2` (ScheduledService.cs:L4105)
+👍 **Valid** — Fixed as part of Finding 1. The second call site now uses clean tuple deconstruction: `var (withoutPrefix, withPrefix) = NormalizeTxIdPrefixes(item.UniqueId)` — no more numbered suffixes.
+
+### 🔵 Finding 3 — Unused tuple element in `(txId, _)` pattern (EVMCollectorService.cs:L183)
+👎 **False positive** — The discard `_` is intentional and idiomatic C#. `EVMCollectorService` is a legacy collector that only needs the transaction ID, not the `actualAmount`. The new tuple return was added for `AssetCollectionService` which *does* use `actualAmount`. Discarding unused tuple elements via `_` is the recommended C# pattern.
+
+### 💡 Finding 4 — Console.WriteLine in AvalancheNetworkService (AvalancheNetworkService.cs:L183)
+👎 **False positive** — `Console.WriteLine` for transaction ID logging is the established pattern across **all** EVM network services (Ethereum, BSC, OPBNB, Optimism, Avalanche). Changing only Avalanche would introduce inconsistency. This is a pre-existing codebase convention, not something introduced by this PR.
+
+---
+
+**Commit:** 194fefb — fixes applied for findings 1 &amp; 2.
+
+@octopus ready for re-review.</em></p>
+<p style="color:var(--text-muted);font-size:0.85rem;">11 files changed, 422 diff lines | LLM: 31.1s</p>
+
+<div class="comparison">
+  <div class="panel">
+    <h4>Actual Findings <span class="count">3</span></h4>
+    
+    <table>
+      <tr><th>Sev</th><th>File</th><th>Title</th></tr>
+      
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/AssetCollectionService.cs:328</td>
+        <td>Missing validation for actualAmount in balance updates</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/Network/TRONNetworkService.cs:201</td>
+        <td>Inconsistent actualAmount calculation across network services</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/AssetCollectionService.cs:335</td>
+        <td>Consider extracting balance update logic into helper method</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h4>Simulated Findings <span class="count">0</span></h4>
+    <div class="empty">No findings (or LLM skipped)</div>
+  </div>
+</div>
+
+<div class="dedup-section"><h4>Dedup Results</h4><div class="empty">No duplicates detected</div></div>
+
+
+<details>
+  <summary>Actual review body (1040 chars)</summary>
+  <pre>11 files reviewed, 3 findings
+
+
+&lt;details&gt;
+&lt;summary&gt;🟡🔵 Additional findings&lt;/summary&gt;
+
+| Severity | File | Title | Description |
+|----------|------|-------|-------------|
+| 🟡 | `source/WalletCoreAPI.Service/Services/AssetCollectionService.cs:L328` | Missing validation for actualAmount in balance updates | The code uses actualAmount from network service without validating it's non-negative or reasonable. If InternalTransfer … |
+| 🟡 | `source/WalletCoreAPI.Service/Services/Network/TRONNetworkService.cs:L201` | Inconsistent actualAmount calculation across network services | TRON returns withdrawAmount as actualAmount, but EVM services return transferAmount (amount minus estimated fee). This i… |
+| 🔵 | `source/WalletCoreAPI.Service/Services/AssetCollectionService.cs:L335` | Consider extracting balance update logic into helper method | The balance update pattern (decrease source, increase destination) is used in multiple places and could benefit from ext… |
+
+&lt;/details&gt;
+
+
+[Octopus Review](https://github.com/apps/octopus-review)</pre>
+</details>
+
+<h2>Trigger #3: @octopus <span class="sha" style="font-weight:normal">004a9e7</span></h2>
+<p style="color:var(--text-muted);font-size:0.85rem;">Instruction: <em>re-review:
+
+### 🟡 Finding 1 — Missing validation for actualAmount (AssetCollectionService.cs:L328)
+👍 **Valid** — Added a guard that:
+- Logs a **fatal alert** when `actualAmount &lt;= 0` (for investigation)
+- **Skips the balance increase** to prevent incorrect balance updates
+- The decrease still happens (funds left the wallet on-chain), so the discrepancy is logged for manual reconciliation
+
+### 🟡 Finding 2 — Inconsistent actualAmount calculation across network services (TRONNetworkService.cs:L201)
+👎 **False positive** — TRON's `withdrawAmount` already has the bandwidth fee deducted (`withdrawAmount -= 1` at line 196), and TRON handles gas differently from EVM chains (no gas subtraction from transfer amount). Both TRON and EVM services return the actual amount the receiver gets — the semantics are correct despite different naming.
+
+### 🔵 Finding 3 — Extract balance update logic into helper method (AssetCollectionService.cs:L335)
+👎 **False positive** — The decrease/increase pattern is used once in this method with different parameters, context-specific comments, and now conditional logic (actualAmount validation). Extracting a helper for a single-use site would add unnecessary abstraction without meaningful benefit.
+
+---
+
+**Commit:** 004a9e7 — fix applied for finding 1.
+
+@octopus ready for re-review.</em></p>
+<p style="color:var(--text-muted);font-size:0.85rem;">11 files changed, 422 diff lines | LLM: 25.4s</p>
+
+<div class="comparison">
+  <div class="panel">
+    <h4>Actual Findings <span class="count">3</span></h4>
+    
+    <table>
+      <tr><th>Sev</th><th>File</th><th>Title</th></tr>
+      
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/AssetCollectionService.cs:332</td>
+        <td>Inconsistent actualAmount logging in Fatal message</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/ScheduledService.cs:4270</td>
+        <td>NormalizeTxIdPrefixes helper should be static utility</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/AssetCollectionService.cs:331</td>
+        <td>Missing test coverage for actualAmount validation</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h4>Simulated Findings <span class="count">0</span></h4>
+    <div class="empty">No findings (or LLM skipped)</div>
+  </div>
+</div>
+
+<div class="dedup-section"><h4>Dedup Results</h4><div class="empty">No duplicates detected</div></div>
+
+
+<details>
+  <summary>Actual review body (1009 chars)</summary>
+  <pre>11 files reviewed, 3 findings
+
+
+&lt;details&gt;
+&lt;summary&gt;🟡🔵 Additional findings&lt;/summary&gt;
+
+| Severity | File | Title | Description |
+|----------|------|-------|-------------|
+| 🟡 | `source/WalletCoreAPI.Service/Services/AssetCollectionService.cs:L332` | Inconsistent actualAmount logging in Fatal message | The Fatal log message shows actualAmount in the message but then uses actualAmount in UpdateAssetCollectionRequest. This… |
+| 🔵 | `source/WalletCoreAPI.Service/Services/ScheduledService.cs:L4270` | NormalizeTxIdPrefixes helper should be static utility | The NormalizeTxIdPrefixes helper method is useful but placed as a private method in ScheduledService. This utility funct… |
+| 🔵 | `source/WalletCoreAPI.Service/Services/AssetCollectionService.cs:L331` | Missing test coverage for actualAmount validation | The new actualAmount &lt;= 0 validation logic is critical for preventing balance corruption but lacks test coverage. This e… |
+
+&lt;/details&gt;
+
+
+[Octopus Review](https://github.com/apps/octopus-review)</pre>
+</details>
+
+<h2>Trigger #4: @octopus <span class="sha" style="font-weight:normal">89598ed</span></h2>
+<p style="color:var(--text-muted);font-size:0.85rem;">Instruction: <em>re-review:
+
+### 🟡 Finding 1 — Inconsistent actualAmount in UpdateAssetCollectionRequest (AssetCollectionService.cs:L332)
+👍 **Valid** — When `actualAmount &lt;= 0`, we now pass `0` to `UpdateAssetCollectionRequest` via a `recordedAmount` variable. This keeps the stored record consistent with the skipped balance increase.
+
+### 🔵 Finding 2 — NormalizeTxIdPrefixes should be static utility (ScheduledService.cs:L4270)
+👎 **False positive** — The method is only used within `ScheduledService`. Moving it to a shared utility class for a single consumer is premature abstraction. If other services need it in the future, it can be promoted then.
+
+### 🔵 Finding 3 — Missing test coverage for actualAmount validation (AssetCollectionService.cs:L331)
+👎 **False positive** — This is a test infrastructure concern, not a code change. The project currently does not have unit tests for these service methods. Adding test coverage is a separate initiative.
+
+---
+
+**Commit:** 89598ed — fix applied for finding 1.
+
+@octopus ready for re-review.</em></p>
+<p style="color:var(--text-muted);font-size:0.85rem;">11 files changed, 422 diff lines | LLM: 32.9s</p>
+
+<div class="comparison">
+  <div class="panel">
+    <h4>Actual Findings <span class="count">3</span></h4>
+    
+    <table>
+      <tr><th>Sev</th><th>File</th><th>Title</th></tr>
+      
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/AssetCollectionService.cs:332</td>
+        <td>Inconsistent error severity for similar balance issues</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/Network/TRONNetworkService.cs:201</td>
+        <td>TRON InternalTransfer returns withdrawAmount instead of actualAmount</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/ScheduledService.cs:4270</td>
+        <td>NormalizeTxIdPrefixes creates duplicate entries unnecessarily</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h4>Simulated Findings <span class="count">1</span></h4>
+    
+    <table>
+      <tr><th>Sev</th><th>File</th><th>Title</th></tr>
+      
+      <tr>
+        <td class="severity">💡</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/ScheduledService.cs:4074</td>
+        <td>Inline normalization still used in one branch while NormalizeTxIdPrefixes exists</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<div class="dedup-section"><h4>Dedup Results</h4><div class="empty">No duplicates detected</div></div>
+
+
+<details>
+  <summary>Actual review body (1044 chars)</summary>
+  <pre>11 files reviewed, 3 findings
+
+
+&lt;details&gt;
+&lt;summary&gt;🟡🔵 Additional findings&lt;/summary&gt;
+
+| Severity | File | Title | Description |
+|----------|------|-------|-------------|
+| 🟡 | `source/WalletCoreAPI.Service/Services/AssetCollectionService.cs:L332` | Inconsistent error severity for similar balance issues | Fatal severity is used for actualAmount &lt;= 0, but the same class in MemberWalletBalanceService uses Warn severity for ne… |
+| 🟡 | `source/WalletCoreAPI.Service/Services/Network/TRONNetworkService.cs:L201` | TRON InternalTransfer returns withdrawAmount instead of actualAmount | TRON's InternalTransfer returns withdrawAmount as actualAmount, but other network services calculate transferAmount (amo… |
+| 🔵 | `source/WalletCoreAPI.Service/Services/ScheduledService.cs:L4270` | NormalizeTxIdPrefixes creates duplicate entries unnecessarily | The method always returns both prefixed and non-prefixed versions, even when the input already matches one format. This … |
+
+&lt;/details&gt;
+
+
+[Octopus Review](https://github.com/apps/octopus-review)</pre>
+</details>
+
+<h2>Trigger #5: @octopus <span class="sha" style="font-weight:normal">ba87dfa</span></h2>
+<p style="color:var(--text-muted);font-size:0.85rem;">Instruction: <em>re-review:
+
+### 🟡 Finding 1 — Inconsistent error severity (AssetCollectionService.cs:L332)
+👍 **Valid** — Changed `Fatal` to `Warn` for the `actualAmount &lt;= 0` guard. This is now consistent with `MemberWalletBalanceService` which uses `Warn` for similar negative balance protection scenarios.
+
+### 🟡 Finding 2 — TRON InternalTransfer returns withdrawAmount (TRONNetworkService.cs:L201)
+👎 **False positive** — Same finding as Round 2 (already dismissed). TRON's `withdrawAmount` already has the bandwidth fee deducted at line 196 (`withdrawAmount -= 1`). TRON handles fees differently from EVM chains — no gas subtraction from transfer amount. Both return the actual amount received. Semantics are correct.
+
+### 🔵 Finding 3 — NormalizeTxIdPrefixes creates duplicate entries (ScheduledService.cs:L4270)
+👎 **False positive** — The method intentionally returns both `withoutPrefix` and `withPrefix` variants because the caller needs both for cross-format matching against a HashSet. TRON stores tx IDs without `0x`, EVM stores with `0x`, and the scanner always adds `0x`. Both variants are required for correct lookups.
+
+---
+
+**Commit:** ba87dfa — fix applied for finding 1.
+
+@octopus ready for re-review.</em></p>
+<p style="color:var(--text-muted);font-size:0.85rem;">11 files changed, 422 diff lines | LLM: 28.6s</p>
+
+<div class="comparison">
+  <div class="panel">
+    <h4>Actual Findings <span class="count">1</span></h4>
+    
+    <table>
+      <tr><th>Sev</th><th>File</th><th>Title</th></tr>
+      
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/AssetCollectionService.cs:331</td>
+        <td>Missing test coverage for critical balance protection logic</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h4>Simulated Findings <span class="count">0</span></h4>
+    <div class="empty">No findings (or LLM skipped)</div>
+  </div>
+</div>
+
+<div class="dedup-section"><h4>Dedup Results</h4><div class="empty">No duplicates detected</div></div>
+
+
+<details>
+  <summary>Actual review body (504 chars)</summary>
+  <pre>11 files reviewed, 1 finding
+
+
+&lt;details&gt;
+&lt;summary&gt;🟡 Additional findings&lt;/summary&gt;
+
+| Severity | File | Title | Description |
+|----------|------|-------|-------------|
+| 🟡 | `source/WalletCoreAPI.Service/Services/AssetCollectionService.cs:L331` | Missing test coverage for critical balance protection logic | The new actualAmount validation and balance protection logic is critical for preventing negative balances, but there's n… |
+
+&lt;/details&gt;
+
+
+[Octopus Review](https://github.com/apps/octopus-review)</pre>
+</details>
+
+<h2>Trigger #6: @octopus <span class="sha" style="font-weight:normal">ba87dfa</span></h2>
+<p style="color:var(--text-muted);font-size:0.85rem;">Instruction: <em>ready for re-review.</em></p>
+<p style="color:var(--text-muted);font-size:0.85rem;">11 files changed, 422 diff lines | LLM: 32.4s</p>
+
+<div class="comparison">
+  <div class="panel">
+    <h4>Actual Findings <span class="count">5</span></h4>
+    
+    <table>
+      <tr><th>Sev</th><th>File</th><th>Title</th></tr>
+      
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/AssetCollectionService.cs:328</td>
+        <td>Complex balance update logic may create maintenance burden</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/ScheduledService.cs:3742</td>
+        <td>Transaction ID normalization creates duplicate work</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/Network/EVMNetworkService.cs:24</td>
+        <td>Breaking change without version increment</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/Network/TRONNetworkService.cs:201</td>
+        <td>Inconsistent actualAmount handling between networks</td>
+      </tr>
+      <tr>
+        <td class="severity">?</td>
+        <td class="file">source/WalletCoreAPI.Service/Services/MemberWalletBalanceService.cs:134</td>
+        <td>Missing null check for symbol in log messages</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h4>Simulated Findings <span class="count">0</span></h4>
+    <div class="empty">No findings (or LLM skipped)</div>
+  </div>
+</div>
+
+<div class="dedup-section"><h4>Dedup Results</h4><div class="empty">No duplicates detected</div></div>
+
+
+<details>
+  <summary>Actual review body (1529 chars)</summary>
+  <pre>11 files reviewed, 5 findings
+
+
+&lt;details&gt;
+&lt;summary&gt;🟡🔵💡 Additional findings&lt;/summary&gt;
+
+| Severity | File | Title | Description |
+|----------|------|-------|-------------|
+| 🟡 | `source/WalletCoreAPI.Service/Services/AssetCollectionService.cs:L328` | Complex balance update logic may create maintenance burden | The balance update logic now has multiple conditional paths (actualAmount checks, different amounts for decrease vs incr… |
+| 🟡 | `source/WalletCoreAPI.Service/Services/ScheduledService.cs:L3742` | Transaction ID normalization creates duplicate work | The code creates both with and without 0x prefix versions for all transaction IDs, then calls Distinct(), which doubles … |
+| 🔵 | `source/WalletCoreAPI.Service/Services/Network/EVMNetworkService.cs:L24` | Breaking change without version increment | The InternalTransfer method signature change from returning string to (string, decimal) is a breaking change for the IEV… |
+| 🔵 | `source/WalletCoreAPI.Service/Services/Network/TRONNetworkService.cs:L201` | Inconsistent actualAmount handling between networks | TRON network returns withdrawAmount as actualAmount, while EVM networks return transferAmount (amount minus fee). This i… |
+| 💡 | `source/WalletCoreAPI.Service/Services/MemberWalletBalanceService.cs:L134` | Missing null check for symbol in log messages | The logging uses symbol?.Name ?? symbol.Id.ToString() but symbol could be null, causing NullReferenceException on symbol… |
+
+&lt;/details&gt;
+
+
+[Octopus Review](https://github.com/apps/octopus-review)</pre>
+</details>
+
+<h2>Trigger #7: @octopus <span class="sha" style="font-weight:normal">1f87136</span></h2>
+<p style="color:var(--text-muted);font-size:0.85rem;">Instruction: <em>re-review:
+
+### 🟡 Finding 1 — Complex balance update logic (AssetCollectionService.cs:L328)
+👎 **False positive** — The conditional paths are minimal, well-commented, and intentionally designed to handle the actualAmount &lt;= 0 edge case correctly. The complexity is justified by the business requirement.
+
+### 🟡 Finding 2 — Transaction ID normalization creates duplicate work (ScheduledService.cs:L3742)
+👎 **False positive** — Repeated concern (dismissed in Rounds 4 and 5). Both with/without 0x prefix variants are needed because TRON stores without 0x, EVM stores with 0x, and the scanner always adds 0x. `Distinct()` is a cheap safety net.
+
+### 🔵 Finding 3 — Breaking change without version increment (EVMNetworkService.cs:L24)
+👎 **False positive** — All callers of `InternalTransfer` (interface + all implementations + all call sites) were updated together in this PR. There are no external consumers of this interface. This is not a breaking change.
+
+### 🔵 Finding 4 — Inconsistent actualAmount between networks (TRONNetworkService.cs:L201)
+👎 **False positive** — Dismissed 3 times already (Rounds 2, 4, 5). TRON's `withdrawAmount` has bandwidth fee already deducted. Both TRON and EVM return the actual amount received. Semantics are correct.
+
+### 💡 Finding 5 — Missing null check for symbol in log messages (MemberWalletBalanceService.cs:L134)
+👍 **Valid** — Fixed the null-conditional chain from `symbol?.Name ?? symbol.Id.ToString()` to `symbol?.Name ?? symbol?.Id.ToString() ?? &quot;unknown&quot;` on both log lines (L134 and L152). This prevents a `NullReferenceException` if `symbol` is null.
+
+---
+
+**Commit:** 1f87136 — fix applied for finding 5.
+
+@octopus ready for re-review.</em></p>
+<p style="color:var(--text-muted);font-size:0.85rem;">11 files changed, 422 diff lines | LLM: 18.6s</p>
+
+<div class="comparison">
+  <div class="panel">
+    <h4>Actual Findings <span class="count">0</span></h4>
+    <div class="empty">No findings</div>
+  </div>
+
+  <div class="panel">
+    <h4>Simulated Findings <span class="count">0</span></h4>
+    <div class="empty">No findings (or LLM skipped)</div>
+  </div>
+</div>
+
+<div class="dedup-section"><h4>Dedup Results</h4><div class="empty">No duplicates detected</div></div>
+
+
+<details>
+  <summary>Actual review body (87 chars)</summary>
+  <pre>11 files reviewed, 0 findings
+
+[Octopus Review](https://github.com/apps/octopus-review)</pre>
+</details>
+
+<div class="footer">
+  Generated by Octopus Review Simulator
+</div>
+
+</body>
+</html>

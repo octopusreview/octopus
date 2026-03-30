@@ -50,7 +50,6 @@ import {
   mergeReviewConfigs,
   parseReviewConfig,
   MAX_FINDINGS_PER_REVIEW,
-  SEVERITY_PRIORITY,
 } from "@/lib/review-helpers";
 import type { ReviewConfig } from "@/lib/review-helpers";
 import { indexRepository } from "@/lib/indexer";

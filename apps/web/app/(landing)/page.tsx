@@ -10,6 +10,7 @@ import { LaunchCountdown } from "@/components/landing-countdown";
 import { LandingMobileNav } from "@/components/landing-mobile-nav";
 import { LandingDesktopNav } from "@/components/landing-desktop-nav";
 import { WebGLToggleButton } from "@/components/webgl-toggle-button";
+import { RotatingHeroText } from "@/components/landing-rotating-hero";
 import { NewsletterForm } from "@/components/landing-newsletter";
 import {
   IconBrandGithub,
@@ -153,9 +154,23 @@ export default async function LandingPage() {
             </span>
           </h1>
 
-          <p className="animate-fade-in mx-auto mt-6 max-w-xl text-base text-[#666] [animation-delay:200ms] sm:text-lg">
-            Octopus reviews every pull request with deep context awareness.
-            Catch bugs, enforce standards, and ship with confidence.
+          <p className="animate-fade-in mx-auto mt-6 h-14 max-w-2xl text-base text-[#666] [animation-delay:200ms] sm:text-lg">
+            <RotatingHeroText
+              texts={[
+                "Octopus reviews every pull request with deep context awareness.\nCatch bugs, enforce standards, and ship with confidence.",
+                "Learns your codebase and reviews PRs like your senior engineer",
+                "Catches bugs, security issues, and anti-patterns before production",
+                "Deep context awareness across your entire codebase",
+                "Indexes every file, function, and relationship in your repo",
+                "Posts inline comments with severity levels directly on your PRs",
+                "Works with GitHub and Bitbucket out of the box",
+                "Open source and self-hostable, your code never leaves your servers",
+                "Improves over time with team feedback on every finding",
+                "Powered by Claude, understands any language, any framework",
+                "Reviews every PR in under 2 minutes, 24/7",
+              ]}
+              interval={3000}
+            />
           </p>
 
           <div className="animate-fade-in mt-10 flex flex-col items-center gap-4 [animation-delay:300ms] sm:flex-row sm:justify-center">

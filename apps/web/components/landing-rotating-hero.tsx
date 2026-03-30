@@ -15,6 +15,8 @@ export function RotatingHeroText({
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
+    if (texts.length === 0) return;
+
     const timer = setInterval(() => {
       setVisible(false);
 
@@ -25,7 +27,11 @@ export function RotatingHeroText({
     }, interval);
 
     return () => clearInterval(timer);
-  }, [texts.length, interval]);
+  }, [texts, interval]);
+
+  if (texts.length === 0) {
+    return null;
+  }
 
   return (
     <>

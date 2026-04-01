@@ -123,6 +123,7 @@ When building a new feature, always consider these cross-cutting concerns:
 - **Admin visibility:** If the feature has background jobs, queues, or async operations, add monitoring in the admin panel (`/admin/`).
 - **Pubby real-time:** If the feature produces state changes users should see live, trigger via `pubby.trigger()` on the org's presence channel.
 - **Email notifications:** If the feature produces events users care about, add to email observer (`lib/events/observers/email.observer.ts`) and respect user notification preferences.
+- **Spend limits:** Always check `isOrgOverSpendLimit()` before expensive LLM operations (`lib/cost.ts`).
 
 ## Docs
 

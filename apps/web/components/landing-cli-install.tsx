@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconCopy, IconCheck, IconTerminal2 } from "@tabler/icons-react";
 import { TrackedLink } from "@/components/tracked-link";
 
@@ -20,7 +20,7 @@ const installCommands: Record<Platform, Record<Method, { comment: string; comman
   },
   windows: {
     "one-liner": {
-      comment: "# Works on Windows. Run in PowerShell as Administrator.",
+      comment: "# Works on Windows. If you use ARM Windows, use the npm installer.",
       command: "irm https://octopus-review.ai/install.ps1 | iex",
     },
     npm: {
@@ -40,10 +40,25 @@ const methodLabels: Record<Method, string> = {
   npm: "npm",
 };
 
+function detectWindowsArm(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent.toLowerCase();
+  return ua.includes("windows") && (ua.includes("arm") || ua.includes("aarch64"));
+}
+
 export function CliInstallSection({ embedded = false }: { embedded?: boolean } = {}) {
   const [platform, setPlatform] = useState<Platform>("mac-linux");
   const [method, setMethod] = useState<Method>("one-liner");
   const [copied, setCopied] = useState(false);
+  const didDetect = useRef(false);
+
+  useEffect(() => {
+    if (!didDetect.current && detectWindowsArm()) {
+      didDetect.current = true;
+      setPlatform("windows");
+      setMethod("npm");
+    }
+  }, []);
 
   const current = installCommands[platform][method];
 
@@ -138,7 +153,21 @@ export function CliInstallSection({ embedded = false }: { embedded?: boolean } =
 
           {/* Code area */}
           <div className="relative px-6 py-6">
-            <p className="font-mono text-sm text-[#555]">{current.comment}</p>
+            <p className="font-mono text-sm text-[#555]">
+              {platform === "windows" && method === "one-liner" ? (
+                <>
+                  # Works on Windows x86. ARM?{" "}
+                  <button
+                    onClick={() => setMethod("npm")}
+                    className="text-[#10D8BE] underline decoration-[#10D8BE]/30 underline-offset-2 transition-colors hover:decoration-[#10D8BE]"
+                  >
+                    Switch to npm
+                  </button>
+                </>
+              ) : (
+                current.comment
+              )}
+            </p>
             <div className="mt-3 flex items-start gap-3">
               <span className="select-none font-mono text-sm text-[#10D8BE]">$</span>
               <code className="flex-1 break-all font-mono text-sm text-[#e0e0e0]">

@@ -18,7 +18,7 @@ AI-powered PR review tool. Analyzes code via GitHub/Bitbucket webhooks, creates 
 
 - CLI (../octopus-cli)
 - VSCode Extension (../octopus-vscode)
-
+- Claude Code Plugin (../octopus-claude-plugin)
 ## Commands
 
 ```bash

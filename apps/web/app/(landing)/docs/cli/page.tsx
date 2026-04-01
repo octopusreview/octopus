@@ -181,6 +181,21 @@ octopus agent start --verbose`}</CodeBlock>
         </div>
       </Section>
 
+      {/* Claude Code Integration */}
+      <Section title="Claude Code Integration">
+        <Paragraph>
+          Use Octopus directly inside Claude Code with the official plugin.
+          Review PRs, auto-fix findings, and chat with your codebase without
+          leaving the terminal.
+        </Paragraph>
+        <Link
+          href="/docs/cli/claude-code-integration"
+          className="mb-3 inline-flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.04] px-4 py-2.5 text-sm text-white transition-colors hover:bg-white/[0.08]"
+        >
+          View Claude Code Integration docs →
+        </Link>
+      </Section>
+
       {/* Skills */}
       <Section title="Skills">
         <Paragraph>

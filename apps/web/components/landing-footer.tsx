@@ -360,7 +360,17 @@ export function LandingFooter() {
               </a>
             </span>
           </div>
-          <div className="flex gap-4">
+          <div className="flex items-center gap-4">
+            <a
+              href="https://claude.ai/code"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-xs text-[#444] transition-colors hover:text-white"
+            >
+              Powered by
+              <Image src="/claude-color.svg" alt="" width={14} height={14} />
+              <Image src="/claude-text.svg" alt="Claude" width={56} height={14} className="brightness-0 invert" />
+            </a>
             <TrackedLink
               href="/docs/privacy"
               event="footer_click"

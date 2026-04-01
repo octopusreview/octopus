@@ -12,6 +12,9 @@ import { LandingDesktopNav } from "@/components/landing-desktop-nav";
 import { WebGLToggleButton } from "@/components/webgl-toggle-button";
 import { RotatingHeroText } from "@/components/landing-rotating-hero";
 import { NewsletterForm } from "@/components/landing-newsletter";
+
+import { ReviewEngineReveal } from "@/components/ReviewEngineReveal";
+import { FaqList } from "@/components/FaqList";
 import {
   IconBrandGithub,
   IconArrowRight,
@@ -24,7 +27,6 @@ import {
   IconEye,
   IconBolt,
   IconClock,
-  IconQuestionMark,
 } from "@tabler/icons-react";
 
 const landingFaqs = [
@@ -243,6 +245,9 @@ export default async function LandingPage() {
               <StatItem icon={<IconClock className="size-4" />} value="< 2 min" label="Review time" />
               <StatItem icon={<IconSparkles className="size-4" />} value="24/7" label="Always on" />
             </div>
+
+            {/* Review Engine — expandable */}
+            <ReviewEngineReveal />
           </div>
         </div>
       </section>
@@ -401,19 +406,7 @@ export default async function LandingPage() {
               </p>
             </div>
 
-            <dl className="mt-14 space-y-8">
-              {landingFaqs.map((faq) => (
-                <div key={faq.q} className="rounded-xl border border-white/[0.06] px-6 py-5 transition-colors hover:border-white/[0.12]">
-                  <dt className="flex items-start gap-3">
-                    <IconQuestionMark className="mt-0.5 size-5 shrink-0 text-[#555]" />
-                    <span className="text-base font-semibold text-white">{faq.q}</span>
-                  </dt>
-                  <dd className="mt-3 pl-8 text-sm leading-relaxed text-[#888]">
-                    {faq.a}
-                  </dd>
-                </div>
-              ))}
-            </dl>
+            <FaqList faqs={landingFaqs} visibleCount={3} />
 
             <div className="mt-10 text-center">
               <TrackedLink

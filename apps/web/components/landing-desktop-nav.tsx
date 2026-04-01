@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { TrackedLink } from "@/components/tracked-link";
-import { IconArrowRight, IconBook, IconBrandGithub, IconPalette, IconCoin, IconNews, IconMessageCircle } from "@tabler/icons-react";
+import { IconArrowRight, IconBook, IconBrandGithub, IconCoin, IconNews, IconMessageCircle } from "@tabler/icons-react";
 
 export function LandingDesktopNav({ isLoggedIn }: { isLoggedIn: boolean }) {
   const [resourcesOpen, setResourcesOpen] = useState(false);
@@ -52,52 +52,79 @@ export function LandingDesktopNav({ isLoggedIn }: { isLoggedIn: boolean }) {
                   : "invisible -translate-y-1 opacity-0"
               }`}
             >
-              <div className="w-56 rounded-xl border border-white/[0.08] bg-[#161616] p-2 shadow-xl shadow-black/30">
+              <div className="grid w-[480px] grid-cols-2 gap-0.5 rounded-xl border border-white/[0.08] bg-[#161616] p-2 shadow-xl shadow-black/30">
                 <TrackedLink
                   href="/docs/getting-started"
                   event="nav_click"
                   eventParams={{ label: "docs" }}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
+                  className="flex items-start gap-3 rounded-lg px-3 py-3 transition-colors hover:bg-white/[0.06]"
                 >
-                  <IconBook className="size-4 shrink-0 text-[#555]" />
-                  Documentation
+                  <IconBook className="mt-0.5 size-5 shrink-0 text-[#555]" />
+                  <div>
+                    <div className="text-sm font-medium text-[#ccc]">Documentation</div>
+                    <div className="mt-0.5 text-xs text-[#555]">Setup guides & API reference</div>
+                  </div>
                 </TrackedLink>
                 <TrackedLink
                   href="/brand"
                   event="nav_click"
                   eventParams={{ label: "brand" }}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
+                  className="flex items-start gap-3 rounded-lg px-3 py-3 transition-colors hover:bg-white/[0.06]"
                 >
-                  <IconPalette className="size-4 shrink-0 text-[#555]" />
-                  Brand Guidelines
+                  <Image src="/logo.svg" alt="" width={20} height={20} className="mt-0.5 shrink-0 opacity-40 grayscale" />
+                  <div>
+                    <div className="text-sm font-medium text-[#ccc]">Brand Guidelines</div>
+                    <div className="mt-0.5 text-xs text-[#555]">Logos, colors & assets</div>
+                  </div>
                 </TrackedLink>
                 <TrackedLink
                   href="/blog"
                   event="nav_click"
                   eventParams={{ label: "blog" }}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
+                  className="flex items-start gap-3 rounded-lg px-3 py-3 transition-colors hover:bg-white/[0.06]"
                 >
-                  <IconNews className="size-4 shrink-0 text-[#555]" />
-                  Blog
+                  <IconNews className="mt-0.5 size-5 shrink-0 text-[#555]" />
+                  <div>
+                    <div className="text-sm font-medium text-[#ccc]">Blog</div>
+                    <div className="mt-0.5 text-xs text-[#555]">News & product updates</div>
+                  </div>
                 </TrackedLink>
                 <TrackedLink
                   href="/docs/pricing"
                   event="nav_click"
                   eventParams={{ label: "pricing" }}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
+                  className="flex items-start gap-3 rounded-lg px-3 py-3 transition-colors hover:bg-white/[0.06]"
                 >
-                  <IconCoin className="size-4 shrink-0 text-[#555]" />
-                  Pricing
+                  <IconCoin className="mt-0.5 size-5 shrink-0 text-[#555]" />
+                  <div>
+                    <div className="text-sm font-medium text-[#ccc]">Pricing</div>
+                    <div className="mt-0.5 text-xs text-[#555]">Plans & credit packages</div>
+                  </div>
                 </TrackedLink>
                 <a
                   href="https://github.com/octopusreview"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
+                  className="flex items-start gap-3 rounded-lg px-3 py-3 transition-colors hover:bg-white/[0.06]"
                 >
-                  <IconBrandGithub className="size-4 shrink-0 text-[#555]" />
-                  GitHub
+                  <IconBrandGithub className="mt-0.5 size-5 shrink-0 text-[#555]" />
+                  <div>
+                    <div className="text-sm font-medium text-[#ccc]">GitHub</div>
+                    <div className="mt-0.5 text-xs text-[#555]">Source code & issues</div>
+                  </div>
                 </a>
+                <TrackedLink
+                  href="/docs/changelog"
+                  event="nav_click"
+                  eventParams={{ label: "changelog" }}
+                  className="flex items-start gap-3 rounded-lg px-3 py-3 transition-colors hover:bg-white/[0.06]"
+                >
+                  <IconNews className="mt-0.5 size-5 shrink-0 text-[#555]" />
+                  <div>
+                    <div className="text-sm font-medium text-[#ccc]">Changelog</div>
+                    <div className="mt-0.5 text-xs text-[#555]">What&apos;s new in Octopus</div>
+                  </div>
+                </TrackedLink>
               </div>
             </div>
           </div>

@@ -146,6 +146,51 @@ button {
   animation: fade-in 0.7s ease-out forwards;
 }
 
+/* Bento preview animations — triggered by .is-visible on parent */
+@keyframes bento-fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes bento-grow-bar {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+
+@keyframes bento-progress {
+  from { width: 0%; }
+  to { width: 78%; }
+}
+
+.bento-stagger > * {
+  opacity: 0;
+}
+.is-visible .bento-stagger > * {
+  animation: bento-fade-up 0.5s ease-out forwards;
+}
+.is-visible .bento-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.is-visible .bento-stagger > *:nth-child(2) { animation-delay: 120ms; }
+.is-visible .bento-stagger > *:nth-child(3) { animation-delay: 240ms; }
+.is-visible .bento-stagger > *:nth-child(4) { animation-delay: 360ms; }
+.is-visible .bento-stagger > *:nth-child(5) { animation-delay: 480ms; }
+.is-visible .bento-stagger > *:nth-child(6) { animation-delay: 600ms; }
+.is-visible .bento-stagger > *:nth-child(7) { animation-delay: 720ms; }
+
+.bento-bar {
+  transform-origin: bottom;
+  transform: scaleY(0);
+}
+.is-visible .bento-bar {
+  animation: bento-grow-bar 0.6s ease-out forwards;
+}
+
+.bento-progress-fill {
+  width: 0%;
+}
+.is-visible .bento-progress-fill {
+  animation: bento-progress 1.2s ease-out 0.3s forwards;
+}
+
 /* Shimmer border animation */
 @keyframes float {
   0%, 100% {
@@ -158,6 +203,15 @@ button {
 
 .animate-float {
   animation: float 3s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
 }
 
 @keyframes shimmer-spin {
@@ -210,6 +264,9 @@ html {
   scrollbar-color: transparent transparent;
   scrollbar-gutter: stable;
   transition: scrollbar-color 0.3s;
+}
+html:has(.dark) {
+  background: #0c0c0c;
 }
 .scrollbar-auto-hide:hover,
 html:hover {

@@ -46,21 +46,26 @@ function Install-Octopus {
     param($arch)
     $version = Get-LatestVersion
 
-    $artifact = "$BINARY_NAME-windows-$arch.exe"
-    $downloadUrl = "https://github.com/$GITHUB_REPO/releases/download/$version/$artifact"
+    $artifactBase = "$BINARY_NAME-windows-$arch"
+    $archive = "$artifactBase.tar.gz"
+    $downloadUrl = "https://github.com/$GITHUB_REPO/releases/download/$version/$archive"
 
-    Write-Info "Downloading $artifact..."
+    Write-Info "Downloading $archive..."
 
     # Ensure install directory exists
     if (-not (Test-Path $INSTALL_DIR)) {
         New-Item -ItemType Directory -Path $INSTALL_DIR -Force | Out-Null
     }
 
-    $destination = Join-Path $INSTALL_DIR "$BINARY_NAME.exe"
+    $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "octopus-install-$([System.Guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+
+    $archivePath = Join-Path $tmpDir $archive
 
     try {
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $destination -UseBasicParsing
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath -UseBasicParsing
     } catch {
+        Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
         Write-Err "Download failed. Check if a release exists for windows-$arch. Error: $_"
     }
 
@@ -68,19 +73,31 @@ function Install-Octopus {
     $checksumsUrl = "https://github.com/$GITHUB_REPO/releases/download/$version/checksums.txt"
     try {
         $checksums = Invoke-RestMethod -Uri $checksumsUrl -Headers @{ "User-Agent" = "octopus-installer" }
-        $expectedLine = $checksums -split "`n" | Where-Object { $_ -match $artifact }
+        $expectedLine = $checksums -split "`n" | Where-Object { $_ -match [regex]::Escape($archive) }
         if ($expectedLine) {
             $expectedSha = ($expectedLine -split "\s+")[0]
-            $actualSha = (Get-FileHash -Path $destination -Algorithm SHA256).Hash.ToLower()
+            $actualSha = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash.ToLower()
             if ($expectedSha -ne $actualSha) {
-                Remove-Item $destination -Force
+                Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
                 Write-Err "Checksum mismatch! Expected $expectedSha, got $actualSha. Aborting."
             }
             Write-Info "Checksum verified."
         }
     } catch {
-        Write-Warn "No checksums.txt found for this release — skipping integrity check."
+        Write-Warn "No checksums.txt found for this release -- skipping integrity check."
     }
+
+    # Extract binary from archive
+    tar -xzf $archivePath -C $tmpDir
+    $extractedBinary = Join-Path $tmpDir "$BINARY_NAME.exe"
+    if (-not (Test-Path $extractedBinary)) {
+        Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Err "Expected binary '$BINARY_NAME.exe' not found in archive."
+    }
+
+    $destination = Join-Path $INSTALL_DIR "$BINARY_NAME.exe"
+    Copy-Item $extractedBinary $destination -Force
+    Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
 
     Write-Success "Installed $BINARY_NAME to $destination"
 

@@ -66,41 +66,46 @@ get_latest_version() {
 # ─── Download & Install ────────────────────────────────────────────────────
 
 download_and_install() {
-  local ext=""
+  local bin_ext=""
   if [ "$PLATFORM" = "windows" ]; then
-    ext=".exe"
+    bin_ext=".exe"
   fi
 
-  local artifact="${BINARY_NAME}-${PLATFORM}-${ARCH}${ext}"
-  local download_url="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/${artifact}"
+  local artifact="${BINARY_NAME}-${PLATFORM}-${ARCH}"
+  local archive="${artifact}.tar.gz"
+  local download_url="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/${archive}"
 
-  info "Downloading ${artifact}..."
+  info "Downloading ${archive}..."
   local tmpdir
   tmpdir=$(mktemp -d)
   trap 'rm -rf "$tmpdir"' EXIT
 
-  local tmpfile="${tmpdir}/${artifact}"
-  curl -fsSL -o "$tmpfile" "$download_url" || error "Download failed. Check if a release exists for your platform: ${PLATFORM}-${ARCH}"
+  local tmparchive="${tmpdir}/${archive}"
+  curl -fsSL -o "$tmparchive" "$download_url" || error "Download failed. Check if a release exists for your platform: ${PLATFORM}-${ARCH}"
 
   # Verify SHA256 checksum if checksums.txt is available
   local checksums_url="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/checksums.txt"
   local expected_sha
-  expected_sha=$(curl -fsSL "$checksums_url" 2>/dev/null | grep "${artifact}" | awk '{print $1}') || true
+  expected_sha=$(curl -fsSL "$checksums_url" 2>/dev/null | grep "${archive}" | awk '{print $1}') || true
   if [ -n "$expected_sha" ]; then
     local actual_sha
     if command -v sha256sum > /dev/null 2>&1; then
-      actual_sha=$(sha256sum "$tmpfile" | awk '{print $1}')
+      actual_sha=$(sha256sum "$tmparchive" | awk '{print $1}')
     elif command -v shasum > /dev/null 2>&1; then
-      actual_sha=$(shasum -a 256 "$tmpfile" | awk '{print $1}')
+      actual_sha=$(shasum -a 256 "$tmparchive" | awk '{print $1}')
     fi
     if [ -n "$actual_sha" ] && [ "$expected_sha" != "$actual_sha" ]; then
       error "Checksum mismatch! Expected ${expected_sha}, got ${actual_sha}. Aborting."
     fi
     info "Checksum verified."
   else
-    warn "No checksums.txt found for this release — skipping integrity check."
+    warn "No checksums.txt found for this release -- skipping integrity check."
   fi
 
+  # Extract binary from archive
+  tar -xzf "$tmparchive" -C "$tmpdir"
+  local tmpfile="${tmpdir}/${BINARY_NAME}${bin_ext}"
+  [ -f "$tmpfile" ] || error "Expected binary '${BINARY_NAME}${bin_ext}' not found in archive."
   chmod +x "$tmpfile"
 
   # Try preferred install dir, fall back to user-local dir
@@ -113,7 +118,7 @@ download_and_install() {
   fi
 
   INSTALLED_DIR="$target_dir"
-  success "Installed ${BINARY_NAME} to ${target_dir}/${BINARY_NAME}${ext}"
+  success "Installed ${BINARY_NAME} to ${target_dir}/${BINARY_NAME}${bin_ext}"
 }
 
 install_binary() {

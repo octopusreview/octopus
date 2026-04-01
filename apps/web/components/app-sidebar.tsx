@@ -32,7 +32,6 @@ import {
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconBug,
-  IconPackage,
 } from "@tabler/icons-react";
 import { CommandPalette } from "@/components/command-palette";
 
@@ -40,7 +39,6 @@ const mainNavItems = [
   { href: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard },
   { href: "/repositories", label: "Repositories", icon: IconGitBranch },
   { href: "/issues", label: "Issues", icon: IconBug },
-  { href: "/package-analyzer", label: "Package Analyzer", icon: IconPackage },
   { href: "/timeline", label: "Timeline", icon: IconTimeline },
 ];
 
@@ -117,6 +115,43 @@ function SidebarContent({
         </>
       )}
 
+      {/* Ask Octopus */}
+      {collapsed ? (
+        <div className="border-b px-2 py-2">
+          <SidebarTooltip label={chat.isOpen ? "Close Ask Octopus" : "Ask Octopus"}>
+            <button
+              onClick={() => { chat.toggle(); onNavigate?.(); }}
+              className={cn(
+                "flex w-full items-center justify-center rounded-md px-2 py-2 transition-colors",
+                chat.isOpen
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+              )}
+            >
+              <IconMessageChatbot className="size-4" />
+            </button>
+          </SidebarTooltip>
+        </div>
+      ) : (
+        <div className="border-b px-3 py-2">
+          <button
+            onClick={() => { chat.toggle(); onNavigate?.(); }}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md border px-3 py-1.5 text-sm transition-colors",
+              chat.isOpen
+                ? "border-primary/30 bg-primary/10 text-primary"
+                : "border-border bg-muted/50 text-muted-foreground hover:bg-muted"
+            )}
+          >
+            <IconMessageChatbot className="size-3.5" />
+            <span className="flex-1 text-left">Ask Octopus</span>
+            {chat.isOpen && (
+              <span className="size-1.5 rounded-full bg-primary" />
+            )}
+          </button>
+        </div>
+      )}
+
       <CommandPalette orgId={currentOrg.id} />
 
       <nav className={cn("flex-1 space-y-1 py-4", collapsed ? "px-2" : "px-3")}>
@@ -159,31 +194,6 @@ function SidebarContent({
           return link;
         })}
 
-        {collapsed ? (
-          <SidebarTooltip label={chat.isOpen ? "Close Ask Octopus" : "Ask Octopus"}>
-            <button
-              onClick={() => { chat.toggle(); onNavigate?.(); }}
-              className={cn(
-                "flex w-full items-center justify-center rounded-md px-2 py-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50"
-              )}
-            >
-              <IconMessageChatbot className="size-4" />
-            </button>
-          </SidebarTooltip>
-        ) : (
-          <button
-            onClick={() => { chat.toggle(); onNavigate?.(); }}
-            className={cn(
-              "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50"
-            )}
-          >
-            <IconMessageChatbot className="size-4 shrink-0" />
-            Ask Octopus
-            {chat.isOpen && (
-              <span className="ml-auto size-1.5 rounded-full bg-primary" />
-            )}
-          </button>
-        )}
         {(() => {
           const knowledgeActive = pathname === "/knowledge";
           const knowledgeLink = (

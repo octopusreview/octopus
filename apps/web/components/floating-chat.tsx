@@ -799,7 +799,7 @@ export function FloatingChat() {
   return (
     <div
       className={cn(
-        "fixed z-50 flex overflow-hidden border bg-background shadow-2xl",
+        "fixed z-50 flex overflow-hidden border border-border/50 bg-card shadow-2xl shadow-black/40 ring-1 ring-white/[0.06]",
         isMaximized ? "rounded-none" : "rounded-xl",
       )}
       style={

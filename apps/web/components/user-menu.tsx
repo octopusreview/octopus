@@ -3,29 +3,35 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
+import { useState } from "react";
 import { signOut } from "@/lib/auth-client";
 import { clearOrgCookie } from "@/app/(app)/actions";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   IconLogout,
   IconUser,
   IconSun,
   IconMoon,
   IconDeviceDesktop,
-  IconPalette,
   IconShieldCog,
+  IconChevronRight,
+  IconCheck,
 } from "@tabler/icons-react";
+
+const menuItemClass =
+  "flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted focus:bg-muted focus:outline-none";
 
 export function UserMenu({
   name,
@@ -39,10 +45,20 @@ export function UserMenu({
   children?: React.ReactNode;
 }) {
   const router = useRouter();
-  const { setTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
+  const [view, setView] = useState<"main" | "theme">("main");
+  const [open, setOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   return (
-    <DropdownMenu>
+    <>
+    <DropdownMenu
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) setView("main");
+      }}
+    >
       <DropdownMenuTrigger asChild>
         {children ?? (
           <Button variant="ghost" size="icon" className="rounded-full">
@@ -50,53 +66,137 @@ export function UserMenu({
           </Button>
         )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel>
-          <div>{name}</div>
-          <div className="text-muted-foreground font-normal">{email}</div>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {isAdmin && (
-          <DropdownMenuItem asChild>
-            <Link href="/admin">
-              <IconShieldCog className="size-4" />
-              Admin
-            </Link>
-          </DropdownMenuItem>
+      <DropdownMenuContent
+        align="end"
+        side="bottom"
+        sideOffset={8}
+        className="w-64 overflow-hidden border-border/50 bg-popover p-0 shadow-xl shadow-black/30"
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
+        {view === "main" ? (
+          <>
+            {/* User info */}
+            <div className="border-b border-border/50 px-4 py-3">
+              <div className="text-sm font-medium">{name}</div>
+              <div className="text-xs text-muted-foreground">{email}</div>
+            </div>
+
+            {/* Menu items */}
+            <div className="p-1">
+              {isAdmin && (
+                <Link
+                  href="/admin"
+                  onClick={() => setOpen(false)}
+                  className={menuItemClass}
+                >
+                  <IconShieldCog className="size-4 text-muted-foreground" />
+                  Admin
+                </Link>
+              )}
+              <button
+                onClick={() => setView("theme")}
+                className={menuItemClass}
+              >
+                {theme === "dark" ? (
+                  <IconMoon className="size-4 text-muted-foreground" />
+                ) : theme === "light" ? (
+                  <IconSun className="size-4 text-muted-foreground" />
+                ) : (
+                  <IconDeviceDesktop className="size-4 text-muted-foreground" />
+                )}
+                <span className="flex-1">Theme</span>
+                <span className="text-xs capitalize text-muted-foreground">
+                  {theme}
+                </span>
+                <IconChevronRight className="size-3.5 text-muted-foreground" />
+              </button>
+            </div>
+
+            {/* Sign out */}
+            <div className="border-t border-border/50 p-1">
+              <button
+                onClick={() => {
+                  setOpen(false);
+                  setConfirmOpen(true);
+                }}
+                className={menuItemClass}
+              >
+                <IconLogout className="size-4 text-muted-foreground" />
+                Sign out
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Theme picker sub-view */}
+            <div className="flex items-center gap-2 border-b border-border/50 px-3 py-2.5">
+              <button
+                onClick={() => setView("main")}
+                className="flex size-6 cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-muted"
+              >
+                <IconChevronRight className="size-3.5 rotate-180 text-muted-foreground" />
+              </button>
+              <span className="text-sm font-medium">Theme</span>
+            </div>
+            <div className="p-1">
+              {(
+                [
+                  { key: "light", label: "Light", icon: IconSun },
+                  { key: "dark", label: "Dark", icon: IconMoon },
+                  { key: "system", label: "System", icon: IconDeviceDesktop },
+                ] as const
+              ).map(({ key, label, icon: Icon }) => (
+                <button
+                  key={key}
+                  onClick={() => {
+                    setTheme(key);
+                    setView("main");
+                  }}
+                  className={menuItemClass}
+                >
+                  <Icon className="size-4 text-muted-foreground" />
+                  <span className="flex-1">{label}</span>
+                  {theme === key && (
+                    <IconCheck className="size-4 text-muted-foreground" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </>
         )}
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <IconPalette className="size-4" />
-            Theme
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            <DropdownMenuItem onClick={() => setTheme("light")}>
-              <IconSun className="size-4" />
-              Light
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setTheme("dark")}>
-              <IconMoon className="size-4" />
-              Dark
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setTheme("system")}>
-              <IconDeviceDesktop className="size-4" />
-              System
-            </DropdownMenuItem>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={async () => {
-            await clearOrgCookie();
-            await signOut();
-            router.push("/login");
-            router.refresh();
-          }}
-        >
-          <IconLogout className="size-4" />
-          Sign out
-        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+
+    <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Sign out</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Are you sure you want to sign out?
+        </p>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => setConfirmOpen(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={async () => {
+              setConfirmOpen(false);
+              await clearOrgCookie();
+              await signOut();
+              router.push("/login");
+              router.refresh();
+            }}
+          >
+            Sign out
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

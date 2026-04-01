@@ -23,7 +23,7 @@ export async function revokeSessionAction(formData: FormData) {
     body: { token },
   });
 
-  if (result.status) {
+  if (result?.status) {
     await writeAuditLog({
       action: "auth.session_revoked",
       category: "auth",
@@ -32,10 +32,12 @@ export async function revokeSessionAction(formData: FormData) {
       targetType: "session",
       metadata: { revokedToken: token.slice(0, 8) + "..." },
     });
+    revalidatePath("/settings/sessions");
+    return { success: true };
   }
 
   revalidatePath("/settings/sessions");
-  return { success: result.status };
+  return { success: false, error: "Failed to revoke session" };
 }
 
 export async function revokeOtherSessionsAction() {

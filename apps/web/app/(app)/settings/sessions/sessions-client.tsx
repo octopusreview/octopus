@@ -233,6 +233,7 @@ function SessionCard({
           disabled={isRevoking}
           className="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50 transition-colors"
           title="Disconnect this session"
+          aria-label="Disconnect this session"
         >
           <IconTrash className="size-3.5" />
           {isRevoking ? "..." : "Disconnect"}

@@ -40,24 +40,36 @@ export async function POST(request: Request) {
 
   // New device — save it
   const reqHeaders = await headers();
+  // Prefer server-set headers that can't be spoofed by the client
   const ip =
-    reqHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    reqHeaders.get("cf-connecting-ip") ||
     reqHeaders.get("x-real-ip") ||
+    reqHeaders.get("x-forwarded-for")?.split(",").pop()?.trim() ||
     "Unknown";
   const ua = reqHeaders.get("user-agent") || "";
   const browser = parseBrowser(ua);
-  const location = await fetchIpLocation(ip).catch(() => "Unknown");
 
+  // Create device record immediately, resolve geolocation asynchronously
   await prisma.userDevice.create({
     data: {
       userId,
       fingerprint,
       browser,
       ipAddress: ip,
-      location,
+      location: null,
       ...(secondarySignals ? { metadata: secondarySignals } : {}),
     },
   });
+
+  // Fire-and-forget: update location after geolocation resolves
+  fetchIpLocation(ip)
+    .then((location) =>
+      prisma.userDevice.update({
+        where: { userId_fingerprint: { userId, fingerprint } },
+        data: { location },
+      }),
+    )
+    .catch(() => {});
 
   // Check if user has any OTHER devices (first device = first login, don't alert)
   const deviceCount = await prisma.userDevice.count({ where: { userId } });
@@ -80,7 +92,6 @@ export async function POST(request: Request) {
         firstName,
         appUrl,
         ipAddress: ip,
-        location,
         browser,
         loginTime: new Date().toLocaleString("en-US", {
           dateStyle: "medium",
@@ -119,7 +130,7 @@ async function fetchIpLocation(ip: string): Promise<string> {
   }
   try {
     const res = await fetch(
-      `http://ip-api.com/json/${ip}?fields=city,country`,
+      `https://ipapi.co/${ip}/json/`,
     );
     if (!res.ok) return "Unknown";
     const data = await res.json();

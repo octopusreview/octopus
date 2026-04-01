@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { IconCopy, IconCheck, IconTerminal2 } from "@tabler/icons-react";
+import { TrackedLink } from "@/components/tracked-link";
 
 type Platform = "mac-linux" | "windows";
 type Method = "one-liner" | "npm";
@@ -46,10 +47,14 @@ export function CliInstallSection() {
 
   const current = installCommands[platform][method];
 
-  function handleCopy() {
-    navigator.clipboard.writeText(current.command);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(current.command);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback: select the command text so user can copy manually
+    }
   }
 
   return (
@@ -154,13 +159,15 @@ export function CliInstallSection() {
 
           {/* Docs link */}
           <div className="mt-6 flex justify-center">
-            <a
+            <TrackedLink
               href="/docs/cli"
+              event="cta_click"
+              eventParams={{ location: "cli_install_section", label: "cli_docs" }}
               className="inline-flex items-center gap-2 text-sm text-[#666] transition-colors hover:text-white"
             >
               <IconTerminal2 className="size-4" />
               View full CLI documentation
-            </a>
+            </TrackedLink>
           </div>
         </div>
       </div>

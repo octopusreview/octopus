@@ -12,6 +12,7 @@ import { LandingDesktopNav } from "@/components/landing-desktop-nav";
 import { WebGLToggleButton } from "@/components/webgl-toggle-button";
 import { RotatingHeroText } from "@/components/landing-rotating-hero";
 import { NewsletterForm } from "@/components/landing-newsletter";
+import { CliInstallSection } from "@/components/landing-cli-install";
 
 import { ReviewEngineReveal } from "@/components/ReviewEngineReveal";
 import { FaqList } from "@/components/FaqList";
@@ -258,6 +259,9 @@ export default async function LandingPage() {
           <LandingFeatures />
         </div>
       </section>
+
+      {/* CLI Quick Install */}
+      <CliInstallSection />
 
       {/* Open Source */}
       <section id="open-source" className="relative z-10 scroll-mt-20 px-4 sm:px-8 md:px-12">

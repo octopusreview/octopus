@@ -28,7 +28,7 @@ export default async function KnowledgePage() {
 
   const orgId = member.organizationId;
 
-  const [activeDocuments, deletedDocuments] = await Promise.all([
+  const [activeDocuments, deletedDocuments, addedTemplates] = await Promise.all([
     prisma.knowledgeDocument.findMany({
       where: { organizationId: orgId, deletedAt: null },
       select: {
@@ -55,6 +55,10 @@ export default async function KnowledgePage() {
       },
       orderBy: { deletedAt: "desc" },
     }),
+    prisma.knowledgeDocument.findMany({
+      where: { organizationId: orgId, templateId: { not: null }, deletedAt: null },
+      select: { templateId: true },
+    }),
   ]);
 
   const documents = activeDocuments.map((doc) => ({
@@ -68,10 +72,15 @@ export default async function KnowledgePage() {
     deletedByName: doc.deletedBy?.name ?? null,
   }));
 
+  const addedTemplateIds = addedTemplates
+    .map((d) => d.templateId)
+    .filter((id): id is string => id !== null);
+
   return (
     <KnowledgeContent
       documents={documents}
       deletedDocuments={deleted}
+      addedTemplateIds={addedTemplateIds}
       orgId={orgId}
     />
   );

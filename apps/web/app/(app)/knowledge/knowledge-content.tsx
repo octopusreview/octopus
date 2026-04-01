@@ -67,6 +67,7 @@ import {
   enhanceKnowledgeContent,
 } from "./actions";
 import { getPubbyClient } from "@/lib/pubby-client";
+import { TemplateBrowser } from "./template-browser";
 
 type Document = {
   id: string;
@@ -99,10 +100,11 @@ type AuditLog = {
 type Props = {
   documents: Document[];
   deletedDocuments: DeletedDocument[];
+  addedTemplateIds: string[];
   orgId: string;
 };
 
-export function KnowledgeContent({ documents: initialDocuments, deletedDocuments: initialDeleted, orgId }: Props) {
+export function KnowledgeContent({ documents: initialDocuments, deletedDocuments: initialDeleted, addedTemplateIds, orgId }: Props) {
   const router = useRouter();
   const [documents, setDocuments] = useState(initialDocuments);
   const [deletedDocs, setDeletedDocs] = useState(initialDeleted);
@@ -343,13 +345,15 @@ export function KnowledgeContent({ documents: initialDocuments, deletedDocuments
             used during code reviews and analysis.
           </p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="shrink-0">
-              <IconPlus className="mr-2 size-4" />
-              Add Document
-            </Button>
-          </DialogTrigger>
+        <div className="flex shrink-0 gap-2">
+          <TemplateBrowser addedTemplateIds={addedTemplateIds} />
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <IconPlus className="mr-2 size-4" />
+                Add Document
+              </Button>
+            </DialogTrigger>
           <DialogContent className="max-h-[85vh] sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle>Add Knowledge Document</DialogTitle>
@@ -460,6 +464,7 @@ export function KnowledgeContent({ documents: initialDocuments, deletedDocuments
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {documents.length > 0 && (
@@ -517,8 +522,11 @@ export function KnowledgeContent({ documents: initialDocuments, deletedDocuments
           <h3 className="font-medium">No documents yet</h3>
           <p className="mt-1 max-w-sm text-center text-sm text-muted-foreground">
             Add your coding standards, guidelines, or rules to enhance AI
-            reviews.
+            reviews. Start with a template or create your own.
           </p>
+          <div className="mt-4">
+            <TemplateBrowser addedTemplateIds={addedTemplateIds} />
+          </div>
         </div>
       ) : (
         <div className="mt-6 space-y-3">
@@ -541,7 +549,9 @@ export function KnowledgeContent({ documents: initialDocuments, deletedDocuments
                   <span>
                     {doc.sourceType === "file" && doc.fileName
                       ? doc.fileName
-                      : "Pasted content"}
+                      : doc.sourceType === "template"
+                        ? "From template"
+                        : "Pasted content"}
                   </span>
                   {doc.status === "ready" && (
                     <>

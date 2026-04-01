@@ -10,6 +10,7 @@ import { eventBus } from "@/lib/events";
 import { deleteKnowledgeDocumentChunks } from "@/lib/qdrant";
 import Anthropic from "@anthropic-ai/sdk";
 import { logAiUsage } from "@/lib/ai-usage";
+import { knowledgeTemplates } from "@/lib/knowledge-templates";
 
 export async function createKnowledgeDocument(
   _prevState: { error?: string },
@@ -599,4 +600,125 @@ export async function getKnowledgeAuditLogs(documentId: string) {
     createdAt: log.createdAt.toISOString(),
     userName: log.user.name,
   }));
+}
+
+export async function addKnowledgeTemplate(
+  templateId: string,
+): Promise<{ error?: string }> {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+  if (!session) redirect("/login");
+
+  const cookieStore = await cookies();
+  const orgId = cookieStore.get("current_org_id")?.value;
+  if (!orgId) return { error: "No organization selected." };
+
+  const member = await prisma.organizationMember.findFirst({
+    where: { userId: session.user.id, organizationId: orgId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!member) return { error: "You are not a member of this organization." };
+
+  const template = knowledgeTemplates.find((t) => t.id === templateId);
+  if (!template) return { error: "Template not found." };
+
+  const existing = await prisma.knowledgeDocument.findFirst({
+    where: { organizationId: orgId, templateId, deletedAt: null },
+    select: { id: true },
+  });
+  if (existing) return { error: "This template has already been added." };
+
+  const doc = await prisma.knowledgeDocument.create({
+    data: {
+      title: template.title,
+      content: template.content,
+      sourceType: "template",
+      templateId,
+      status: "processing",
+      organizationId: orgId,
+    },
+  });
+
+  await prisma.knowledgeAuditLog.create({
+    data: {
+      action: "created",
+      details: "Added from template",
+      documentId: doc.id,
+      userId: session.user.id,
+      organizationId: orgId,
+    },
+  });
+
+  const channel = `presence-org-${orgId}`;
+  pubby.trigger(channel, "knowledge-status", {
+    documentId: doc.id,
+    status: "processing",
+  });
+
+  // Fire-and-forget background indexing
+  (async () => {
+    try {
+      const { indexKnowledgeDocument } = await import(
+        "@/lib/knowledge-indexer"
+      );
+      const result = await indexKnowledgeDocument(
+        doc.id,
+        orgId,
+        doc.title,
+        doc.content,
+      );
+
+      await prisma.knowledgeDocument.update({
+        where: { id: doc.id },
+        data: {
+          status: "ready",
+          totalChunks: result.totalChunks,
+          totalVectors: result.totalVectors,
+          processingMs: result.durationMs,
+        },
+      });
+
+      pubby.trigger(channel, "knowledge-status", {
+        documentId: doc.id,
+        status: "ready",
+        totalChunks: result.totalChunks,
+        totalVectors: result.totalVectors,
+      });
+
+      eventBus.emit({
+        type: "knowledge-ready",
+        orgId,
+        documentTitle: doc.title,
+        action: "created",
+        totalChunks: result.totalChunks,
+        totalVectors: result.totalVectors,
+      });
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Unknown error";
+      console.error(
+        `[knowledge] Indexing failed for template doc ${doc.id}:`,
+        err,
+      );
+
+      await prisma.knowledgeDocument
+        .update({
+          where: { id: doc.id },
+          data: { status: "error", errorMessage },
+        })
+        .catch((e) =>
+          console.error("[knowledge] Failed to update error status:", e),
+        );
+
+      pubby.trigger(channel, "knowledge-status", {
+        documentId: doc.id,
+        status: "error",
+        error: errorMessage,
+      });
+    }
+  })();
+
+  revalidatePath("/knowledge");
+  return {};
 }

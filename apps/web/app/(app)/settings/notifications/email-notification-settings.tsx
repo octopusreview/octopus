@@ -57,12 +57,12 @@ export function EmailNotificationSettings({
   const allEventTypes = Object.keys(EVENT_LABELS);
   const allDisabled = allEventTypes.every((eventType) => {
     const pref = preferences.find((p) => p.eventType === eventType);
-    return pref ? !pref.enabled : false; // default is enabled
+    return pref ? !pref.enabled : true; // default is disabled
   });
 
   const allEnabled = allEventTypes.every((eventType) => {
     const pref = preferences.find((p) => p.eventType === eventType);
-    return pref ? pref.enabled : true; // default is enabled
+    return pref ? pref.enabled : false; // default is disabled
   });
 
   return (
@@ -118,7 +118,7 @@ export function EmailNotificationSettings({
           {Object.entries(EVENT_LABELS).map(
             ([eventType, { label, description }]) => {
               const pref = preferences.find((p) => p.eventType === eventType);
-              const enabled = pref?.enabled ?? true;
+              const enabled = pref?.enabled ?? false;
 
               return (
                 <div

@@ -6,11 +6,16 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 
-async function getCurrentMember() {
+async function requireSession() {
   const session = await auth.api.getSession({
     headers: await headers(),
   });
   if (!session) redirect("/login");
+  return session;
+}
+
+async function getCurrentMember() {
+  const session = await requireSession();
 
   const cookieStore = await cookies();
   const orgId = cookieStore.get("current_org_id")?.value;
@@ -87,6 +92,20 @@ export async function toggleAllEmailNotifications(
       }),
     ),
   );
+
+  revalidatePath("/settings/notifications");
+  return {};
+}
+
+export async function toggleMarketingEmails(
+  enabled: boolean,
+): Promise<{ error?: string }> {
+  const session = await requireSession();
+
+  await prisma.user.update({
+    where: { id: session.user.id },
+    data: { marketingEmailsEnabled: enabled },
+  });
 
   revalidatePath("/settings/notifications");
   return {};

@@ -4,6 +4,8 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { prisma } from "@octopus/db";
 import { sendEmail } from "./email";
 import { writeAuditLog } from "./audit";
+import { renderEmailTemplate } from "./email-renderer";
+import { enqueueAfter } from "./queue";
 
 export const auth = betterAuth({
   trustedOrigins: [process.env.BETTER_AUTH_URL!],
@@ -18,6 +20,7 @@ export const auth = betterAuth({
             where: { id: session.userId },
             select: { email: true },
           });
+
           await writeAuditLog({
             action: "auth.login",
             category: "auth",
@@ -42,6 +45,15 @@ export const auth = betterAuth({
             targetType: "user",
             targetId: user.id,
           });
+
+          // Queue welcome email — 1 hour after signup
+          enqueueAfter(
+            "welcome-email",
+            { userId: user.id, email: user.email, name: user.name },
+            60 * 60, // 1 hour in seconds
+          ).catch((err) =>
+            console.error("[auth] Failed to enqueue welcome email:", err),
+          );
         },
       },
     },
@@ -49,10 +61,16 @@ export const auth = betterAuth({
   plugins: [
     magicLink({
       sendMagicLink: async ({ email, url }) => {
+        const result = await renderEmailTemplate("magic-link", {
+          magicLinkUrl: url,
+        });
+
         await sendEmail({
           to: email,
-          subject: "Sign in to Octopus",
-          html: `<p>Click <a href="${url}">here</a> to sign in to Octopus.</p>`,
+          subject: result?.subject ?? "Sign in to Octopus",
+          html:
+            result?.html ??
+            `<p>Click <a href="${url}">here</a> to sign in to Octopus.</p>`,
         });
         await writeAuditLog({
           action: "email.magic_link_sent",
@@ -75,3 +93,5 @@ export const auth = betterAuth({
     },
   },
 });
+
+

@@ -3,26 +3,25 @@ import type { SendOptions } from "pg-boss";
 
 const globalForQueue = globalThis as unknown as { pgBoss?: PgBoss };
 
-function createBoss(): PgBoss {
+function getBoss(): PgBoss {
+  if (globalForQueue.pgBoss) return globalForQueue.pgBoss;
+
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required for pg-boss");
   }
 
-  return new PgBoss(databaseUrl);
-}
-
-export const boss = globalForQueue.pgBoss ?? createBoss();
-
-if (process.env.NODE_ENV !== "production") {
-  globalForQueue.pgBoss = boss;
+  const instance = new PgBoss(databaseUrl);
+  globalForQueue.pgBoss = instance;
+  return instance;
 }
 
 let started = false;
 
 export async function startQueue(): Promise<PgBoss> {
-  if (started) return boss;
+  if (started) return getBoss();
 
+  const boss = getBoss();
   await boss.start();
   started = true;
 
@@ -49,7 +48,7 @@ export async function enqueue<T extends object>(
   if (!started) {
     await startQueue();
   }
-  return boss.send(name, data, options);
+  return getBoss().send(name, data, options);
 }
 
 export async function enqueueAfter<T extends object>(
@@ -61,5 +60,5 @@ export async function enqueueAfter<T extends object>(
   if (!started) {
     await startQueue();
   }
-  return boss.sendAfter(name, data, options ?? null, seconds);
+  return getBoss().sendAfter(name, data, options ?? null, seconds);
 }

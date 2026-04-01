@@ -5,8 +5,9 @@ set -euo pipefail
 
 GITHUB_REPO="octopusreview/octopus-cli"
 BINARY_NAME="octopus"
-INSTALL_DIR="/usr/local/bin"
-FALLBACK_DIR="$HOME/.local/bin"
+INSTALL_DIR="$HOME/.local/bin"
+FALLBACK_DIR="/usr/local/bin"
+TMPDIR_CLEANUP=""
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -78,7 +79,8 @@ download_and_install() {
   info "Downloading ${archive}..."
   local tmpdir
   tmpdir=$(mktemp -d)
-  trap 'rm -rf "$tmpdir"' EXIT
+  TMPDIR_CLEANUP="$tmpdir"
+  trap 'rm -rf "$TMPDIR_CLEANUP"' EXIT
 
   local tmparchive="${tmpdir}/${archive}"
   curl -fsSL -o "$tmparchive" "$download_url" || error "Download failed. Check if a release exists for your platform: ${PLATFORM}-${ARCH}"
@@ -108,14 +110,14 @@ download_and_install() {
   [ -f "$tmpfile" ] || error "Expected binary '${BINARY_NAME}${bin_ext}' not found in archive."
   chmod +x "$tmpfile"
 
-  # Try preferred install dir, fall back to user-local dir
+  # Try user-local dir first (no sudo needed), fall back to system dir
   local target_dir="$INSTALL_DIR"
+  mkdir -p "$target_dir"
   if ! install_binary "$tmpfile" "$target_dir" 2>/dev/null; then
     target_dir="$FALLBACK_DIR"
-    mkdir -p "$target_dir"
     install_binary "$tmpfile" "$target_dir"
-    ensure_in_path "$target_dir"
   fi
+  ensure_in_path "$target_dir"
 
   INSTALLED_DIR="$target_dir"
   success "Installed ${BINARY_NAME} to ${target_dir}/${BINARY_NAME}${bin_ext}"
@@ -149,8 +151,8 @@ ensure_in_path() {
 # ─── Skills prompt ──────────────────────────────────────────────────────────
 
 prompt_install_skills() {
-  # If running non-interactively (piped), skip prompt
-  if [ ! -t 0 ]; then
+  # If no terminal available at all, skip prompt
+  if [ ! -e /dev/tty ]; then
     info ""
     info "To install skills later, run: octopus skills install --all"
     return
@@ -158,7 +160,7 @@ prompt_install_skills() {
 
   echo ""
   printf 'Would you like to install Octopus skills for Claude Code? (y/N) '
-  read -r answer
+  read -r answer < /dev/tty
   case "$answer" in
     [yY]|[yY][eE][sS])
       info "Installing skills..."

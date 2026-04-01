@@ -96,7 +96,9 @@ export function TemplateEditor({ template }: { template: Template }) {
       if (res.ok) {
         setPreviewHtml(await res.text());
       }
-    } catch {}
+    } catch (err) {
+      console.error("Preview fetch failed:", err);
+    }
   }, [fromName, fromEmail, subject, body, buttonText, buttonUrl, signatureName, signatureTitle]);
 
   useEffect(() => {
@@ -126,6 +128,7 @@ export function TemplateEditor({ template }: { template: Template }) {
         enabled,
       });
       setFeedback({ type: "success", message: "Saved" });
+      setTimeout(() => setFeedback(null), 4000);
     } catch {
       setFeedback({ type: "error", message: "Failed to save" });
     } finally {
@@ -145,6 +148,7 @@ export function TemplateEditor({ template }: { template: Template }) {
       const data = await res.json();
       if (res.ok) {
         setFeedback({ type: "success", message: `Test sent to ${data.to}` });
+        setTimeout(() => setFeedback(null), 4000);
       } else {
         setFeedback({ type: "error", message: data.error });
       }
@@ -172,7 +176,10 @@ export function TemplateEditor({ template }: { template: Template }) {
         if (data.body) setBody(data.body);
         if (data.buttonText !== undefined) setButtonText(data.buttonText || "");
         if (data.buttonUrl !== undefined) setButtonUrl(data.buttonUrl || "");
+        if (data.signatureName) setSignatureName(data.signatureName);
+        if (data.signatureTitle) setSignatureTitle(data.signatureTitle);
         setFeedback({ type: "success", message: "Generated" });
+        setTimeout(() => setFeedback(null), 4000);
         setAiTopic("");
       } else {
         setFeedback({ type: "error", message: data.error || "Generation failed" });
@@ -194,12 +201,10 @@ export function TemplateEditor({ template }: { template: Template }) {
   }
 
   function handlePreview() {
-    // Open preview using current editor values (not DB)
-    const win = window.open("", "_blank", "width=640,height=800");
-    if (win) {
-      win.document.write(previewHtml || "<p>Loading preview...</p>");
-      win.document.close();
-    }
+    const blob = new Blob([previewHtml || "<p>Loading preview...</p>"], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
 
   return (
@@ -449,6 +454,7 @@ export function TemplateEditor({ template }: { template: Template }) {
           <CardContent>
             <iframe
               srcDoc={previewHtml}
+              sandbox="allow-same-origin"
               className="border-input h-[700px] w-full rounded-md border"
               title="Email preview"
             />

@@ -40,6 +40,11 @@ export async function updateTemplateAction(
 ) {
   await requireAdmin();
 
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (data.fromEmail && !emailRegex.test(data.fromEmail)) {
+    throw new Error("Invalid fromEmail format");
+  }
+
   await prisma.emailTemplate.update({
     where: { slug: currentSlug },
     data: {
@@ -65,7 +70,7 @@ export async function updateTemplateAction(
 export async function createTemplateAction(): Promise<{ slug: string }> {
   await requireAdmin();
 
-  const slug = `custom-${Date.now()}`;
+  const slug = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
   await prisma.emailTemplate.create({
     data: {

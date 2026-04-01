@@ -25,15 +25,6 @@ const tabs = [
 
 type TabKey = (typeof tabs)[number]["key"];
 
-const categoryColors: Record<string, string> = {
-  transactional:
-    "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
-  notification:
-    "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300",
-  marketing:
-    "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300",
-};
-
 const categoryDescriptions: Record<string, string> = {
   transactional: "Required emails that cannot be disabled by users",
   notification: "System events, controllable per org member",

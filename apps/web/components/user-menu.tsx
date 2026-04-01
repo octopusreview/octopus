@@ -6,6 +6,7 @@ import { useTheme } from "next-themes";
 import { useState } from "react";
 import { signOut } from "@/lib/auth-client";
 import { clearOrgCookie } from "@/app/(app)/actions";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -106,7 +107,7 @@ export function UserMenu({
                 )}
                 <span className="flex-1">Theme</span>
                 <span className="text-xs capitalize text-muted-foreground">
-                  {theme}
+                  {theme ?? "system"}
                 </span>
                 <IconChevronRight className="size-3.5 text-muted-foreground" />
               </button>
@@ -185,11 +186,16 @@ export function UserMenu({
           <Button
             variant="destructive"
             onClick={async () => {
-              setConfirmOpen(false);
-              await clearOrgCookie();
-              await signOut();
-              router.push("/login");
-              router.refresh();
+              try {
+                setConfirmOpen(false);
+                await clearOrgCookie();
+                await signOut();
+                router.push("/login");
+                router.refresh();
+              } catch (err) {
+                console.error("Sign-out failed", err);
+                toast.error("Sign-out failed. Please try again.");
+              }
             }}
           >
             Sign out

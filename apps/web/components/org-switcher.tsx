@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useMemo } from "react";
+import { useActionState, useState, useMemo, useRef } from "react";
 import Image from "next/image";
 import {
   DropdownMenu,
@@ -29,10 +29,11 @@ type Org = {
 function getOrgInitials(name: string) {
   return name
     .split(/\s+/)
+    .filter(Boolean)
     .map((w) => w[0])
     .join("")
     .slice(0, 2)
-    .toUpperCase();
+    .toUpperCase() || "?";
 }
 
 const avatarColors = [
@@ -49,9 +50,9 @@ const avatarColors = [
 function getOrgColor(id: string) {
   let hash = 0;
   for (let i = 0; i < id.length; i++) {
-    hash = (hash << 5) - hash + id.charCodeAt(i);
+    hash = ((hash << 5) - hash + id.charCodeAt(i)) | 0;
   }
-  return avatarColors[Math.abs(hash) % avatarColors.length];
+  return avatarColors[((hash % avatarColors.length) + avatarColors.length) % avatarColors.length];
 }
 
 export function OrgSwitcher({
@@ -67,6 +68,7 @@ export function OrgSwitcher({
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [state, formAction, pending] = useActionState(createOrganization, {});
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const filtered = useMemo(
     () =>
@@ -120,16 +122,20 @@ export function OrgSwitcher({
           sideOffset={8}
           className="w-72 overflow-hidden border-border/50 bg-popover p-0 shadow-xl shadow-black/30"
           onCloseAutoFocus={(e) => e.preventDefault()}
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            searchInputRef.current?.focus();
+          }}
         >
           {/* Search */}
           <div className="flex items-center border-b border-border/50 px-3">
             <input
+              ref={searchInputRef}
               type="text"
               placeholder="Find Organization..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="h-10 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-              autoFocus
             />
             <kbd className="ml-2 shrink-0 rounded border border-border/50 bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
               Esc
@@ -163,7 +169,7 @@ export function OrgSwitcher({
                     {org.name}
                   </span>
                   {org.id === currentOrg.id && (
-                    <IconCheck className="size-4 shrink-0 text-muted-foreground" />
+                    <IconCheck className="size-4 shrink-0 text-primary" />
                   )}
                 </button>
               ))

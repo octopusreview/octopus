@@ -10,14 +10,17 @@ interface FaqItem {
 
 export function FaqList({ faqs, visibleCount = 3 }: { faqs: FaqItem[]; visibleCount?: number }) {
   const [open, setOpen] = useState(false);
-  const visible = faqs.slice(0, visibleCount);
-  const hidden = faqs.slice(visibleCount);
+  const safeVisibleCount = Math.max(1, visibleCount);
+  const visible = faqs.slice(0, safeVisibleCount);
+  const hidden = faqs.slice(safeVisibleCount);
+
+  if (faqs.length === 0) return null;
 
   return (
     <>
       <dl className="mt-14 space-y-8">
         {visible.map((faq) => (
-          <FaqCard key={faq.q} faq={faq} />
+          <FaqCard key={`faq-${faqs.indexOf(faq)}`} faq={faq} />
         ))}
 
         {/* Hidden FAQs — always in DOM for SEO, animated open/close */}
@@ -32,7 +35,7 @@ export function FaqList({ faqs, visibleCount = 3 }: { faqs: FaqItem[]; visibleCo
             <div className="overflow-hidden">
               <div className="space-y-8">
                 {hidden.map((faq) => (
-                  <FaqCard key={faq.q} faq={faq} />
+                  <FaqCard key={`faq-${faqs.indexOf(faq)}`} faq={faq} />
                 ))}
               </div>
             </div>

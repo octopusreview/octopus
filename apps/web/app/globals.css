@@ -162,11 +162,6 @@ button {
   to { width: 78%; }
 }
 
-@keyframes bento-typing {
-  from { width: 0; }
-  to { width: 100%; }
-}
-
 .bento-stagger > * {
   opacity: 0;
 }

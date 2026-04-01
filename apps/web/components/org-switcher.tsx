@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useMemo, useRef } from "react";
+import { useActionState, useState, useMemo, useRef, useEffect } from "react";
 import Image from "next/image";
 import {
   DropdownMenu,
@@ -70,6 +70,12 @@ export function OrgSwitcher({
   const [state, formAction, pending] = useActionState(createOrganization, {});
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (dropdownOpen) {
+      requestAnimationFrame(() => searchInputRef.current?.focus());
+    }
+  }, [dropdownOpen]);
+
   const filtered = useMemo(
     () =>
       search.trim()
@@ -122,10 +128,6 @@ export function OrgSwitcher({
           sideOffset={8}
           className="w-72 overflow-hidden border-border/50 bg-popover p-0 shadow-xl shadow-black/30"
           onCloseAutoFocus={(e) => e.preventDefault()}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            searchInputRef.current?.focus();
-          }}
         >
           {/* Search */}
           <div className="flex items-center border-b border-border/50 px-3">

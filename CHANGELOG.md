@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.7] - 2026-04-01
+
+### Added
+- Landing page overhaul with bento grid features, FAQ accordion, and Review Engine animation (#108)
+- Email template system with database-driven templates, Resend integration, and pg-boss job queue (#109)
+- Admin UI for email template management with AI-powered generation and bulk sending (#109)
+- Session management page with active session list, device tracking, and revoke actions (#110)
+- Knowledge base templates for one-click content creation with 8 pre-built templates (#111)
+- Marketing email opt-out toggle in notification settings (#109)
+- Rotating hero text animation on landing page (#99)
+
+### Fixed
+- Middleware redirect poisoning via X-Forwarded-Host header replaced with explicit URL config (#113)
+
+### Changed
+- Org switcher redesigned with searchable dropdown and colored avatars (#112)
+- User menu revamped with view-switching pattern and sign-out confirmation (#112)
+- Sidebar chat button repositioned with improved styling (#112)
+- Review helpers extracted into separate module with unit tests (#100)
+
 ## [1.0.6] - 2026-03-29
 
 ### Added
@@ -98,6 +118,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Suppress dismissed findings in Additional findings summary (#25)
 - CI lint failures across all packages (#36)
 
+[1.0.7]: https://github.com/octopusreview/octopus/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/octopusreview/octopus/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/octopusreview/octopus/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/octopusreview/octopus/compare/v1.0.3...v1.0.4

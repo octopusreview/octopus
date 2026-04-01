@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { TrackedLink } from "@/components/tracked-link";
-import { IconMenu2, IconX, IconBrandGithub, IconBook, IconPalette, IconCoin, IconNews, IconMessageCircle } from "@tabler/icons-react";
+import { IconMenu2, IconX, IconBrandGithub, IconBook, IconCoin, IconNews, IconMessageCircle } from "@tabler/icons-react";
 
 export function LandingMobileNav({ isLoggedIn }: { isLoggedIn: boolean }) {
   const [open, setOpen] = useState(false);
@@ -75,56 +75,86 @@ export function LandingMobileNav({ isLoggedIn }: { isLoggedIn: boolean }) {
               {/* Resources */}
               <div className="mt-2 border-t border-white/[0.06] pt-2">
                 <span className="px-3 py-1 text-xs font-semibold uppercase tracking-[0.15em] text-[#444]">Resources</span>
-                <TrackedLink
-                  href="/docs/getting-started"
-                  event="nav_click"
-                  eventParams={{ label: "docs" }}
-                  onClick={() => setOpen(false)}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
-                >
-                  <IconBook className="size-4 text-[#555]" />
-                  Documentation
-                </TrackedLink>
-                <TrackedLink
-                  href="/brand"
-                  event="nav_click"
-                  eventParams={{ label: "brand" }}
-                  onClick={() => setOpen(false)}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
-                >
-                  <IconPalette className="size-4 text-[#555]" />
-                  Brand Guidelines
-                </TrackedLink>
-                <TrackedLink
-                  href="/blog"
-                  event="nav_click"
-                  eventParams={{ label: "blog" }}
-                  onClick={() => setOpen(false)}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
-                >
-                  <IconNews className="size-4 text-[#555]" />
-                  Blog
-                </TrackedLink>
-                <TrackedLink
-                  href="/docs/pricing"
-                  event="nav_click"
-                  eventParams={{ label: "pricing" }}
-                  onClick={() => setOpen(false)}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
-                >
-                  <IconCoin className="size-4 text-[#555]" />
-                  Pricing
-                </TrackedLink>
-                <a
-                  href="https://github.com/octopusreview"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => setOpen(false)}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
-                >
-                  <IconBrandGithub className="size-4 text-[#555]" />
-                  GitHub
-                </a>
+                <div className="mt-1.5 grid grid-cols-2 gap-0.5">
+                  <TrackedLink
+                    href="/docs/getting-started"
+                    event="nav_click"
+                    eventParams={{ label: "docs" }}
+                    onClick={() => setOpen(false)}
+                    className="flex items-start gap-2.5 rounded-lg px-3 py-2.5 transition-colors hover:bg-white/[0.06]"
+                  >
+                    <IconBook className="mt-0.5 size-4 shrink-0 text-[#555]" />
+                    <div>
+                      <div className="text-sm font-medium text-[#ccc]">Documentation</div>
+                      <div className="mt-0.5 text-[11px] text-[#555]">Setup guides & API reference</div>
+                    </div>
+                  </TrackedLink>
+                  <TrackedLink
+                    href="/brand"
+                    event="nav_click"
+                    eventParams={{ label: "brand" }}
+                    onClick={() => setOpen(false)}
+                    className="flex items-start gap-2.5 rounded-lg px-3 py-2.5 transition-colors hover:bg-white/[0.06]"
+                  >
+                    <Image src="/logo.svg" alt="" width={16} height={16} className="mt-0.5 shrink-0 opacity-40 grayscale" />
+                    <div>
+                      <div className="text-sm font-medium text-[#ccc]">Brand Guidelines</div>
+                      <div className="mt-0.5 text-[11px] text-[#555]">Logos, colors & assets</div>
+                    </div>
+                  </TrackedLink>
+                  <TrackedLink
+                    href="/blog"
+                    event="nav_click"
+                    eventParams={{ label: "blog" }}
+                    onClick={() => setOpen(false)}
+                    className="flex items-start gap-2.5 rounded-lg px-3 py-2.5 transition-colors hover:bg-white/[0.06]"
+                  >
+                    <IconNews className="mt-0.5 size-4 shrink-0 text-[#555]" />
+                    <div>
+                      <div className="text-sm font-medium text-[#ccc]">Blog</div>
+                      <div className="mt-0.5 text-[11px] text-[#555]">News & product updates</div>
+                    </div>
+                  </TrackedLink>
+                  <TrackedLink
+                    href="/docs/pricing"
+                    event="nav_click"
+                    eventParams={{ label: "pricing" }}
+                    onClick={() => setOpen(false)}
+                    className="flex items-start gap-2.5 rounded-lg px-3 py-2.5 transition-colors hover:bg-white/[0.06]"
+                  >
+                    <IconCoin className="mt-0.5 size-4 shrink-0 text-[#555]" />
+                    <div>
+                      <div className="text-sm font-medium text-[#ccc]">Pricing</div>
+                      <div className="mt-0.5 text-[11px] text-[#555]">Plans & credit packages</div>
+                    </div>
+                  </TrackedLink>
+                  <a
+                    href="https://github.com/octopusreview"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setOpen(false)}
+                    className="flex items-start gap-2.5 rounded-lg px-3 py-2.5 transition-colors hover:bg-white/[0.06]"
+                  >
+                    <IconBrandGithub className="mt-0.5 size-4 shrink-0 text-[#555]" />
+                    <div>
+                      <div className="text-sm font-medium text-[#ccc]">GitHub</div>
+                      <div className="mt-0.5 text-[11px] text-[#555]">Source code & issues</div>
+                    </div>
+                  </a>
+                  <TrackedLink
+                    href="/docs/changelog"
+                    event="nav_click"
+                    eventParams={{ label: "changelog" }}
+                    onClick={() => setOpen(false)}
+                    className="flex items-start gap-2.5 rounded-lg px-3 py-2.5 transition-colors hover:bg-white/[0.06]"
+                  >
+                    <IconNews className="mt-0.5 size-4 shrink-0 text-[#555]" />
+                    <div>
+                      <div className="text-sm font-medium text-[#ccc]">Changelog</div>
+                      <div className="mt-0.5 text-[11px] text-[#555]">What&apos;s new in Octopus</div>
+                    </div>
+                  </TrackedLink>
+                </div>
               </div>
             </div>
           </div>

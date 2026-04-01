@@ -253,15 +253,15 @@ export default async function LandingPage() {
         </div>
       </section>
 
+      {/* CLI Quick Install */}
+      <CliInstallSection />
+
       {/* Features — DARK panel, split layout like skillo */}
       <section id="features" className="relative z-10 scroll-mt-20 px-4 py-8 sm:px-8 md:px-12">
         <div className="mx-auto max-w-6xl overflow-hidden rounded-3xl bg-[#161616] px-6 py-20 md:px-12 md:py-28">
           <LandingFeatures />
         </div>
       </section>
-
-      {/* CLI Quick Install */}
-      <CliInstallSection />
 
       {/* Open Source */}
       <section id="open-source" className="relative z-10 scroll-mt-20 px-4 sm:px-8 md:px-12">

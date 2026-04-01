@@ -114,6 +114,17 @@ Do not use "npx tsc --noEmit", use "bunx tsc --noEmit --pretty 2>&1 | head -40" 
 - **Layout data:** Call `revalidatePath()` in server actions when layout data changes (layouts don't re-render on same-route navigation).
 - **DB constraint errors:** Handle unique/FK constraint errors gracefully — never let raw DB errors reach the UI.
 
+## New Feature Checklist
+
+When building a new feature, always consider these cross-cutting concerns:
+
+- **Audit log:** Log significant actions via `writeAuditLog()` (`lib/audit.ts`). Use appropriate category (`auth`, `email`, `review`, `repo`, `knowledge`, `billing`, `admin`, `system`) and include relevant metadata.
+- **Event bus:** Emit events via `eventBus.emit()` (`lib/events/bus.ts`) so observers (email, audit, Pubby) can react. Define new event types in `lib/events/types.ts`.
+- **Admin visibility:** If the feature has background jobs, queues, or async operations, add monitoring in the admin panel (`/admin/`).
+- **Pubby real-time:** If the feature produces state changes users should see live, trigger via `pubby.trigger()` on the org's presence channel.
+- **Email notifications:** If the feature produces events users care about, add to email observer (`lib/events/observers/email.observer.ts`) and respect user notification preferences.
+- **Spend limits:** Always check `isOrgOverSpendLimit()` before expensive LLM operations (`lib/cost.ts`).
+
 ## Docs
 
 All files under `docs/` must be written in English. Key docs:

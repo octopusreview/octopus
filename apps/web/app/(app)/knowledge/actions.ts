@@ -623,22 +623,28 @@ export async function addKnowledgeTemplate(
   const template = knowledgeTemplates.find((t) => t.id === templateId);
   if (!template) return { error: "Template not found." };
 
-  const existing = await prisma.knowledgeDocument.findFirst({
-    where: { organizationId: orgId, templateId, deletedAt: null },
-    select: { id: true },
-  });
-  if (existing) return { error: "This template has already been added." };
-
-  const doc = await prisma.knowledgeDocument.create({
-    data: {
-      title: template.title,
-      content: template.content,
-      sourceType: "template",
-      templateId,
-      status: "processing",
-      organizationId: orgId,
-    },
-  });
+  let doc;
+  try {
+    doc = await prisma.knowledgeDocument.create({
+      data: {
+        title: template.title,
+        content: template.content,
+        sourceType: "template",
+        templateId,
+        status: "processing",
+        organizationId: orgId,
+      },
+    });
+  } catch (e: unknown) {
+    if (
+      e instanceof Error &&
+      "code" in e &&
+      (e as { code: string }).code === "P2002"
+    ) {
+      return { error: "This template has already been added." };
+    }
+    throw e;
+  }
 
   await prisma.knowledgeAuditLog.create({
     data: {

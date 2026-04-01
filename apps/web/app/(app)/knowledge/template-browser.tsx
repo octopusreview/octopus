@@ -88,7 +88,7 @@ export function TemplateBrowser({
     useState<KnowledgeTemplateCategory | null>(null);
   const [previewTemplate, setPreviewTemplate] =
     useState<KnowledgeTemplate | null>(null);
-  const [addingId, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
   const [addedIds, setAddedIds] = useState<Set<string>>(
     new Set(addedTemplateIds),
   );
@@ -202,9 +202,9 @@ export function TemplateBrowser({
                           size="sm"
                           className="h-8 gap-1 text-xs"
                           onClick={() => handleAdd(template.id)}
-                          disabled={!!addingId}
+                          disabled={!!isPending}
                         >
-                          {addingId ? (
+                          {isPending ? (
                             <IconLoader2 className="size-3.5 animate-spin" />
                           ) : (
                             <IconPlus className="size-3.5" />
@@ -241,9 +241,9 @@ export function TemplateBrowser({
                 size="sm"
                 className="mt-3 gap-1"
                 onClick={() => handleAdd(previewTemplate.id)}
-                disabled={!!addingId}
+                disabled={!!isPending}
               >
-                {addingId ? (
+                {isPending ? (
                   <IconLoader2 className="size-3.5 animate-spin" />
                 ) : (
                   <IconPlus className="size-3.5" />

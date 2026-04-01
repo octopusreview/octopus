@@ -40,7 +40,7 @@ const methodLabels: Record<Method, string> = {
   npm: "npm",
 };
 
-export function CliInstallSection() {
+export function CliInstallSection({ embedded = false }: { embedded?: boolean } = {}) {
   const [platform, setPlatform] = useState<Platform>("mac-linux");
   const [method, setMethod] = useState<Method>("one-liner");
   const [copied, setCopied] = useState(false);
@@ -57,10 +57,10 @@ export function CliInstallSection() {
     }
   }
 
-  return (
-    <section id="cli" className="relative z-10 scroll-mt-20 px-4 py-8 sm:px-8 md:px-12">
-      <div className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-white/[0.06] bg-[#161616] px-6 py-20 md:px-12 md:py-28">
-        <div className="mx-auto max-w-3xl">
+  const content = (
+    <>
+      <div className={embedded ? "mx-auto max-w-3xl" : "mx-auto max-w-3xl"}>
+        {!embedded && (
           <div className="mx-auto max-w-2xl text-center">
             <span className="text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
               Quick Start
@@ -72,104 +72,125 @@ export function CliInstallSection() {
               Review PRs, chat with your codebase, and run AI agents — all from your terminal.
             </p>
           </div>
+        )}
 
-          {/* Terminal card */}
-          <div className="mt-12 overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0c0c0c]">
-            {/* Top bar: platform tabs + method tabs */}
-            <div className="flex flex-col gap-0 border-b border-white/[0.06] sm:flex-row sm:items-center sm:justify-between">
-              {/* Platform tabs */}
-              <div className="flex items-center gap-0 border-b border-white/[0.06] sm:border-b-0">
-                {/* Traffic lights */}
-                <div className="flex items-center gap-1.5 px-4">
-                  <span className="size-2.5 rounded-full bg-[#ff5f57]" />
-                  <span className="size-2.5 rounded-full bg-[#febc2e]" />
-                  <span className="size-2.5 rounded-full bg-[#28c840]" />
-                </div>
-                {(["mac-linux", "windows"] as Platform[]).map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setPlatform(p)}
-                    className={`px-4 py-3 text-xs font-medium transition-colors ${
-                      platform === p
-                        ? "bg-white/[0.06] text-white"
-                        : "text-[#555] hover:text-[#888]"
-                    }`}
-                  >
-                    {platformLabels[p]}
-                  </button>
-                ))}
-              </div>
+        {embedded && (
+          <div className="mb-6 text-center">
+            <h3 className="text-lg font-semibold text-white">Install the CLI</h3>
+            <p className="mt-1 text-sm text-[#888]">
+              Review PRs, chat with your codebase, and run AI agents from your terminal.
+            </p>
+          </div>
+        )}
 
-              {/* Method tabs */}
-              <div className="flex items-center gap-0">
-                {(["one-liner", "npm"] as Method[]).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setMethod(m)}
-                    className={`px-4 py-3 text-xs font-medium transition-colors ${
-                      method === m
-                        ? "text-white"
-                        : "text-[#555] hover:text-[#888]"
-                    }`}
-                  >
-                    <span
-                      className={`rounded-full px-3 py-1 ${
-                        method === m
-                          ? "bg-[#10D8BE]/20 text-[#10D8BE]"
-                          : ""
-                      }`}
-                    >
-                      {methodLabels[m]}
-                    </span>
-                  </button>
-                ))}
+        {/* Terminal card */}
+        <div className={`${embedded ? "" : "mt-12 "}overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0c0c0c]`}>
+          {/* Top bar: platform tabs + method tabs */}
+          <div className="flex flex-col gap-0 border-b border-white/[0.06] sm:flex-row sm:items-center sm:justify-between">
+            {/* Platform tabs */}
+            <div className="flex items-center gap-0 border-b border-white/[0.06] sm:border-b-0">
+              {/* Traffic lights */}
+              <div className="flex items-center gap-1.5 px-4">
+                <span className="size-2.5 rounded-full bg-[#ff5f57]" />
+                <span className="size-2.5 rounded-full bg-[#febc2e]" />
+                <span className="size-2.5 rounded-full bg-[#28c840]" />
               </div>
+              {(["mac-linux", "windows"] as Platform[]).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPlatform(p)}
+                  className={`px-4 py-3 text-xs font-medium transition-colors ${
+                    platform === p
+                      ? "bg-white/[0.06] text-white"
+                      : "text-[#555] hover:text-[#888]"
+                  }`}
+                >
+                  {platformLabels[p]}
+                </button>
+              ))}
             </div>
 
-            {/* Code area */}
-            <div className="relative px-6 py-6">
-              <p className="font-mono text-sm text-[#555]">{current.comment}</p>
-              <div className="mt-3 flex items-start gap-3">
-                <span className="select-none font-mono text-sm text-[#10D8BE]">$</span>
-                <code className="flex-1 break-all font-mono text-sm text-[#e0e0e0]">
-                  {current.command}
-                </code>
+            {/* Method tabs */}
+            <div className="flex items-center gap-0">
+              {(["one-liner", "npm"] as Method[]).map((m) => (
                 <button
-                  onClick={handleCopy}
-                  className="shrink-0 rounded-lg border border-white/[0.08] p-2 text-[#555] transition-colors hover:border-white/[0.15] hover:text-white"
-                  aria-label="Copy command"
+                  key={m}
+                  onClick={() => setMethod(m)}
+                  className={`px-4 py-3 text-xs font-medium transition-colors ${
+                    method === m
+                      ? "text-white"
+                      : "text-[#555] hover:text-[#888]"
+                  }`}
                 >
-                  {copied ? (
-                    <IconCheck className="size-4 text-[#10D8BE]" />
-                  ) : (
-                    <IconCopy className="size-4" />
-                  )}
+                  <span
+                    className={`rounded-full px-3 py-1 ${
+                      method === m
+                        ? "bg-[#10D8BE]/20 text-[#10D8BE]"
+                        : ""
+                    }`}
+                  >
+                    {methodLabels[m]}
+                  </span>
                 </button>
-              </div>
+              ))}
             </div>
           </div>
 
-          {/* Bottom note */}
-          <p className="mt-6 text-center text-sm text-[#555]">
-            Works on macOS, Windows & Linux.{" "}
-            {method === "one-liner"
-              ? "The one-liner installs Node.js and everything else for you."
-              : "Requires Node.js 18+ installed."}
-          </p>
-
-          {/* Docs link */}
-          <div className="mt-6 flex justify-center">
-            <TrackedLink
-              href="/docs/cli"
-              event="cta_click"
-              eventParams={{ location: "cli_install_section", label: "cli_docs" }}
-              className="inline-flex items-center gap-2 text-sm text-[#666] transition-colors hover:text-white"
-            >
-              <IconTerminal2 className="size-4" />
-              View full CLI documentation
-            </TrackedLink>
+          {/* Code area */}
+          <div className="relative px-6 py-6">
+            <p className="font-mono text-sm text-[#555]">{current.comment}</p>
+            <div className="mt-3 flex items-start gap-3">
+              <span className="select-none font-mono text-sm text-[#10D8BE]">$</span>
+              <code className="flex-1 break-all font-mono text-sm text-[#e0e0e0]">
+                {current.command}
+              </code>
+              <button
+                onClick={handleCopy}
+                className="shrink-0 rounded-lg border border-white/[0.08] p-2 text-[#555] transition-colors hover:border-white/[0.15] hover:text-white"
+                aria-label="Copy command"
+              >
+                {copied ? (
+                  <IconCheck className="size-4 text-[#10D8BE]" />
+                ) : (
+                  <IconCopy className="size-4" />
+                )}
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Bottom note */}
+        <p className="mt-4 text-center text-xs text-[#555]">
+          Works on macOS, Windows & Linux.{" "}
+          {method === "one-liner"
+            ? "The one-liner installs Node.js and everything else for you."
+            : "Requires Node.js 18+ installed."}
+        </p>
+
+        {/* Docs link */}
+        <div className="mt-4 flex justify-center">
+          <TrackedLink
+            href="/docs/cli"
+            event="cta_click"
+            eventParams={{ location: "cli_install_section", label: "cli_docs" }}
+            className="inline-flex items-center gap-2 text-sm text-[#666] transition-colors hover:text-white"
+          >
+            <IconTerminal2 className="size-4" />
+            View full CLI documentation
+          </TrackedLink>
+        </div>
+      </div>
+    </>
+  );
+
+  if (embedded) {
+    return content;
+  }
+
+  return (
+    <section id="cli" className="relative z-10 scroll-mt-20 px-4 py-8 sm:px-8 md:px-12">
+      <div className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-white/[0.06] bg-[#161616] px-6 py-20 md:px-12 md:py-28">
+        {content}
       </div>
     </section>
   );

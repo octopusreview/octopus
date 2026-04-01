@@ -24,10 +24,6 @@ import {
   IconPlugConnected,
   IconRocket,
   IconBrain,
-  IconSparkles,
-  IconEye,
-  IconBolt,
-  IconClock,
 } from "@tabler/icons-react";
 
 const landingFaqs = [
@@ -239,12 +235,9 @@ export default async function LandingPage() {
               />
             </div>
 
-            {/* Stats */}
-            <div className="mt-16 grid grid-cols-2 gap-8 border-t border-white/[0.06] pt-12 lg:grid-cols-4">
-              <StatItem icon={<IconBolt className="size-4" />} value="10x" label="Faster reviews" />
-              <StatItem icon={<IconEye className="size-4" />} value="85%" label="Bugs caught" />
-              <StatItem icon={<IconClock className="size-4" />} value="< 2 min" label="Review time" />
-              <StatItem icon={<IconSparkles className="size-4" />} value="24/7" label="Always on" />
+            {/* CLI Quick Install (embedded) */}
+            <div className="mt-16 border-t border-white/[0.06] pt-12">
+              <CliInstallSection embedded />
             </div>
 
             {/* Review Engine — expandable */}
@@ -252,9 +245,6 @@ export default async function LandingPage() {
           </div>
         </div>
       </section>
-
-      {/* CLI Quick Install */}
-      <CliInstallSection />
 
       {/* Features — DARK panel, split layout like skillo */}
       <section id="features" className="relative z-10 scroll-mt-20 px-4 py-8 sm:px-8 md:px-12">
@@ -473,18 +463,6 @@ export default async function LandingPage() {
 /* ------------------------------------------------------------------ */
 /* Sub-components                                                      */
 /* ------------------------------------------------------------------ */
-
-function StatItem({ icon, value, label }: { icon: React.ReactNode; value: string; label: string }) {
-  return (
-    <div className="text-center">
-      <div className="mx-auto mb-2 flex size-8 items-center justify-center rounded-lg bg-white/[0.04] text-[#888]">
-        {icon}
-      </div>
-      <div className="text-2xl font-bold tracking-tight text-white sm:text-3xl">{value}</div>
-      <div className="mt-1 text-sm text-[#666]">{label}</div>
-    </div>
-  );
-}
 
 function StepCard({ step, icon, title, description }: { step: string; icon: React.ReactNode; title: string; description: string }) {
   return (

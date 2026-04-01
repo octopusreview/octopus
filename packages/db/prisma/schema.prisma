@@ -21,6 +21,12 @@ model User {
   bannedAt     DateTime?
   bannedReason String?
 
+  welcomeEmailSentAt    DateTime?
+  marketingEmailsEnabled Boolean @default(true)
+
+  emailSends EmailSend[]
+  devices    UserDevice[]
+
   sessions Session[]
   accounts Account[]
   organizationMembers OrganizationMember[]
@@ -193,7 +199,7 @@ model Repository {
   externalId    String
   defaultBranch String   @default("main")
   isActive      Boolean  @default(true)
-  autoReview    Boolean  @default(false)
+  autoReview    Boolean  @default(true)
   installationId Int?
   indexStatus    String   @default("pending") // pending | indexing | indexed | failed
   indexedAt      DateTime?
@@ -295,6 +301,7 @@ model KnowledgeDocument {
   totalChunks    Int      @default(0)
   totalVectors   Int      @default(0)
   processingMs   Int?
+  templateId     String?
   deletedAt      DateTime?
   deletedById    String?
   createdAt      DateTime @default(now())
@@ -982,4 +989,56 @@ model OrgTypeChange {
 
   @@index([organizationId, createdAt])
   @@map("org_type_changes")
+}
+
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  slug        String   @unique // e.g. "welcome", "credit-low", "review-completed"
+  name        String   // Display name: "Welcome Email"
+  category    String   @default("transactional") // "transactional" or "marketing"
+  fromName    String   @default("Octopus") // Sender display name
+  fromEmail   String   @default("notifications@rs.octopus-review.ai") // Sender email
+  subject     String   // Subject with variables: "Welcome to Octopus, {{firstName}}!"
+  body        String   // Body text with variables and markdown-like formatting
+  buttonText     String?  // Optional CTA button text
+  buttonUrl      String?  // Optional CTA button URL (supports variables)
+  signatureName  String?  // e.g. "Ferit" — if set, adds "-Name / Title" signature
+  signatureTitle String?  // e.g. "Founder"
+  variables   String[] // Available variable names: ["firstName", "appUrl"]
+  system      Boolean  @default(false) // true = seeded, cannot be deleted
+  enabled     Boolean  @default(true)
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@map("email_templates")
+}
+
+model EmailSend {
+  id         String   @id @default(cuid())
+  slug       String   // template slug
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sentAt     DateTime @default(now())
+
+  @@index([slug, userId, sentAt])
+  @@index([userId])
+  @@map("email_sends")
+}
+
+model UserDevice {
+  id          String   @id @default(cuid())
+  fingerprint String
+  browser     String   // e.g. "Chrome"
+  ipAddress   String?
+  location    String?  // e.g. "Istanbul, Turkey"
+  metadata    Json?    // Secondary signals (screen, DPR, etc.) for context, not identification
+  lastSeenAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fingerprint])
+  @@index([userId])
+  @@map("user_devices")
 }

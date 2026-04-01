@@ -10,6 +10,7 @@ import { getInstallationPermissions } from "@/lib/github";
 import { isAdminEmail } from "@/lib/admin";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { OrgCookieSync } from "@/components/org-cookie-sync";
+import { DeviceReporter } from "@/components/device-reporter";
 import { createOrgForUser } from "./complete-profile/actions";
 
 export default async function AppLayout({
@@ -152,6 +153,7 @@ export default async function AppLayout({
   return (
     <ChatWrapper orgId={currentOrg.id} userId={session.user.id} userName={session.user.name}>
       <OrgCookieSync orgId={currentOrg.id} />
+      <DeviceReporter />
       <div className="flex h-screen flex-col">
         {orgsNeedingPermission.length > 0 && githubAppSlug && (
           <PermissionBanner

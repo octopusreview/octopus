@@ -18,10 +18,12 @@ export function middleware(request: NextRequest) {
     request.cookies.get("__Secure-better-auth.session_token")?.value;
 
   if (!sessionToken) {
-    // Use x-forwarded headers or BETTER_AUTH_URL to avoid 0.0.0.0 redirects
-    const proto = request.headers.get("x-forwarded-proto") || "http";
-    const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "localhost:3000";
-    const loginUrl = new URL("/login", `${proto}://${host}`);
+    // Use configured app URL to prevent redirect poisoning via X-Forwarded-Host
+    const appUrl =
+      process.env.BETTER_AUTH_URL ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      `http://${request.headers.get("host") || "localhost:3000"}`;
+    const loginUrl = new URL("/login", appUrl);
     const fullPath = pathname + request.nextUrl.search;
     if (fullPath !== "/dashboard") {
       loginUrl.searchParams.set("callbackUrl", fullPath);

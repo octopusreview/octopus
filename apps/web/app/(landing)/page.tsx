@@ -194,6 +194,17 @@ export default async function LandingPage() {
               View on GitHub
             </TrackedAnchor>
           </div>
+
+          <div className="animate-fade-in mt-16 inline-flex items-center gap-3 text-sm text-[#555] [animation-delay:400ms]">
+            <img src="/claude-color.svg" alt="Claude" className="h-4 w-4" />
+            <img src="/claude-text.svg" alt="Claude" className="h-3.5 invert brightness-50" />
+            <span className="text-white/20">+</span>
+            <img src="/openai.svg" alt="OpenAI" className="h-4 w-4 invert brightness-50" />
+            <img src="/openai-text.svg" alt="OpenAI" className="h-4 invert brightness-50" />
+            <span className="text-white/20">+</span>
+            <img src="/cohere-color.svg" alt="Cohere" className="h-4 w-4" />
+            <img src="/cohere-text.svg" alt="Cohere" className="h-3.5 invert brightness-50" />
+          </div>
         </div>
       </section>
 

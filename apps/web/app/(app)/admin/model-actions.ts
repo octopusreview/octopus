@@ -148,6 +148,44 @@ export async function getGlobalBlockedAuthors(): Promise<string[]> {
   return (row?.blockedAuthors as string[]) ?? [];
 }
 
+export interface QueueConfig {
+  reviewTimeoutSeconds: number;
+  reviewConcurrency: number;
+}
+
+const QUEUE_CONFIG_DEFAULTS: QueueConfig = {
+  reviewTimeoutSeconds: 900,
+  reviewConcurrency: 2,
+};
+
+export async function getQueueConfig(): Promise<QueueConfig> {
+  const row = await prisma.systemConfig.findUnique({ where: { id: "singleton" } });
+  const stored = (row?.queueConfig as Partial<QueueConfig>) ?? {};
+  return { ...QUEUE_CONFIG_DEFAULTS, ...stored };
+}
+
+export async function updateQueueConfig(
+  config: QueueConfig,
+): Promise<{ error?: string; success?: boolean }> {
+  await requireAdmin();
+
+  if (config.reviewTimeoutSeconds < 60 || config.reviewTimeoutSeconds > 3600) {
+    return { error: "Timeout must be between 60 and 3600 seconds." };
+  }
+  if (config.reviewConcurrency < 1 || config.reviewConcurrency > 10) {
+    return { error: "Concurrency must be between 1 and 10." };
+  }
+
+  await prisma.systemConfig.upsert({
+    where: { id: "singleton" },
+    create: { id: "singleton", queueConfig: config as object },
+    update: { queueConfig: config as object },
+  });
+
+  revalidatePath("/admin/jobs");
+  return { success: true };
+}
+
 export async function updateGlobalBlockedAuthors(
   authors: string[],
 ): Promise<{ error?: string; success?: boolean }> {

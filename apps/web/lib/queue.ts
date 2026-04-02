@@ -1,5 +1,16 @@
 import { PgBoss } from "pg-boss";
 import type { SendOptions } from "pg-boss";
+import { prisma } from "@octopus/db";
+
+export interface QueueConfig {
+  reviewTimeoutSeconds: number;
+  reviewConcurrency: number;
+}
+
+const QUEUE_CONFIG_DEFAULTS: QueueConfig = {
+  reviewTimeoutSeconds: 900,
+  reviewConcurrency: 2,
+};
 
 const globalForQueue = globalThis as unknown as { pgBoss?: PgBoss };
 
@@ -16,6 +27,16 @@ function getBoss(): PgBoss {
   return instance;
 }
 
+async function loadQueueConfig(): Promise<QueueConfig> {
+  try {
+    const row = await prisma.systemConfig.findUnique({ where: { id: "singleton" } });
+    const stored = (row?.queueConfig as Partial<QueueConfig>) ?? {};
+    return { ...QUEUE_CONFIG_DEFAULTS, ...stored };
+  } catch {
+    return QUEUE_CONFIG_DEFAULTS;
+  }
+}
+
 let started = false;
 
 export async function startQueue(): Promise<PgBoss> {
@@ -25,17 +46,25 @@ export async function startQueue(): Promise<PgBoss> {
   await boss.start();
   started = true;
 
+  const config = await loadQueueConfig();
+  console.log(`[queue] Config: timeout=${config.reviewTimeoutSeconds}s, concurrency=${config.reviewConcurrency}`);
+
   // Create queues with retry/expiry config
   await boss.createQueue("welcome-email", {
     retryLimit: 3,
     expireInSeconds: 300, // 5 min timeout per attempt
   }).catch(() => {}); // ignore if already exists
 
-  console.log("[queue] pg-boss started");
+  await boss.createQueue("process-review", {
+    retryLimit: 2,
+    expireInSeconds: config.reviewTimeoutSeconds,
+  }).catch(() => {});
 
   // Register all workers
   const { registerWorkers } = await import("./queue-workers");
-  await registerWorkers(boss);
+  await registerWorkers(boss, config);
+
+  console.log("[queue] pg-boss started");
 
   return boss;
 }

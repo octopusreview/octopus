@@ -6,6 +6,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { QueueConfigManager } from "../queue-config-manager";
+import { getQueueConfig } from "../model-actions";
 
 type PgBossJob = {
   id: string;
@@ -36,6 +38,7 @@ export default async function AdminJobsPage({
   const params = await searchParams;
   const stateFilter = typeof params.state === "string" ? params.state : undefined;
   const nameFilter = typeof params.name === "string" ? params.name : undefined;
+  const queueConfig = await getQueueConfig();
 
   // Check if pgboss schema exists (created on first boss.start())
   const schemaExists = await prisma.$queryRawUnsafe<{ exists: boolean }[]>(
@@ -85,6 +88,9 @@ export default async function AdminJobsPage({
 
   return (
     <div className="space-y-4">
+      {/* Queue Configuration */}
+      <QueueConfigManager initialConfig={queueConfig} />
+
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-6">
         {stats.map((s) => (

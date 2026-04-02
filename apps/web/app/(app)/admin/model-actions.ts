@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { isAdminEmail } from "@/lib/admin";
+import { type QueueConfig, loadQueueConfig } from "@/lib/queue";
 
 async function requireAdmin() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -146,6 +147,34 @@ export async function getSystemReviewConfig(): Promise<Record<string, unknown>> 
 export async function getGlobalBlockedAuthors(): Promise<string[]> {
   const row = await prisma.systemConfig.findUnique({ where: { id: "singleton" } });
   return (row?.blockedAuthors as string[]) ?? [];
+}
+
+export { type QueueConfig } from "@/lib/queue";
+
+export async function getQueueConfig(): Promise<QueueConfig> {
+  return loadQueueConfig();
+}
+
+export async function updateQueueConfig(
+  config: QueueConfig,
+): Promise<{ error?: string; success?: boolean }> {
+  await requireAdmin();
+
+  if (config.reviewTimeoutSeconds < 60 || config.reviewTimeoutSeconds > 3600) {
+    return { error: "Timeout must be between 60 and 3600 seconds." };
+  }
+  if (config.reviewConcurrency < 1 || config.reviewConcurrency > 10) {
+    return { error: "Concurrency must be between 1 and 10." };
+  }
+
+  await prisma.systemConfig.upsert({
+    where: { id: "singleton" },
+    create: { id: "singleton", queueConfig: config as object },
+    update: { queueConfig: config as object },
+  });
+
+  revalidatePath("/admin/jobs");
+  return { success: true };
 }
 
 export async function updateGlobalBlockedAuthors(

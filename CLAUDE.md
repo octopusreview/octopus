@@ -127,7 +127,7 @@ When building a new feature, always consider these cross-cutting concerns:
 
 ## Docs
 
-All files under `docs/` must be written in English. Key docs:
-- `docs/PRD.md` — Product requirements
-- `docs/PUBBY_REALTIME.md` — Real-time architecture guide
-- `docs/RULE_NO_HARD_DELETES.md` — Soft delete policy
+All files under `documents/` must be written in English. Key docs:
+- `documents/PRD.md` — Product requirements
+- `documents/PUBBY_REALTIME.md` — Real-time architecture guide
+- `documents/RULE_NO_HARD_DELETES.md` — Soft delete policy

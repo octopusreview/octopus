@@ -21,7 +21,7 @@ const installCommands: Record<Platform, Record<Method, { comment: string; comman
   windows: {
     "one-liner": {
       comment: "# Works on Windows. If you use ARM Windows, use the npm installer.",
-      command: "irm https://octopus-review.ai/install.ps1 | iex",
+      command: "powershell -c \"irm https://octopus-review.ai/install.ps1 | iex\"",
     },
     npm: {
       comment: "# Requires Node.js 18+",

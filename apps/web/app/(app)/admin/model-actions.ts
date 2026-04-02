@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { isAdminEmail } from "@/lib/admin";
+import { type QueueConfig, QUEUE_CONFIG_DEFAULTS } from "@/lib/queue";
 
 async function requireAdmin() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -148,15 +149,7 @@ export async function getGlobalBlockedAuthors(): Promise<string[]> {
   return (row?.blockedAuthors as string[]) ?? [];
 }
 
-export interface QueueConfig {
-  reviewTimeoutSeconds: number;
-  reviewConcurrency: number;
-}
-
-const QUEUE_CONFIG_DEFAULTS: QueueConfig = {
-  reviewTimeoutSeconds: 900,
-  reviewConcurrency: 2,
-};
+export { type QueueConfig } from "@/lib/queue";
 
 export async function getQueueConfig(): Promise<QueueConfig> {
   const row = await prisma.systemConfig.findUnique({ where: { id: "singleton" } });

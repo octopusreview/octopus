@@ -7,7 +7,7 @@ export interface QueueConfig {
   reviewConcurrency: number;
 }
 
-const QUEUE_CONFIG_DEFAULTS: QueueConfig = {
+export const QUEUE_CONFIG_DEFAULTS: QueueConfig = {
   reviewTimeoutSeconds: 900,
   reviewConcurrency: 2,
 };

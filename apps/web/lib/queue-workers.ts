@@ -27,7 +27,12 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
     async (jobs) => {
       for (const job of jobs) {
         console.log(`[queue] Processing review for PR ${job.data.pullRequestId}`);
-        await processReview(job.data.pullRequestId);
+        try {
+          await processReview(job.data.pullRequestId);
+        } catch (err) {
+          console.error(`[queue] Review failed for PR ${job.data.pullRequestId} (job ${job.id}):`, err);
+          throw err;
+        }
       }
     },
   );

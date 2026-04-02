@@ -27,7 +27,7 @@ function getBoss(): PgBoss {
   return instance;
 }
 
-async function loadQueueConfig(): Promise<QueueConfig> {
+export async function loadQueueConfig(): Promise<QueueConfig> {
   try {
     const row = await prisma.systemConfig.findUnique({ where: { id: "singleton" } });
     const stored = (row?.queueConfig as Partial<QueueConfig>) ?? {};

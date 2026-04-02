@@ -34,8 +34,8 @@ coverage/
 # deployment
 deploy.ini
 deploy.sh
-docker-compose.swarm.yml
-docker-compose.review.yml
+docker-compose.*.yml
+!docker-compose.yml
 
 # database
 *.sql

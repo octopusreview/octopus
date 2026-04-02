@@ -203,7 +203,7 @@ export default async function LandingPage() {
             <img src="/openai-text.svg" alt="OpenAI" className="h-4 invert brightness-50" />
             <span className="text-white/20">+</span>
             <img src="/cohere-color.svg" alt="Cohere" className="h-4 w-4" />
-            <img src="/cohere-text.svg" alt="Cohere" className="h-3.5 invert brightness-50" />
+            <img src="/cohere-text.svg" alt="Cohere" className="h-4 invert brightness-50" />
           </div>
         </div>
       </section>

@@ -40,6 +40,14 @@ const methodLabels: Record<Method, string> = {
   npm: "npm",
 };
 
+function detectPlatform(): Platform | null {
+  if (typeof navigator === "undefined") return null;
+  const ua = navigator.userAgent.toLowerCase();
+  if (ua.includes("win")) return "windows";
+  if (ua.includes("mac") || ua.includes("linux") || ua.includes("x11") || ua.includes("unix")) return "mac-linux";
+  return null;
+}
+
 function detectWindowsArm(): boolean {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent.toLowerCase();
@@ -53,9 +61,13 @@ export function CliInstallSection({ embedded = false }: { embedded?: boolean } =
   const didDetect = useRef(false);
 
   useEffect(() => {
-    if (!didDetect.current && detectWindowsArm()) {
-      didDetect.current = true;
-      setPlatform("windows");
+    if (didDetect.current) return;
+    didDetect.current = true;
+
+    const detected = detectPlatform();
+    if (detected) setPlatform(detected);
+
+    if (detected === "windows" && detectWindowsArm()) {
       setMethod("npm");
     }
   }, []);

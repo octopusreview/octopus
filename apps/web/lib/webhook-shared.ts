@@ -1,6 +1,6 @@
 import { prisma } from "@octopus/db";
 import { pubby } from "@/lib/pubby";
-import { processReview } from "@/lib/reviewer";
+import { enqueue } from "@/lib/queue";
 import { eventBus } from "@/lib/events";
 import * as github from "@/lib/github";
 import * as bitbucket from "@/lib/bitbucket";
@@ -191,8 +191,6 @@ export async function startReviewFlow(params: {
     prUrl,
   });
 
-  // Fire-and-forget: start the review process
-  processReview(pr.id).catch((err) =>
-    console.error("[webhook] Review failed:", err),
-  );
+  // Enqueue review job — pg-boss persists it in DB, survives container restarts
+  await enqueue("process-review", { pullRequestId: pr.id });
 }

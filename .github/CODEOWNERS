@@ -16,5 +16,5 @@
 /apps/web/lib/review-dedup.ts @redoh
 
 # Tests
-/apps/web/lib/__tests__/ @redoh
+/apps/web/lib/__tests__/ @redoh @ogulcanaydogan
 

@@ -261,7 +261,7 @@ async function main() {
           category: "",
           description: [...f.keywords].join(" "),
           suggestion: "",
-          confidence: "MEDIUM",
+          confidence: 70,
         }));
         const actualDedupResult = deduplicateAgainstPrior(actualAsInline, accumulatedPriorFindings);
         dedupKept = actualDedupResult.kept;

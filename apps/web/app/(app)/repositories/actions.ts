@@ -707,8 +707,13 @@ export async function updateReviewConfig(
   if (config.inlineThreshold && !["critical", "high", "medium"].includes(config.inlineThreshold)) {
     return { error: "Invalid inline threshold." };
   }
-  if (config.confidenceThreshold && !["HIGH", "MEDIUM"].includes(config.confidenceThreshold)) {
-    return { error: "Invalid confidence threshold." };
+  if (config.confidenceThreshold !== undefined) {
+    const ct = config.confidenceThreshold;
+    const isValidString = typeof ct === "string" && ["HIGH", "MEDIUM"].includes(ct);
+    const isValidNumber = typeof ct === "number" && ct >= 0 && ct <= 100;
+    if (!isValidString && !isValidNumber) {
+      return { error: "Invalid confidence threshold." };
+    }
   }
 
   await prisma.repository.update({

@@ -14,7 +14,7 @@ export type InlineFinding = {
   category: string;
   description: string;
   suggestion: string;
-  confidence: string;
+  confidence: number;
 };
 
 export type PriorFinding = {
@@ -81,7 +81,12 @@ export function parseFindingsFromJson(reviewBody: string): InlineFinding[] | nul
         category: item.category ?? "",
         description: item.description,
         suggestion: item.suggestion ?? "",
-        confidence: (item.confidence ?? "MEDIUM").toUpperCase(),
+        confidence:
+          typeof item.confidence === "number"
+            ? item.confidence
+            : item.confidence === "HIGH"
+              ? 90
+              : 70,
       });
     }
 
@@ -123,7 +128,7 @@ export function parseFindingsFromMarkdown(reviewBody: string): InlineFinding[] {
     const suggestion = suggMatch?.[1]?.trimEnd() ?? "";
 
     const confMatch = part.match(/\*\*Confidence:\*\*\s*(HIGH|MEDIUM|LOW)/i);
-    const confidence = confMatch?.[1]?.toUpperCase() ?? "MEDIUM";
+    const confidence = confMatch?.[1]?.toUpperCase() === "HIGH" ? 90 : 70;
 
     findings.push({ severity, title, filePath, startLine, endLine, category, description, suggestion, confidence });
   }

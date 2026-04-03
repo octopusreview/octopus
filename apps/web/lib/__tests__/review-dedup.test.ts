@@ -69,7 +69,7 @@ ${FINDINGS_END_MARKER}`;
     expect(findings![0].filePath).toBe("src/api.ts");
     expect(findings![0].startLine).toBe(42);
     expect(findings![0].endLine).toBe(45);
-    expect(findings![0].confidence).toBe("HIGH");
+    expect(findings![0].confidence).toBe(90);
   });
 
   it("handles JSON wrapped in code fences", () => {
@@ -125,12 +125,12 @@ ${FINDINGS_END_MARKER}`;
     expect(findings![0].endLine).toBe(10);
   });
 
-  it("defaults confidence to MEDIUM when not provided", () => {
+  it("defaults confidence to 70 when not provided", () => {
     const body = `${FINDINGS_START_MARKER}
 [{"severity":"🟡","title":"T","filePath":"a.ts","startLine":10,"description":"d"}]
 ${FINDINGS_END_MARKER}`;
     const findings = parseFindingsFromJson(body);
-    expect(findings![0].confidence).toBe("MEDIUM");
+    expect(findings![0].confidence).toBe(70);
   });
 });
 
@@ -156,7 +156,7 @@ const result = await db.query("SELECT * FROM users WHERE id = $1", [userId]);
     expect(findings[0].startLine).toBe(42);
     expect(findings[0].endLine).toBe(45);
     expect(findings[0].category).toBe("security");
-    expect(findings[0].confidence).toBe("HIGH");
+    expect(findings[0].confidence).toBe(90);
   });
 
   it("handles single line reference (no endLine)", () => {
@@ -284,7 +284,7 @@ describe("jaccardSimilarity", () => {
 describe("deduplicateAgainstPrior", () => {
   it("keeps all findings when no prior findings", () => {
     const findings = [
-      { severity: "🔴", title: "Bug", filePath: "a.ts", startLine: 10, endLine: 12, category: "", description: "desc", suggestion: "", confidence: "HIGH" },
+      { severity: "🔴", title: "Bug", filePath: "a.ts", startLine: 10, endLine: 12, category: "", description: "desc", suggestion: "", confidence: 90 },
     ] satisfies InlineFinding[];
     const { kept, removed } = deduplicateAgainstPrior(findings, []);
     expect(kept.length).toBe(1);
@@ -293,7 +293,7 @@ describe("deduplicateAgainstPrior", () => {
 
   it("removes duplicate finding (same file, nearby line, similar text)", () => {
     const findings: InlineFinding[] = [
-      { severity: "🔴", title: "SQL injection vulnerability", filePath: "src/api.ts", startLine: 42, endLine: 44, category: "security", description: "User input not sanitized for SQL", suggestion: "", confidence: "HIGH" },
+      { severity: "🔴", title: "SQL injection vulnerability", filePath: "src/api.ts", startLine: 42, endLine: 44, category: "security", description: "User input not sanitized for SQL", suggestion: "", confidence: 90 },
     ];
     const priorFindings: PriorFinding[] = [
       { filePath: "src/api.ts", line: 43, title: "SQL injection", keywords: extractKeywords("SQL injection vulnerability User input not sanitized for SQL") },
@@ -305,7 +305,7 @@ describe("deduplicateAgainstPrior", () => {
 
   it("keeps finding in different file", () => {
     const findings: InlineFinding[] = [
-      { severity: "🔴", title: "SQL injection", filePath: "src/api.ts", startLine: 42, endLine: 44, category: "", description: "User input not sanitized", suggestion: "", confidence: "HIGH" },
+      { severity: "🔴", title: "SQL injection", filePath: "src/api.ts", startLine: 42, endLine: 44, category: "", description: "User input not sanitized", suggestion: "", confidence: 90 },
     ];
     const priorFindings: PriorFinding[] = [
       { filePath: "src/other.ts", line: 42, title: "SQL injection", keywords: extractKeywords("SQL injection User input not sanitized") },
@@ -316,7 +316,7 @@ describe("deduplicateAgainstPrior", () => {
 
   it("keeps finding when lines are far apart", () => {
     const findings: InlineFinding[] = [
-      { severity: "🔴", title: "SQL injection", filePath: "src/api.ts", startLine: 100, endLine: 102, category: "", description: "User input not sanitized", suggestion: "", confidence: "HIGH" },
+      { severity: "🔴", title: "SQL injection", filePath: "src/api.ts", startLine: 100, endLine: 102, category: "", description: "User input not sanitized", suggestion: "", confidence: 90 },
     ];
     const priorFindings: PriorFinding[] = [
       { filePath: "src/api.ts", line: 5, title: "SQL injection", keywords: extractKeywords("SQL injection User input not sanitized") },
@@ -327,7 +327,7 @@ describe("deduplicateAgainstPrior", () => {
 
   it("keeps finding when text is very different", () => {
     const findings: InlineFinding[] = [
-      { severity: "🟡", title: "Missing error handling", filePath: "src/api.ts", startLine: 42, endLine: 44, category: "", description: "Promise rejection not caught", suggestion: "", confidence: "MEDIUM" },
+      { severity: "🟡", title: "Missing error handling", filePath: "src/api.ts", startLine: 42, endLine: 44, category: "", description: "Promise rejection not caught", suggestion: "", confidence: 70 },
     ];
     const priorFindings: PriorFinding[] = [
       { filePath: "src/api.ts", line: 43, title: "SQL injection", keywords: extractKeywords("SQL injection vulnerability in database query") },

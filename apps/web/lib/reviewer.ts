@@ -1590,9 +1590,9 @@ Rules:
         if (crossFileQueries.length > 0) {
           const fileContentFetcher: FileContentFetcher | undefined =
             isGitHub && installationId && pr.headSha
-              ? (path) => ghGetFileContent(installationId!, owner, repoName, pr.headSha!, path)
-              : isBitbucket && repo.bitbucketAccessToken
-                ? (path) => bitbucket.getFileContent(repo.bitbucketAccessToken!, repo.fullName, pr.headSha ?? repo.defaultBranch, path)
+              ? async (path) => (await ghGetFileContent(installationId!, owner, repoName, pr.headSha!, path)) ?? ""
+              : isBitbucket
+                ? (path) => bitbucket.getFileContent(org.id, owner, repoName, pr.headSha ?? repo.defaultBranch ?? "main", path)
                 : undefined;
           crossFileContext = await gatherCrossFileContext(crossFileQueries, repo.id, org.id, fileContentFetcher);
           if (crossFileContext) {

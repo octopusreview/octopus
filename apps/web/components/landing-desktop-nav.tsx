@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { TrackedLink } from "@/components/tracked-link";
-import { IconArrowRight, IconBook, IconBrandGithub, IconCoin, IconNews, IconMessageCircle } from "@tabler/icons-react";
+import { IconArrowRight, IconBook, IconBrandGithub, IconBug, IconCoin, IconNews, IconMessageCircle } from "@tabler/icons-react";
 
 export function LandingDesktopNav({ isLoggedIn }: { isLoggedIn: boolean }) {
   const [resourcesOpen, setResourcesOpen] = useState(false);
@@ -123,6 +123,18 @@ export function LandingDesktopNav({ isLoggedIn }: { isLoggedIn: boolean }) {
                   <div>
                     <div className="text-sm font-medium text-[#ccc]">Changelog</div>
                     <div className="mt-0.5 text-xs text-[#555]">What&apos;s new in Octopus</div>
+                  </div>
+                </TrackedLink>
+                <TrackedLink
+                  href="/bug-bounty"
+                  event="nav_click"
+                  eventParams={{ label: "bug_bounty" }}
+                  className="col-span-2 inline-flex w-fit items-start gap-3 rounded-lg px-3 py-3 transition-colors hover:bg-white/[0.06]"
+                >
+                  <IconBug className="mt-0.5 size-5 shrink-0 text-[#555]" />
+                  <div>
+                    <div className="text-sm font-medium text-[#ccc]">Bug Bounty</div>
+                    <div className="mt-0.5 text-xs text-[#555]">Report vulnerabilities & earn rewards</div>
                   </div>
                 </TrackedLink>
               </div>

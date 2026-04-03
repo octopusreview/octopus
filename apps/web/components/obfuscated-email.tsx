@@ -10,21 +10,25 @@ import { IconMail } from "@tabler/icons-react";
  * - Bots see neither a plain-text address nor a mailto: href in HTML.
  */
 export function ObfuscatedEmail({
+  user = "hello",
   showIcon = true,
   className = "",
   children,
 }: {
+  user?: string;
   showIcon?: boolean;
   className?: string;
   children?: React.ReactNode;
 }) {
+  const reversedUser = user.split("").reverse().join("");
+  const reversedDomain = "ia.weiver-supotco";
+  const displayReversed = `${reversedDomain}@${reversedUser}`;
+
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    const u = "olleh";
-    const d = "ia.weiver-supotco";
-    const addr = u.split("").reverse().join("") + "@" + d.split("").reverse().join("");
+    const addr = reversedUser.split("").reverse().join("") + "@" + reversedDomain.split("").reverse().join("");
     window.location.href = "mailto:" + addr;
-  }, []);
+  }, [reversedUser, reversedDomain]);
 
   return (
     <a
@@ -36,7 +40,7 @@ export function ObfuscatedEmail({
       {showIcon && <IconMail className="size-3.5" />}
       {children ?? (
         <span className="select-all" style={{ direction: "rtl", unicodeBidi: "bidi-override" }}>
-          ia.weiver-supotco@olleh
+          {displayReversed}
         </span>
       )}
     </a>

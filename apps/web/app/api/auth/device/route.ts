@@ -120,7 +120,6 @@ function parseBrowser(userAgent: string): string {
 function parseCloudflareLocation(h: Headers): string {
   const city = h.get("cf-ipcity");
   const country = h.get("cf-ipcountry");
-  if (city && country) return `${city}, ${country}`;
-  if (country) return country;
-  return "Unknown";
+  const raw = city && country ? `${city}, ${country}` : country || "Unknown";
+  return raw.replace(/[^\w\s,.\-()]/g, "").slice(0, 100);
 }

@@ -1,5 +1,4 @@
 import Image from "next/image";
-import Link from "next/link";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { TrackedLink } from "@/components/tracked-link";
@@ -14,8 +13,12 @@ export default async function DocsLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  const isLoggedIn = !!session;
+  let session = null;
+  try {
+    session = await auth.api.getSession({ headers: await headers() });
+  } catch {
+    session = null;
+  }
 
   return (
     <div className="dark min-h-screen bg-[#0c0c0c] text-[#a0a0a0]">
@@ -43,14 +46,16 @@ export default async function DocsLayout({
           </TrackedLink>
           <DocsBreadcrumb />
           <div className="ml-auto shrink-0">
-            {isLoggedIn ? (
-              <Link
+            {session ? (
+              <TrackedLink
                 href="/dashboard"
+                event="cta_click"
+                eventParams={{ location: "docs_header", label: "dashboard" }}
                 className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-medium text-[#0c0c0c] transition-colors hover:bg-[#e0e0e0]"
               >
                 Dashboard
                 <IconArrowRight className="size-3.5" />
-              </Link>
+              </TrackedLink>
             ) : (
               <TrackedLink
                 href="/login"

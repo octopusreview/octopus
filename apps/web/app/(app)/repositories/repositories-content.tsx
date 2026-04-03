@@ -48,7 +48,6 @@ import {
   IconChevronRight,
   IconBrandBitbucket,
   IconFilter,
-  IconFilterOff,
   IconSettings,
   IconPackage,
   IconMessageCircle,
@@ -198,13 +197,21 @@ function IndexStatusBadge({ status }: { status: string }) {
       </Badge>
     );
   }
+  if (status === "stale") {
+    return (
+      <Badge variant="secondary" className="border-yellow-600/30 bg-yellow-600/10 text-yellow-600">
+        <IconRefresh className="mr-1 size-3" />
+        Stale
+      </Badge>
+    );
+  }
   return (
     <Badge variant="outline">Pending</Badge>
   );
 }
 
 function StatsGrid({ repo }: { repo: Repo }) {
-  if (repo.indexStatus !== "indexed" || !repo.indexedAt) return null;
+  if ((repo.indexStatus !== "indexed" && repo.indexStatus !== "stale") || !repo.indexedAt) return null;
 
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
@@ -1014,7 +1021,7 @@ function RepoDetail({
   );
   const router = useRouter();
   const isIndexing = repo.indexStatus === "indexing" || indexPending;
-  const canAutoReview = repo.indexStatus === "indexed" && (analysisStatus === "analyzed" || analysisStatus === "completed");
+  const canAutoReview = (repo.indexStatus === "indexed" || repo.indexStatus === "stale") && (analysisStatus === "analyzed" || analysisStatus === "completed");
 
   // Sync localPrs when detail data changes
   useEffect(() => {
@@ -1137,7 +1144,9 @@ function RepoDetail({
           <div className="text-sm font-medium">Auto Review</div>
           <div className="text-xs text-muted-foreground">
             {canAutoReview
-              ? "Automatically review new pull requests with AI"
+              ? repo.indexStatus === "stale"
+                ? "Index is stale. It will be automatically re-indexed on the next PR review."
+                : "Automatically review new pull requests with AI"
               : "Index and analyze this repository first to enable auto review"}
           </div>
         </div>
@@ -1806,12 +1815,12 @@ export function RepositoriesContent({
     router.push(`/repositories?${params.toString()}`);
   };
 
-  const handleFilterToggle = () => {
+  const handleFilterChange = (value: string) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (currentFilter === "not-indexed") {
+    if (value === "all") {
       params.delete("filter");
     } else {
-      params.set("filter", "not-indexed");
+      params.set("filter", value);
     }
     params.delete("page");
     router.push(`/repositories?${params.toString()}`);
@@ -1941,19 +1950,19 @@ export function RepositoriesContent({
                 ))}
               </SelectContent>
             </Select>
-            <Button
-              size="sm"
-              variant={currentFilter === "not-indexed" ? "secondary" : "outline"}
-              className="h-8 shrink-0 text-xs"
-              onClick={handleFilterToggle}
-            >
-              {currentFilter === "not-indexed" ? (
-                <IconFilterOff className="mr-1 size-3" />
-              ) : (
+            <Select value={currentFilter || "all"} onValueChange={handleFilterChange}>
+              <SelectTrigger className="h-8 text-xs">
                 <IconFilter className="mr-1 size-3" />
-              )}
-              {currentFilter === "not-indexed" ? "Show All" : "Not Indexed"}
-            </Button>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="indexed">Indexed</SelectItem>
+                <SelectItem value="stale">Stale</SelectItem>
+                <SelectItem value="not-indexed">Not indexed</SelectItem>
+                <SelectItem value="failed">Failed</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="mt-2 flex items-center gap-2">
             {githubAppSlug && (

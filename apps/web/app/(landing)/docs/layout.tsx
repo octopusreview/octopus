@@ -1,15 +1,22 @@
 import Image from "next/image";
+import Link from "next/link";
+import { headers } from "next/headers";
+import { auth } from "@/lib/auth";
 import { TrackedLink } from "@/components/tracked-link";
+import { IconArrowRight } from "@tabler/icons-react";
 import { DocsBreadcrumb } from "./docs-breadcrumb";
 import { DocsMobileMenu } from "./docs-mobile-menu";
 import { DocsSidebar } from "./docs-sidebar";
 import { LandingFooter } from "@/components/landing-footer";
 
-export default function DocsLayout({
+export default async function DocsLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const session = await auth.api.getSession({ headers: await headers() });
+  const isLoggedIn = !!session;
+
   return (
     <div className="dark min-h-screen bg-[#0c0c0c] text-[#a0a0a0]">
       {/* Top bar */}
@@ -35,6 +42,27 @@ export default function DocsLayout({
             Docs
           </TrackedLink>
           <DocsBreadcrumb />
+          <div className="ml-auto shrink-0">
+            {isLoggedIn ? (
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-medium text-[#0c0c0c] transition-colors hover:bg-[#e0e0e0]"
+              >
+                Dashboard
+                <IconArrowRight className="size-3.5" />
+              </Link>
+            ) : (
+              <TrackedLink
+                href="/login"
+                event="cta_click"
+                eventParams={{ location: "docs_header", label: "get_started" }}
+                className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-medium text-[#0c0c0c] transition-colors hover:bg-[#e0e0e0]"
+              >
+                Get Started
+                <IconArrowRight className="size-3.5" />
+              </TrackedLink>
+            )}
+          </div>
         </div>
       </header>
 

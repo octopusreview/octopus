@@ -49,27 +49,19 @@ export async function POST(request: Request) {
   const ua = reqHeaders.get("user-agent") || "";
   const browser = parseBrowser(ua);
 
-  // Create device record immediately, resolve geolocation asynchronously
+  // Use Cloudflare geolocation headers (zero latency, no rate limits)
+  const location = parseCloudflareLocation(reqHeaders);
+
   await prisma.userDevice.create({
     data: {
       userId,
       fingerprint,
       browser,
       ipAddress: ip,
-      location: null,
+      location,
       ...(secondarySignals ? { metadata: secondarySignals } : {}),
     },
   });
-
-  // Fire-and-forget: update location after geolocation resolves
-  fetchIpLocation(ip)
-    .then((location) =>
-      prisma.userDevice.update({
-        where: { userId_fingerprint: { userId, fingerprint } },
-        data: { location },
-      }),
-    )
-    .catch(() => {});
 
   // Check if user has any OTHER devices (first device = first login, don't alert)
   const deviceCount = await prisma.userDevice.count({ where: { userId } });
@@ -92,6 +84,7 @@ export async function POST(request: Request) {
         firstName,
         appUrl,
         ipAddress: ip,
+        location,
         browser,
         loginTime: new Date().toLocaleString("en-US", {
           dateStyle: "medium",
@@ -124,20 +117,9 @@ function parseBrowser(userAgent: string): string {
   return "Unknown browser";
 }
 
-async function fetchIpLocation(ip: string): Promise<string> {
-  if (!ip || ip === "Unknown" || ip === "127.0.0.1" || ip === "::1") {
-    return "Localhost";
-  }
-  try {
-    const res = await fetch(
-      `https://ipapi.co/${ip}/json/`,
-    );
-    if (!res.ok) return "Unknown";
-    const data = await res.json();
-    if (data.city && data.country) return `${data.city}, ${data.country}`;
-    if (data.country) return data.country;
-    return "Unknown";
-  } catch {
-    return "Unknown";
-  }
+function parseCloudflareLocation(h: Headers): string {
+  const city = h.get("cf-ipcity");
+  const country = h.get("cf-ipcountry");
+  const raw = city && country ? `${city}, ${country}` : country || "Unknown";
+  return raw.replace(/[^\w\s,.\-()]/g, "").slice(0, 100);
 }

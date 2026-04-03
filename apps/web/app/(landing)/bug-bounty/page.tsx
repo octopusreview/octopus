@@ -391,9 +391,7 @@ export default async function BugBountyPage() {
               <div>
                 <p className="text-base font-semibold text-white">Email</p>
                 <p className="mt-1 text-sm text-[#888]">
-                  <span style={{ direction: "rtl", unicodeBidi: "bidi-override" }}>
-                    ia.weiver-supotco@ytiruces
-                  </span>
+                  <ObfuscatedEmail user="security" showIcon={false} className="text-sm text-[#888]" />
                 </p>
                 <p className="mt-2 text-xs text-[#555]">
                   Best for detailed reports with attachments.

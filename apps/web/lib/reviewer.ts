@@ -50,11 +50,16 @@ import {
   mergeReviewConfigs,
   parseReviewConfig,
   MAX_FINDINGS_PER_REVIEW,
+  extractCrossFileQueries,
 } from "@/lib/review-helpers";
 import type { ReviewConfig } from "@/lib/review-helpers";
+import {
+  gatherCrossFileContext,
+  validateFindings,
+  type FileContentFetcher,
+} from "@/lib/review-validation";
 import { indexRepository } from "@/lib/indexer";
 import {
-  type InlineFinding,
   type PriorFinding,
   FINDINGS_START_MARKER,
   FINDINGS_END_MARKER,
@@ -98,76 +103,6 @@ function getConflictDetectionPrompt(): string {
     conflictDetectionTemplate = fs.readFileSync(path.join(promptsDir, "CONFLICT_DETECTION.md"), "utf-8");
   }
   return conflictDetectionTemplate;
-}
-
-/** Validate findings with a second LLM pass. Returns only the findings that pass validation. */
-async function validateFindings(
-  findings: InlineFinding[],
-  diff: string,
-  orgId: string,
-  model: string,
-): Promise<InlineFinding[]> {
-  if (findings.length === 0) return findings;
-
-  const findingsSummary = findings
-    .map((f, i) => `[${i}] ${f.severity} ${f.title}\nFile: ${f.filePath}:L${f.startLine}\nDescription: ${f.description}`)
-    .join("\n\n");
-
-  const response = await createAiMessage(
-    {
-      model,
-      maxTokens: 2048,
-      messages: [
-        {
-          role: "user",
-          content: `You are a senior code reviewer validating findings from an automated review. For each finding below, determine if it is a genuine issue based on the diff provided.
-
-FINDINGS:
-${findingsSummary}
-
-DIFF:
-\`\`\`diff
-${diff.slice(0, 12000)}
-\`\`\`
-
-For each finding, respond with ONLY a JSON array of verdicts:
-[{"index": 0, "verdict": "KEEP"}, {"index": 1, "verdict": "DISCARD"}, ...]
-
-KEEP = the finding is a real, actionable issue visible in the diff
-DISCARD = the finding is speculative, a false positive, or not supported by the diff
-
-Output ONLY the JSON array, nothing else.`,
-        },
-      ],
-    },
-    orgId,
-  );
-
-  await logAiUsage({
-    provider: response.provider,
-    model,
-    operation: "review-validation",
-    inputTokens: response.usage.inputTokens,
-    outputTokens: response.usage.outputTokens,
-    cacheReadTokens: response.usage.cacheReadTokens,
-    cacheWriteTokens: response.usage.cacheWriteTokens,
-    organizationId: orgId,
-  });
-
-  try {
-    const jsonMatch = response.text.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) return findings;
-    const verdicts = JSON.parse(jsonMatch[0]) as { index: number; verdict: string }[];
-    const keepIndexes = new Set(
-      verdicts.filter((v) => v.verdict === "KEEP").map((v) => v.index),
-    );
-    const validated = findings.filter((_, i) => keepIndexes.has(i));
-    console.log(`[reviewer] Two-pass validation: ${validated.length}/${findings.length} findings kept`);
-    return validated;
-  } catch {
-    console.warn("[reviewer] Failed to parse two-pass validation response, keeping all findings");
-    return findings;
-  }
 }
 
 type ReviewEvent = {
@@ -1513,7 +1448,7 @@ Now output ONLY the ${findings.length === 0 ? "missing findings" : `${missingCou
     "category": "Bug",
     "description": "Clear explanation of the issue",
     "suggestion": "suggested fix code or empty string",
-    "confidence": "HIGH"
+    "confidence": 85
   }
 ]
 
@@ -1521,7 +1456,7 @@ Rules:
 - severity: one of 🔴 🟠 🟡 🔵 💡
 - filePath: relative path only, no backticks, no :L suffix
 - startLine/endLine: integers
-- confidence: HIGH or MEDIUM only
+- confidence: integer 0-100 (90-100 = certain, 70-89 = clear, 50-69 = likely, below 50 = do not include)
 - Output ONLY valid JSON array. No markdown, no explanation, no code fences.`,
                 },
               ],
@@ -1580,14 +1515,14 @@ Rules:
     let allParsedFindings = [...findings];
 
     // Filter out findings below confidence threshold
-    const confidenceThreshold = reviewConfig.confidenceThreshold ?? "MEDIUM";
+    const confidenceThreshold =
+      typeof reviewConfig.confidenceThreshold === "number"
+        ? reviewConfig.confidenceThreshold
+        : reviewConfig.confidenceThreshold === "HIGH"
+          ? 85
+          : 65;
     const allFindings = findings;
-    if (confidenceThreshold === "HIGH") {
-      findings = findings.filter((f) => f.confidence === "HIGH");
-    } else {
-      // Default: filter out LOW
-      findings = findings.filter((f) => f.confidence !== "LOW");
-    }
+    findings = findings.filter((f) => f.confidence >= confidenceThreshold);
     if (allFindings.length !== findings.length) {
       console.log(`[reviewer] Filtered out ${allFindings.length - findings.length} findings below confidence threshold (${confidenceThreshold})`);
     }
@@ -1646,11 +1581,25 @@ Rules:
       console.warn("[reviewer] Semantic feedback matching failed, continuing:", err);
     }
 
-    // Two-pass validation: use a second LLM call to validate findings (feature flag)
-    const enableTwoPass = reviewConfig.enableTwoPassReview || process.env.ENABLE_TWO_PASS_REVIEW === "true";
-    if (enableTwoPass && findings.length > 0) {
+    // Two-pass validation: use Haiku to re-score confidence on all findings
+    // with cross-file context for verifying function signatures, types, etc.
+    if (findings.length > 0) {
       try {
-        findings = await validateFindings(findings, diff, org.id, reviewModel);
+        let crossFileContext = "";
+        const crossFileQueries = extractCrossFileQueries(findings, diff);
+        if (crossFileQueries.length > 0) {
+          const fileContentFetcher: FileContentFetcher | undefined =
+            isGitHub && installationId && pr.headSha
+              ? async (path) => (await ghGetFileContent(installationId!, owner, repoName, pr.headSha!, path)) ?? ""
+              : isBitbucket
+                ? (path) => bitbucket.getFileContent(org.id, owner, repoName, pr.headSha ?? repo.defaultBranch ?? "main", path)
+                : undefined;
+          crossFileContext = await gatherCrossFileContext(crossFileQueries, repo.id, org.id, fileContentFetcher);
+          if (crossFileContext) {
+            console.log(`[reviewer] Gathered cross-file context: ${crossFileQueries.length} queries, ${crossFileContext.length} chars`);
+          }
+        }
+        findings = await validateFindings(findings, diff, org.id, confidenceThreshold, crossFileContext || undefined, "[reviewer]");
       } catch (err) {
         console.warn("[reviewer] Two-pass validation failed, keeping all findings:", err);
       }
@@ -1960,7 +1909,7 @@ Rules:
           severity: severityMap[f.severity] ?? "medium",
           filePath: f.filePath || null,
           lineNumber: f.startLine || null,
-          confidence: f.confidence || null,
+          confidence: f.confidence ? String(f.confidence) : null,
           pullRequestId: pr.id,
         })),
       });

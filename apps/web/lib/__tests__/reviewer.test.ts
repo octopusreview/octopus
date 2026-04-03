@@ -26,7 +26,7 @@ function makeFinding(overrides: Partial<InlineFinding> = {}): InlineFinding {
     category: "correctness",
     description: "Something is wrong",
     suggestion: "",
-    confidence: "HIGH",
+    confidence: 90,
     ...overrides,
   };
 }

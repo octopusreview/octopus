@@ -23,6 +23,8 @@ import {
   parseFindingsFromJson,
   parseFindingsFromMarkdown,
 } from "@/lib/review-dedup";
+import { extractCrossFileQueries } from "@/lib/review-helpers";
+import { gatherCrossFileContext, validateFindings } from "@/lib/review-validation";
 import { logAiUsage } from "@/lib/ai-usage";
 import { getReviewModel } from "@/lib/ai-client";
 import { createAiMessage } from "@/lib/ai-router";
@@ -95,7 +97,7 @@ type ReviewConfig = {
   inlineThreshold?: string;
   enableConflictDetection?: boolean;
   disabledCategories?: string[];
-  confidenceThreshold?: string;
+  confidenceThreshold?: number | string;
   enableTwoPassReview?: boolean;
 };
 
@@ -149,77 +151,6 @@ function countFindingsFromTable(reviewBody: string): number {
     if (countMatch) total += parseInt(countMatch[1], 10);
   }
   return total;
-}
-
-// ─── Two-pass validation ─────────────────────────────────────────────────────
-
-async function validateFindings(
-  findings: InlineFinding[],
-  diff: string,
-  orgId: string,
-  model: string,
-): Promise<InlineFinding[]> {
-  if (findings.length === 0) return findings;
-
-  const findingsSummary = findings
-    .map((f, i) => `[${i}] ${f.severity} ${f.title}\nFile: ${f.filePath}:L${f.startLine}\nDescription: ${f.description}`)
-    .join("\n\n");
-
-  const response = await createAiMessage(
-    {
-      model,
-      maxTokens: 2048,
-      messages: [
-        {
-          role: "user",
-          content: `You are a senior code reviewer validating findings from an automated review. For each finding below, determine if it is a genuine issue based on the diff provided.
-
-FINDINGS:
-${findingsSummary}
-
-DIFF:
-\`\`\`diff
-${diff.slice(0, 12000)}
-\`\`\`
-
-For each finding, respond with ONLY a JSON array of verdicts:
-[{"index": 0, "verdict": "KEEP"}, {"index": 1, "verdict": "DISCARD"}, ...]
-
-KEEP = the finding is a real, actionable issue visible in the diff
-DISCARD = the finding is speculative, a false positive, or not supported by the diff
-
-Output ONLY the JSON array, nothing else.`,
-        },
-      ],
-    },
-    orgId,
-  );
-
-  await logAiUsage({
-    provider: response.provider,
-    model,
-    operation: "review-validation",
-    inputTokens: response.usage.inputTokens,
-    outputTokens: response.usage.outputTokens,
-    cacheReadTokens: response.usage.cacheReadTokens,
-    cacheWriteTokens: response.usage.cacheWriteTokens,
-    organizationId: orgId,
-  });
-
-  try {
-    const jsonMatch = response.text.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) return findings;
-    const verdicts = JSON.parse(jsonMatch[0]) as { index: number; verdict: string }[];
-    const keepIndexes = new Set(
-      verdicts.filter((v) => v.verdict === "KEEP").map((v) => v.index),
-    );
-    const validated = findings.filter((_, i) => keepIndexes.has(i));
-    console.log(`[review-core] Two-pass validation: ${validated.length}/${findings.length} findings kept`);
-    return validated;
-  } catch {
-    console.warn("[review-core] Failed to parse two-pass validation response, keeping all findings");
-    return findings;
-  }
 }
 
 // ─── File tree constants ─────────────────────────────────────────────────────
@@ -470,7 +401,7 @@ Now output ONLY the ${findings.length === 0 ? "missing findings" : `${missingCou
     "category": "Bug",
     "description": "Clear explanation of the issue",
     "suggestion": "suggested fix code or empty string",
-    "confidence": "HIGH"
+    "confidence": 85
   }
 ]
 
@@ -478,7 +409,7 @@ Rules:
 - severity: one of 🔴 🟠 🟡 🔵 💡
 - filePath: relative path only, no backticks, no :L suffix
 - startLine/endLine: integers
-- confidence: HIGH or MEDIUM only
+- confidence: integer 0-100 (90-100 = certain, 70-89 = clear, 50-69 = likely, below 50 = do not include)
 - Output ONLY valid JSON array. No markdown, no explanation, no code fences.`,
             },
           ],
@@ -525,12 +456,13 @@ Rules:
   }
 
   // Step 7: Filter by confidence threshold
-  const confidenceThreshold = reviewConfig.confidenceThreshold ?? "MEDIUM";
-  if (confidenceThreshold === "HIGH") {
-    findings = findings.filter((f) => f.confidence === "HIGH");
-  } else {
-    findings = findings.filter((f) => f.confidence !== "LOW");
-  }
+  const confidenceThreshold =
+    typeof reviewConfig.confidenceThreshold === "number"
+      ? reviewConfig.confidenceThreshold
+      : reviewConfig.confidenceThreshold === "HIGH"
+        ? 85
+        : 65;
+  findings = findings.filter((f) => f.confidence >= confidenceThreshold);
 
   // Filter out disabled categories
   if (reviewConfig.disabledCategories && reviewConfig.disabledCategories.length > 0) {
@@ -569,11 +501,19 @@ Rules:
     console.warn("[review-core] Semantic feedback matching failed, continuing:", err);
   }
 
-  // Step 9: Two-pass validation (if enabled)
-  const enableTwoPass = reviewConfig.enableTwoPassReview || process.env.ENABLE_TWO_PASS_REVIEW === "true";
-  if (enableTwoPass && findings.length > 0) {
+  // Step 9: Two-pass validation — use Haiku to re-score confidence on all findings
+  // with cross-file context for verifying function signatures, types, etc.
+  if (findings.length > 0) {
     try {
-      findings = await validateFindings(findings, diff, org.id, reviewModel);
+      let crossFileContext = "";
+      const crossFileQueries = extractCrossFileQueries(findings, diff);
+      if (crossFileQueries.length > 0) {
+        crossFileContext = await gatherCrossFileContext(crossFileQueries, repoId, org.id);
+        if (crossFileContext) {
+          console.log(`[review-core] Gathered cross-file context: ${crossFileQueries.length} queries, ${crossFileContext.length} chars`);
+        }
+      }
+      findings = await validateFindings(findings, diff, org.id, confidenceThreshold, crossFileContext || undefined, "[review-core]");
     } catch (err) {
       console.warn("[review-core] Two-pass validation failed, keeping all findings:", err);
     }

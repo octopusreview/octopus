@@ -385,7 +385,8 @@ export default async function BugBountyPage() {
             <ObfuscatedEmail
               user="security"
               showIcon={false}
-              className="group flex items-start gap-4 rounded-xl border border-white/[0.06] bg-white/[0.02] p-6 transition-colors hover:border-white/[0.12]"
+              className="group flex cursor-pointer items-start gap-4 rounded-xl border border-white/[0.06] bg-white/[0.02] p-6 transition-colors hover:border-white/[0.12]"
+              as="div"
             >
               <IconMail className="mt-0.5 size-6 shrink-0 text-teal-400" />
               <div>

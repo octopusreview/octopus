@@ -14,11 +14,13 @@ export function ObfuscatedEmail({
   showIcon = true,
   className = "",
   children,
+  as: Tag = "a",
 }: {
   user?: string;
   showIcon?: boolean;
   className?: string;
   children?: React.ReactNode;
+  as?: "a" | "div" | "span";
 }) {
   const reversedUser = user.split("").reverse().join("");
   const reversedDomain = "ia.weiver-supotco";
@@ -31,8 +33,8 @@ export function ObfuscatedEmail({
   }, [reversedUser, reversedDomain]);
 
   return (
-    <a
-      href="#contact"
+    <Tag
+      {...(Tag === "a" ? { href: "#contact" } : { role: "button", tabIndex: 0 })}
       onClick={handleClick}
       className={`inline-flex items-center gap-1.5 ${className}`}
       aria-label="Send email"
@@ -43,6 +45,6 @@ export function ObfuscatedEmail({
           {displayReversed}
         </span>
       )}
-    </a>
+    </Tag>
   )
 }

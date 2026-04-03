@@ -6,6 +6,31 @@ import * as github from "@/lib/github";
 import * as bitbucket from "@/lib/bitbucket";
 
 /**
+ * Post a neutral "skipped" check run so the PR isn't blocked forever.
+ * GitHub only — Bitbucket has no checks API.
+ */
+async function postSkippedCheckRun(
+  provider: "github" | "bitbucket",
+  installationId: number | undefined,
+  repoFullName: string,
+  headSha: string,
+  reason: string,
+) {
+  if (provider !== "github" || !installationId || !headSha) return;
+  const [owner, repo] = repoFullName.split("/");
+  try {
+    const checkRunId = await github.createCheckRun(installationId, owner, repo, headSha, "Octopus Review");
+    await github.updateCheckRun(installationId, owner, repo, checkRunId, "neutral", {
+      title: "Review skipped",
+      summary: reason,
+    });
+    console.log(`[webhook] Check run marked as neutral — ${reason}`);
+  } catch (err) {
+    console.warn("[webhook] Failed to post neutral check run:", err);
+  }
+}
+
+/**
  * Shared flow: upsert PR -> post placeholder comment -> notify dashboard -> start review.
  * Works for both GitHub and Bitbucket.
  */
@@ -98,6 +123,7 @@ export async function startReviewFlow(params: {
     );
     if (isBlocked) {
       console.log(`[webhook] PR author "${prAuthor}" is blocked for org ${orgId}, skipping PR #${prNumber}`);
+      await postSkippedCheckRun(provider, installationId, repoFullName, headSha, `PR author "${prAuthor}" is in the blocked list`);
       return;
     }
   }

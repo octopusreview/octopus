@@ -6,14 +6,20 @@ import { usePathname, useSearchParams } from "next/navigation";
 function TopLoaderInner({ color }: { color: string }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const urlKey = pathname + "?" + searchParams.toString();
+
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const safetyRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingStartRef = useRef(false);
 
   const start = useCallback(() => {
+    pendingStartRef.current = false;
     if (timerRef.current) clearInterval(timerRef.current);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (safetyRef.current) clearTimeout(safetyRef.current);
     setProgress(0);
     setLoading(true);
 
@@ -28,14 +34,42 @@ function TopLoaderInner({ color }: { color: string }) {
       }
       setProgress(p);
     }, 100);
+
+    safetyRef.current = setTimeout(() => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      setProgress(100);
+      setTimeout(() => {
+        setLoading(false);
+        setProgress(0);
+      }, 300);
+    }, 8000);
   }, []);
 
+  const scheduleStart = useCallback(() => {
+    pendingStartRef.current = true;
+    setTimeout(() => {
+      if (pendingStartRef.current) {
+        start();
+      }
+    }, 0);
+  }, [start]);
+
   const done = useCallback(() => {
+    // Cancel any pending start that hasn't fired yet
+    pendingStartRef.current = false;
+
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (safetyRef.current) {
+      clearTimeout(safetyRef.current);
+      safetyRef.current = null;
+    }
 
     setProgress(100);
     timeoutRef.current = setTimeout(() => {
@@ -45,10 +79,10 @@ function TopLoaderInner({ color }: { color: string }) {
     }, 300);
   }, []);
 
-  // Complete on route change
+  // Complete on route/search param change (string comparison for reliability)
   useEffect(() => {
     done();
-  }, [pathname, searchParams, done]);
+  }, [urlKey, done]);
 
   // Intercept link clicks
   useEffect(() => {
@@ -76,21 +110,27 @@ function TopLoaderInner({ color }: { color: string }) {
     const originalPushState = history.pushState.bind(history);
     history.pushState = (...args) => {
       const url = args[2];
-      if (url && String(url) !== window.location.pathname + window.location.search) {
-        // Defer to avoid setState inside useInsertionEffect (Next.js router internals)
-        setTimeout(start, 0);
+      if (url) {
+        const next = new URL(String(url), window.location.origin);
+        const current = new URL(window.location.href);
+        // Only start loader if pathname or search changed (ignore hash-only changes)
+        const routeChanged = next.pathname !== current.pathname || next.search !== current.search;
+        if (routeChanged && !timerRef.current) {
+          scheduleStart();
+        }
       }
       return originalPushState(...args);
     };
     return () => {
       history.pushState = originalPushState;
     };
-  }, [start]);
+  }, [scheduleStart]);
 
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (safetyRef.current) clearTimeout(safetyRef.current);
     };
   }, []);
 
@@ -126,7 +166,7 @@ function TopLoaderInner({ color }: { color: string }) {
   );
 }
 
-export function TopLoader({ color = "hsl(var(--primary))" }: { color?: string }) {
+export function TopLoader({ color = "var(--primary)" }: { color?: string }) {
   return (
     <Suspense fallback={null}>
       <TopLoaderInner color={color} />

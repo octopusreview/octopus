@@ -9,6 +9,7 @@ import {
   FINDINGS_START_MARKER,
   FINDINGS_END_MARKER,
   parseFindingsFromJson,
+  extractDiffFiles,
 } from "@/lib/review-dedup";
 // Re-define the type locally to avoid importing from github.ts (which has side effects in some envs)
 export type ReviewComment = {
@@ -310,7 +311,7 @@ export type ReviewConfig = {
   inlineThreshold?: string; // severity threshold for inline comments: "critical" | "high" | "medium" (default)
   enableConflictDetection?: boolean;
   disabledCategories?: string[];
-  confidenceThreshold?: string; // "HIGH" | "MEDIUM" (default)
+  confidenceThreshold?: number | string; // numeric 0-100 or legacy "HIGH" | "MEDIUM"
   enableTwoPassReview?: boolean;
 };
 
@@ -331,4 +332,64 @@ export function mergeReviewConfigs(...configs: ReviewConfig[]): ReviewConfig {
     if (cfg.enableTwoPassReview !== undefined) merged.enableTwoPassReview = cfg.enableTwoPassReview;
   }
   return merged;
+}
+
+// ─── Cross-File Reference Extraction ────────────────────────────────────────
+
+export type CrossFileQuery = {
+  findingIndex: number;
+  query: string;
+  filePath?: string;
+};
+
+/** Extract cross-file references from findings for Qdrant search / file fetch. */
+export function extractCrossFileQueries(findings: InlineFinding[], diff: string): CrossFileQuery[] {
+  const diffFiles = extractDiffFiles(diff);
+  const queries: CrossFileQuery[] = [];
+  const seen = new Set<string>();
+
+  for (let i = 0; i < findings.length; i++) {
+    const finding = findings[i];
+    const text = `${finding.description} ${finding.suggestion}`;
+
+    // File references in description/suggestion
+    for (const match of text.matchAll(
+      /(?:in|from|see|check|defined in|imported from)\s+[`"']?([a-zA-Z0-9_\-/.]+\.[a-zA-Z]{1,5})[`"']?/gi,
+    )) {
+      const filePath = match[1];
+      if (!diffFiles.has(filePath) && filePath !== finding.filePath && !seen.has(filePath)) {
+        seen.add(filePath);
+        queries.push({ findingIndex: i, query: filePath, filePath });
+      }
+    }
+
+    // Import/require references
+    for (const match of text.matchAll(/(?:import|require)\s*\(?\s*["']([^"']+)["']/g)) {
+      const filePath = match[1];
+      if (!seen.has(filePath)) {
+        seen.add(filePath);
+        queries.push({ findingIndex: i, query: filePath, filePath });
+      }
+    }
+
+    // Function/method references: `functionName(params)` pattern
+    for (const match of text.matchAll(/[`"](\w+)\s*\([^)]*\)[`"]/g)) {
+      const funcName = match[1];
+      if (!seen.has(funcName)) {
+        seen.add(funcName);
+        queries.push({ findingIndex: i, query: funcName });
+      }
+    }
+
+    // Named function/method references
+    for (const match of text.matchAll(/(?:function|method|calls?)\s+[`"]?(\w{3,})[`"]?/gi)) {
+      const funcName = match[1];
+      if (!seen.has(funcName) && !["the", "this", "that", "from", "with"].includes(funcName.toLowerCase())) {
+        seen.add(funcName);
+        queries.push({ findingIndex: i, query: funcName });
+      }
+    }
+  }
+
+  return queries.slice(0, 8);
 }

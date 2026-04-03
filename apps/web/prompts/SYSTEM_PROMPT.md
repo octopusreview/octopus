@@ -197,7 +197,7 @@ Format — wrap ALL findings in this exact structure:
     "category": "Security",
     "description": "User input is concatenated directly into the SQL query without parameterization.",
     "suggestion": "db.query('SELECT * FROM users WHERE id = $1', [userId])",
-    "confidence": "HIGH"
+    "confidence": 92
   }
 ]
 ```
@@ -211,11 +211,11 @@ Field rules:
 - **category**: Bug | Security | Performance | Style | Architecture | Logic Error | Race Condition
 - **description**: Clear explanation of the issue
 - **suggestion**: Plain code string for the suggested fix (no markdown fences inside JSON). Empty string if no suggestion.
-- **confidence**: HIGH or MEDIUM only (never include LOW confidence findings)
-
-Confidence definitions:
-- **HIGH**: The issue is directly visible in the diff — wrong logic, missing null check, security flaw in changed code
-- **MEDIUM**: The issue is inferred from patterns — common pitfall, likely missing handling based on codebase conventions
+- **confidence**: Integer 0-100. Scoring guide:
+  - 90-100: Issue is directly visible in the diff with near-certainty (wrong logic, missing null check, security flaw in changed code)
+  - 70-89: Issue is clearly supported by the diff and context (clear pattern violation, obvious missing handling)
+  - 50-69: Issue is inferred from patterns, likely but not certain (common pitfall, convention-based inference)
+  - Below 50: Do not include — these are filtered automatically
 
 Output valid JSON. No trailing commas. No comments inside the JSON. Properly escape special characters in strings.
 

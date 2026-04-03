@@ -154,11 +154,18 @@ export async function POST(request: NextRequest) {
       });
 
       if (repo) {
-        await prisma.pullRequest.updateMany({
-          where: { repositoryId: repo.id, number: prId },
-          data: { mergedAt: new Date() },
-        });
-        console.log(`[bitbucket-webhook] PR #${prId} marked as merged`);
+        await Promise.all([
+          prisma.pullRequest.updateMany({
+            where: { repositoryId: repo.id, number: prId },
+            data: { mergedAt: new Date() },
+          }),
+          // Mark repo index as stale — will be re-indexed on next PR review
+          prisma.repository.update({
+            where: { id: repo.id },
+            data: { indexStatus: "stale" },
+          }),
+        ]);
+        console.log(`[bitbucket-webhook] PR #${prId} merged, repo index marked as stale`);
       }
     }
   }

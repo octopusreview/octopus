@@ -6,6 +6,7 @@ import {
   IconBrandReddit,
   IconBrandX,
   IconBrandYoutube,
+  IconBug,
 } from "@tabler/icons-react";
 import { TrackedLink, TrackedAnchor } from "@/components/tracked-link";
 import { GetInTouchModal } from "@/components/get-in-touch-modal";
@@ -161,6 +162,17 @@ export function LandingFooter() {
                   className="text-sm text-[#666] transition-colors hover:text-white"
                 >
                   System Status
+                </TrackedLink>
+              </li>
+              <li>
+                <TrackedLink
+                  href="/bug-bounty"
+                  event="footer_click"
+                  eventParams={{ label: "bug_bounty" }}
+                  className="flex items-center gap-1.5 text-sm text-[#666] transition-colors hover:text-white"
+                >
+                  <IconBug className="size-3 text-orange-400" />
+                  Bug Bounty
                 </TrackedLink>
               </li>
             </ul>

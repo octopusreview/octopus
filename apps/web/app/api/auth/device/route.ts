@@ -49,27 +49,19 @@ export async function POST(request: Request) {
   const ua = reqHeaders.get("user-agent") || "";
   const browser = parseBrowser(ua);
 
-  // Create device record immediately, resolve geolocation asynchronously
+  // Resolve geolocation before creating the device record so it's available for the email
+  const location = await fetchIpLocation(ip);
+
   await prisma.userDevice.create({
     data: {
       userId,
       fingerprint,
       browser,
       ipAddress: ip,
-      location: null,
+      location,
       ...(secondarySignals ? { metadata: secondarySignals } : {}),
     },
   });
-
-  // Fire-and-forget: update location after geolocation resolves
-  fetchIpLocation(ip)
-    .then((location) =>
-      prisma.userDevice.update({
-        where: { userId_fingerprint: { userId, fingerprint } },
-        data: { location },
-      }),
-    )
-    .catch(() => {});
 
   // Check if user has any OTHER devices (first device = first login, don't alert)
   const deviceCount = await prisma.userDevice.count({ where: { userId } });
@@ -92,6 +84,7 @@ export async function POST(request: Request) {
         firstName,
         appUrl,
         ipAddress: ip,
+        location,
         browser,
         loginTime: new Date().toLocaleString("en-US", {
           dateStyle: "medium",

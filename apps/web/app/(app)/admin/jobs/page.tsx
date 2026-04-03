@@ -30,6 +30,8 @@ const stateColors: Record<string, string> = {
   cancelled: "bg-stone-100 text-stone-800 dark:bg-stone-900 dark:text-stone-300",
 };
 
+const PAGE_SIZE = 50;
+
 export default async function AdminJobsPage({
   searchParams,
 }: {
@@ -38,6 +40,8 @@ export default async function AdminJobsPage({
   const params = await searchParams;
   const stateFilter = typeof params.state === "string" ? params.state : undefined;
   const nameFilter = typeof params.name === "string" ? params.name : undefined;
+  const page = Math.max(1, parseInt(typeof params.page === "string" ? params.page : "1", 10) || 1);
+  const offset = (page - 1) * PAGE_SIZE;
   const queueConfig = await getQueueConfig();
 
   // Check if pgboss schema exists (created on first boss.start())
@@ -68,12 +72,18 @@ export default async function AdminJobsPage({
     .filter(Boolean)
     .join(" AND ");
 
+  const totalResult = await prisma.$queryRawUnsafe<{ count: bigint }[]>(
+    `SELECT COUNT(*) as count FROM pgboss.job ${whereClause ? `WHERE ${whereClause}` : ""}`,
+  );
+  const totalCount = Number(totalResult[0]?.count ?? 0);
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
   const jobs = await prisma.$queryRawUnsafe<PgBossJob[]>(
     `SELECT id, name, state, data, created_on as createdon, started_on as startedon, completed_on as completedon, retry_count as retrycount, output
      FROM pgboss.job
      ${whereClause ? `WHERE ${whereClause}` : ""}
      ORDER BY created_on DESC
-     LIMIT 100`,
+     LIMIT ${PAGE_SIZE} OFFSET ${offset}`,
   );
 
   const stats = await prisma.$queryRawUnsafe<
@@ -144,7 +154,7 @@ export default async function AdminJobsPage({
           <CardTitle className="flex items-center justify-between">
             <span>Jobs</span>
             <span className="text-muted-foreground text-sm font-normal">
-              Showing {jobs.length} most recent
+              {totalCount} total &middot; Page {page} of {totalPages}
             </span>
           </CardTitle>
         </CardHeader>
@@ -214,6 +224,27 @@ export default async function AdminJobsPage({
                   </div>
                 );
               })}
+            </div>
+          )}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t pt-4 mt-4">
+              <a
+                href={`/admin/jobs?page=${page - 1}${stateFilter ? `&state=${stateFilter}` : ""}${nameFilter ? `&name=${nameFilter}` : ""}`}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium ${page <= 1 ? "pointer-events-none text-muted-foreground/40" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                aria-disabled={page <= 1}
+              >
+                &larr; Previous
+              </a>
+              <span className="text-muted-foreground text-xs">
+                Page {page} of {totalPages}
+              </span>
+              <a
+                href={`/admin/jobs?page=${page + 1}${stateFilter ? `&state=${stateFilter}` : ""}${nameFilter ? `&name=${nameFilter}` : ""}`}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium ${page >= totalPages ? "pointer-events-none text-muted-foreground/40" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                aria-disabled={page >= totalPages}
+              >
+                Next &rarr;
+              </a>
             </div>
           )}
         </CardContent>

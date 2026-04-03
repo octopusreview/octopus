@@ -1,8 +1,8 @@
 # Default owners for everything
-* @redoh @ogulcanaydogan
+* @redoh
 
 # Web application
-/apps/web/ @redoh @ogulcanaydogan
+/apps/web/ @redoh
 
 # Database schema and migrations
 /packages/db/ @redoh
@@ -16,5 +16,5 @@
 /apps/web/lib/review-dedup.ts @redoh
 
 # Tests
-/apps/web/lib/__tests__/ @ogulcanaydogan
+/apps/web/lib/__tests__/ @redoh
 

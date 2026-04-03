@@ -49,8 +49,8 @@ export async function POST(request: Request) {
   const ua = reqHeaders.get("user-agent") || "";
   const browser = parseBrowser(ua);
 
-  // Resolve geolocation before creating the device record so it's available for the email
-  const location = await fetchIpLocation(ip);
+  // Use Cloudflare geolocation headers (zero latency, no rate limits)
+  const location = parseCloudflareLocation(reqHeaders);
 
   await prisma.userDevice.create({
     data: {
@@ -117,20 +117,10 @@ function parseBrowser(userAgent: string): string {
   return "Unknown browser";
 }
 
-async function fetchIpLocation(ip: string): Promise<string> {
-  if (!ip || ip === "Unknown" || ip === "127.0.0.1" || ip === "::1") {
-    return "Localhost";
-  }
-  try {
-    const res = await fetch(
-      `https://ipapi.co/${ip}/json/`,
-    );
-    if (!res.ok) return "Unknown";
-    const data = await res.json();
-    if (data.city && data.country) return `${data.city}, ${data.country}`;
-    if (data.country) return data.country;
-    return "Unknown";
-  } catch {
-    return "Unknown";
-  }
+function parseCloudflareLocation(h: Headers): string {
+  const city = h.get("cf-ipcity");
+  const country = h.get("cf-ipcountry");
+  if (city && country) return `${city}, ${country}`;
+  if (country) return country;
+  return "Unknown";
 }

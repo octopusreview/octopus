@@ -2,6 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
+import { getLandingStats } from "@/lib/landing-stats";
 import { FloatingOctopus } from "@/components/landing-unicorn-section";
 import { LandingFeatures } from "@/components/landing-features";
 import { TrackedLink, TrackedAnchor } from "@/components/tracked-link";
@@ -13,6 +14,7 @@ import { WebGLToggleButton } from "@/components/webgl-toggle-button";
 import { RotatingHeroText } from "@/components/landing-rotating-hero";
 import { NewsletterForm } from "@/components/landing-newsletter";
 import { CliInstallSection } from "@/components/landing-cli-install";
+import { LandingStats } from "@/components/landing-stats";
 
 import { ReviewEngineReveal } from "@/components/ReviewEngineReveal";
 import { FaqList } from "@/components/FaqList";
@@ -96,7 +98,7 @@ const faqJsonLd = {
 };
 
 export default async function LandingPage() {
-  const [session, blogPosts] = await Promise.all([
+  const [session, blogPosts, landingStats] = await Promise.all([
     auth.api.getSession({ headers: await headers() }),
     prisma.blogPost.findMany({
       where: { status: "published", deletedAt: null },
@@ -104,6 +106,7 @@ export default async function LandingPage() {
       take: 3,
       select: { title: true, slug: true, excerpt: true, publishedAt: true, authorName: true },
     }),
+    getLandingStats(),
   ]);
   return (
     <div className="dark relative min-h-screen bg-[#0c0c0c] text-[#a0a0a0] selection:bg-white/20">
@@ -195,21 +198,14 @@ export default async function LandingPage() {
             </TrackedAnchor>
           </div>
 
-          <div className="animate-fade-in mt-16 inline-flex items-center gap-3 text-sm text-[#555] [animation-delay:400ms]">
-            <img src="/claude-color.svg" alt="Claude" className="h-4 w-4" />
-            <img src="/claude-text.svg" alt="Claude" className="h-3.5 invert brightness-50" />
-            <span className="text-white/20">+</span>
-            <img src="/openai.svg" alt="OpenAI" className="h-4 w-4 invert brightness-50" />
-            <img src="/openai-text.svg" alt="OpenAI" className="h-4 invert brightness-50" />
-            <span className="text-white/20">+</span>
-            <img src="/cohere-color.svg" alt="Cohere" className="h-4 w-4" />
-            <img src="/cohere-text.svg" alt="Cohere" className="h-4 invert brightness-50" />
-          </div>
         </div>
       </section>
 
       {/* How it works */}
-      <section id="how-it-works" className="relative z-10 scroll-mt-20 px-4 sm:px-8 md:px-12">
+      <section id="how-it-works" className="relative z-10 scroll-mt-20 px-4 pb-6 sm:px-8 md:px-12">
+        <div className="relative mx-auto max-w-6xl">
+          <LandingStats initial={landingStats} />
+        </div>
         <div className="relative mx-auto max-w-6xl overflow-hidden rounded-3xl border border-white/[0.06] bg-[#161616] px-6 py-20 md:px-12 md:py-28">
           <div className="absolute right-4 top-4 z-10 md:right-6 md:top-6">
             <WebGLToggleButton />
@@ -258,14 +254,14 @@ export default async function LandingPage() {
       </section>
 
       {/* Features — DARK panel, split layout like skillo */}
-      <section id="features" className="relative z-10 scroll-mt-20 px-4 py-8 sm:px-8 md:px-12">
+      <section id="features" className="relative z-10 scroll-mt-20 px-4 py-6 sm:px-8 md:px-12">
         <div className="mx-auto max-w-6xl overflow-hidden rounded-3xl bg-[#161616] px-6 py-20 md:px-12 md:py-28">
           <LandingFeatures />
         </div>
       </section>
 
       {/* Open Source */}
-      <section id="open-source" className="relative z-10 scroll-mt-20 px-4 sm:px-8 md:px-12">
+      <section id="open-source" className="relative z-10 scroll-mt-20 px-4 py-6 sm:px-8 md:px-12">
         <div className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-white/[0.06] bg-[#161616] px-6 py-20 md:px-12 md:py-28">
           <div className="mx-auto max-w-5xl">
             <div className="mx-auto max-w-2xl text-center">
@@ -338,7 +334,7 @@ export default async function LandingPage() {
 
       {/* Blog */}
       {blogPosts.length > 0 && (
-        <section className="relative z-10 px-4 py-8 sm:px-8 md:px-12">
+        <section className="relative z-10 px-4 py-6 sm:px-8 md:px-12">
           <div className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-white/[0.06] bg-[#161616] px-6 py-20 md:px-12 md:py-28">
             <div className="mx-auto max-w-5xl">
               <div className="mx-auto max-w-2xl text-center">
@@ -398,7 +394,7 @@ export default async function LandingPage() {
       )}
 
       {/* FAQ */}
-      <section id="faq" className="relative z-10 scroll-mt-20 px-4 py-8 sm:px-8 md:px-12">
+      <section id="faq" className="relative z-10 scroll-mt-20 px-4 py-6 sm:px-8 md:px-12">
         <div className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-white/[0.06] bg-[#161616] px-6 py-20 md:px-12 md:py-28">
           <div className="mx-auto max-w-3xl">
             <div className="mx-auto max-w-2xl text-center">

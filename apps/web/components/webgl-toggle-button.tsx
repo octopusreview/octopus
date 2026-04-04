@@ -50,7 +50,7 @@ export function WebGLToggleButton() {
   if (!supported) return null;
 
   return (
-    <div className="hidden items-center gap-2 sm:flex">
+    <div className="hidden items-center gap-2 lg:flex">
       <span className="hidden text-[11px] text-[#444] sm:inline">
         Press <kbd className="rounded border border-white/[0.08] bg-white/[0.04] px-1 py-0.5 font-mono text-[10px] text-[#555]">H</kbd> to toggle
       </span>

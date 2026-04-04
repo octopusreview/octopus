@@ -51,18 +51,18 @@ export function LandingMobileNav({ isLoggedIn }: { isLoggedIn: boolean }) {
           <div className="border-t border-white/[0.06] bg-[#0c0c0c]/95 px-4 pb-4 pt-2 backdrop-blur-xl">
             <div className="flex flex-col gap-1">
               <a
-                href="#features"
-                onClick={() => setOpen(false)}
-                className="rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
-              >
-                Features
-              </a>
-              <a
                 href="#how-it-works"
                 onClick={() => setOpen(false)}
                 className="rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
               >
                 How It Works
+              </a>
+              <a
+                href="#features"
+                onClick={() => setOpen(false)}
+                className="rounded-lg px-3 py-2.5 text-sm text-[#888] transition-colors hover:bg-white/[0.06] hover:text-white"
+              >
+                Features
               </a>
               <a
                 href="#faq"

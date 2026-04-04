@@ -218,13 +218,11 @@ export function AskOctopus() {
         <>
           {/* Mobile backdrop */}
           <div
+            aria-hidden="true"
             className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm sm:hidden"
             onClick={() => setIsOpen(false)}
           />
-        </>
-      )}
-      {isOpen && (
-        <div className="fixed inset-x-0 bottom-0 z-50 flex h-[85dvh] flex-col overflow-hidden rounded-t-2xl border border-white/10 bg-[#111] shadow-2xl shadow-black/60 sm:inset-auto sm:right-6 sm:bottom-6 sm:h-[560px] sm:w-[420px] sm:rounded-2xl">
+          <div className="fixed inset-x-0 bottom-0 z-[51] flex h-[85dvh] flex-col overflow-hidden rounded-t-2xl border border-white/10 bg-[#111] shadow-2xl shadow-black/60 sm:inset-auto sm:right-6 sm:bottom-6 sm:h-[560px] sm:w-[420px] sm:rounded-2xl">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-white/[0.08] bg-[#0c0c0c] px-4 py-3">
             <div className="flex items-center gap-2">
@@ -344,6 +342,7 @@ export function AskOctopus() {
             </p>
           </div>
         </div>
+        </>
       )}
     </>
   );

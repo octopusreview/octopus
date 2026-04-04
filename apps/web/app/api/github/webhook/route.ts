@@ -6,6 +6,8 @@ import {
   listInstallationRepos,
   addCommentReaction,
   getPullRequestDetails,
+  createCheckRun,
+  updateCheckRun,
 } from "@/lib/github";
 import { startReviewFlow } from "@/lib/webhook-shared";
 
@@ -146,10 +148,10 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // ── PR opened / reopened → auto-review if repo has autoReview enabled ──
+  // ── PR opened / reopened / synchronize → auto-review if repo has autoReview enabled ──
   if (
     event === "pull_request" &&
-    (payload.action === "opened" || payload.action === "reopened")
+    (payload.action === "opened" || payload.action === "reopened" || payload.action === "synchronize")
   ) {
     const installationId = payload.installation?.id as number | undefined;
     if (!installationId) {
@@ -158,7 +160,7 @@ export async function POST(request: NextRequest) {
 
     const repoFullName: string = payload.repository?.full_name ?? "";
     const repoExternalId = String(payload.repository?.id ?? "");
-    const [_owner, _repoName] = repoFullName.split("/");
+    const [owner, repoName] = repoFullName.split("/");
     const prNumber: number = payload.pull_request?.number;
     const prTitle: string = payload.pull_request?.title ?? `PR #${prNumber}`;
     const prUrl: string = payload.pull_request?.html_url ?? "";
@@ -188,8 +190,50 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Check if review should be skipped (autoReview off or blocked author)
+    // If skipped, post a neutral check run so the PR isn't blocked forever
+    const skipReview = async (reason: string) => {
+      console.log(`[webhook] ${reason}, skipping PR #${prNumber}`);
+      if (headSha) {
+        try {
+          const checkRunId = await createCheckRun(installationId, owner, repoName, headSha, "Octopus Review");
+          await updateCheckRun(installationId, owner, repoName, checkRunId, "neutral", {
+            title: "Review skipped",
+            summary: reason,
+          });
+          console.log(`[webhook] Check run marked as neutral for PR #${prNumber}`);
+        } catch (err) {
+          console.warn(`[webhook] Failed to post neutral check run for PR #${prNumber}:`, err);
+        }
+      }
+    };
+
     if (!repo.autoReview) {
-      console.log(`[webhook] Auto-review disabled for repo ${repoFullName}, skipping`);
+      await skipReview(`Auto-review disabled for repo ${repoFullName}`);
+      return NextResponse.json({ ok: true });
+    }
+
+    // Check blocked authors before starting review
+    const [org, systemConfig] = await Promise.all([
+      prisma.organization.findUnique({
+        where: { id: repo.organizationId },
+        select: { blockedAuthors: true },
+      }),
+      prisma.systemConfig.findUnique({
+        where: { id: "singleton" },
+        select: { blockedAuthors: true },
+      }),
+    ]);
+
+    const globalBlocked = (systemConfig?.blockedAuthors as string[]) ?? [];
+    const orgBlocked = (org?.blockedAuthors as string[]) ?? [];
+    const authorLower = prAuthor.toLowerCase();
+    const isBlocked = [...globalBlocked, ...orgBlocked].some(
+      (b) => b.toLowerCase() === authorLower,
+    );
+
+    if (isBlocked) {
+      await skipReview(`PR author "${prAuthor}" is in the blocked list`);
       return NextResponse.json({ ok: true });
     }
 

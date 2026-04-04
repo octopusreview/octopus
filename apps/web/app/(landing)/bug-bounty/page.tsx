@@ -438,7 +438,7 @@ export default async function BugBountyPage() {
         <div className="mx-auto max-w-4xl text-center">
           <p className="text-sm text-[#444]">
             Octopus reserves the right to modify or cancel this program at any
-            time. Reward amounts are at our discretion based on impact and
+            time. <br />Reward amounts are at our discretion based on impact and
             quality of the report.
           </p>
         </div>

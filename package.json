@@ -17,7 +17,10 @@
     "db:push": "bun --filter @octopus/db db:push",
     "db:studio": "bun --filter @octopus/db db:studio",
     "skills:generate": "bun run apps/web/scripts/generate-skills-json.ts",
-    "simulate:review": "bun run --cwd apps/web scripts/review-simulator.ts"
+    "simulate:review": "bun run --cwd apps/web scripts/review-simulator.ts",
+    "deploy:wdc": "./deploy.sh all --host wdc",
+    "deploy:aws": "./deploy.sh all --host aws --skip-build",
+    "deploy:all": "./deploy.sh all --host wdc && ./deploy.sh all --host aws --skip-build"
   },
   "trustedDependencies": [
     "@prisma/engines",

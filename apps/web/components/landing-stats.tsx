@@ -55,7 +55,7 @@ const statsMeta = [
 ];
 
 export function LandingStats({ initial }: { initial: Stats }) {
-  const [stats, setStats] = useState({ ...initial, chunks: 1_234_567 });
+  const [stats, setStats] = useState({ ...initial });
   const sectionRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
 

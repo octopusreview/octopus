@@ -2,6 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
+import { getLandingStats } from "@/lib/landing-stats";
 import { FloatingOctopus } from "@/components/landing-unicorn-section";
 import { LandingFeatures } from "@/components/landing-features";
 import { TrackedLink, TrackedAnchor } from "@/components/tracked-link";
@@ -97,7 +98,7 @@ const faqJsonLd = {
 };
 
 export default async function LandingPage() {
-  const [session, blogPosts, repoChunkAgg, knowledgeChunkAgg, findingsCount, reviewCount, repoCount] = await Promise.all([
+  const [session, blogPosts, landingStats] = await Promise.all([
     auth.api.getSession({ headers: await headers() }),
     prisma.blogPost.findMany({
       where: { status: "published", deletedAt: null },
@@ -105,19 +106,8 @@ export default async function LandingPage() {
       take: 3,
       select: { title: true, slug: true, excerpt: true, publishedAt: true, authorName: true },
     }),
-    prisma.repository.aggregate({ _sum: { totalChunks: true } }),
-    prisma.knowledgeDocument.aggregate({ _sum: { totalChunks: true }, where: { deletedAt: null, status: "ready" } }),
-    prisma.reviewIssue.count(),
-    prisma.pullRequest.count({ where: { status: "completed" } }),
-    prisma.repository.count({ where: { isActive: true } }),
+    getLandingStats(),
   ]);
-
-  const landingStats = {
-    chunks: (repoChunkAgg._sum?.totalChunks ?? 0) + (knowledgeChunkAgg._sum?.totalChunks ?? 0),
-    findings: findingsCount,
-    reviews: reviewCount,
-    repositories: repoCount,
-  };
   return (
     <div className="dark relative min-h-screen bg-[#0c0c0c] text-[#a0a0a0] selection:bg-white/20">
       <script

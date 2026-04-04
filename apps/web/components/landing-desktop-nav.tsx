@@ -17,8 +17,8 @@ export function LandingDesktopNav({ isLoggedIn }: { isLoggedIn: boolean }) {
           <span className="text-sm font-semibold tracking-tight text-white">Octopus</span>
         </Link>
         <div className="flex items-center gap-1 whitespace-nowrap pl-4 text-sm text-[#777]">
-          <Link href="/#features" className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">Features</Link>
           <Link href="/#how-it-works" className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">How It Works</Link>
+          <Link href="/#features" className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">Features</Link>
           <Link href="/#faq" className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-white">FAQ</Link>
 
           {/* Resources dropdown */}

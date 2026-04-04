@@ -1520,7 +1520,7 @@ Rules:
         ? reviewConfig.confidenceThreshold
         : reviewConfig.confidenceThreshold === "HIGH"
           ? 85
-          : 65;
+          : 70;
     const allFindings = findings;
     findings = findings.filter((f) => f.confidence >= confidenceThreshold);
     if (allFindings.length !== findings.length) {
@@ -1554,7 +1554,7 @@ Rules:
         for (let i = 0; i < allParsedFindings.length; i++) {
           const matches = await searchFeedbackPatterns(repo.id, allFindingVectors[i], 3, org.id, allFindingTexts[i]);
           const falsePositiveMatch = matches.find(
-            (m) => m.feedback === "down" && m.score > 0.85,
+            (m) => m.feedback === "down" && m.score > 0.80,
           );
           if (falsePositiveMatch) {
             suppressedAllIndexes.add(i);

@@ -302,6 +302,22 @@ SCORING RULES:
 23. Always verify file paths before including them in findings. If you reference a file path,
     it MUST match an entry in the file tree or a path visible in the diff. Never invent or
     guess file paths.
+24. Before flagging a code pattern as incorrect or over-broad, trace the full logic chain:
+    - What is the actual input to the flagged operation? (e.g., is a variable already
+      scoped by a prior regex capture group, filter, or type guard?)
+    - Does the surrounding code constrain the input in a way that makes the "broad"
+      pattern intentionally exhaustive?
+    - If the code includes a comment explaining WHY it does something broadly, trust
+      the author's domain knowledge unless you have concrete evidence it's wrong.
+    Example: `.replace(/:/g, "")` looks over-aggressive in isolation, but if the input
+    is already extracted from a specific context where ALL colons are invalid, it's correct.
+25. Do not flag code as wrong based solely on general programming heuristics when the
+    code operates in a domain-specific context (parsers, serializers, protocol handlers,
+    format-specific sanitizers). Domain rules often override general intuitions. If you
+    lack domain expertise to verify, downgrade to a NIT with conditional language.
+26. Self-check before reporting: "Am I flagging this because I traced a concrete bug,
+    or because it LOOKS like a common anti-pattern?" If pattern-matching without
+    verification, either skip the finding or reduce confidence below 50.
 </review_rules>
 
 {{CONFLICT_DETECTION}}

@@ -83,7 +83,7 @@ export async function gatherCrossFileContext(
 
 // ─── Two-Pass Validation ────────────────────────────────────────────────────
 
-export const VALIDATION_MODEL = "claude-haiku-4-5-20251001";
+export const VALIDATION_MODEL = "claude-sonnet-4-6-20250514";
 
 export async function validateFindings(
   findings: InlineFinding[],
@@ -131,6 +131,16 @@ When a finding claims a function call has wrong parameters, a missing import, or
 - Check the "Referenced Code Context" section if available for the actual definition
 - If the context confirms the usage is correct, assign confidence 10-20
 - If the context confirms the issue, keep or raise confidence
+
+When a finding flags a "broad" operation (regex, string replacement, deletion) as over-aggressive:
+- Check whether the input is already constrained by prior code (capture groups, filters, conditionals)
+- If the input is pre-scoped so the broad operation is intentionally exhaustive, assign confidence 10-20
+
+When a finding is based on a general heuristic ("don't replace all X", "avoid broad regex") rather than a concrete traced bug:
+- If no specific incorrect behavior is demonstrated, assign confidence 30-50
+
+When the diff includes comments explaining the domain-specific reason for an approach and the finding contradicts that without concrete counter-evidence:
+- Assign confidence 10-20
 
 For each finding, respond with ONLY a JSON array:
 [{"index": 0, "confidence": 92}, {"index": 1, "confidence": 35}, ...]

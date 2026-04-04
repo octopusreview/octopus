@@ -461,7 +461,7 @@ Rules:
       ? reviewConfig.confidenceThreshold
       : reviewConfig.confidenceThreshold === "HIGH"
         ? 85
-        : 65;
+        : 70;
   findings = findings.filter((f) => f.confidence >= confidenceThreshold);
 
   // Filter out disabled categories
@@ -485,7 +485,7 @@ Rules:
       for (let i = 0; i < findings.length; i++) {
         const matches = await searchFeedbackPatterns(repo.id, findingVectors[i], 3, org.id, findingTexts[i]);
         const falsePositiveMatch = matches.find(
-          (m) => m.feedback === "down" && m.score > 0.85,
+          (m) => m.feedback === "down" && m.score > 0.80,
         );
         if (falsePositiveMatch) {
           suppressedIndexes.add(i);

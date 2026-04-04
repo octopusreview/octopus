@@ -13,6 +13,7 @@ function TopLoaderInner({ color }: { color: string }) {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const safetyRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingStartRef = useRef(false);
 
   const start = useCallback(() => {
@@ -41,16 +42,19 @@ function TopLoaderInner({ color }: { color: string }) {
         timerRef.current = null;
       }
       setProgress(100);
-      setTimeout(() => {
+      timeoutRef.current = setTimeout(() => {
         setLoading(false);
         setProgress(0);
+        timeoutRef.current = null;
       }, 300);
     }, 8000);
   }, []);
 
   const scheduleStart = useCallback(() => {
     pendingStartRef.current = true;
-    setTimeout(() => {
+    if (scheduleRef.current) clearTimeout(scheduleRef.current);
+    scheduleRef.current = setTimeout(() => {
+      scheduleRef.current = null;
       if (pendingStartRef.current) {
         start();
       }
@@ -131,6 +135,7 @@ function TopLoaderInner({ color }: { color: string }) {
       if (timerRef.current) clearInterval(timerRef.current);
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       if (safetyRef.current) clearTimeout(safetyRef.current);
+      if (scheduleRef.current) clearTimeout(scheduleRef.current);
     };
   }, []);
 

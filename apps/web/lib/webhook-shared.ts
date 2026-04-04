@@ -95,7 +95,7 @@ export async function startReviewFlow(params: {
     select: { id: true, status: true, headSha: true, updatedAt: true },
   });
 
-  if (existingPr && existingPr.status === "reviewing") {
+  if (existingPr && (existingPr.status === "reviewing" || existingPr.status === "pending")) {
     const stuckThresholdMs = 3 * 60 * 1000; // 3 minutes
     const isStuck = Date.now() - existingPr.updatedAt.getTime() > stuckThresholdMs;
 
@@ -106,7 +106,7 @@ export async function startReviewFlow(params: {
         data: { status: "failed", errorMessage: "Review timed out after 3 minutes" },
       });
     } else if (existingPr.headSha === headSha) {
-      console.log(`[webhook] Review already in progress for PR #${prNumber} (same SHA), skipping`);
+      console.log(`[webhook] Review already in progress/queued for PR #${prNumber} (same SHA), skipping`);
       return;
     } else {
       console.log(`[webhook] New SHA detected for PR #${prNumber}, restarting review`);

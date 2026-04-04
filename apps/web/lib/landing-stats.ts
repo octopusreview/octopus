@@ -15,7 +15,7 @@ export async function getLandingStats(): Promise<LandingStats> {
         _sum: { totalChunks: true },
         where: { deletedAt: null, status: "ready" },
       }),
-      prisma.reviewIssue.count({ where: { deletedAt: null } }),
+      prisma.reviewIssue.count(),
       prisma.pullRequest.count({ where: { status: "completed" } }),
       prisma.repository.count({ where: { isActive: true } }),
     ]);

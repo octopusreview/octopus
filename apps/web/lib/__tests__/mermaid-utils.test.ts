@@ -175,6 +175,41 @@ describe("sanitizeMermaidCode", () => {
     const code = "graph TD\n  A --> B\n  B --> C";
     expect(sanitizeMermaidCode(code)).toBe(code);
   });
+
+  it("strips colons and parentheses from state diagram note text", () => {
+    const code = 'stateDiagram-v2\n    [*] --> stale\n    note right of stale: Badge: yellow Stale (NEW)';
+    const result = sanitizeMermaidCode(code);
+    expect(result).not.toContain("(NEW)");
+    expect(result).toContain("note right of stale:");
+    expect(result).toContain("Badge - yellow Stale NEW");
+  });
+
+  it("strips colons from note text with quoted state IDs", () => {
+    const code = 'stateDiagram-v2\n    note left of "My State": Info: details (extra)';
+    const result = sanitizeMermaidCode(code);
+    expect(result).toContain('note left of "My State":');
+    expect(result).not.toContain("(extra)");
+    expect(result).toContain("Info - details extra");
+  });
+
+  it("strips parentheses from state descriptions", () => {
+    const code = "stateDiagram-v2\n    stale: Stale (needs reindex)";
+    const result = sanitizeMermaidCode(code);
+    expect(result).toContain("stale: Stale needs reindex");
+    expect(result).not.toContain("(");
+  });
+
+  it("does not modify transitions in state diagrams", () => {
+    const code = "stateDiagram-v2\n    pending --> reviewing: Review starts";
+    const result = sanitizeMermaidCode(code);
+    expect(result).toContain("pending --> reviewing: Review starts");
+  });
+
+  it("does not modify non-state diagrams", () => {
+    const code = "graph TD\n    A[\"Note: important (yes)\"] --> B";
+    const result = sanitizeMermaidCode(code);
+    expect(result).toContain("(yes)");
+  });
 });
 
 describe("extractNodeLabels", () => {

@@ -279,6 +279,7 @@ STATE DIAGRAM RULES:
 6. Group related states with `state "Group" as` blocks when needed
 7. Mark NEW states/transitions added in this PR with `%% NEW` comments
 8. NEVER add `classDef` or `class` statements — they are NOT supported in state diagrams
+9. In `note` text and state descriptions: NEVER use parentheses `()` or extra colons `:` — they break the parser. Use dashes or plain text instead.
 
 State Diagram Example:
 ```mermaid

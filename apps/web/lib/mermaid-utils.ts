@@ -87,7 +87,32 @@ export function sanitizeMermaidCode(code: string): string {
     "$1\n    $2",
   );
 
-  // 4. Remove trailing whitespace
+  // 4. State diagrams: sanitize note text and state descriptions that contain
+  //    special characters (colons, parentheses) which break the Mermaid parser.
+  //    e.g. "note right of stale: Badge: yellow Stale (NEW)" → fix colons and parens
+  if (/^\s*stateDiagram/m.test(result)) {
+    // Fix note lines: strip colons and parentheses from note body text.
+    // Supports both plain IDs (stale) and quoted IDs ("My State").
+    result = result.replace(
+      /^(\s*note\s+(?:right|left)\s+of\s+(?:\w+|"[^"]*")\s*:\s*)(.+)$/gm,
+      (_match, prefix: string, text: string) => {
+        const cleaned = text.replace(/:/g, " -").replace(/[()]/g, "");
+        return `${prefix}${cleaned}`;
+      },
+    );
+    // Fix state descriptions: "stateId : Description with (parens)" → remove parens
+    result = result.replace(
+      /^(\s*\w+\s*:\s*)(.+)$/gm,
+      (_match, prefix: string, text: string) => {
+        // Only fix if it looks like a state description (not a transition)
+        if (/-->/.test(prefix)) return _match;
+        const cleaned = text.replace(/[()]/g, "");
+        return `${prefix}${cleaned}`;
+      },
+    );
+  }
+
+  // 5. Remove trailing whitespace
   result = result.replace(/[ \t]+$/gm, "");
 
   return result;

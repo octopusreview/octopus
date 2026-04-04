@@ -23,6 +23,29 @@ export interface AuditEntry {
   userAgent?: string | null;
 }
 
+/**
+ * Compares `before` and `after` objects, returning only the fields that changed.
+ * Useful for logging field-level changes in audit metadata.
+ *
+ * Usage:
+ *   const org = await prisma.organization.findUniqueOrThrow({ where: { id } });
+ *   const updates = { name: "New Name" };
+ *   const changes = diffFields(org, updates);
+ *   // changes => { name: { old: "Old Name", new: "New Name" } }
+ */
+export function diffFields<T extends Record<string, unknown>>(
+  before: T,
+  after: Partial<T>,
+): Record<string, { old: unknown; new: unknown }> {
+  const changes: Record<string, { old: unknown; new: unknown }> = {};
+  for (const key of Object.keys(after) as (keyof T & string)[]) {
+    if (before[key] !== after[key]) {
+      changes[key] = { old: before[key], new: after[key] };
+    }
+  }
+  return changes;
+}
+
 export async function writeAuditLog(entry: AuditEntry): Promise<void> {
   try {
     await prisma.auditLog.create({

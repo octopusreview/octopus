@@ -55,7 +55,13 @@ export default async function RepositoriesPage({
   }
 
   if (filter === "not-indexed") {
-    baseWhere.indexStatus = { not: "indexed" };
+    baseWhere.indexStatus = { notIn: ["indexed", "stale"] };
+  } else if (filter === "indexed") {
+    baseWhere.indexStatus = "indexed";
+  } else if (filter === "stale") {
+    baseWhere.indexStatus = "stale";
+  } else if (filter === "failed") {
+    baseWhere.indexStatus = "failed";
   }
 
   const repoSelect = {

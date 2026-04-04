@@ -91,9 +91,10 @@ export function sanitizeMermaidCode(code: string): string {
   //    special characters (colons, parentheses) which break the Mermaid parser.
   //    e.g. "note right of stale: Badge: yellow Stale (NEW)" → fix colons and parens
   if (/^\s*stateDiagram/m.test(result)) {
-    // Fix note lines: only the first colon is the separator, replace subsequent colons
+    // Fix note lines: strip colons and parentheses from note body text.
+    // Supports both plain IDs (stale) and quoted IDs ("My State").
     result = result.replace(
-      /^(\s*note\s+(?:right|left)\s+of\s+\w+\s*:\s*)(.+)$/gm,
+      /^(\s*note\s+(?:right|left)\s+of\s+(?:\w+|"[^"]*")\s*:\s*)(.+)$/gm,
       (_match, prefix: string, text: string) => {
         const cleaned = text.replace(/:/g, " -").replace(/[()]/g, "");
         return `${prefix}${cleaned}`;

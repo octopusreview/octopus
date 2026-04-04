@@ -41,7 +41,6 @@ export default async function AdminJobsPage({
   const stateFilter = typeof params.state === "string" ? params.state : undefined;
   const nameFilter = typeof params.name === "string" ? params.name : undefined;
   const page = Math.max(1, parseInt(typeof params.page === "string" ? params.page : "1", 10) || 1);
-  const offset = (page - 1) * PAGE_SIZE;
   const queueConfig = await getQueueConfig();
 
   // Check if pgboss schema exists (created on first boss.start())
@@ -64,26 +63,43 @@ export default async function AdminJobsPage({
     );
   }
 
-  // Query pg-boss tables directly
-  const whereClause = [
-    stateFilter ? `state = '${stateFilter}'` : null,
-    nameFilter ? `name = '${nameFilter}'` : null,
-  ]
-    .filter(Boolean)
-    .join(" AND ");
+  // Query pg-boss tables directly (parameterized to prevent SQL injection)
+  const validStates = ["created", "retry", "active", "completed", "cancelled", "failed", "expired"];
+  const safeState = stateFilter && validStates.includes(stateFilter) ? stateFilter : undefined;
+
+  const conditions: string[] = [];
+  const queryParams: unknown[] = [];
+  let paramIdx = 1;
+
+  if (safeState) {
+    conditions.push(`state = $${paramIdx++}`);
+    queryParams.push(safeState);
+  }
+  if (nameFilter) {
+    conditions.push(`name = $${paramIdx++}`);
+    queryParams.push(nameFilter);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const totalResult = await prisma.$queryRawUnsafe<{ count: bigint }[]>(
-    `SELECT COUNT(*) as count FROM pgboss.job ${whereClause ? `WHERE ${whereClause}` : ""}`,
+    `SELECT COUNT(*) as count FROM pgboss.job ${whereClause}`,
+    ...queryParams,
   );
   const totalCount = Number(totalResult[0]?.count ?? 0);
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
+  // Clamp page to valid range
+  const safePage = Math.min(page, totalPages);
+  const safeOffset = (safePage - 1) * PAGE_SIZE;
+
   const jobs = await prisma.$queryRawUnsafe<PgBossJob[]>(
     `SELECT id, name, state, data, created_on as createdon, started_on as startedon, completed_on as completedon, retry_count as retrycount, output
      FROM pgboss.job
-     ${whereClause ? `WHERE ${whereClause}` : ""}
+     ${whereClause}
      ORDER BY created_on DESC
-     LIMIT ${PAGE_SIZE} OFFSET ${offset}`,
+     LIMIT $${paramIdx++} OFFSET $${paramIdx++}`,
+    ...queryParams, PAGE_SIZE, safeOffset,
   );
 
   const stats = await prisma.$queryRawUnsafe<
@@ -154,7 +170,7 @@ export default async function AdminJobsPage({
           <CardTitle className="flex items-center justify-between">
             <span>Jobs</span>
             <span className="text-muted-foreground text-sm font-normal">
-              {totalCount} total &middot; Page {page} of {totalPages}
+              {totalCount} total &middot; Page {safePage} of {totalPages}
             </span>
           </CardTitle>
         </CardHeader>
@@ -229,19 +245,19 @@ export default async function AdminJobsPage({
           {totalPages > 1 && (
             <div className="flex items-center justify-between border-t pt-4 mt-4">
               <a
-                href={`/admin/jobs?page=${page - 1}${stateFilter ? `&state=${stateFilter}` : ""}${nameFilter ? `&name=${nameFilter}` : ""}`}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium ${page <= 1 ? "pointer-events-none text-muted-foreground/40" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
-                aria-disabled={page <= 1}
+                href={`/admin/jobs?page=${safePage - 1}${stateFilter ? `&state=${stateFilter}` : ""}${nameFilter ? `&name=${nameFilter}` : ""}`}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium ${safePage <= 1 ? "pointer-events-none text-muted-foreground/40" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                aria-disabled={safePage <= 1}
               >
                 &larr; Previous
               </a>
               <span className="text-muted-foreground text-xs">
-                Page {page} of {totalPages}
+                Page {safePage} of {totalPages}
               </span>
               <a
-                href={`/admin/jobs?page=${page + 1}${stateFilter ? `&state=${stateFilter}` : ""}${nameFilter ? `&name=${nameFilter}` : ""}`}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium ${page >= totalPages ? "pointer-events-none text-muted-foreground/40" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
-                aria-disabled={page >= totalPages}
+                href={`/admin/jobs?page=${safePage + 1}${stateFilter ? `&state=${stateFilter}` : ""}${nameFilter ? `&name=${nameFilter}` : ""}`}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium ${safePage >= totalPages ? "pointer-events-none text-muted-foreground/40" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                aria-disabled={safePage >= totalPages}
               >
                 Next &rarr;
               </a>

@@ -233,7 +233,7 @@ export async function POST(request: NextRequest) {
     );
 
     if (isBlocked) {
-      await skipReview(`PR author "${prAuthor}" is blocked for org ${repo.organizationId}`);
+      await skipReview(`PR author "${prAuthor}" is in the blocked list`);
       return NextResponse.json({ ok: true });
     }
 

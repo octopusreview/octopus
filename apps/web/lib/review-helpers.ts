@@ -35,6 +35,16 @@ export function touchesSharedFiles(diff: string): boolean {
   return sharedPatterns.some((p) => p.test(diff));
 }
 
+// ─── Index Warning ──────────────────────────────────────────────────────────
+
+/** Build a stale-index warning line if the repo's index is degraded. */
+export function buildIndexWarning(indexStatus: string): string | null {
+  if (indexStatus === "stale" || indexStatus === "failed") {
+    return `- **WARNING: This repository's index is ${indexStatus}. Code search results may be outdated or incomplete.**`;
+  }
+  return null;
+}
+
 // ─── User Instruction Extraction ────────────────────────────────────────────
 
 export function extractUserInstruction(commentBody: string): string {

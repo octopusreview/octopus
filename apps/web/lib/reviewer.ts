@@ -590,6 +590,23 @@ export async function processReview(pullRequestId: string): Promise<void> {
     return;
   }
 
+  // Guard against duplicate processing (e.g. pg-boss jobs replicated to standby DB).
+  // Use atomic UPDATE with WHERE to claim the review — only one server can win.
+  const serverId = process.env.OCTOPUS_SERVER_ID || "unknown";
+  if (pr.status === "completed") {
+    console.log(`[reviewer] PR ${pullRequestId} already completed, skipping`);
+    return;
+  }
+  const claimed = await prisma.pullRequest.updateMany({
+    where: { id: pullRequestId, status: { in: ["pending", "queued"] } },
+    data: { status: "reviewing" },
+  });
+  if (claimed.count === 0) {
+    console.log(`[reviewer] PR ${pullRequestId} already claimed by another server, skipping on '${serverId}'`);
+    return;
+  }
+  console.log(`[reviewer] PR ${pullRequestId} claimed by server '${serverId}'`);
+
   const repo = pr.repository;
   const org = repo.organization;
 

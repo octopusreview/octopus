@@ -15,7 +15,7 @@ Rules:
 - Resolve the thread/conversation after replying, if resolving is supported.
 - If thread resolution is not supported, leave a reply clearly stating that the issue has been addressed.
 
-Once all fixes are applied and pushed, post a final PR comment tagging @octopus to notify it that the updates are ready for review.
+Once all fixes are applied and pushed, post a final PR comment tagging @octopusreview to notify it that the updates are ready for review.
 
 ## Instructions
 

@@ -13,7 +13,7 @@
       "title": "Octopus Fix",
       "description": "Check open PRs for review comments, apply fixes, and push updates",
       "filename": "octopus-fix.md",
-      "hash": "9800adc9633709a0d6eea5a7f0042c524267f473828435b8c3aed7ae362e4be7"
+      "hash": "c31fe903b00a5c55f34b1c19325c9f9478b54edc51d207b6bfcecb4dd9ab88f8"
     },
     {
       "name": "split-and-ship",

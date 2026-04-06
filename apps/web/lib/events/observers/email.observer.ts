@@ -145,19 +145,34 @@ async function getAdminRecipients(
     .map((m) => ({ email: m.user.email, name: m.user.name }));
 }
 
-// Track last credit-low email per org to avoid spamming (24h cooldown)
-const creditLowLastSent = new Map<string, number>();
+const CREDIT_LOW_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24h
 
 async function onCreditLow(event: CreditLowEvent): Promise<void> {
-  const now = Date.now();
-  const lastSent = creditLowLastSent.get(event.orgId);
+  // DB-backed cooldown: check last credit_low_email transaction
+  const recent = await prisma.creditTransaction.findFirst({
+    where: {
+      organizationId: event.orgId,
+      type: "credit_low_email",
+      createdAt: { gte: new Date(Date.now() - CREDIT_LOW_COOLDOWN_MS) },
+    },
+    select: { id: true },
+  });
 
-  if (lastSent && now - lastSent < 24 * 60 * 60 * 1000) return;
+  if (recent) return;
 
   const recipients = await getAdminRecipients(event.orgId);
   if (recipients.length === 0) return;
 
-  creditLowLastSent.set(event.orgId, now);
+  // Record that we sent this notification (amount 0, just a marker)
+  await prisma.creditTransaction.create({
+    data: {
+      amount: 0,
+      type: "credit_low_email",
+      description: `Credit low notification sent - balance: $${event.remainingBalance.toFixed(2)}`,
+      balanceAfter: event.remainingBalance,
+      organizationId: event.orgId,
+    },
+  });
 
   const appUrl =
     process.env.NEXT_PUBLIC_APP_URL ?? "https://octopus-review.ai";

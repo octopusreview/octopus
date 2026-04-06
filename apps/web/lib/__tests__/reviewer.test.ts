@@ -93,6 +93,14 @@ describe("extractUserInstruction", () => {
   it("is case insensitive", () => {
     expect(extractUserInstruction("@OCTOPUS check types")).toBe("check types");
   });
+
+  it("extracts instruction after @octopusreview mention", () => {
+    expect(extractUserInstruction("@octopusreview please check error handling")).toBe("please check error handling");
+  });
+
+  it("does not match @octopusreviewer (word boundary)", () => {
+    expect(extractUserInstruction("@octopusreviewer check this")).toBe("");
+  });
 });
 
 // ─── countFindings ──────────────────────────────────────────────────────────

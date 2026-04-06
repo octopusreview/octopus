@@ -175,7 +175,7 @@ export async function POST(request: NextRequest) {
     const comment = payload.comment as Record<string, unknown> | undefined;
     const content = comment?.content as Record<string, string> | undefined;
     const commentBody = content?.raw ?? content?.markup ?? "";
-    const mentionsOctopus = /@octopus\b/i.test(commentBody);
+    const mentionsOctopus = /@octopus(?:review|-review)?\b/i.test(commentBody);
 
     if (mentionsOctopus) {
       const repoUuid = (repository?.uuid as string) ?? "";

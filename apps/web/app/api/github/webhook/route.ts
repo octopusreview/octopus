@@ -293,7 +293,7 @@ export async function POST(request: NextRequest) {
   if (event === "issue_comment" && payload.action === "created") {
     const commentBody: string = payload.comment?.body ?? "";
     const isPr = !!payload.issue?.pull_request;
-    const mentionsOctopus = /@octopus\b/i.test(commentBody);
+    const mentionsOctopus = /@octopus(?:review|-review)?\b/i.test(commentBody);
 
     console.log(`[webhook] issue_comment received — isPR: ${isPr}, mentionsOctopus: ${mentionsOctopus}, comment: "${commentBody.slice(0, 100)}"`);
 

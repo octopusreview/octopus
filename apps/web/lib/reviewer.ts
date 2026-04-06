@@ -733,13 +733,14 @@ export async function processReview(pullRequestId: string): Promise<void> {
 
       // Atomic claim: only one process can transition to "indexing" at a time.
       // If another process is already indexing, wait for it to finish instead of starting a parallel index.
-      const indexClaimed = await prisma.repository.updateMany({
+      const claimResult = await prisma.repository.updateMany({
         where: { id: repo.id, indexStatus: { notIn: ["indexed", "indexing"] } },
         data: { indexStatus: "indexing" },
       });
+      let shouldRunIndexing = claimResult.count > 0;
 
       // ── Wait path: another process is already indexing ──
-      if (indexClaimed.count === 0) {
+      if (!shouldRunIndexing) {
         console.log(`[reviewer] Repository ${repo.fullName} is already being indexed by another process, waiting...`);
         if (reviewCommentId) {
           await providerUpdateComment(
@@ -773,8 +774,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
           });
           if (reclaimed.count > 0) {
             console.log(`[reviewer] Repository ${repo.fullName} reclaimed indexing after peer timeout/failure`);
-            // Fall through to run indexing below (indexClaimed reassigned)
-            indexClaimed.count = 1;
+            shouldRunIndexing = true;
           } else {
             // Could not reclaim -- check if it just finished
             const finalCheck = await prisma.repository.findUnique({ where: { id: repo.id }, select: { indexStatus: true } });
@@ -800,7 +800,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
       }
 
       // ── Run indexing (only if we hold the claim) ──
-      if (indexClaimed.count > 0) {
+      if (shouldRunIndexing) {
         if (reviewCommentId) {
           await providerUpdateComment(
             reviewCommentId,

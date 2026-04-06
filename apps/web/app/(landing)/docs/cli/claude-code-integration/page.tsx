@@ -189,7 +189,7 @@ octopus login --token oct_your_token_here`}</CodeBlock>
           <li>Checks out each PR branch, applies fixes, and commits</li>
           <li>For valid suggestions: reacts with a thumbs up and replies with the fix</li>
           <li>For false positives: reacts with a thumbs down and explains why</li>
-          <li>Pushes changes and posts a summary comment tagging @octopus</li>
+          <li>Pushes changes and posts a summary comment tagging @octopusreview</li>
         </ol>
       </Section>
 

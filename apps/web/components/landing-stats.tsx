@@ -49,9 +49,9 @@ function formatNumber(n: number, raw?: boolean): string {
 
 const statsMeta = [
   { key: "chunks" as const, label: "Code Chunks", suffix: "+", raw: true },
-  { key: "findings" as const, label: "Findings", suffix: "+", raw: false },
-  { key: "reviews" as const, label: "PR Reviews", suffix: "+", raw: false },
-  { key: "repositories" as const, label: "Repositories", suffix: "", raw: false },
+  { key: "findings" as const, label: "Findings", suffix: "+", raw: true },
+  { key: "reviews" as const, label: "PR Reviews", suffix: "+", raw: true },
+  { key: "repositories" as const, label: "Repositories", suffix: "", raw: true },
 ];
 
 export function LandingStats({ initial }: { initial: Stats }) {

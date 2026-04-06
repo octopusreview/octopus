@@ -35,6 +35,38 @@ export function touchesSharedFiles(diff: string): boolean {
   return sharedPatterns.some((p) => p.test(diff));
 }
 
+// ─── Index Claim Resolution ─────────────────────────────────────────────────
+
+export type IndexClaimAction =
+  | { action: "run-indexing" }
+  | { action: "skip-to-review" }
+  | { action: "fail-review"; reason: string };
+
+/**
+ * Determine what a waiter process should do after polling for a peer's indexing to complete.
+ * Pure decision function -- no side effects.
+ */
+export function resolveIndexClaimWait(
+  peerStatus: string,
+  reclaimCount: number,
+  finalCheckStatus: string | null,
+): IndexClaimAction {
+  // Peer succeeded -- no need to index
+  if (peerStatus === "indexed") {
+    return { action: "skip-to-review" };
+  }
+  // Peer failed/timed out and we successfully reclaimed
+  if (reclaimCount > 0) {
+    return { action: "run-indexing" };
+  }
+  // Could not reclaim -- maybe peer just finished
+  if (finalCheckStatus === "indexed") {
+    return { action: "skip-to-review" };
+  }
+  // Cannot index, cannot reclaim -- unrecoverable
+  return { action: "fail-review", reason: `indexing failed and could not reclaim (status: ${finalCheckStatus})` };
+}
+
 // ─── User Instruction Extraction ────────────────────────────────────────────
 
 export function extractUserInstruction(commentBody: string): string {

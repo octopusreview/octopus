@@ -285,12 +285,22 @@ export async function POST(request: NextRequest) {
         try {
           const { getInstallationToken } = await import("@/lib/github");
           const token = await getInstallationToken(installationId);
-          const filesRes = await fetch(
-            `https://api.github.com/repos/${repo.fullName}/pulls/${prNumber}/files?per_page=100`,
-            { headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" } },
-          );
-          if (filesRes.ok) {
-            const files = await filesRes.json() as { filename: string; status: string }[];
+          const headers = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" };
+          let page = 1;
+          const files: { filename: string; status: string }[] = [];
+          while (true) {
+            const res = await fetch(
+              `https://api.github.com/repos/${repo.fullName}/pulls/${prNumber}/files?per_page=100&page=${page}`,
+              { headers },
+            );
+            if (!res.ok) break;
+            const batch = await res.json() as { filename: string; status: string }[];
+            if (batch.length === 0) break;
+            files.push(...batch);
+            if (batch.length < 100) break;
+            page++;
+          }
+          if (files.length > 0) {
             const { incrementalIndex } = await import("@/lib/indexer");
             const result = await incrementalIndex(
               repo.id,
@@ -303,7 +313,7 @@ export async function POST(request: NextRequest) {
             );
             await prisma.repository.update({
               where: { id: repo.id },
-              data: { indexedAt: new Date() },
+              data: { indexedAt: new Date(), indexStatus: "indexed" },
             });
             console.log(`[webhook] PR #${prNumber} merged — incremental index: ${result.updatedFiles} updated, ${result.removedFiles} removed, ${result.newVectors} vectors`);
           } else {

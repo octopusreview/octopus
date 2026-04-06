@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, spyOn, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, mock, beforeEach } from "bun:test";
 
 // ── Mock external dependencies before importing ──
 

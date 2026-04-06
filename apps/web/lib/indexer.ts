@@ -565,7 +565,6 @@ export async function incrementalIndex(
 
   if (provider === "github") {
     const token = await getInstallationToken(installationId);
-    const headers = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" };
 
     for (const filePath of addedOrModified) {
       try {

@@ -38,8 +38,8 @@ export function touchesSharedFiles(diff: string): boolean {
 // ─── User Instruction Extraction ────────────────────────────────────────────
 
 export function extractUserInstruction(commentBody: string): string {
-  // Match @octopus or @octopus-review, then capture everything after
-  const match = commentBody.match(/@octopus(?:-review)?\b\s*([\s\S]*)/i);
+  // Match @octopus, @octopusreview, or @octopus-review, then capture everything after
+  const match = commentBody.match(/@octopus(?:review|-review)?\b\s*([\s\S]*)/i);
   const raw = match?.[1]?.trim() ?? "";
   // Strip bare "review" keyword that people use to trigger re-reviews
   return raw.replace(/^review\b\s*/i, "").trim();

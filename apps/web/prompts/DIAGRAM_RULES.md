@@ -290,8 +290,8 @@ stateDiagram-v2
     reviewing --> completed: Review posted
     reviewing --> failed: Error occurred
 
-    failed --> reviewing: Retry (@octopus)
-    completed --> reviewing: Re-review (@octopus)
+    failed --> reviewing: Retry (@octopusreview)
+    completed --> reviewing: Re-review (@octopusreview)
 
     state reviewing {
         [*] --> fetching_diff
@@ -301,5 +301,5 @@ stateDiagram-v2
         posting_comment --> [*]
     }
 
-    note right of failed: User can retry\nby commenting @octopus
+    note right of failed: User can retry\nby commenting @octopusreview
 ```

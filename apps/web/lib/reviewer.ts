@@ -740,64 +740,62 @@ export async function processReview(pullRequestId: string): Promise<void> {
       });
       let shouldRunIndexing = claimResult.count > 0;
 
-      // ── Wait path: another process is already indexing ──
+      // ── Yield path: another process is already indexing ──
+      // Instead of blocking this worker with a poll loop, re-queue the PR
+      // so pg-boss retries after the peer finishes indexing.
       if (!shouldRunIndexing) {
-        console.log(`[reviewer] Repository ${repo.fullName} is already being indexed by another process, waiting...`);
-        if (reviewCommentId) {
-          await providerUpdateComment(
-            reviewCommentId,
-            "> 🐙 **Octopus Review** — Repository indexing is already in progress (started by another review).\n>\n> Waiting for it to complete...",
-          );
-        }
+        const fresh = await prisma.repository.findUnique({ where: { id: repo.id }, select: { indexStatus: true } });
+        const currentStatus = fresh?.indexStatus ?? "failed";
 
-        const MAX_WAIT_MS = 10 * 60 * 1000; // 10 minutes
-        const BASE_POLL_MS = 3_000;
-        const MAX_POLL_MS = 15_000;
-        const waitStart = Date.now();
-        let currentStatus = repo.indexStatus;
-        let pollMs = BASE_POLL_MS;
-
-        while (currentStatus === "indexing" && Date.now() - waitStart < MAX_WAIT_MS) {
-          await new Promise((r) => setTimeout(r, pollMs));
-          pollMs = Math.min(pollMs * 1.5, MAX_POLL_MS); // exponential backoff
-          const fresh = await prisma.repository.findUnique({ where: { id: repo.id }, select: { indexStatus: true } });
-          currentStatus = fresh?.indexStatus ?? "failed";
-        }
-
-        // Attempt conditional reclaim if peer did not succeed
-        let reclaimCount = 0;
-        let finalCheckStatus: string | null = null;
-        if (currentStatus !== "indexed") {
-          const reclaimed = await prisma.repository.updateMany({
-            where: { id: repo.id, indexStatus: { notIn: ["indexed", "indexing"] } },
-            data: { indexStatus: "indexing" },
-          });
-          reclaimCount = reclaimed.count;
-          if (reclaimCount === 0) {
-            const finalCheck = await prisma.repository.findUnique({ where: { id: repo.id }, select: { indexStatus: true } });
-            finalCheckStatus = finalCheck?.indexStatus ?? null;
-          }
-        }
-
-        const decision = resolveIndexClaimWait(currentStatus, reclaimCount, finalCheckStatus);
-        if (decision.action === "run-indexing") {
-          console.log(`[reviewer] Repository ${repo.fullName} reclaimed indexing after peer timeout/failure`);
-          shouldRunIndexing = true;
-        } else if (decision.action === "skip-to-review") {
-          console.log(`[reviewer] Repository ${repo.fullName} indexing resolved by peer, continuing with review`);
-        } else {
-          console.error(`[reviewer] Repository ${repo.fullName} ${decision.reason}`);
+        if (currentStatus === "indexed") {
+          // Peer already finished -- skip straight to review
+          console.log(`[reviewer] Repository ${repo.fullName} already indexed by another process, continuing with review`);
+        } else if (currentStatus === "indexing") {
+          // Peer still running -- yield this worker and retry later
+          console.log(`[reviewer] Repository ${repo.fullName} is being indexed by another process, re-queuing PR ${pullRequestId}`);
           await prisma.pullRequest.update({
             where: { id: pullRequestId },
-            data: { status: "failed" },
+            data: { status: "queued" },
           });
           if (reviewCommentId) {
             await providerUpdateComment(
               reviewCommentId,
-              "> 🐙 **Octopus Review** — Repository indexing failed and could not be recovered.\n>\n> Please re-trigger the review by commenting `@octopusreview`.",
+              "> 🐙 **Octopus Review** — Repository indexing is in progress (started by another review).\n>\n> This review has been re-queued and will start automatically once indexing completes.",
             );
           }
           return;
+        } else {
+          // Peer failed -- attempt conditional reclaim
+          const reclaimed = await prisma.repository.updateMany({
+            where: { id: repo.id, indexStatus: { notIn: ["indexed", "indexing"] } },
+            data: { indexStatus: "indexing" },
+          });
+          const decision = resolveIndexClaimWait(
+            currentStatus,
+            reclaimed.count,
+            reclaimed.count === 0
+              ? (await prisma.repository.findUnique({ where: { id: repo.id }, select: { indexStatus: true } }))?.indexStatus ?? null
+              : null,
+          );
+          if (decision.action === "run-indexing") {
+            console.log(`[reviewer] Repository ${repo.fullName} reclaimed indexing after peer failure`);
+            shouldRunIndexing = true;
+          } else if (decision.action === "skip-to-review") {
+            console.log(`[reviewer] Repository ${repo.fullName} indexing resolved by peer, continuing with review`);
+          } else {
+            console.error(`[reviewer] Repository ${repo.fullName} ${decision.reason}`);
+            await prisma.pullRequest.update({
+              where: { id: pullRequestId },
+              data: { status: "failed" },
+            });
+            if (reviewCommentId) {
+              await providerUpdateComment(
+                reviewCommentId,
+                "> 🐙 **Octopus Review** — Repository indexing failed and could not be recovered.\n>\n> Please re-trigger the review by commenting `@octopusreview`.",
+              );
+            }
+            return;
+          }
         }
       }
 

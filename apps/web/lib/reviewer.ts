@@ -750,6 +750,12 @@ export async function processReview(pullRequestId: string): Promise<void> {
         if (currentStatus === "indexed") {
           // Peer already finished -- skip straight to review
           console.log(`[reviewer] Repository ${repo.fullName} already indexed by another process, continuing with review`);
+          if (reviewCommentId) {
+            await providerUpdateComment(
+              reviewCommentId,
+              "> 🐙 **Octopus Review** — Repository already indexed ✓.\n>\n> Starting PR review...",
+            );
+          }
         } else if (currentStatus === "indexing") {
           // Peer still running -- yield this worker and retry later
           console.log(`[reviewer] Repository ${repo.fullName} is being indexed by another process, re-queuing PR ${pullRequestId}`);
@@ -770,13 +776,12 @@ export async function processReview(pullRequestId: string): Promise<void> {
             where: { id: repo.id, indexStatus: { notIn: ["indexed", "indexing"] } },
             data: { indexStatus: "indexing" },
           });
-          const decision = resolveIndexClaimWait(
-            currentStatus,
-            reclaimed.count,
-            reclaimed.count === 0
-              ? (await prisma.repository.findUnique({ where: { id: repo.id }, select: { indexStatus: true } }))?.indexStatus ?? null
-              : null,
-          );
+          let finalCheckStatus: string | null = null;
+          if (reclaimed.count === 0) {
+            const finalCheck = await prisma.repository.findUnique({ where: { id: repo.id }, select: { indexStatus: true } });
+            finalCheckStatus = finalCheck?.indexStatus ?? null;
+          }
+          const decision = resolveIndexClaimWait(currentStatus, reclaimed.count, finalCheckStatus);
           if (decision.action === "run-indexing") {
             console.log(`[reviewer] Repository ${repo.fullName} reclaimed indexing after peer failure`);
             shouldRunIndexing = true;
@@ -2155,8 +2160,9 @@ Rules:
       ).catch((e) => console.error("[reviewer] Failed to update check run:", e));
     }
 
-    // If indexing was in progress, mark it as failed
-    if (repo.indexStatus !== "indexed") {
+    // If indexing was in progress, mark it as failed (check current DB state, not stale in-memory value)
+    const repoStatusNow = await prisma.repository.findUnique({ where: { id: repo.id }, select: { indexStatus: true } }).catch(() => null);
+    if (repoStatusNow?.indexStatus === "indexing") {
       await prisma.repository.update({
         where: { id: repo.id },
         data: { indexStatus: "failed" },

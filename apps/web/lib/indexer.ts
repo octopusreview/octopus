@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { getInstallationToken, getFileContent as ghGetFileContent } from "@/lib/github";
 import * as bitbucketLib from "@/lib/bitbucket";
-import { ensureCollection, upsertChunks, deleteRepoChunks } from "@/lib/qdrant";
+import { ensureCollection, upsertChunks, deleteRepoChunks, deleteRepoFileChunks } from "@/lib/qdrant";
 import { generateSparseVectors } from "@/lib/sparse-vector";
 import { parseOctopusIgnore, type Ignore } from "@/lib/octopus-ignore";
 
@@ -495,6 +495,7 @@ export async function indexRepository(
   // 6. Upsert to Qdrant
   const sparseVectors = generateSparseVectors(texts);
 
+  const indexedAt = new Date().toISOString();
   const points = allChunks.map((chunk, i) => ({
     id: crypto.randomUUID(),
     vector: vectors[i],
@@ -507,6 +508,7 @@ export async function indexRepository(
       endLine: chunk.endLine,
       text: chunk.text,
       language: chunk.filePath.split(".").pop() ?? "unknown",
+      indexedAt,
     },
   }));
 
@@ -524,4 +526,109 @@ export async function indexRepository(
     contributors,
     durationMs: Date.now() - startTime,
   };
+}
+
+/**
+ * Incrementally re-index only the changed files from a merged PR.
+ * Deletes old chunks for changed/removed files, fetches & indexes added/modified files.
+ * The repo stays "indexed" throughout — no downtime window.
+ */
+export async function incrementalIndex(
+  repoId: string,
+  fullName: string,
+  defaultBranch: string,
+  installationId: number,
+  changedFiles: { filename: string; status: string }[],
+  provider: string = "github",
+  organizationId?: string,
+): Promise<{ updatedFiles: number; removedFiles: number; newVectors: number }> {
+  const removed = changedFiles
+    .filter((f) => f.status === "removed")
+    .map((f) => f.filename);
+  const addedOrModified = changedFiles
+    .filter((f) => f.status !== "removed" && shouldIndex(f.filename))
+    .map((f) => f.filename);
+
+  // 1. Delete chunks for all changed files (removed + modified + added that had old version)
+  const allChangedPaths = [...new Set([...removed, ...addedOrModified])];
+  if (allChangedPaths.length > 0) {
+    await ensureCollection();
+    await deleteRepoFileChunks(repoId, allChangedPaths);
+  }
+
+  // 2. Fetch and chunk only added/modified files
+  if (addedOrModified.length === 0) {
+    return { updatedFiles: 0, removedFiles: removed.length, newVectors: 0 };
+  }
+
+  const allChunks: { text: string; filePath: string; startLine: number; endLine: number }[] = [];
+
+  if (provider === "github") {
+    const token = await getInstallationToken(installationId);
+    const headers = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" };
+
+    for (const filePath of addedOrModified) {
+      try {
+        const [owner, repoName] = fullName.split("/");
+        const content = await ghGetFileContent(installationId, owner, repoName, defaultBranch, filePath);
+        if (!content || content.includes("\0")) continue;
+        const chunks = chunkText(content, filePath);
+        for (const chunk of chunks) {
+          allChunks.push({ text: chunk.text, filePath, startLine: chunk.startLine, endLine: chunk.endLine });
+        }
+      } catch {
+        console.warn(`[indexer:incremental] Failed to fetch ${filePath}, skipping`);
+      }
+    }
+  } else if (provider === "bitbucket" && organizationId) {
+    const [workspace, repoSlug] = fullName.split("/");
+    for (const filePath of addedOrModified) {
+      try {
+        const content = await bitbucketLib.getFileContent(organizationId, workspace, repoSlug, defaultBranch, filePath);
+        if (!content || content.includes("\0")) continue;
+        const chunks = chunkText(content, filePath);
+        for (const chunk of chunks) {
+          allChunks.push({ text: chunk.text, filePath, startLine: chunk.startLine, endLine: chunk.endLine });
+        }
+      } catch {
+        console.warn(`[indexer:incremental] Failed to fetch ${filePath}, skipping`);
+      }
+    }
+  }
+
+  if (allChunks.length === 0) {
+    return { updatedFiles: addedOrModified.length, removedFiles: removed.length, newVectors: 0 };
+  }
+
+  // 3. Generate embeddings & upsert
+  const texts = allChunks.map((c) => c.text);
+  const { createEmbeddings } = await import("@/lib/embeddings");
+  const vectors: number[][] = [];
+  for (let i = 0; i < texts.length; i += 512) {
+    const batch = texts.slice(i, i + 512);
+    const batchVectors = await createEmbeddings(batch);
+    vectors.push(...batchVectors);
+  }
+
+  const sparseVectors = generateSparseVectors(texts);
+  const indexedAt = new Date().toISOString();
+  const points = allChunks.map((chunk, i) => ({
+    id: crypto.randomUUID(),
+    vector: vectors[i],
+    sparseVector: sparseVectors[i],
+    payload: {
+      repoId,
+      fullName,
+      filePath: chunk.filePath,
+      startLine: chunk.startLine,
+      endLine: chunk.endLine,
+      text: chunk.text,
+      language: chunk.filePath.split(".").pop() ?? "unknown",
+      indexedAt,
+    },
+  }));
+
+  await upsertChunks(points);
+
+  return { updatedFiles: addedOrModified.length, removedFiles: removed.length, newVectors: points.length };
 }

@@ -257,7 +257,7 @@ export async function POST(request: NextRequest) {
     console.log(`[webhook] ✅ Auto-review triggered for ${repoFullName}#${prNumber}`);
   }
 
-  // ── PR merged → mark as merged ──
+  // ── PR merged → incremental re-index changed files ──
   if (
     event === "pull_request" &&
     payload.action === "closed" &&
@@ -265,27 +265,66 @@ export async function POST(request: NextRequest) {
   ) {
     const repoExternalId = String(payload.repository?.id ?? "");
     const prNumber: number = payload.pull_request?.number;
+    const installationId = payload.installation?.id as number | undefined;
 
     const repo = await prisma.repository.findUnique({
       where: {
         provider_externalId: { provider: "github", externalId: repoExternalId },
       },
-      select: { id: true },
+      select: { id: true, fullName: true, defaultBranch: true, indexStatus: true, organizationId: true },
     });
 
     if (repo) {
-      await Promise.all([
-        prisma.pullRequest.updateMany({
-          where: { repositoryId: repo.id, number: prNumber },
-          data: { mergedAt: new Date() },
-        }),
-        // Mark repo index as stale — will be re-indexed on next PR review
-        prisma.repository.update({
-          where: { id: repo.id },
-          data: { indexStatus: "stale" },
-        }),
-      ]);
-      console.log(`[webhook] PR #${prNumber} merged, repo index marked as stale`);
+      await prisma.pullRequest.updateMany({
+        where: { repositoryId: repo.id, number: prNumber },
+        data: { mergedAt: new Date() },
+      });
+
+      // Incremental index: only re-index files changed in this PR
+      if (repo.indexStatus === "indexed" && installationId) {
+        try {
+          const { getInstallationToken } = await import("@/lib/github");
+          const token = await getInstallationToken(installationId);
+          const filesRes = await fetch(
+            `https://api.github.com/repos/${repo.fullName}/pulls/${prNumber}/files?per_page=100`,
+            { headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" } },
+          );
+          if (filesRes.ok) {
+            const files = await filesRes.json() as { filename: string; status: string }[];
+            const { incrementalIndex } = await import("@/lib/indexer");
+            const result = await incrementalIndex(
+              repo.id,
+              repo.fullName,
+              repo.defaultBranch,
+              installationId,
+              files,
+              "github",
+              repo.organizationId,
+            );
+            await prisma.repository.update({
+              where: { id: repo.id },
+              data: { indexedAt: new Date() },
+            });
+            console.log(`[webhook] PR #${prNumber} merged — incremental index: ${result.updatedFiles} updated, ${result.removedFiles} removed, ${result.newVectors} vectors`);
+          } else {
+            // Fallback: mark as stale if we can't get file list
+            await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "stale" } });
+            console.log(`[webhook] PR #${prNumber} merged, could not fetch files (${filesRes.status}), marked as stale`);
+          }
+        } catch (err) {
+          // Fallback: mark as stale on any error
+          await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "stale" } });
+          console.warn(`[webhook] PR #${prNumber} incremental index failed, marked as stale:`, err);
+        }
+      } else {
+        // Repo not yet indexed or no installation — mark as stale for full re-index on next review
+        if (repo.indexStatus !== "indexed") {
+          console.log(`[webhook] PR #${prNumber} merged, repo not yet indexed (${repo.indexStatus}), skipping incremental`);
+        } else {
+          await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "stale" } });
+          console.log(`[webhook] PR #${prNumber} merged, no installationId, marked as stale`);
+        }
+      }
     }
   }
 

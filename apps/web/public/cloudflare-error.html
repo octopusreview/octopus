@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Octopus - Service Unavailable</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0a;
+      color: #e5e5e5;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .container {
+      text-align: center;
+      max-width: 480px;
+      padding: 2rem;
+    }
+    .logo {
+      height: 48px;
+      margin-bottom: 2.5rem;
+      opacity: 0.9;
+    }
+    .error-code {
+      font-size: 1.75rem;
+      font-weight: 600;
+      color: #fff;
+      line-height: 1;
+      margin-bottom: 0.5rem;
+    }
+    .error-title {
+      font-size: 1.25rem;
+      font-weight: 500;
+      color: #a3a3a3;
+      margin-bottom: 1.5rem;
+    }
+    .error-message {
+      font-size: 0.95rem;
+      color: #737373;
+      line-height: 1.6;
+      margin-bottom: 2rem;
+    }
+    .retry-btn {
+      display: inline-block;
+      padding: 0.625rem 1.5rem;
+      background: #fff;
+      color: #0a0a0a;
+      text-decoration: none;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: opacity 0.2s;
+    }
+    .retry-btn:hover { opacity: 0.85; }
+    .meta {
+      margin-top: 2.5rem;
+      font-size: 0.75rem;
+      color: #525252;
+    }
+  </style>
+  <script async src="https://www.googletagmanager.com/gtag/js?id={{GOOGLE_ANALYTICS_ID}}"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', '{{GOOGLE_ANALYTICS_ID}}');
+    gtag('event', 'cf-error', {
+      event_category: 'error',
+      event_label: document.title,
+      ray_id: '::RAY_ID::'
+    });
+  </script>
+</head>
+<body>
+  <div class="container">
+    <img src="https://octopus-review.ai/logo.svg" alt="Octopus" class="logo">
+    <div style="display:none">::CLOUDFLARE_ERROR_500XX_MSG::</div>
+    <div class="error-code">Something went wrong</div>
+    <div class="error-message">
+      We're experiencing a brief interruption. <br />Our systems are working to restore service automatically. <br /><br />Please try again in a few moments.
+    </div>
+    <a href="/" class="retry-btn">Try Again</a>
+    <div style="display:none">::CLOUDFLARE_ERROR_500S_BOX::</div>
+    <div class="meta">
+      Ray ID: ::RAY_ID:: &middot; ::CLIENT_IP::
+    </div>
+  </div>
+</body>
+</html>

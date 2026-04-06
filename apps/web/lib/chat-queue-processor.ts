@@ -193,8 +193,11 @@ export async function processNextInQueue(conversationId: string): Promise<void> 
         `### ${r.fullName}`,
         `- Provider: ${r.provider} | Branch: ${r.defaultBranch} | Auto-review: ${r.autoReview ? "on" : "off"}`,
         `- Index: ${r.indexStatus}${r.indexedAt ? ` (${r.indexedAt.toISOString().split("T")[0]})` : ""} | Files: ${r.indexedFiles}/${r.totalFiles} | Chunks: ${r.totalChunks}`,
-        `- PRs: ${r._count.pullRequests} | Contributors: ${r.contributorCount}${topContributors ? ` — ${topContributors}` : ""}`,
+        `- PRs: ${r._count.pullRequests} | Contributors: ${r.contributorCount}${topContributors ? ` -- ${topContributors}` : ""}`,
       ];
+      if (r.indexStatus === "stale" || r.indexStatus === "failed") {
+        lines.push(`- **WARNING: This repository's index is ${r.indexStatus}. Code search results may be outdated or incomplete.**`);
+      }
       if (r.purpose) lines.push(`- Purpose: ${r.purpose}`);
       if (r.summary) lines.push(`- Summary: ${r.summary}`);
       if (r.analysis) lines.push(`- Analysis: ${r.analysis}`);

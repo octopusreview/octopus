@@ -11,6 +11,7 @@ import {
   buildInlineComments,
   mergeReviewConfigs,
   parseReviewConfig,
+  resolveIndexClaimWait,
 } from "@/lib/review-helpers";
 import type { InlineFinding } from "@/lib/review-dedup";
 
@@ -100,6 +101,41 @@ describe("extractUserInstruction", () => {
 
   it("does not match @octopusreviewer (word boundary)", () => {
     expect(extractUserInstruction("@octopusreviewer check this")).toBe("");
+  });
+});
+
+// ─── resolveIndexClaimWait ───────────────────────────────────────────────────
+
+describe("resolveIndexClaimWait", () => {
+  it("skips to review when peer succeeded (status=indexed)", () => {
+    const result = resolveIndexClaimWait("indexed", 0, null);
+    expect(result.action).toBe("skip-to-review");
+  });
+
+  it("runs indexing when reclaim succeeds", () => {
+    const result = resolveIndexClaimWait("failed", 1, null);
+    expect(result.action).toBe("run-indexing");
+  });
+
+  it("skips to review when reclaim fails but final check shows indexed", () => {
+    const result = resolveIndexClaimWait("failed", 0, "indexed");
+    expect(result.action).toBe("skip-to-review");
+  });
+
+  it("fails review when reclaim fails and repo is still not indexed", () => {
+    const result = resolveIndexClaimWait("failed", 0, "failed");
+    expect(result.action).toBe("fail-review");
+    expect((result as { reason: string }).reason).toContain("failed");
+  });
+
+  it("fails review when reclaim fails and status is null", () => {
+    const result = resolveIndexClaimWait("indexing", 0, null);
+    expect(result.action).toBe("fail-review");
+  });
+
+  it("runs indexing when peer timed out (status=indexing) and reclaim succeeds", () => {
+    const result = resolveIndexClaimWait("indexing", 1, null);
+    expect(result.action).toBe("run-indexing");
   });
 });
 

@@ -93,6 +93,19 @@ export async function deleteRepoChunks(repoId: string) {
   });
 }
 
+export async function deleteRepoFileChunks(repoId: string, filePaths: string[]) {
+  if (filePaths.length === 0) return;
+  const qdrant = getQdrantClient();
+  await qdrant.delete(COLLECTION_NAME, {
+    filter: {
+      must: [
+        { key: "repoId", match: { value: repoId } },
+        { key: "filePath", match: { any: filePaths } },
+      ],
+    },
+  });
+}
+
 export async function getRepoChunks(
   repoId: string,
   limit = 50,

@@ -208,7 +208,7 @@ export default function SkillsPage() {
             <RuleItem text="Valid suggestions get a thumbs up reaction and are fixed with a reply describing the change." />
             <RuleItem text="False positives get a thumbs down reaction with an explanation." />
             <RuleItem text="Review threads are resolved after fixes are applied." />
-            <RuleItem text="A final PR comment tags @octopus to notify that updates are ready." />
+            <RuleItem text="A final PR comment tags @octopusreview to notify that updates are ready." />
           </ul>
 
           <SubHeading>Rules</SubHeading>

@@ -731,23 +731,55 @@ export async function processReview(pullRequestId: string): Promise<void> {
     if (repo.indexStatus !== "indexed") {
       console.log(`[reviewer] Repository ${repo.fullName} not indexed (status: ${repo.indexStatus}). Starting auto-index...`);
 
-      // 0a. Update placeholder comment — indexing
-      if (reviewCommentId) {
-        await providerUpdateComment(
-          reviewCommentId,
-          "> 🐙 **Octopus Review** — This repository hasn't been indexed yet.\n>\n> Indexing in progress... this may take a few minutes. (Step 1/3)",
-        );
-      }
-
-      // 0b. Run indexing (with real-time logs via Pubby + Elasticsearch)
-      const indexChannel = `presence-org-${org.id}`;
-
-      await deleteSyncLogs(org.id, repo.id);
-
-      await prisma.repository.update({
-        where: { id: repo.id },
+      // Atomic claim: only one process can transition to "indexing" at a time.
+      // If another process is already indexing, wait for it to finish instead of starting a parallel index.
+      const indexClaimed = await prisma.repository.updateMany({
+        where: { id: repo.id, indexStatus: { notIn: ["indexed", "indexing"] } },
         data: { indexStatus: "indexing" },
       });
+
+      if (indexClaimed.count === 0) {
+        // Another process is already indexing this repo — wait for it to finish
+        console.log(`[reviewer] Repository ${repo.fullName} is already being indexed by another process, waiting...`);
+        if (reviewCommentId) {
+          await providerUpdateComment(
+            reviewCommentId,
+            "> 🐙 **Octopus Review** — Repository indexing is already in progress (started by another review).\n>\n> Waiting for it to complete...",
+          );
+        }
+        const maxWaitMs = 10 * 60 * 1000; // 10 minutes
+        const pollIntervalMs = 5_000;
+        const waitStart = Date.now();
+        let currentStatus = repo.indexStatus;
+        while (currentStatus === "indexing" && Date.now() - waitStart < maxWaitMs) {
+          await new Promise((r) => setTimeout(r, pollIntervalMs));
+          const fresh = await prisma.repository.findUnique({ where: { id: repo.id }, select: { indexStatus: true } });
+          currentStatus = fresh?.indexStatus ?? "failed";
+        }
+        if (currentStatus === "indexed") {
+          console.log(`[reviewer] Repository ${repo.fullName} indexing completed by another process, continuing with review`);
+        } else {
+          console.log(`[reviewer] Repository ${repo.fullName} indexing did not complete (status: ${currentStatus}), attempting own index`);
+          // Force claim — the other process likely failed or timed out
+          await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "indexing" } });
+        }
+      }
+
+      // Only run indexing if we claimed it (or reclaimed after timeout)
+      const repoNow = await prisma.repository.findUnique({ where: { id: repo.id }, select: { indexStatus: true } });
+      if (repoNow?.indexStatus === "indexing") {
+        // 0a. Update placeholder comment — indexing
+        if (reviewCommentId) {
+          await providerUpdateComment(
+            reviewCommentId,
+            "> 🐙 **Octopus Review** — This repository hasn't been indexed yet.\n>\n> Indexing in progress... this may take a few minutes. (Step 1/3)",
+          );
+        }
+
+        // 0b. Run indexing (with real-time logs via Pubby + Elasticsearch)
+        const indexChannel = `presence-org-${org.id}`;
+
+        await deleteSyncLogs(org.id, repo.id);
 
       pubby.trigger(indexChannel, "index-status", {
         repoId: repo.id,
@@ -896,6 +928,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
       });
 
       console.log(`[reviewer] Phase 0 complete — ${repo.fullName} indexed, analyzed, auto-review enabled`);
+      } // end: if repoNow.indexStatus === "indexing" (we claimed indexing)
     }
 
     // Resolve the model to use for this org (with repo-level override)

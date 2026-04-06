@@ -738,6 +738,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
         data: { indexStatus: "indexing" },
       });
 
+      let skipIndexing = false;
       if (indexClaimed.count === 0) {
         // Another process is already indexing this repo — wait for it to finish
         console.log(`[reviewer] Repository ${repo.fullName} is already being indexed by another process, waiting...`);
@@ -758,16 +759,29 @@ export async function processReview(pullRequestId: string): Promise<void> {
         }
         if (currentStatus === "indexed") {
           console.log(`[reviewer] Repository ${repo.fullName} indexing completed by another process, continuing with review`);
+          skipIndexing = true;
         } else {
-          console.log(`[reviewer] Repository ${repo.fullName} indexing did not complete (status: ${currentStatus}), attempting own index`);
-          // Force claim — the other process likely failed or timed out
-          await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "indexing" } });
+          // Conditional reclaim — only take over if not indexed and not actively indexing
+          const reclaimed = await prisma.repository.updateMany({
+            where: { id: repo.id, indexStatus: { notIn: ["indexed", "indexing"] } },
+            data: { indexStatus: "indexing" },
+          });
+          if (reclaimed.count === 0) {
+            const finalCheck = await prisma.repository.findUnique({ where: { id: repo.id }, select: { indexStatus: true } });
+            if (finalCheck?.indexStatus === "indexed") {
+              console.log(`[reviewer] Repository ${repo.fullName} indexed just before reclaim, continuing with review`);
+              skipIndexing = true;
+            } else {
+              console.error(`[reviewer] Repository ${repo.fullName} could not reclaim indexing slot (status: ${finalCheck?.indexStatus}), skipping`);
+              skipIndexing = true;
+            }
+          } else {
+            console.log(`[reviewer] Repository ${repo.fullName} reclaimed indexing after timeout/failure`);
+          }
         }
       }
 
-      // Only run indexing if we claimed it (or reclaimed after timeout)
-      const repoNow = await prisma.repository.findUnique({ where: { id: repo.id }, select: { indexStatus: true } });
-      if (repoNow?.indexStatus === "indexing") {
+      if (!skipIndexing) {
         // 0a. Update placeholder comment — indexing
         if (reviewCommentId) {
           await providerUpdateComment(
@@ -928,7 +942,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
       });
 
       console.log(`[reviewer] Phase 0 complete — ${repo.fullName} indexed, analyzed, auto-review enabled`);
-      } // end: if repoNow.indexStatus === "indexing" (we claimed indexing)
+      } // end: if !skipIndexing
     }
 
     // Resolve the model to use for this org (with repo-level override)

@@ -598,7 +598,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
     return;
   }
   const claimed = await prisma.pullRequest.updateMany({
-    where: { id: pullRequestId, status: { in: ["pending", "queued"] } },
+    where: { id: pullRequestId, status: { in: ["pending", "queued", "failed", "reviewing"] } },
     data: { status: "reviewing" },
   });
   if (claimed.count === 0) {

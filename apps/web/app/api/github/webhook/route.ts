@@ -319,7 +319,7 @@ export async function POST(request: NextRequest) {
           } else {
             // Fallback: mark as stale if we can't get file list
             await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "stale" } });
-            console.log(`[webhook] PR #${prNumber} merged, could not fetch files (${filesRes.status}), marked as stale`);
+            console.log(`[webhook] PR #${prNumber} merged, no changed files found via API, marked as stale`);
           }
         } catch (err) {
           // Fallback: mark as stale on any error

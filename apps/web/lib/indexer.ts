@@ -564,8 +564,6 @@ export async function incrementalIndex(
   const allChunks: { text: string; filePath: string; startLine: number; endLine: number }[] = [];
 
   if (provider === "github") {
-    const token = await getInstallationToken(installationId);
-
     for (const filePath of addedOrModified) {
       try {
         const [owner, repoName] = fullName.split("/");

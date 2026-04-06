@@ -738,9 +738,8 @@ export async function processReview(pullRequestId: string): Promise<void> {
         data: { indexStatus: "indexing" },
       });
 
-      let skipIndexing = false;
+      // ── Wait path: another process is already indexing ──
       if (indexClaimed.count === 0) {
-        // Another process is already indexing this repo — wait for it to finish
         console.log(`[reviewer] Repository ${repo.fullName} is already being indexed by another process, waiting...`);
         if (reviewCommentId) {
           await providerUpdateComment(
@@ -748,41 +747,60 @@ export async function processReview(pullRequestId: string): Promise<void> {
             "> 🐙 **Octopus Review** — Repository indexing is already in progress (started by another review).\n>\n> Waiting for it to complete...",
           );
         }
-        const maxWaitMs = 10 * 60 * 1000; // 10 minutes
-        const pollIntervalMs = 5_000;
+
+        const MAX_WAIT_MS = 10 * 60 * 1000; // 10 minutes
+        const BASE_POLL_MS = 3_000;
+        const MAX_POLL_MS = 15_000;
         const waitStart = Date.now();
         let currentStatus = repo.indexStatus;
-        while (currentStatus === "indexing" && Date.now() - waitStart < maxWaitMs) {
-          await new Promise((r) => setTimeout(r, pollIntervalMs));
+        let pollMs = BASE_POLL_MS;
+
+        while (currentStatus === "indexing" && Date.now() - waitStart < MAX_WAIT_MS) {
+          await new Promise((r) => setTimeout(r, pollMs));
+          pollMs = Math.min(pollMs * 1.5, MAX_POLL_MS); // exponential backoff
           const fresh = await prisma.repository.findUnique({ where: { id: repo.id }, select: { indexStatus: true } });
           currentStatus = fresh?.indexStatus ?? "failed";
         }
+
         if (currentStatus === "indexed") {
+          // Peer succeeded -- skip straight to review
           console.log(`[reviewer] Repository ${repo.fullName} indexing completed by another process, continuing with review`);
-          skipIndexing = true;
         } else {
-          // Conditional reclaim — only take over if not indexed and not actively indexing
+          // Peer failed or timed out -- attempt conditional reclaim
           const reclaimed = await prisma.repository.updateMany({
             where: { id: repo.id, indexStatus: { notIn: ["indexed", "indexing"] } },
             data: { indexStatus: "indexing" },
           });
-          if (reclaimed.count === 0) {
+          if (reclaimed.count > 0) {
+            console.log(`[reviewer] Repository ${repo.fullName} reclaimed indexing after peer timeout/failure`);
+            // Fall through to run indexing below (indexClaimed reassigned)
+            indexClaimed.count = 1;
+          } else {
+            // Could not reclaim -- check if it just finished
             const finalCheck = await prisma.repository.findUnique({ where: { id: repo.id }, select: { indexStatus: true } });
             if (finalCheck?.indexStatus === "indexed") {
               console.log(`[reviewer] Repository ${repo.fullName} indexed just before reclaim, continuing with review`);
-              skipIndexing = true;
             } else {
-              console.error(`[reviewer] Repository ${repo.fullName} could not reclaim indexing slot (status: ${finalCheck?.indexStatus}), skipping`);
-              skipIndexing = true;
+              // Cannot index, cannot reclaim -- fail the review explicitly
+              console.error(`[reviewer] Repository ${repo.fullName} indexing failed and could not reclaim (status: ${finalCheck?.indexStatus})`);
+              await prisma.pullRequest.update({
+                where: { id: pullRequestId },
+                data: { status: "failed" },
+              });
+              if (reviewCommentId) {
+                await providerUpdateComment(
+                  reviewCommentId,
+                  "> 🐙 **Octopus Review** — Repository indexing failed and could not be recovered.\n>\n> Please re-trigger the review by commenting `@octopusreview`.",
+                );
+              }
+              return;
             }
-          } else {
-            console.log(`[reviewer] Repository ${repo.fullName} reclaimed indexing after timeout/failure`);
           }
         }
       }
 
-      if (!skipIndexing) {
-        // 0a. Update placeholder comment — indexing
+      // ── Run indexing (only if we hold the claim) ──
+      if (indexClaimed.count > 0) {
         if (reviewCommentId) {
           await providerUpdateComment(
             reviewCommentId,
@@ -790,159 +808,150 @@ export async function processReview(pullRequestId: string): Promise<void> {
           );
         }
 
-        // 0b. Run indexing (with real-time logs via Pubby + Elasticsearch)
         const indexChannel = `presence-org-${org.id}`;
-
         await deleteSyncLogs(org.id, repo.id);
 
-      pubby.trigger(indexChannel, "index-status", {
-        repoId: repo.id,
-        status: "indexing",
-      }).catch((err) => console.error("[reviewer] Pubby index-status trigger failed:", err));
+        pubby.trigger(indexChannel, "index-status", {
+          repoId: repo.id,
+          status: "indexing",
+        }).catch((err) => console.error("[reviewer] Pubby index-status trigger failed:", err));
 
-      const emitIndexLog = (message: string, level: LogLevel = "info") => {
-        const timestamp = Date.now();
-        pubby.trigger(indexChannel, "index-log", {
-          repoId: repo.id,
-          message,
-          level,
-          timestamp,
-        }).catch((err) => console.error("[reviewer] Pubby index-log trigger failed:", err));
-        writeSyncLog({
-          orgId: org.id,
-          repoId: repo.id,
-          message,
-          level,
-          timestamp,
+        const emitIndexLog = (message: string, level: LogLevel = "info") => {
+          const timestamp = Date.now();
+          pubby.trigger(indexChannel, "index-log", {
+            repoId: repo.id,
+            message,
+            level,
+            timestamp,
+          }).catch((err) => console.error("[reviewer] Pubby index-log trigger failed:", err));
+          writeSyncLog({
+            orgId: org.id,
+            repoId: repo.id,
+            message,
+            level,
+            timestamp,
+          });
+        };
+
+        const indexStats = await indexRepository(
+          repo.id,
+          repo.fullName,
+          repo.defaultBranch,
+          installationId ?? 0,
+          emitIndexLog,
+          undefined,
+          repo.provider,
+          repo.organizationId,
+        );
+
+        await prisma.repository.update({
+          where: { id: repo.id },
+          data: {
+            indexStatus: "indexed",
+            indexedAt: new Date(),
+            indexedFiles: indexStats.indexedFiles,
+            totalFiles: indexStats.totalFiles,
+            totalChunks: indexStats.totalChunks,
+            totalVectors: indexStats.totalVectors,
+            indexDurationMs: indexStats.durationMs,
+            contributorCount: indexStats.contributorCount,
+            contributors: JSON.parse(JSON.stringify(indexStats.contributors)),
+          },
         });
-      };
 
-      const indexStats = await indexRepository(
-        repo.id,
-        repo.fullName,
-        repo.defaultBranch,
-        installationId ?? 0,
-        emitIndexLog,
-        undefined,
-        repo.provider,
-        repo.organizationId,
-      );
+        emitIndexLog(`Indexing complete: ${indexStats.indexedFiles} files, ${indexStats.totalVectors} vectors`, "success");
 
-      // 0c. Update DB with index results
-      await prisma.repository.update({
-        where: { id: repo.id },
-        data: {
-          indexStatus: "indexed",
-          indexedAt: new Date(),
+        pubby.trigger(indexChannel, "index-status", {
+          repoId: repo.id,
+          status: "indexed",
+        }).catch((err) => console.error("[reviewer] Pubby index-status trigger failed:", err));
+
+        console.log(`[reviewer] Indexing complete: ${indexStats.indexedFiles} files, ${indexStats.totalVectors} vectors`);
+
+        if (reviewCommentId) {
+          await providerUpdateComment(
+            reviewCommentId,
+            `> 🐙 **Octopus Review** — Indexing complete ✓ (${indexStats.indexedFiles} files, ${indexStats.totalVectors} vectors).\n>\n> Analyzing repository... (Step 2/3)`,
+          );
+        }
+
+        const { summary, purpose } = await summarizeRepository(repo.id, repo.fullName, org.id);
+        await prisma.repository.update({
+          where: { id: repo.id },
+          data: { summary, purpose },
+        });
+
+        console.log(`[reviewer] Summary complete: ${purpose}`);
+
+        await prisma.repository.update({
+          where: { id: repo.id },
+          data: { analysisStatus: "analyzing" },
+        });
+
+        pubby.trigger(indexChannel, "analysis-status", {
+          repoId: repo.id,
+          status: "analyzing",
+        }).catch((err) => console.error("[reviewer] Pubby analysis-status trigger failed:", err));
+
+        const analysis = await analyzeRepository(repo.id, repo.fullName, org.id);
+        await prisma.repository.update({
+          where: { id: repo.id },
+          data: {
+            analysis,
+            analysisStatus: "analyzed",
+            analyzedAt: new Date(),
+          },
+        });
+
+        pubby.trigger(indexChannel, "analysis-status", {
+          repoId: repo.id,
+          status: "analyzed",
+        }).catch((err) => console.error("[reviewer] Pubby analysis-status trigger failed:", err));
+
+        console.log(`[reviewer] Analysis complete`);
+
+        if (reviewCommentId) {
+          await providerUpdateComment(
+            reviewCommentId,
+            "> 🐙 **Octopus Review** — Repository indexed and analyzed ✓.\n>\n> Starting PR review... (Step 3/3)",
+          );
+        }
+
+        await prisma.repository.update({
+          where: { id: repo.id },
+          data: { autoReview: true },
+        });
+
+        await pubby.trigger(`presence-org-${org.id}`, "repo-indexed", {
+          repoId: repo.id,
+          fullName: repo.fullName,
           indexedFiles: indexStats.indexedFiles,
-          totalFiles: indexStats.totalFiles,
-          totalChunks: indexStats.totalChunks,
           totalVectors: indexStats.totalVectors,
-          indexDurationMs: indexStats.durationMs,
-          contributorCount: indexStats.contributorCount,
-          contributors: JSON.parse(JSON.stringify(indexStats.contributors)),
-        },
-      });
+        }).catch((err) => console.error("[reviewer] Pubby repo-indexed trigger failed:", err));
 
-      emitIndexLog(`Indexing complete: ${indexStats.indexedFiles} files, ${indexStats.totalVectors} vectors`, "success");
+        eventBus.emit({
+          type: "repo-indexed",
+          orgId: org.id,
+          repoFullName: repo.fullName,
+          success: true,
+          indexedFiles: indexStats.indexedFiles,
+          totalVectors: indexStats.totalVectors,
+          durationMs: indexStats.durationMs,
+        });
 
-      pubby.trigger(indexChannel, "index-status", {
-        repoId: repo.id,
-        status: "indexed",
-      }).catch((err) => console.error("[reviewer] Pubby index-status trigger failed:", err));
+        await pubby.trigger(`presence-org-${org.id}`, "repo-analyzed", {
+          repoId: repo.id,
+          fullName: repo.fullName,
+        }).catch((err) => console.error("[reviewer] Pubby repo-analyzed trigger failed:", err));
 
-      console.log(`[reviewer] Indexing complete: ${indexStats.indexedFiles} files, ${indexStats.totalVectors} vectors`);
+        eventBus.emit({
+          type: "repo-analyzed",
+          orgId: org.id,
+          repoFullName: repo.fullName,
+        });
 
-      // 0d. Update placeholder comment — analyzing
-      if (reviewCommentId) {
-        await providerUpdateComment(
-          reviewCommentId,
-          `> 🐙 **Octopus Review** — Indexing complete ✓ (${indexStats.indexedFiles} files, ${indexStats.totalVectors} vectors).\n>\n> Analyzing repository... (Step 2/3)`,
-        );
+        console.log(`[reviewer] Phase 0 complete -- ${repo.fullName} indexed, analyzed, auto-review enabled`);
       }
-
-      // 0e. Summarize repository
-      const { summary, purpose } = await summarizeRepository(repo.id, repo.fullName, org.id);
-      await prisma.repository.update({
-        where: { id: repo.id },
-        data: { summary, purpose },
-      });
-
-      console.log(`[reviewer] Summary complete: ${purpose}`);
-
-      // 0f. Analyze repository
-      await prisma.repository.update({
-        where: { id: repo.id },
-        data: { analysisStatus: "analyzing" },
-      });
-
-      pubby.trigger(indexChannel, "analysis-status", {
-        repoId: repo.id,
-        status: "analyzing",
-      }).catch((err) => console.error("[reviewer] Pubby analysis-status trigger failed:", err));
-
-      const analysis = await analyzeRepository(repo.id, repo.fullName, org.id);
-      await prisma.repository.update({
-        where: { id: repo.id },
-        data: {
-          analysis,
-          analysisStatus: "analyzed",
-          analyzedAt: new Date(),
-        },
-      });
-
-      pubby.trigger(indexChannel, "analysis-status", {
-        repoId: repo.id,
-        status: "analyzed",
-      }).catch((err) => console.error("[reviewer] Pubby analysis-status trigger failed:", err));
-
-      console.log(`[reviewer] Analysis complete`);
-
-      // 0g. Update placeholder comment — ready for review
-      if (reviewCommentId) {
-        await providerUpdateComment(
-          reviewCommentId,
-          "> 🐙 **Octopus Review** — Repository indexed and analyzed ✓.\n>\n> Starting PR review... (Step 3/3)",
-        );
-      }
-
-      // 0h. Enable auto-review for this repo
-      await prisma.repository.update({
-        where: { id: repo.id },
-        data: { autoReview: true },
-      });
-
-      // 0i. Emit Pubby events for dashboard updates
-      await pubby.trigger(`presence-org-${org.id}`, "repo-indexed", {
-        repoId: repo.id,
-        fullName: repo.fullName,
-        indexedFiles: indexStats.indexedFiles,
-        totalVectors: indexStats.totalVectors,
-      }).catch((err) => console.error("[reviewer] Pubby repo-indexed trigger failed:", err));
-
-      eventBus.emit({
-        type: "repo-indexed",
-        orgId: org.id,
-        repoFullName: repo.fullName,
-        success: true,
-        indexedFiles: indexStats.indexedFiles,
-        totalVectors: indexStats.totalVectors,
-        durationMs: indexStats.durationMs,
-      });
-
-      await pubby.trigger(`presence-org-${org.id}`, "repo-analyzed", {
-        repoId: repo.id,
-        fullName: repo.fullName,
-      }).catch((err) => console.error("[reviewer] Pubby repo-analyzed trigger failed:", err));
-
-      eventBus.emit({
-        type: "repo-analyzed",
-        orgId: org.id,
-        repoFullName: repo.fullName,
-      });
-
-      console.log(`[reviewer] Phase 0 complete — ${repo.fullName} indexed, analyzed, auto-review enabled`);
-      } // end: if !skipIndexing
     }
 
     // Resolve the model to use for this org (with repo-level override)

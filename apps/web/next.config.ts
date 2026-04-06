@@ -7,6 +7,11 @@ config({ path: path.resolve(__dirname, "../../.env") });
 const nextConfig: NextConfig = {
   output: "standalone",
   transpilePackages: ["@octopus/db", "@octopus/package-analyzer"],
+  experimental: {
+    serverActions: {
+      allowedOrigins: ["octopus-review.ai", "*.octopus-review.ai"],
+    },
+  },
   images: {
     remotePatterns: [
       {

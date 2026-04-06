@@ -83,7 +83,7 @@ export async function gatherCrossFileContext(
 
 // ─── Two-Pass Validation ────────────────────────────────────────────────────
 
-export const VALIDATION_MODEL = "claude-sonnet-4-6-20250514";
+export const VALIDATION_MODEL = "claude-sonnet-4-6";
 
 export async function validateFindings(
   findings: InlineFinding[],

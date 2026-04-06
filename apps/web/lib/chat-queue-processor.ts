@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { buildIndexWarning } from "@/lib/review-helpers";
 import { prisma } from "@octopus/db";
 import { pubby } from "@/lib/pubby";
 import { createEmbeddings } from "@/lib/embeddings";
@@ -195,6 +196,8 @@ export async function processNextInQueue(conversationId: string): Promise<void> 
         `- Index: ${r.indexStatus}${r.indexedAt ? ` (${r.indexedAt.toISOString().split("T")[0]})` : ""} | Files: ${r.indexedFiles}/${r.totalFiles} | Chunks: ${r.totalChunks}`,
         `- PRs: ${r._count.pullRequests} | Contributors: ${r.contributorCount}${topContributors ? ` — ${topContributors}` : ""}`,
       ];
+      const warning = buildIndexWarning(r.indexStatus);
+      if (warning) lines.push(warning);
       if (r.purpose) lines.push(`- Purpose: ${r.purpose}`);
       if (r.summary) lines.push(`- Summary: ${r.summary}`);
       if (r.analysis) lines.push(`- Analysis: ${r.analysis}`);

@@ -24,7 +24,7 @@ export async function GET() {
     publisher: {
       name: "Octopus",
       url: baseUrl,
-      support_email: "support@octopus.dev",
+      support_email: "support@octopus-review.ai",
       privacy_url: `${baseUrl}/privacy`,
       terms_url: `${baseUrl}/terms`,
     },

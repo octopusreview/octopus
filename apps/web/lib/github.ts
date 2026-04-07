@@ -297,13 +297,77 @@ export async function getPullRequestDiff(
     },
   );
 
-  if (!res.ok) {
-    throw new Error(`Failed to get PR diff: ${res.status}`);
+  if (res.ok) {
+    const diff = await res.text();
+    return truncateDiff(diff);
   }
 
-  const diff = await res.text();
-  // Truncate to 30k chars to stay within token limits
-  return diff.length > 30_000 ? diff.slice(0, 30_000) + "\n\n[... diff truncated at 30,000 chars]" : diff;
+  // GitHub returns 406 when the diff is too large (e.g. bulk file deletions).
+  // Fall back to paginated /files endpoint to reconstruct the diff.
+  if (res.status === 406) {
+    console.warn(
+      `[github] Diff too large for ${owner}/${repo}#${prNumber}, falling back to /files endpoint`,
+    );
+    return await getPullRequestDiffViaFiles(token, owner, repo, prNumber);
+  }
+
+  throw new Error(`Failed to get PR diff: ${res.status}`);
+}
+
+const MAX_DIFF_CHARS = 30_000;
+
+function truncateDiff(diff: string): string {
+  return diff.length > MAX_DIFF_CHARS
+    ? diff.slice(0, MAX_DIFF_CHARS) + "\n\n[... diff truncated at 30,000 chars]"
+    : diff;
+}
+
+async function getPullRequestDiffViaFiles(
+  token: string,
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<string> {
+  const patches: string[] = [];
+  let totalLength = 0;
+  let page = 1;
+
+  while (totalLength < MAX_DIFF_CHARS) {
+    const res = await fetchWithRetry(
+      `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/files?per_page=100&page=${page}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+        },
+      },
+    );
+
+    if (!res.ok) {
+      throw new Error(`Failed to get PR files: ${res.status}`);
+    }
+
+    const files: Array<{ filename: string; status: string; patch?: string }> =
+      await res.json();
+
+    if (files.length === 0) break;
+
+    for (const file of files) {
+      const header = `diff --git a/${file.filename} b/${file.filename}\n--- a/${file.filename}\n+++ b/${file.filename}\n`;
+      const patch = file.patch ?? "(binary or too large)";
+      const entry = header + patch + "\n";
+
+      patches.push(entry);
+      totalLength += entry.length;
+
+      if (totalLength >= MAX_DIFF_CHARS) break;
+    }
+
+    if (files.length < 100) break;
+    page++;
+  }
+
+  return truncateDiff(patches.join(""));
 }
 
 export async function createPullRequestComment(

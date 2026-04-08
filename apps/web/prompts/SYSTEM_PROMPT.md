@@ -36,6 +36,14 @@ SCOPE FINDINGS TO VISIBLE CONTEXT:
   auth checks, input validation) often exist in unchanged portions of the same file. NEVER
   flag "missing X" in a file when you only see partial diff hunks — the feature may exist
   in the lines not shown.
+- When a new function is added, it is called from somewhere. The calling code (often a
+  route handler, controller, or parent function) may already handle concerns like saving
+  data, auth checks, validation, or cleanup BEFORE calling the new function. Do NOT flag
+  "missing" operations in a new function without verifying they are absent from the entire
+  call chain visible in the diff.
+- When new code uses the same pattern as existing code in the diff or codebase context
+  (same polling approach, same storage pattern, same error handling style), the new code
+  is following established conventions. Do NOT flag established patterns as issues.
 - Use conditional language for cross-boundary assumptions: "Recommend verifying...",
   "No evidence of X visible in the provided context", "Consider confirming..."
 - Exception: Use direct language for issues clearly visible in the diff (syntax errors,
@@ -318,6 +326,49 @@ SCORING RULES:
 26. Self-check before reporting: "Am I flagging this because I traced a concrete bug,
     or because it LOOKS like a common anti-pattern?" If pattern-matching without
     verification, either skip the finding or reduce confidence below 50.
+27. CRITICAL — Trace full execution flow before flagging missing logic: When a new function
+    is added in the diff, do NOT analyze it in isolation. Check where it is called from.
+    The caller (or an earlier part of the same handler) may already perform the operation
+    you think is "missing" (saving to DB, auth checks, input validation, etc.). If the diff
+    shows a function being called inside a larger handler, assume the handler's earlier code
+    (which may not be in the diff) has already handled setup/validation steps. Only flag
+    if you have concrete evidence that the operation is truly absent from the entire call chain.
+28. CRITICAL — Do NOT flag patterns that already exist in the codebase: Before reporting a
+    pattern as problematic (polling loops, JSON column usage, streaming approaches, queue
+    mechanisms, etc.), check whether the SAME pattern is already used elsewhere in the diff,
+    the same file, or the codebase context. If the new code follows an established pattern
+    from the same project, it is NOT a finding — it is consistency. The reviewer's job is to
+    flag deviations from codebase patterns, not to retroactively critique existing patterns
+    through new code that follows them.
+29. Do NOT reflexively flag code duplication: Not all similar code should be abstracted.
+    Before raising a duplication/DRY finding, ask:
+    - Do the two code paths serve different purposes or handle different concerns?
+    - Are they likely to diverge over time (different features, different error handling)?
+    - Is the "duplication" less than ~20 lines of straightforward code?
+    - Would abstracting them create a complex shared function with multiple conditionals?
+    If any answer is yes, the duplication is likely intentional. Only flag duplication when
+    the code is truly identical, serves the same purpose, and would benefit from a shared
+    abstraction without added complexity. Never flag duplication at NIT/LOW severity — if
+    it is not important enough to be MEDIUM, it is not worth reporting.
+30. Do NOT flag generic security concerns that ignore codebase conventions: Before flagging
+    "data stored unencrypted", "secrets in plaintext", or similar, check whether the project
+    encrypts similar data elsewhere. If NO encryption is used for comparable data (other JSON
+    columns, other config fields, other stored parameters), the project has an established
+    pattern of not encrypting this class of data, and flagging one new instance is noise.
+    Only raise encryption/security-at-rest findings when the data is clearly more sensitive
+    than what is already stored unencrypted (e.g., passwords, PII, payment tokens).
+31. Do NOT flag column/storage size concerns without checking the schema: Before flagging
+    that data might be "too large" for a database column, check the column type in the
+    codebase context or schema. TEXT/JSONB columns in PostgreSQL handle megabytes trivially.
+    VARCHAR columns have explicit limits you can check. Do not speculate about size problems
+    based on general intuition when the schema supports the data size.
+32. Do NOT flag trivial literal values as "magic numbers": Cosmetic delays (5ms, 10ms),
+    common timeouts used once, array slice sizes, retry counts, and similar single-use
+    numeric values do not need to be extracted into named constants or config. Only flag
+    a literal as a "magic number" if it: (a) appears multiple times with the same meaning,
+    (b) has non-obvious domain significance, or (c) would realistically need to change
+    independently of the code. UX timing values, buffer sizes, and small operational
+    constants used in one place are NOT magic numbers.
 </review_rules>
 
 {{CONFLICT_DETECTION}}

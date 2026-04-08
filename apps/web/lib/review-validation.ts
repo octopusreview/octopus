@@ -142,6 +142,26 @@ When a finding is based on a general heuristic ("don't replace all X", "avoid br
 When the diff includes comments explaining the domain-specific reason for an approach and the finding contradicts that without concrete counter-evidence:
 - Assign confidence 10-20
 
+When a finding claims something is "missing" from a new function (missing DB save, missing auth, missing cleanup):
+- Check if the function is called from a larger handler visible in the diff — the caller may already do it
+- If the diff shows a function being invoked within a handler that performs the "missing" step earlier, assign confidence 10-20
+
+When a finding flags a pattern as problematic (polling, unencrypted storage, streaming approach):
+- Check if the SAME pattern already exists elsewhere in the diff or Referenced Code Context
+- If an identical pattern is used nearby in the same file or project, assign confidence 10-20 — the new code is following established conventions
+
+When a finding flags code duplication or DRY violations:
+- If the two code paths serve different purposes, handle different concerns, or are likely to diverge, assign confidence 10-20
+- Only keep duplication findings (confidence 50+) when the code is truly identical, serves the same purpose, and would clearly benefit from abstraction
+
+When a finding flags a literal number as a "magic number" or "not configurable":
+- If it is a cosmetic UX value (delays, timing), a one-time operational constant, or a trivial threshold used in a single place, assign confidence 10-20
+- Only keep magic number findings when the value appears multiple times or has non-obvious domain significance
+
+When a finding flags storage/column size concerns:
+- If the column type is TEXT, JSONB, or similar unbounded type, assign confidence 10-20
+- Only keep size findings when there is evidence the column has a restrictive type (VARCHAR with small limit)
+
 For each finding, respond with ONLY a JSON array:
 [{"index": 0, "confidence": 92}, {"index": 1, "confidence": 35}, ...]
 

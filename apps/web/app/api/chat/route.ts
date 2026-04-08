@@ -18,7 +18,7 @@ import { rerankDocuments } from "@/lib/reranker";
 import { pubby } from "@/lib/pubby";
 import { processNextInQueue } from "@/lib/chat-queue-processor";
 import { generateSparseVector } from "@/lib/sparse-vector";
-import { requestAgentSearch } from "@/lib/agent-search";
+import { requestAgentSearch, findClaudeAgent, requestAgentAnswer } from "@/lib/agent-search";
 
 let anthropicClient: Anthropic | null = null;
 
@@ -543,6 +543,43 @@ ${agentResult ? `<local_agent_context>\nREAL-TIME results from a local agent run
   const isFirstMessage = conversation.messages.length === 0;
   const chatChannel = conversation.isShared ? `presence-chat-${conversation.id}` : null;
 
+  // --- Agent answer path: delegate to local agent with claude-cli ---
+  const claudeAgent = await findClaudeAgent(orgId);
+  if (claudeAgent) {
+    const agentRepos = claudeAgent.repoFullNames as string[];
+    const targetRepo = mentionedRepos.find((r) => agentRepos.includes(r.fullName))?.fullName
+      ?? agentRepos[0];
+
+    if (targetRepo) {
+      console.log(`[chat] Delegating answer to agent "${claudeAgent.name}" via repo "${targetRepo}"`);
+
+      const agentAnswer = await requestAgentAnswer({
+        orgId,
+        systemPrompt: systemInstructions,
+        contextSections: finalSystemContext,
+        conversationHistory: historyMessages,
+        conversationId: conversation.id,
+        repoFullName: targetRepo,
+      });
+
+      if (agentAnswer) {
+        return streamAgentAnswer({
+          answer: agentAnswer.answer,
+          agentName: agentAnswer.agentName,
+          conversationId: conversation.id,
+          message,
+          orgId,
+          userId: session.user.id,
+          isFirstMessage,
+          chatChannel,
+          isShared: conversation.isShared ?? false,
+        });
+      }
+
+      console.log("[chat] Agent answer failed/timed out, falling back to server LLM");
+    }
+  }
+
   // Stream response
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -793,6 +830,242 @@ ${agentResult ? `<local_agent_context>\nREAL-TIME results from a local agent run
 
           // Try to process next in queue
           processNextInQueue(conversation.id).catch(() => {});
+        }
+
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ type: "error", message: "Stream error" })}\n\n`,
+          ),
+        );
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
+}
+
+/**
+ * Stream an agent-generated answer to the client.
+ * No server-side LLM cost — the answer was generated locally by the agent.
+ */
+async function streamAgentAnswer(opts: {
+  answer: string;
+  agentName: string | null;
+  conversationId: string;
+  message: string;
+  orgId: string;
+  userId: string;
+  isFirstMessage: boolean;
+  chatChannel: string | null;
+  isShared: boolean;
+}): Promise<Response> {
+  const { answer, agentName, conversationId, message, orgId, userId, isFirstMessage, chatChannel } = opts;
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        // Send conversation ID
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ type: "conversation_id", id: conversationId })}\n\n`,
+          ),
+        );
+
+        // Signal that the agent generated the full answer
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ type: "agent_answered", agentName })}\n\n`,
+          ),
+        );
+
+        // Broadcast stream start for shared chats
+        if (chatChannel) {
+          try {
+            await pubby.trigger(chatChannel, "chat-stream-start", { conversationId });
+          } catch {}
+        }
+
+        // Stream the answer in chunks for a natural UX
+        const CHUNK_SIZE = 100;
+        let deltaBatch = "";
+        let lastBroadcast = Date.now();
+
+        for (let i = 0; i < answer.length; i += CHUNK_SIZE) {
+          const chunk = answer.slice(i, i + CHUNK_SIZE);
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "delta", text: chunk })}\n\n`,
+            ),
+          );
+
+          // Broadcast deltas for shared chats (batched)
+          if (chatChannel) {
+            deltaBatch += chunk;
+            if (deltaBatch.length >= 200 || Date.now() - lastBroadcast >= 500) {
+              try {
+                await pubby.trigger(chatChannel, "chat-stream-delta", { text: deltaBatch });
+              } catch {}
+              deltaBatch = "";
+              lastBroadcast = Date.now();
+            }
+          }
+
+          // Small delay between chunks for streaming feel
+          if (i + CHUNK_SIZE < answer.length) {
+            await new Promise((r) => setTimeout(r, 5));
+          }
+        }
+
+        // Flush remaining delta batch
+        if (chatChannel && deltaBatch) {
+          try {
+            await pubby.trigger(chatChannel, "chat-stream-delta", { text: deltaBatch });
+          } catch {}
+        }
+
+        // Send zero usage — no server LLM cost
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({
+              type: "usage",
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+              totalTokens: 0,
+              maxContextTokens: 200_000,
+              remainingTokens: 200_000,
+            })}\n\n`,
+          ),
+        );
+
+        // Save assistant response
+        const savedAssistantMsg = await prisma.chatMessage.create({
+          data: {
+            role: "assistant",
+            content: answer,
+            conversationId,
+          },
+        });
+
+        // Broadcast completion for shared chats
+        if (chatChannel) {
+          try {
+            await pubby.trigger(chatChannel, "chat-message-complete", {
+              id: savedAssistantMsg.id,
+              role: "assistant",
+              content: answer,
+            });
+          } catch {}
+
+          await prisma.chatQueue.updateMany({
+            where: {
+              conversationId,
+              userId,
+              status: "processing",
+            },
+            data: { status: "completed", completedAt: new Date() },
+          });
+
+          processNextInQueue(conversationId).catch(() => {});
+        }
+
+        // Store Q&A in Qdrant for cross-conversation context
+        try {
+          await ensureChatCollection();
+          const qaPairText = `Q: ${message}\nA: ${answer}`.slice(0, 8000);
+          const [qaVector] = await createEmbeddings([qaPairText], {
+            organizationId: orgId,
+            operation: "embedding",
+          });
+          const conv = await prisma.chatConversation.findUnique({
+            where: { id: conversationId },
+            select: { title: true },
+          });
+          await upsertChatChunk({
+            id: crypto.randomUUID(),
+            vector: qaVector,
+            sparseVector: generateSparseVector(qaPairText),
+            payload: {
+              orgId,
+              userId,
+              conversationId,
+              conversationTitle: conv?.title ?? "New Chat",
+              question: message,
+              answer: answer.slice(0, 4000),
+              createdAt: new Date().toISOString(),
+            },
+          });
+        } catch {
+          // Non-critical
+        }
+
+        // Auto-generate title on first message
+        if (isFirstMessage) {
+          try {
+            const client = getAnthropicClient();
+            const titleResponse = await client.messages.create({
+              model: "claude-haiku-4-5-20251001",
+              max_tokens: 50,
+              messages: [
+                {
+                  role: "user",
+                  content: `Generate a very short title (max 6 words) summarizing the TOPIC of this developer question. Keep the same language as the question. Do NOT mention the language itself. Reply ONLY with the title, nothing else.\n\nQuestion: "${message}"`,
+                },
+              ],
+            });
+            const title =
+              titleResponse.content[0].type === "text"
+                ? titleResponse.content[0].text.trim()
+                : "New Chat";
+            await logAiUsage({
+              provider: "anthropic",
+              model: "claude-haiku-4-5-20251001",
+              operation: "chat-title",
+              inputTokens: titleResponse.usage.input_tokens,
+              outputTokens: titleResponse.usage.output_tokens,
+              cacheReadTokens: titleResponse.usage.cache_read_input_tokens ?? 0,
+              cacheWriteTokens: titleResponse.usage.cache_creation_input_tokens ?? 0,
+              organizationId: orgId,
+            });
+            await prisma.chatConversation.update({
+              where: { id: conversationId },
+              data: { title },
+            });
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "title", title })}\n\n`,
+              ),
+            );
+
+            if (chatChannel) {
+              try {
+                await pubby.trigger(chatChannel, "chat-title-update", { title });
+              } catch {}
+            }
+          } catch {}
+        }
+
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      } catch (err) {
+        console.error("[chat] agent answer streaming error:", err);
+
+        if (opts.isShared) {
+          await prisma.chatQueue.updateMany({
+            where: { conversationId, userId, status: "processing" },
+            data: { status: "failed", completedAt: new Date() },
+          }).catch(() => {});
+          processNextInQueue(conversationId).catch(() => {});
         }
 
         controller.enqueue(

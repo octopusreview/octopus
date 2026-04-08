@@ -108,6 +108,7 @@ export function FloatingChat() {
     lastUsage,
     connectedAgents,
     lastMessageAgentUsed,
+    lastMessageAgentAnswered,
     repoContext,
     clearRepoContext,
   } = useChat();
@@ -705,9 +706,14 @@ export function FloatingChat() {
               {lastMessageAgentUsed && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-900/30 px-2 py-0.5 text-[10px] text-emerald-700 dark:text-emerald-400">
                   <IconCpu className="size-2.5" />
-                  Local agent
+                  {lastMessageAgentAnswered ? "Answered by local agent" : "Local agent"}
                 </span>
               )}
+              {lastMessageAgentAnswered ? (
+              <div className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 text-[10px] text-muted-foreground">
+                <span>0 credits used</span>
+              </div>
+              ) : (
               <div className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 text-[10px] text-muted-foreground">
                 <span>{(lastUsage.inputTokens / 1000).toFixed(1)}K in</span>
                 <span className="text-muted-foreground/40">·</span>
@@ -717,6 +723,7 @@ export function FloatingChat() {
                   {(lastUsage.remainingTokens / 1000).toFixed(0)}K remaining
                 </span>
               </div>
+              )}
             </div>
           )}
 
@@ -940,9 +947,14 @@ export function FloatingChat() {
                 {lastMessageAgentUsed && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-900/30 px-2 py-0.5 text-[10px] text-emerald-700 dark:text-emerald-400">
                     <IconCpu className="size-2.5" />
-                    Local agent
+                    {lastMessageAgentAnswered ? "Answered by local agent" : "Local agent"}
                   </span>
                 )}
+                {lastMessageAgentAnswered ? (
+                <div className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 text-[10px] text-muted-foreground">
+                  <span>0 credits used</span>
+                </div>
+                ) : (
                 <div className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 text-[10px] text-muted-foreground">
                   <span>{(lastUsage.inputTokens / 1000).toFixed(1)}K in</span>
                   <span className="text-muted-foreground/40">·</span>
@@ -958,6 +970,7 @@ export function FloatingChat() {
                     {(lastUsage.remainingTokens / 1000).toFixed(0)}K remaining
                   </span>
                 </div>
+                )}
               </div>
             )}
 

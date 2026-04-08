@@ -948,7 +948,7 @@ async function streamAgentAnswer(opts: {
           ),
         );
 
-        // Save assistant response
+        // Save assistant response (user message already saved at the top of POST handler)
         const savedAssistantMsg = await prisma.chatMessage.create({
           data: {
             role: "assistant",

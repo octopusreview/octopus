@@ -137,6 +137,7 @@ export async function findClaudeAgent(orgId: string) {
       organizationId: orgId,
       status: "online",
       lastSeenAt: { gte: staleThreshold },
+      capabilities: { array_contains: ["claude-cli"] },
     },
     select: {
       id: true,
@@ -144,11 +145,6 @@ export async function findClaudeAgent(orgId: string) {
       repoFullNames: true,
       capabilities: true,
     },
-  }).then((agent) => {
-    if (!agent) return null;
-    const caps = agent.capabilities as string[];
-    if (!caps.includes("claude-cli")) return null;
-    return agent;
   });
 }
 

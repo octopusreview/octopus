@@ -710,19 +710,19 @@ export function FloatingChat() {
                 </span>
               )}
               {lastMessageAgentAnswered ? (
-              <div className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 text-[10px] text-muted-foreground">
-                <span>0 credits used</span>
-              </div>
+                <div className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 text-[10px] text-muted-foreground">
+                  <span>0 credits used</span>
+                </div>
               ) : (
-              <div className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 text-[10px] text-muted-foreground">
-                <span>{(lastUsage.inputTokens / 1000).toFixed(1)}K in</span>
-                <span className="text-muted-foreground/40">·</span>
-                <span>{(lastUsage.outputTokens / 1000).toFixed(1)}K out</span>
-                <span className="text-muted-foreground/40">·</span>
-                <span className={lastUsage.remainingTokens < 30000 ? "text-orange-400" : ""}>
-                  {(lastUsage.remainingTokens / 1000).toFixed(0)}K remaining
-                </span>
-              </div>
+                <div className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 text-[10px] text-muted-foreground">
+                  <span>{(lastUsage.inputTokens / 1000).toFixed(1)}K in</span>
+                  <span className="text-muted-foreground/40">·</span>
+                  <span>{(lastUsage.outputTokens / 1000).toFixed(1)}K out</span>
+                  <span className="text-muted-foreground/40">·</span>
+                  <span className={lastUsage.remainingTokens < 30000 ? "text-orange-400" : ""}>
+                    {(lastUsage.remainingTokens / 1000).toFixed(0)}K remaining
+                  </span>
+                </div>
               )}
             </div>
           )}
@@ -951,25 +951,25 @@ export function FloatingChat() {
                   </span>
                 )}
                 {lastMessageAgentAnswered ? (
-                <div className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 text-[10px] text-muted-foreground">
-                  <span>0 credits used</span>
-                </div>
+                  <div className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 text-[10px] text-muted-foreground">
+                    <span>0 credits used</span>
+                  </div>
                 ) : (
-                <div className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 text-[10px] text-muted-foreground">
-                  <span>{(lastUsage.inputTokens / 1000).toFixed(1)}K in</span>
-                  <span className="text-muted-foreground/40">·</span>
-                  <span>{(lastUsage.outputTokens / 1000).toFixed(1)}K out</span>
-                  {lastUsage.cacheReadTokens > 0 && (
-                    <>
-                      <span className="text-muted-foreground/40">·</span>
-                      <span>{(lastUsage.cacheReadTokens / 1000).toFixed(1)}K cached</span>
-                    </>
-                  )}
-                  <span className="text-muted-foreground/40">·</span>
-                  <span className={lastUsage.remainingTokens < 30000 ? "text-orange-400" : ""}>
-                    {(lastUsage.remainingTokens / 1000).toFixed(0)}K remaining
-                  </span>
-                </div>
+                  <div className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 text-[10px] text-muted-foreground">
+                    <span>{(lastUsage.inputTokens / 1000).toFixed(1)}K in</span>
+                    <span className="text-muted-foreground/40">·</span>
+                    <span>{(lastUsage.outputTokens / 1000).toFixed(1)}K out</span>
+                    {lastUsage.cacheReadTokens > 0 && (
+                      <>
+                        <span className="text-muted-foreground/40">·</span>
+                        <span>{(lastUsage.cacheReadTokens / 1000).toFixed(1)}K cached</span>
+                      </>
+                    )}
+                    <span className="text-muted-foreground/40">·</span>
+                    <span className={lastUsage.remainingTokens < 30000 ? "text-orange-400" : ""}>
+                      {(lastUsage.remainingTokens / 1000).toFixed(0)}K remaining
+                    </span>
+                  </div>
                 )}
               </div>
             )}

@@ -1816,7 +1816,7 @@ Rules:
     // Build the review summary body with non-inline findings embedded
     const buildReviewSummary = (findingsBlock: string, visibleCount: number) => {
       let header = `${filesChanged} file${filesChanged !== 1 ? "s" : ""} reviewed, ${visibleCount} finding${visibleCount !== 1 ? "s" : ""}`;
-      const resolvedCount = findingsCount - visibleCount;
+      const resolvedCount = Math.max(0, findingsCount - visibleCount);
       if (resolvedCount > 0) {
         header += ` (${resolvedCount} resolved)`;
       }

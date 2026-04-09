@@ -1,82 +1,125 @@
-# ── Copy this file to terraform.tfvars and fill in every value ────────────────
-# terraform.tfvars is gitignored — never commit secrets.
+# ══════════════════════════════════════════════════════════════════════════════
+#  HOW TO USE
+#  1. cp terraform.tfvars.example terraform.tfvars
+#  2. Fill in every value marked REQUIRED.
+#  3. Optional values can be left as-is or emptied ("").
+#  4. terraform.tfvars is gitignored — never commit it.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ┌─────────────────────────────────────────────────────────────────────────────
+# │ REQUIRED — must be filled in before terraform apply
+# └─────────────────────────────────────────────────────────────────────────────
 
 # ── AWS ───────────────────────────────────────────────────────────────────────
-aws_region  = "us-east-1"
+aws_region = "us-east-1"
+
+# ── Application ───────────────────────────────────────────────────────────────
+# Docker image for the Octopus web app.
+# Build and push it first (see README Step 1).
+# Examples:
+#   GHCR  → ghcr.io/your-org/octopus:latest
+#   ECR   → 123456789012.dkr.ecr.us-east-1.amazonaws.com/octopus:latest
+#   Hub   → youruser/octopus:latest
+app_image  = "ghcr.io/your-org/octopus:latest"
+
+# Public domain that will serve the app.
+# Point its DNS A record to the output public_ip after apply.
+app_domain = "octopus.example.com"
+
+# ── Secrets (auto-generated if left empty) ───────────────────────────────────
+# Leave these empty — Terraform generates secure values automatically on first apply.
+# Override only if you need a specific value (e.g. migrating an existing database).
+better_auth_secret = ""  # auto-generated if empty (64 chars)
+db_password        = ""  # auto-generated if empty (24 chars, no special chars)
+
+# ── GitHub App (for PR reviews) ──────────────────────────────────────────────
+# See README "Step 2: Create GitHub Apps" for a step-by-step guide.
+#
+# Webhook URL to set in app settings: https://<app_domain>/api/github/webhook
+# Setup URL (optional):               https://<app_domain>/api/github/callback
+github_app_id          = ""
+github_webhook_secret  = ""  # Set in the app's "Webhook secret" field
+github_app_slug        = ""  # The slug shown in the app URL (github.com/apps/<slug>)
+
+# Private key: paste the entire contents of the .pem file as a single HCL string.
+# Keep the header/footer and replace each newline with \n (literal backslash-n):
+#
+#   "-----BEGIN RSA PRIVATE KEY-----\nMIIEo...(rest of key)...\n-----END RSA PRIVATE KEY-----\n"
+#
+# Tip: run this to get the correct format:
+#   awk 'NF {printf "%s\\n", $0}' your-key.pem
+github_app_private_key = ""
+
+# ── GitHub OAuth App (for "Sign in with GitHub") ─────────────────────────────
+# See README "Step 2: Create GitHub Apps" for a step-by-step guide.
+#
+# Authorization callback URL: https://<app_domain>/api/auth/callback/github
+github_client_id     = ""
+github_client_secret = ""
+
+# ── LLM (at least one required) ──────────────────────────────────────────────
+openai_api_key    = ""   # https://platform.openai.com/api-keys
+anthropic_api_key = ""   # https://console.anthropic.com/settings/keys
+
+# ── Admin ─────────────────────────────────────────────────────────────────────
+# Comma-separated email addresses that get admin access on first login.
+admin_emails = "you@example.com"
+
+
+# ┌─────────────────────────────────────────────────────────────────────────────
+# │ OPTIONAL — safe defaults are already set; change only if needed
+# └─────────────────────────────────────────────────────────────────────────────
+
+# ── AWS ───────────────────────────────────────────────────────────────────────
 environment = "production"
 name_prefix = "octopus"
 
-# ── Application ───────────────────────────────────────────────────────────────
-# Docker image published to a container registry (build & push first).
-# Example: ghcr.io/your-org/octopus:latest
-app_image  = "ghcr.io/your-org/octopus:latest"
-app_domain = "octopus.example.com"
+# ── Networking ────────────────────────────────────────────────────────────────
+vpc_cidr           = "10.0.0.0/16"
+enable_nat_gateway = false
 
 # ── EC2 ───────────────────────────────────────────────────────────────────────
-instance_type       = "t3.xlarge"    # 4 vCPU, 16 GB — minimum for small teams
+instance_type       = "t3.xlarge"  # min 4 vCPU / 16 GB for small teams
 root_volume_size_gb = 100
 create_eip          = true
-key_name            = null           # Set to your EC2 key pair name to enable SSH; null = SSH disabled
-ssh_cidr_blocks     = ["0.0.0.0/0"] # Restrict to your IP in production: ["YOUR.IP.ADDRESS/32"]
+
+# SSH access — leave null to disable entirely (use SSM Session Manager instead)
+key_name        = null
+ssh_cidr_blocks = ["0.0.0.0/0"]  # Restrict to your IP: ["1.2.3.4/32"]
 
 # ── Container Registry ────────────────────────────────────────────────────────
-# Leave empty for Docker Hub or GHCR (public) images.
-# For private AWS ECR images, set to your registry URL:
+# Only needed for private AWS ECR images. Leave empty for GHCR / Docker Hub.
 #   ecr_registry_url = "123456789012.dkr.ecr.us-east-1.amazonaws.com"
 ecr_registry_url = ""
 
 # ── Database ──────────────────────────────────────────────────────────────────
-db_password             = "change-me-strong-password"
 db_instance_class       = "db.t3.medium"
 db_allocated_storage_gb = 50
-db_multi_az             = false       # Set to true for high-availability
+db_multi_az             = false  # true = Multi-AZ for high availability
 db_deletion_protection  = true
 
-# ── Redis (optional) ──────────────────────────────────────────────────────────
+# ── Redis (disabled by default) ──────────────────────────────────────────────
 enable_redis    = false
 redis_node_type = "cache.t3.micro"
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
-# Generate with: openssl rand -hex 32
-better_auth_secret = "change-me-32-char-minimum-secret-key"
-
-# ── GitHub App ────────────────────────────────────────────────────────────────
-# Create a GitHub App at: https://github.com/settings/apps/new
-# Required permissions: Pull requests (read/write), Contents (read), Metadata (read)
-github_app_id         = "123456"
-github_app_private_key = "-----BEGIN RSA PRIVATE KEY-----\n..."
-github_webhook_secret  = "change-me-webhook-secret"
-github_app_slug        = "your-app-slug"
-
-# GitHub OAuth (for user login)
-github_client_id     = "your-github-oauth-client-id"
-github_client_secret = "your-github-oauth-client-secret"
-
-# ── Google OAuth (optional) ───────────────────────────────────────────────────
+# ── Google OAuth (optional) ──────────────────────────────────────────────────
+# Create at: https://console.cloud.google.com → APIs & Services → Credentials
 google_client_id     = ""
 google_client_secret = ""
 
-# ── LLM Providers ─────────────────────────────────────────────────────────────
-# At least one of OpenAI or Anthropic is required.
-openai_api_key    = "sk-..."
-anthropic_api_key = "sk-ant-..."
-cohere_api_key    = ""   # Optional — enables reranking for better search results
-
 # ── Email ─────────────────────────────────────────────────────────────────────
-# Get your API key at: https://resend.com
-resend_api_key = "re_..."
+resend_api_key = ""  # https://resend.com — leave empty to disable email
 email_from     = "noreply@example.com"
 
-# ── Pubby (Real-time notifications) ──────────────────────────────────────────
-# Sign up at: https://pubby.io
+# ── Pubby real-time (optional) ───────────────────────────────────────────────
 pubby_app_id     = ""
 pubby_app_key    = ""
 pubby_app_secret = ""
 
-# ── Admin ─────────────────────────────────────────────────────────────────────
-admin_emails = "admin@example.com"
+# ── Cohere reranking (optional) ──────────────────────────────────────────────
+cohere_api_key = ""  # Better search quality; leave empty to skip
 
-# ── Tags ──────────────────────────────────────────────────────────────────────
+# ── Tags ─────────────────────────────────────────────────────────────────────
 tags = {
   Team = "engineering"
 }

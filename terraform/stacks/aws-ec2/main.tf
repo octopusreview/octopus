@@ -1,5 +1,20 @@
+resource "random_password" "db_password" {
+  count   = var.db_password == "" ? 1 : 0
+  length  = 24
+  special = false
+}
+
+resource "random_password" "better_auth_secret" {
+  count   = var.better_auth_secret == "" ? 1 : 0
+  length  = 64
+  special = false
+}
+
 locals {
-  db_url = "postgresql://${module.rds.username}:${urlencode(var.db_password)}@${module.rds.endpoint}/${module.rds.db_name}?sslmode=require"
+  db_password        = var.db_password != "" ? var.db_password : random_password.db_password[0].result
+  better_auth_secret = var.better_auth_secret != "" ? var.better_auth_secret : random_password.better_auth_secret[0].result
+
+  db_url = "postgresql://${module.rds.username}:${urlencode(local.db_password)}@${module.rds.endpoint}/${module.rds.db_name}?sslmode=require"
 
   redis_url = var.enable_redis ? module.redis[0].connection_url : ""
 
@@ -87,7 +102,7 @@ locals {
     DATABASE_URL=${local.db_url}
 
     # Better Auth
-    BETTER_AUTH_SECRET=${var.better_auth_secret}
+    BETTER_AUTH_SECRET=${local.better_auth_secret}
     BETTER_AUTH_URL=https://${var.app_domain}
 
     # App
@@ -196,7 +211,7 @@ module "rds" {
   vpc_id               = module.vpc.vpc_id
   subnet_ids           = module.vpc.private_subnet_ids
   allowed_cidr_blocks  = [var.vpc_cidr]
-  db_password          = var.db_password
+  db_password          = local.db_password
   instance_class       = var.db_instance_class
   allocated_storage_gb = var.db_allocated_storage_gb
   multi_az             = var.db_multi_az

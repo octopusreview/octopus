@@ -84,9 +84,10 @@ variable "app_domain" {
 
 # ── Database ──────────────────────────────────────────────────────────────────
 variable "db_password" {
-  description = "Master password for the RDS PostgreSQL instance."
+  description = "Master password for the RDS PostgreSQL instance. Leave empty to auto-generate."
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "db_instance_class" {
@@ -152,14 +153,10 @@ variable "redis_node_type" {
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 variable "better_auth_secret" {
-  description = "Secret key for Better Auth session signing (min 32 chars). Generate: openssl rand -hex 32"
+  description = "Secret key for Better Auth session signing. Leave empty to auto-generate."
   type        = string
   sensitive   = true
-
-  validation {
-    condition     = length(var.better_auth_secret) >= 32
-    error_message = "better_auth_secret must be at least 32 characters. Generate one with: openssl rand -hex 32"
-  }
+  default     = ""
 }
 
 # ── GitHub App ────────────────────────────────────────────────────────────────

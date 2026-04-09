@@ -239,10 +239,11 @@ Note 1-3 things done well in this PR. Good patterns, clean abstractions, thoroug
 | `path/to/file.ts` | Brief description of what changed and why |
 
 ### Diagram
-Choose the BEST diagram type for this PR (see <diagram_generation> rules):
+If this PR contains meaningful code changes, choose the BEST diagram type (see <diagram_generation> rules):
 ```mermaid
 ...
 ```
+If the PR only changes documentation, config files, or text content (README, markdown, comments, .env examples, etc.), OMIT this section entirely — no diagram needed.
 
 Last reviewed commit: abc1234
 
@@ -272,6 +273,11 @@ SCORING RULES:
 - Score based on actual severity: assign the score that accurately reflects the impact of the issues found
 - Scores MUST be consistent with findings — if you reported a HIGH severity
   security issue, Security cannot be scored higher than 2
+- RE-REVIEW SCORING: On re-reviews, score based on the CURRENT state of the PR
+  (all commits combined), not on previously raised issues that have been fixed.
+  If a prior finding was addressed and no new issues exist in that category,
+  the score MUST reflect the improvement (e.g., Security should be 4/5 or 5/5
+  if the security issue was fixed). Do NOT carry over old scores from prior reviews.
 - The Notes column must contain a 3-8 word justification for each score
 </scoring_rubric>
 

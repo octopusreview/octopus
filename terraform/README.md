@@ -41,21 +41,67 @@ Production-ready infrastructure for self-hosting Octopus on AWS.
 
 ### 1. Build and push the Docker image
 
+Build the image from the repository root and push it to a registry. Choose one of the options below.
+
+**Option A — GitHub Container Registry (GHCR)**
+
 ```bash
-# From the repository root
-docker build -t ghcr.io/your-org/octopus:latest -f apps/web/Dockerfile .
-docker push ghcr.io/your-org/octopus:latest
+# Authenticate (one-time; requires a GitHub Personal Access Token with write:packages)
+echo $GITHUB_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+
+# Build and push
+docker build -t ghcr.io/YOUR_ORG/octopus:latest -f apps/web/Dockerfile .
+docker push ghcr.io/YOUR_ORG/octopus:latest
 ```
 
-### 2. Configure variables
+Set `app_image = "ghcr.io/YOUR_ORG/octopus:latest"` in `terraform.tfvars`.
+
+**Option B — AWS Elastic Container Registry (ECR)**
+
+```bash
+# Create the repository (one-time)
+aws ecr create-repository --repository-name octopus --region us-east-1
+
+# Authenticate
+aws ecr get-login-password --region us-east-1 \
+  | docker login --username AWS --password-stdin \
+      123456789012.dkr.ecr.us-east-1.amazonaws.com
+
+# Build and push
+docker build -t 123456789012.dkr.ecr.us-east-1.amazonaws.com/octopus:latest \
+  -f apps/web/Dockerfile .
+docker push 123456789012.dkr.ecr.us-east-1.amazonaws.com/octopus:latest
+```
+
+Set `app_image = "123456789012.dkr.ecr.us-east-1.amazonaws.com/octopus:latest"` and
+`ecr_registry_url = "123456789012.dkr.ecr.us-east-1.amazonaws.com"` in `terraform.tfvars`
+(the EC2 instance will authenticate automatically via its IAM role).
+
+**Option C — Docker Hub**
+
+```bash
+docker build -t youruser/octopus:latest -f apps/web/Dockerfile .
+docker push youruser/octopus:latest
+```
+
+Set `app_image = "youruser/octopus:latest"` in `terraform.tfvars`.
+
+### 2. Choose a deployment path
+
+| Path | When to use |
+|------|-------------|
+| `stacks/aws-ec2/` | **Recommended for all real deployments.** Full control over every variable, supports remote state, suitable for production. |
+| `examples/aws-ec2/` | Quick evaluation only. Minimal wrapper with hard-coded defaults — not intended for production use. |
+
+### 3. Configure variables
 
 ```bash
 cd terraform/stacks/aws-ec2
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars — fill in all required values
+# Edit terraform.tfvars — fill in all REQUIRED values at the top of the file
 ```
 
-### 3. (Optional) Configure remote state
+### 4. (Optional) Configure remote state
 
 ```bash
 cp backend.conf.example backend.conf
@@ -69,14 +115,14 @@ Or use local state for simple setups:
 terraform init
 ```
 
-### 4. Deploy
+### 5. Deploy
 
 ```bash
 terraform plan
 terraform apply
 ```
 
-### 5. Run database migrations
+### 6. Run database migrations
 
 On first deploy (and after schema changes), migrations must be run before the application serves traffic. SSH into the instance and run:
 
@@ -93,7 +139,7 @@ sudo docker compose run --rm web sh -c "cd /app && npx prisma migrate deploy"
 
 > The `web` service container image includes the Next.js standalone output but not the Prisma CLI binary. If `npx prisma` is not found, run migrations locally pointing `DATABASE_URL` at the RDS endpoint, or add a dedicated migration step to your CI/CD pipeline.
 
-### 6. Point DNS
+### 7. Point DNS
 
 After `apply` completes, copy the `public_ip` output and create an **A record** in your DNS provider:
 

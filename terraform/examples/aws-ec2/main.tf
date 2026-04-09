@@ -1,13 +1,17 @@
-# Minimal example — demonstrates the smallest viable configuration.
-# For production use, copy terraform/stacks/aws-ec2/ instead.
+# Minimal example — copy this directory, fill in the values, and run:
+#   terraform init && terraform plan && terraform apply
+#
+# For production (more control over every option), use terraform/stacks/aws-ec2/ instead.
 
 module "octopus" {
   source = "../../stacks/aws-ec2"
 
-  # Required
-  app_image          = "ghcr.io/your-org/octopus:latest"
+  aws_region = var.aws_region
+
+  # ── Required ──────────────────────────────────────────────────────────────
+  app_image          = "ghcr.io/your-org/octopus:latest" # see README step 1
   app_domain         = "octopus.example.com"
-  db_password        = "change-me"
+  db_password        = "change-me-strong-password"
   better_auth_secret = "change-me-32-char-minimum-secret"
 
   # GitHub App (required for PR reviews)

@@ -1262,6 +1262,8 @@ export async function processReview(pullRequestId: string): Promise<void> {
         "RULE 4 — EMPTY IS GOOD: If all previous findings are addressed and no critical new issues exist, the findings list MUST be empty. An empty findings list on re-review is the EXPECTED outcome.",
         "",
         "RULE 5 — SELF-CHECK: Before including ANY finding in your output, ask yourself: 'Does this finding overlap with ANY item in PRIOR INLINE COMMENTS or DISMISSED FINDINGS below?' If yes, EXCLUDE it.",
+        "",
+        "RULE 6 — SCORE MUST REFLECT CURRENT STATE: Score each category based on the PR as it stands NOW (all commits combined). Items marked ✅ RESOLVED below have been fixed by the author (the code at that location has changed since your last review). If a prior finding is resolved — especially if the author applied YOUR OWN suggestion — that category's score MUST improve. A fixed security issue means Security should be 4/5 or 5/5, NOT the old score. Do NOT penalize for resolved issues.",
       ];
 
       // Build a map of bot comment ID → author reply bodies for inline dismissals
@@ -1279,7 +1281,8 @@ export async function processReview(pullRequestId: string): Promise<void> {
           // Include first two lines for better context (title + description start)
           const bodyLines = c.body.split("\n").filter((l) => l.trim());
           const summary = bodyLines.slice(0, 2).map((l) => l.replace(/\*\*/g, "").trim()).join(" — ");
-          let entry = `- ${c.path}:${c.line} — ${summary}`;
+          const resolvedTag = c.isOutdated ? " ✅ RESOLVED (code changed)" : "";
+          let entry = `- ${c.path}:${c.line} — ${summary}${resolvedTag}`;
 
           // Include author replies (especially dismissals) so the LLM understands why it was rejected
           const replies = repliesByBotComment.get(c.id);
@@ -1734,9 +1737,9 @@ Rules:
         console.log(`[reviewer] Re-review filter: removed ${filtered} non-critical findings, kept ${allParsedFindings.length}`);
 
         // Update the main comment to reflect filtered findings.
-        // The original mainCommentBody was posted before filtering (Step 5a),
-        // so it still shows the LLM's unfiltered findings summary table.
-        // Keep summary, score, risk assessment, highlights, diagram — only replace the findings table.
+        // Score table is NOT touched — the LLM is instructed via prompt to score
+        // based on the current state of the PR, so its scores should already
+        // reflect resolved findings.
         if (reviewCommentId) {
           try {
             let reReviewBody = mainCommentBody;
@@ -1812,10 +1815,17 @@ Rules:
 
     // Build the review summary body with non-inline findings embedded
     const buildReviewSummary = (findingsBlock: string, visibleCount: number) => {
-      const header = `${filesChanged} file${filesChanged !== 1 ? "s" : ""} reviewed, ${visibleCount} finding${visibleCount !== 1 ? "s" : ""}`;
+      let header = `${filesChanged} file${filesChanged !== 1 ? "s" : ""} reviewed, ${visibleCount} finding${visibleCount !== 1 ? "s" : ""}`;
+      const resolvedCount = Math.max(0, findingsCount - visibleCount);
+      if (resolvedCount > 0) {
+        header += ` (${resolvedCount} resolved)`;
+      }
+      if (reviewCommentId && pr.url) {
+        header += ` | [View scores & details](${pr.url}#issuecomment-${reviewCommentId})`;
+      }
       const parts = [header];
       if (findingsBlock) parts.push(findingsBlock);
-      parts.push("[Octopus Review](https://github.com/apps/octopus-review)");
+      parts.push(`<details><summary>About</summary>\n\n[Octopus Review](https://octopus-review.ai) is an AI-powered code review tool that analyzes your pull requests for bugs, security issues, and code quality.\n\n</details>`);
       return parts.join("\n\n");
     };
 

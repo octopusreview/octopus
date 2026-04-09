@@ -586,6 +586,7 @@ export type PRReviewComment = {
   body: string;
   user: string;
   inReplyToId: number | null;
+  isOutdated: boolean;
 };
 
 export async function listPullRequestReviewComments(
@@ -615,6 +616,7 @@ export async function listPullRequestReviewComments(
     path: string;
     line: number | null;
     original_line: number | null;
+    position: number | null;
     body: string;
     user: { login: string } | null;
     in_reply_to_id?: number;
@@ -627,6 +629,7 @@ export async function listPullRequestReviewComments(
     body: c.body,
     user: c.user?.login ?? "",
     inReplyToId: c.in_reply_to_id ?? null,
+    isOutdated: c.line === null && c.original_line !== null,
   }));
 }
 

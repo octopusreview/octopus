@@ -56,8 +56,8 @@ export default async function ReviewLogsPage({
     ...(search
       ? {
           OR: [
-            { title: { contains: search, mode: "insensitive" as const } },
-            { author: { contains: search, mode: "insensitive" as const } },
+            { title: { contains: search, mode: "insensitive" as const }, repository: { organizationId: orgId } },
+            { author: { contains: search, mode: "insensitive" as const }, repository: { organizationId: orgId } },
             {
               repository: {
                 fullName: { contains: search, mode: "insensitive" as const },
@@ -66,7 +66,7 @@ export default async function ReviewLogsPage({
             },
             ...(isNaN(Number(search))
               ? []
-              : [{ number: Number(search) }]),
+              : [{ number: Number(search), repository: { organizationId: orgId } }]),
           ],
         }
       : {}),
@@ -82,7 +82,6 @@ export default async function ReviewLogsPage({
         url: true,
         author: true,
         status: true,
-        headSha: true,
         createdAt: true,
         updatedAt: true,
         repository: {

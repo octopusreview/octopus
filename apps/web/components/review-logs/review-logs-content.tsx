@@ -271,7 +271,7 @@ export function ReviewLogsContent({
                         <span className="text-muted-foreground">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap" suppressHydrationWarning>
                       {formatRelativeTime(pr.updatedAt)}
                     </td>
                   </tr>
@@ -326,7 +326,7 @@ export function ReviewLogsContent({
                       {pr.issueCount} issues
                     </Badge>
                   )}
-                  <span>{formatRelativeTime(pr.updatedAt)}</span>
+                  <span suppressHydrationWarning>{formatRelativeTime(pr.updatedAt)}</span>
                 </div>
               </div>
             );

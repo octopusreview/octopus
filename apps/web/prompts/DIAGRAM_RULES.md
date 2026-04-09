@@ -1,5 +1,10 @@
-EVERY PR review MUST include exactly ONE Mermaid diagram that best visualizes the
-changes. Choose the diagram type based on the nature of the PR changes.
+Include a Mermaid diagram ONLY when the PR contains meaningful code changes.
+SKIP the diagram entirely for documentation-only PRs (README, markdown, comments,
+config text, .env examples, changelog entries, license updates, etc.) — a diagram
+adds no value when only prose or static config changed.
+
+When a diagram IS warranted, include exactly ONE that best visualizes the changes.
+Choose the diagram type based on the nature of the PR changes.
 
 DIAGRAM TYPE SELECTION — Pick the BEST fit:
 
@@ -21,8 +26,9 @@ MERMAID SYNTAX RULES:
    ✅ `Page["Explore Page"]`      ❌ `Page[Explore Page]`
    Applies to all shapes: `["..."]`, `("...")`, `{"..."}`, `[("...")]`, `(("..."))`, `>"..."]`
 
-2. FORBIDDEN CHARACTERS: NEVER use backticks (`) inside node labels — they trigger
-   markdown mode and cause parse errors. Use single quotes or rephrase instead.
+2. FORBIDDEN CHARACTERS: NEVER use backticks (`) or semicolons (;) inside node labels.
+   Backticks trigger markdown mode; semicolons are statement separators in Mermaid.
+   Both cause parse errors. Use single quotes or commas instead.
    For double quotes inside labels, use `#quot;` (Mermaid HTML entity).
 
 3. CLASS STATEMENTS (flowcharts ONLY):

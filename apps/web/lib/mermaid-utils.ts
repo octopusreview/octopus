@@ -69,14 +69,29 @@ export function sanitizeMermaidCode(code: string): string {
   //    intended a line break. It's not valid mermaid syntax anywhere else.
   result = result.replace(/\\n/g, "<br/>");
 
-  // 2. Inside node labels: replace backticks and escaped quotes with single quotes.
-  //    Backticks trigger markdown mode; escaped quotes (\\") break label delimiters.
+  // 2. Inside node labels: replace backticks, escaped quotes, and semicolons.
+  //    Backticks trigger markdown mode; escaped quotes (\\") break label delimiters;
+  //    semicolons are statement separators in Mermaid and break the parser when
+  //    they appear inside node labels.
   //    Scoped to label boundaries to avoid mutating comments or other constructs.
   result = result.replace(
     /([\[({]["'])((?:[^"'\\]|\\.)*)(['"][\])}])/g,
     (_match, open: string, content: string, close: string) => {
-      const fixed = content.replace(/`/g, "'").replace(/\\"/g, "'");
+      const fixed = content
+        .replace(/`/g, "'")
+        .replace(/\\"/g, "'")
+        .replace(/;/g, ",");
       return `${open}${fixed}${close}`;
+    },
+  );
+
+  // 2b. Catch semicolons in unquoted bracket-enclosed labels too.
+  //     e.g. A[primary language; if mixed] → A[primary language, if mixed]
+  //     Only replace semicolons inside [...], (...), {...} that weren't caught above.
+  result = result.replace(
+    /([\[({])((?:[^\[\](){};]*?;[^\[\](){}]*)+)([\])}])/g,
+    (_match, open: string, content: string, close: string) => {
+      return `${open}${content.replace(/;/g, ",")}${close}`;
     },
   );
 

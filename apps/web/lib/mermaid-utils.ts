@@ -88,8 +88,10 @@ export function sanitizeMermaidCode(code: string): string {
   // 2b. Catch semicolons in unquoted bracket-enclosed labels too.
   //     e.g. A[primary language; if mixed] → A[primary language, if mixed]
   //     Only replace semicolons inside [...], (...), {...} that weren't caught above.
+  //     Uses a permissive content match (no quote delimiters) so nested brackets
+  //     and multiple semicolons are handled correctly.
   result = result.replace(
-    /([\[({])((?:[^\[\](){};]*?;[^\[\](){}]*)+)([\])}])/g,
+    /([\[({])([^"'\[\](){}]*;[^"'\[\](){}]*)([\])}])/g,
     (_match, open: string, content: string, close: string) => {
       return `${open}${content.replace(/;/g, ",")}${close}`;
     },

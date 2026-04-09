@@ -36,6 +36,11 @@ variable "root_volume_size_gb" {
   description = "Root EBS volume size in GB."
   type        = number
   default     = 100
+
+  validation {
+    condition     = var.root_volume_size_gb >= 20
+    error_message = "root_volume_size_gb must be at least 20 GB."
+  }
 }
 
 variable "create_eip" {

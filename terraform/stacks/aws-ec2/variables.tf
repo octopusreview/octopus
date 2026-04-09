@@ -22,6 +22,11 @@ variable "vpc_cidr" {
   description = "CIDR block for the VPC."
   type        = string
   default     = "10.0.0.0/16"
+
+  validation {
+    condition     = can(cidrnetmask(var.vpc_cidr))
+    error_message = "vpc_cidr must be a valid CIDR block (e.g. 10.0.0.0/16)."
+  }
 }
 
 variable "enable_nat_gateway" {
@@ -53,6 +58,11 @@ variable "root_volume_size_gb" {
   description = "Root EBS volume size in GB."
   type        = number
   default     = 100
+
+  validation {
+    condition     = var.root_volume_size_gb >= 20
+    error_message = "root_volume_size_gb must be at least 20 GB."
+  }
 }
 
 variable "create_eip" {
@@ -83,12 +93,22 @@ variable "db_instance_class" {
   description = "RDS instance class."
   type        = string
   default     = "db.t3.medium"
+
+  validation {
+    condition     = startswith(var.db_instance_class, "db.")
+    error_message = "db_instance_class must be a valid RDS instance class starting with 'db.' (e.g. db.t3.medium)."
+  }
 }
 
 variable "db_allocated_storage_gb" {
   description = "Allocated storage in GB for RDS."
   type        = number
   default     = 50
+
+  validation {
+    condition     = var.db_allocated_storage_gb >= 20
+    error_message = "db_allocated_storage_gb must be at least 20 GB (RDS minimum for PostgreSQL)."
+  }
 }
 
 variable "db_multi_az" {
@@ -132,9 +152,14 @@ variable "redis_node_type" {
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 variable "better_auth_secret" {
-  description = "Secret key for Better Auth session signing (min 32 chars)."
+  description = "Secret key for Better Auth session signing (min 32 chars). Generate: openssl rand -hex 32"
   type        = string
   sensitive   = true
+
+  validation {
+    condition     = length(var.better_auth_secret) >= 32
+    error_message = "better_auth_secret must be at least 32 characters. Generate one with: openssl rand -hex 32"
+  }
 }
 
 # ── GitHub App ────────────────────────────────────────────────────────────────

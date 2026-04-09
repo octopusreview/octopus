@@ -1,6 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
+# ── Setup logging ─────────────────────────────────────────────────────────────
+# All output (stdout + stderr) is mirrored to /var/log/octopus-setup.log.
+# On failure: sudo cat /var/log/octopus-setup.log
+exec > >(tee /var/log/octopus-setup.log) 2>&1
+echo "=== Octopus setup started at $(date -u) ==="
+
 # ── System update ────────────────────────────────────────────────────────────
 apt-get update -y
 apt-get install -y ca-certificates curl gnupg lsb-release git unzip awscli
@@ -86,3 +92,5 @@ SERVICE_EOF
 
 systemctl daemon-reload
 systemctl enable octopus
+
+echo "=== Octopus setup completed at $(date -u) ==="

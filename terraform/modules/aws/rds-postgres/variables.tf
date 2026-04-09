@@ -54,6 +54,11 @@ variable "allocated_storage_gb" {
   description = "Allocated storage in GB."
   type        = number
   default     = 50
+
+  validation {
+    condition     = var.allocated_storage_gb >= 20
+    error_message = "allocated_storage_gb must be at least 20 GB (RDS minimum for PostgreSQL)."
+  }
 }
 
 variable "max_allocated_storage_gb" {
@@ -72,6 +77,11 @@ variable "backup_retention_days" {
   description = "Number of days to retain automated backups (0 disables backups)."
   type        = number
   default     = 7
+
+  validation {
+    condition     = var.backup_retention_days >= 0 && var.backup_retention_days <= 35
+    error_message = "backup_retention_days must be between 0 (disabled) and 35 (AWS maximum)."
+  }
 }
 
 variable "backup_window" {

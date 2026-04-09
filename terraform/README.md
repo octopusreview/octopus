@@ -76,7 +76,24 @@ terraform plan
 terraform apply
 ```
 
-### 5. Point DNS
+### 5. Run database migrations
+
+On first deploy (and after schema changes), migrations must be run before the application serves traffic. SSH into the instance and run:
+
+```bash
+ssh -i your-key.pem ubuntu@<public_ip>
+cd /opt/octopus
+
+# Wait for the containers to start (usually 30–60 s after boot)
+sudo docker compose ps
+
+# Run Prisma migrations against the RDS instance
+sudo docker compose run --rm web sh -c "cd /app && npx prisma migrate deploy"
+```
+
+> The `web` service container image includes the Next.js standalone output but not the Prisma CLI binary. If `npx prisma` is not found, run migrations locally pointing `DATABASE_URL` at the RDS endpoint, or add a dedicated migration step to your CI/CD pipeline.
+
+### 6. Point DNS
 
 After `apply` completes, copy the `public_ip` output and create an **A record** in your DNS provider:
 

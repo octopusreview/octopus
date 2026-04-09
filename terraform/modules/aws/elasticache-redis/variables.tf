@@ -39,7 +39,7 @@ variable "engine_version" {
 }
 
 variable "num_cache_nodes" {
-  description = "Number of cache nodes (1 = no replication)."
+  description = "Number of cache clusters in the replication group (1 = single-node, no replica)."
   type        = number
   default     = 1
 }

@@ -48,16 +48,21 @@ resource "aws_security_group" "this" {
   tags = merge({ Name = "${var.name_prefix}-redis-sg" }, var.tags)
 }
 
-resource "aws_elasticache_cluster" "this" {
-  cluster_id        = "${var.name_prefix}-redis"
-  engine            = "redis"
-  node_type         = var.node_type
-  num_cache_nodes   = var.num_cache_nodes
-  engine_version    = var.engine_version
-  port              = 6379
+resource "aws_elasticache_replication_group" "this" {
+  replication_group_id = "${var.name_prefix}-redis"
+  description          = "Octopus Redis replication group"
+
+  engine               = "redis"
+  engine_version       = var.engine_version
+  node_type            = var.node_type
+  num_cache_clusters   = var.num_cache_nodes
+  port                 = 6379
 
   subnet_group_name  = aws_elasticache_subnet_group.this.name
   security_group_ids = [aws_security_group.this.id]
+
+  at_rest_encryption_enabled = true
+  transit_encryption_enabled = true
 
   apply_immediately = true
 

@@ -69,13 +69,6 @@ variable "ingress_rules" {
       protocol    = "tcp"
       cidr_blocks = ["0.0.0.0/0"]
     },
-    {
-      description = "App port"
-      from_port   = 43300
-      to_port     = 43300
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
-    },
   ]
 }
 

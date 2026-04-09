@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { pubby } from "@/lib/pubby";
 import { createAnalysisAbortController, abortAnalysis, clearAnalysisAbortController } from "@/lib/analysis-abort";
+import { eventBus } from "@/lib/events/bus";
 
 export type RepoDetailData = {
   contributors: { login: string; avatarUrl: string; contributions: number }[];
@@ -193,6 +194,12 @@ export async function analyzeRepository(
       pubby.trigger(channel, "analysis-status", {
         repoId: repo.id,
         status: "analyzed",
+      });
+
+      eventBus.emit({
+        type: "repo-analyzed",
+        orgId: repo.organizationId,
+        repoFullName: repo.fullName,
       });
     } catch (error) {
       const isCancelled = abortController.signal.aborted;

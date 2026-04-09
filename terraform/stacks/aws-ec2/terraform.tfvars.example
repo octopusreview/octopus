@@ -26,14 +26,11 @@ app_image  = "ghcr.io/your-org/octopus:latest"
 # Point its DNS A record to the output public_ip after apply.
 app_domain = "octopus.example.com"
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
-# Run this to generate: openssl rand -hex 32
-better_auth_secret = ""
-
-# ── Database ──────────────────────────────────────────────────────────────────
-# Use a strong random password — it is never shown after apply.
-# Run: openssl rand -base64 24 | tr -d '/+=' | cut -c1-24
-db_password = ""
+# ── Secrets (auto-generated if left empty) ───────────────────────────────────
+# Leave these empty — Terraform generates secure values automatically on first apply.
+# Override only if you need a specific value (e.g. migrating an existing database).
+better_auth_secret = ""  # auto-generated if empty (64 chars)
+db_password        = ""  # auto-generated if empty (24 chars, no special chars)
 
 # ── GitHub App (for PR reviews) ──────────────────────────────────────────────
 # See README "Step 2: Create GitHub Apps" for a step-by-step guide.

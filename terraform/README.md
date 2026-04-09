@@ -106,9 +106,10 @@ You need two separate GitHub apps: one for PR reviews and one for user login.
 3. Under **Permissions**, set:
    - Repository: **Contents** → Read-only
    - Repository: **Pull requests** → Read & Write
+   - Repository: **Checks** → Read & Write
    - Repository: **Metadata** → Read-only (auto-selected)
    - Repository: **Issues** → Read & Write
-4. Under **Subscribe to events**, check: **Pull request**, **Issue comment**, **Installation**
+4. Under **Subscribe to events**, check: **Pull request**, **Issue comment**, **Installation**, **Installation repositories**
 5. **Where can this app be installed?** → Any account (or Only on this account)
 6. Click **Create GitHub App**
 7. On the next page, note the **App ID** (a number like `123456`)
@@ -149,8 +150,8 @@ The minimum you need to fill in:
 |----------|----------------|
 | `app_image` | The image URL from Step 1 |
 | `app_domain` | Your domain (e.g. `octopus.example.com`) |
-| `db_password` | Run: `openssl rand -base64 24 \| tr -d '/+=' \| cut -c1-24` |
-| `better_auth_secret` | Run: `openssl rand -hex 32` |
+| `db_password` | Leave empty — auto-generated on first apply |
+| `better_auth_secret` | Leave empty — auto-generated on first apply |
 | `github_app_id` | From Step 2A (the number) |
 | `github_app_private_key` | The single-line PEM from Step 2A |
 | `github_webhook_secret` | The secret you set in the GitHub App webhook |
@@ -181,6 +182,15 @@ When `apply` finishes, you'll see output like:
 public_ip  = "54.123.45.67"
 app_url    = "https://octopus.example.com"
 ```
+
+If you left `db_password` and `better_auth_secret` empty (recommended), Terraform generated them automatically. To retrieve them:
+
+```bash
+terraform output -raw db_password
+terraform output -raw better_auth_secret
+```
+
+Save these somewhere safe — they are stored in your Terraform state file.
 
 ---
 
@@ -300,11 +310,11 @@ Running on default settings in `us-east-1`:
 | Resource | Type | ~$/month |
 |----------|------|----------|
 | EC2 | t3.xlarge (on-demand) | $120 |
-| RDS | db.t3.medium, single-AZ | $50 |
+| RDS | db.t3.medium, single-AZ, 50 GB | $54 |
 | EBS | 100 GB gp3 | $8 |
 | Elastic IP | (always attached) | $0 |
 | Data transfer | ~50 GB out | $5 |
-| **Total** | | **~$183/mo** |
+| **Total** | | **~$187/mo** |
 
 > Switching to Reserved Instances (1-year, no upfront) saves ~35% — roughly $65/mo.
 
@@ -333,7 +343,7 @@ sudo docker compose up -d
 | 5–20 devs | t3.2xlarge | db.t3.large | Scale up as load grows |
 | 20+ devs  | c5.2xlarge | db.t3.xlarge | Consider `db_multi_az = true` |
 
-The web process needs at least 4 GB RAM. With Qdrant and nginx, plan for 8 GB total minimum.
+The web container is allocated 5 GB RAM (4 GB for the Node.js heap). With Qdrant and nginx, plan for 8 GB total minimum.
 
 ---
 

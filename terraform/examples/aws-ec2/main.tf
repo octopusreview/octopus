@@ -9,10 +9,9 @@ module "octopus" {
   aws_region = var.aws_region
 
   # ── Required ──────────────────────────────────────────────────────────────
-  app_image          = "ghcr.io/your-org/octopus:latest"  # see README Step 1
-  app_domain         = "octopus.example.com"
-  db_password        = "change-me-strong-password"
-  better_auth_secret = "change-me-32-char-minimum-secret"
+  app_image  = "ghcr.io/your-org/octopus:latest"  # see README Step 1
+  app_domain = "octopus.example.com"
+  # db_password and better_auth_secret are auto-generated — no need to set them
 
   # GitHub App (required for PR reviews) — see README Step 2
   github_app_id          = "123456"

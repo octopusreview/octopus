@@ -72,6 +72,7 @@ type ChatContextValue = {
   queuePosition: number | null;
   connectedAgents: ConnectedAgent[];
   lastMessageAgentUsed: boolean;
+  lastMessageAgentAnswered: boolean;
   openWithRepoContext: (repoFullName: string) => void;
   repoContext: string | null;
   clearRepoContext: () => void;
@@ -131,6 +132,7 @@ export function ChatProvider({
   const [repoContext, setRepoContext] = useState<string | null>(null);
   const repoContextRef = useRef<string | null>(null);
   const [lastMessageAgentUsed, setLastMessageAgentUsed] = useState(false);
+  const [lastMessageAgentAnswered, setLastMessageAgentAnswered] = useState(false);
 
   // Track which conversation is currently subscribed to pubby
   const pubbyChannelRef = useRef<string | null>(null);
@@ -486,6 +488,7 @@ export function ChatProvider({
       setStreamingContent("");
       setQueuePosition(null);
       setLastMessageAgentUsed(false);
+      setLastMessageAgentAnswered(false);
 
       const userMsg: Message = {
         id: `temp-${Date.now()}`,
@@ -571,6 +574,9 @@ export function ChatProvider({
                 setStreamingConversationId(parsed.id);
               } else if (parsed.type === "agent_used") {
                 setLastMessageAgentUsed(true);
+              } else if (parsed.type === "agent_answered") {
+                setLastMessageAgentUsed(true);
+                setLastMessageAgentAnswered(true);
               } else if (parsed.type === "delta") {
                 fullContent += parsed.text;
                 setStreamingContent(fullContent);
@@ -722,6 +728,7 @@ export function ChatProvider({
         queuePosition,
         connectedAgents,
         lastMessageAgentUsed,
+        lastMessageAgentAnswered,
         openWithRepoContext,
         repoContext,
         clearRepoContext,

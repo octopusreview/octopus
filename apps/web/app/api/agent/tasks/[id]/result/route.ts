@@ -5,6 +5,7 @@ import { pubby } from "@/lib/pubby";
 
 const MAX_RESULT_SIZE = 50 * 1024; // 50KB
 const MAX_SUMMARY_SIZE = 15 * 1024; // 15KB
+const MAX_ANSWER_SUMMARY_SIZE = 100 * 1024; // 100KB for answer tasks
 
 export async function POST(
   request: Request,
@@ -35,7 +36,9 @@ export async function POST(
     );
   }
 
-  // Truncate results if too large
+  // Truncate results if too large — answer tasks get a higher limit
+  const summaryLimit = task.searchType === "answer" ? MAX_ANSWER_SUMMARY_SIZE : MAX_SUMMARY_SIZE;
+
   const resultStr = JSON.stringify(results ?? null);
   const truncatedResult =
     resultStr.length > MAX_RESULT_SIZE
@@ -43,8 +46,8 @@ export async function POST(
       : results;
 
   const truncatedSummary =
-    resultSummary && resultSummary.length > MAX_SUMMARY_SIZE
-      ? resultSummary.slice(0, MAX_SUMMARY_SIZE)
+    resultSummary && resultSummary.length > summaryLimit
+      ? resultSummary.slice(0, summaryLimit)
       : resultSummary;
 
   const status = errorMessage ? "failed" : "completed";

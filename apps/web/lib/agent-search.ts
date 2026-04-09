@@ -126,6 +126,126 @@ export async function requestAgentSearch(
   return null;
 }
 
+/**
+ * Check if an online agent with claude-cli capability exists for this org.
+ */
+export async function findClaudeAgent(orgId: string) {
+  const staleThreshold = new Date(Date.now() - STALE_THRESHOLD_MS);
+
+  return prisma.localAgent.findFirst({
+    where: {
+      organizationId: orgId,
+      status: "online",
+      lastSeenAt: { gte: staleThreshold },
+      capabilities: { array_contains: ["claude-cli"] },
+    },
+    select: {
+      id: true,
+      name: true,
+      repoFullNames: true,
+      capabilities: true,
+    },
+  });
+}
+
+interface AgentAnswerOptions {
+  orgId: string;
+  systemPrompt: string;
+  contextSections: string;
+  conversationHistory: { role: string; content: string }[];
+  conversationId: string;
+  repoFullName: string;
+  timeoutMs?: number;
+}
+
+interface AgentAnswerResult {
+  answer: string;
+  taskId: string;
+  agentName: string | null;
+}
+
+/**
+ * Delegate full answer generation to a local agent with claude-cli.
+ * Sends Qdrant context + conversation history as task params.
+ * The agent runs Claude CLI locally — no server-side LLM cost.
+ */
+export async function requestAgentAnswer(
+  options: AgentAnswerOptions,
+): Promise<AgentAnswerResult | null> {
+  const { orgId, systemPrompt, contextSections, conversationHistory, conversationId, repoFullName } = options;
+  const timeoutMs = options.timeoutMs ?? 120_000;
+
+  const task = await prisma.agentSearchTask.create({
+    data: {
+      query: conversationHistory[conversationHistory.length - 1]?.content ?? "",
+      searchType: "answer",
+      status: "pending",
+      repoFullName,
+      organizationId: orgId,
+      conversationId,
+      timeoutMs,
+      params: {
+        systemPrompt,
+        contextSections,
+        conversationHistory,
+      },
+    },
+  });
+
+  console.log(`[agent-answer] Created answer task ${task.id} → repo "${repoFullName}"`);
+
+  // Signal agents via Pubby
+  pubby
+    .trigger(`private-agent-org-${orgId}`, "agent-answer-request", {
+      taskId: task.id,
+      repoFullName,
+    })
+    .catch(() => {});
+
+  // Poll for completion
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    await sleep(POLL_INTERVAL_MS);
+
+    const updated = await prisma.agentSearchTask.findUnique({
+      where: { id: task.id },
+      select: {
+        status: true,
+        resultSummary: true,
+        agent: { select: { name: true } },
+      },
+    });
+
+    if (!updated) break;
+
+    if (updated.status === "completed" && updated.resultSummary) {
+      console.log(`[agent-answer] Task ${task.id} completed by "${updated.agent?.name}"`);
+      return {
+        answer: updated.resultSummary,
+        taskId: task.id,
+        agentName: updated.agent?.name ?? null,
+      };
+    }
+
+    if (updated.status === "failed") {
+      console.log(`[agent-answer] Task ${task.id} failed`);
+      return null;
+    }
+  }
+
+  // Timeout
+  console.log(`[agent-answer] Task ${task.id} timed out after ${timeoutMs}ms`);
+  await prisma.agentSearchTask
+    .updateMany({
+      where: { id: task.id, status: { in: ["pending", "claimed"] } },
+      data: { status: "timeout", completedAt: new Date() },
+    })
+    .catch(() => {});
+
+  return null;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -8,7 +8,7 @@ import { createEmbeddings } from "@/lib/embeddings";
 import { logAiUsage } from "@/lib/ai-usage";
 import { createAiMessage } from "@/lib/ai-router";
 import type { InlineFinding } from "@/lib/review-dedup";
-import type { CrossFileQuery } from "@/lib/review-helpers";
+import type { CrossFileQuery, VerificationQuery } from "@/lib/review-helpers";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -81,6 +81,89 @@ export async function gatherCrossFileContext(
   return chunks.join("\n\n");
 }
 
+// ─── Finding Verification Context ──────────────────────────────────────────
+
+/**
+ * For each finding, gather targeted context from Qdrant to verify or disprove
+ * the finding's claim. Unlike gatherCrossFileContext (which searches for
+ * cross-file references), this searches the finding's OWN file to check
+ * claims like "missing import" or "inconsistent pattern".
+ *
+ * Returns a map of findingIndex → verification context string.
+ */
+export async function gatherVerificationContext(
+  queries: VerificationQuery[],
+  repoId: string,
+  orgId: string,
+  fileContentFetcher?: FileContentFetcher,
+): Promise<Map<number, string>> {
+  const result = new Map<number, string>();
+  if (queries.length === 0) return result;
+
+  // Batch embed all verification queries
+  const queryTexts = queries.map((q) => q.query);
+  let embeddings: number[][];
+  try {
+    embeddings = await createEmbeddings(queryTexts, {
+      organizationId: orgId,
+      operation: "finding-verification",
+    });
+  } catch {
+    console.warn("[review-validation] Failed to create embeddings for verification queries");
+    return result;
+  }
+
+  // Search Qdrant for each query and group results by finding index
+  const findingChunks = new Map<number, string[]>();
+
+  for (let i = 0; i < queries.length; i++) {
+    const query = queries[i];
+    const vector = embeddings[i];
+    if (!vector || vector.length === 0) continue;
+
+    const idx = query.findingIndex;
+    if (!findingChunks.has(idx)) findingChunks.set(idx, []);
+    const chunks = findingChunks.get(idx)!;
+
+    try {
+      const results = await searchSimilarChunks(repoId, vector, 3, query.query);
+      for (const r of results) {
+        // Prioritize results from the finding's own file
+        const isOwnFile = query.filePath && r.filePath.endsWith(query.filePath.replace(/^.*?\//, ""));
+        const prefix = isOwnFile ? "[SAME FILE] " : "";
+        chunks.push(`${prefix}// ${r.filePath}:L${r.startLine}-L${r.endLine}\n${r.text.slice(0, MAX_CHARS_PER_CHUNK)}`);
+      }
+    } catch {
+      // Qdrant search failed — try fallback
+    }
+
+    // Fallback: fetch file directly if we have a filePath and no same-file results
+    const hasSameFileResult = chunks.some((c) => c.startsWith("[SAME FILE]"));
+    if (!hasSameFileResult && query.filePath && fileContentFetcher) {
+      try {
+        const content = await fileContentFetcher(query.filePath);
+        if (content) {
+          // Get the first 2000 chars (imports/header section) which is most useful for verification
+          chunks.push(`[SAME FILE] // ${query.filePath}:L1 (file header)\n${content.slice(0, 2000)}`);
+        }
+      } catch {
+        // File fetch failed — skip
+      }
+    }
+  }
+
+  // Build per-finding verification context
+  for (const [idx, chunks] of findingChunks) {
+    if (chunks.length > 0) {
+      const query = queries.find((q) => q.findingIndex === idx);
+      const header = query ? `Verification for: ${query.claim}` : "Verification context";
+      result.set(idx, `--- ${header} ---\n${chunks.join("\n\n")}`);
+    }
+  }
+
+  return result;
+}
+
 // ─── Two-Pass Validation ────────────────────────────────────────────────────
 
 export const VALIDATION_MODEL = "claude-sonnet-4-6";
@@ -92,11 +175,20 @@ export async function validateFindings(
   confidenceThreshold: number,
   crossFileContext?: string,
   logPrefix = "[review-validation]",
+  verificationContext?: Map<number, string>,
 ): Promise<InlineFinding[]> {
   if (findings.length === 0) return findings;
 
+  // Build findings summary with per-finding verification context inline
   const findingsSummary = findings
-    .map((f, i) => `[${i}] ${f.severity} ${f.title} (confidence: ${f.confidence})\nFile: ${f.filePath}:L${f.startLine}\nDescription: ${f.description}`)
+    .map((f, i) => {
+      let entry = `[${i}] ${f.severity} ${f.title} (confidence: ${f.confidence})\nFile: ${f.filePath}:L${f.startLine}\nDescription: ${f.description}`;
+      const verification = verificationContext?.get(i);
+      if (verification) {
+        entry += `\n\n>> VERIFICATION CONTEXT FOR FINDING [${i}]:\n${verification}`;
+      }
+      return entry;
+    })
     .join("\n\n");
 
   const crossFileSection = crossFileContext
@@ -141,6 +233,14 @@ When a finding is based on a general heuristic ("don't replace all X", "avoid br
 
 When the diff includes comments explaining the domain-specific reason for an approach and the finding contradicts that without concrete counter-evidence:
 - Assign confidence 10-20
+
+CRITICAL — VERIFICATION CONTEXT:
+Some findings include a ">> VERIFICATION CONTEXT" section with actual code from the repository (fetched from the vector database). This is ground truth from the indexed codebase. Use it to verify or disprove the finding's claims:
+- If a finding claims "missing import for X" but the verification context shows the import already exists in the same file, assign confidence 0-10 — it is a false positive
+- If a finding claims "missing function call" but the verification context shows the function is already called, assign confidence 0-10
+- If a finding claims "inconsistent pattern" but the verification context shows the pattern difference is due to different call-site architectures (both achieving the same result), assign confidence 0-10
+- Lines marked [SAME FILE] are from the finding's own file — these are the strongest evidence for or against the claim
+- If verification context CONFIRMS the issue (e.g., the import truly does not exist), keep or raise confidence
 
 When a finding claims something is "missing" from a new function (missing DB save, missing auth, missing cleanup):
 - Check if the function is called from a larger handler visible in the diff — the caller may already do it

@@ -435,3 +435,90 @@ export function extractCrossFileQueries(findings: InlineFinding[], diff: string)
 
   return queries.slice(0, 8);
 }
+
+// ─── Finding Verification Queries ───────────────────────────────────────────
+
+export type VerificationQuery = {
+  findingIndex: number;
+  /** Natural-language query to embed and search in Qdrant */
+  query: string;
+  /** If set, also try to fetch this file directly as fallback */
+  filePath?: string;
+  /** What the finding claims — used by the validator to check against context */
+  claim: string;
+};
+
+/**
+ * Missing-X patterns: "missing import", "no import", "lacks import",
+ * "missing error handling", "missing validation", etc.
+ */
+const MISSING_PATTERN =
+  /\b(?:missing|absent|no|lacks?|without|not (?:imported|defined|declared|included))\b.*?\b(\w[\w./\-@]*)\b/i;
+
+/**
+ * Inconsistency patterns: "inconsistent with", "differs from", "unlike other"
+ */
+const INCONSISTENCY_PATTERN =
+  /\b(?:inconsisten|differs? from|unlike|not consistent|asymmetr)/i;
+
+/**
+ * Generate targeted verification queries to check whether finding claims are
+ * actually true. Unlike extractCrossFileQueries (which only looks at cross-file
+ * references), this specifically searches the finding's OWN file to verify
+ * claims like "missing import" or "inconsistent pattern".
+ */
+export function generateVerificationQueries(
+  findings: InlineFinding[],
+): VerificationQuery[] {
+  const queries: VerificationQuery[] = [];
+
+  for (let i = 0; i < findings.length; i++) {
+    const f = findings[i];
+    const text = `${f.title} ${f.description}`;
+
+    // 1. "Missing X" claims — search the finding's own file for X
+    const missingMatch = text.match(MISSING_PATTERN);
+    if (missingMatch && f.filePath) {
+      const missingThing = missingMatch[1];
+      queries.push({
+        findingIndex: i,
+        query: `import ${missingThing} in ${f.filePath}`,
+        filePath: f.filePath,
+        claim: `Claims "${missingThing}" is missing from ${f.filePath}`,
+      });
+      // Also search for the thing itself (not just import)
+      queries.push({
+        findingIndex: i,
+        query: `${missingThing} ${f.filePath}`,
+        filePath: f.filePath,
+        claim: `Verify "${missingThing}" existence in ${f.filePath}`,
+      });
+    }
+
+    // 2. Inconsistency claims — search for the pattern in other files
+    if (INCONSISTENCY_PATTERN.test(text) && f.filePath) {
+      // Extract what the "inconsistent" thing is (usually a function/method name)
+      const funcMatch = text.match(/[`"'](\w+)[`"']\s*\(/);
+      if (funcMatch) {
+        queries.push({
+          findingIndex: i,
+          query: `${funcMatch[1]} usage pattern`,
+          claim: `Claims "${funcMatch[1]}" usage is inconsistent across call sites`,
+        });
+      }
+    }
+
+    // 3. Any finding about a specific file — get that file's imports/header
+    //    This catches cases the above patterns miss
+    if (f.filePath && !queries.some((q) => q.findingIndex === i)) {
+      queries.push({
+        findingIndex: i,
+        query: `imports and declarations in ${f.filePath}`,
+        filePath: f.filePath,
+        claim: `General verification context for ${f.filePath}`,
+      });
+    }
+  }
+
+  return queries.slice(0, 15);
+}

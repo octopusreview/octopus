@@ -23,8 +23,8 @@ import {
   parseFindingsFromJson,
   parseFindingsFromMarkdown,
 } from "@/lib/review-dedup";
-import { extractCrossFileQueries } from "@/lib/review-helpers";
-import { gatherCrossFileContext, validateFindings } from "@/lib/review-validation";
+import { extractCrossFileQueries, generateVerificationQueries } from "@/lib/review-helpers";
+import { gatherCrossFileContext, gatherVerificationContext, validateFindings } from "@/lib/review-validation";
 import { logAiUsage } from "@/lib/ai-usage";
 import { getReviewModel } from "@/lib/ai-client";
 import { createAiMessage } from "@/lib/ai-router";
@@ -505,6 +505,7 @@ Rules:
   // with cross-file context for verifying function signatures, types, etc.
   if (findings.length > 0) {
     try {
+      // Phase 1: Cross-file context (function signatures, types, APIs)
       let crossFileContext = "";
       const crossFileQueries = extractCrossFileQueries(findings, diff);
       if (crossFileQueries.length > 0) {
@@ -513,7 +514,18 @@ Rules:
           console.log(`[review-core] Gathered cross-file context: ${crossFileQueries.length} queries, ${crossFileContext.length} chars`);
         }
       }
-      findings = await validateFindings(findings, diff, org.id, confidenceThreshold, crossFileContext || undefined, "[review-core]");
+
+      // Phase 2: Verification context (verify each finding's claims via Qdrant)
+      let verificationContext: Map<number, string> | undefined;
+      const verificationQueries = generateVerificationQueries(findings);
+      if (verificationQueries.length > 0) {
+        verificationContext = await gatherVerificationContext(verificationQueries, repoId, org.id);
+        if (verificationContext.size > 0) {
+          console.log(`[review-core] Gathered verification context: ${verificationQueries.length} queries → ${verificationContext.size} findings verified`);
+        }
+      }
+
+      findings = await validateFindings(findings, diff, org.id, confidenceThreshold, crossFileContext || undefined, "[review-core]", verificationContext);
     } catch (err) {
       console.warn("[review-core] Two-pass validation failed, keeping all findings:", err);
     }

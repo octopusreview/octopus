@@ -51,11 +51,13 @@ import {
   parseReviewConfig,
   MAX_FINDINGS_PER_REVIEW,
   extractCrossFileQueries,
+  generateVerificationQueries,
   resolveIndexClaimWait,
 } from "@/lib/review-helpers";
 import type { ReviewConfig } from "@/lib/review-helpers";
 import {
   gatherCrossFileContext,
+  gatherVerificationContext,
   validateFindings,
   type FileContentFetcher,
 } from "@/lib/review-validation";
@@ -1666,21 +1668,34 @@ Rules:
     // with cross-file context for verifying function signatures, types, etc.
     if (findings.length > 0) {
       try {
+        const fileContentFetcher: FileContentFetcher | undefined =
+          isGitHub && installationId && pr.headSha
+            ? async (path) => (await ghGetFileContent(installationId!, owner, repoName, pr.headSha!, path)) ?? ""
+            : isBitbucket
+              ? (path) => bitbucket.getFileContent(org.id, owner, repoName, pr.headSha ?? repo.defaultBranch ?? "main", path)
+              : undefined;
+
+        // Phase 1: Cross-file context (existing — function signatures, types, APIs)
         let crossFileContext = "";
         const crossFileQueries = extractCrossFileQueries(findings, diff);
         if (crossFileQueries.length > 0) {
-          const fileContentFetcher: FileContentFetcher | undefined =
-            isGitHub && installationId && pr.headSha
-              ? async (path) => (await ghGetFileContent(installationId!, owner, repoName, pr.headSha!, path)) ?? ""
-              : isBitbucket
-                ? (path) => bitbucket.getFileContent(org.id, owner, repoName, pr.headSha ?? repo.defaultBranch ?? "main", path)
-                : undefined;
           crossFileContext = await gatherCrossFileContext(crossFileQueries, repo.id, org.id, fileContentFetcher);
           if (crossFileContext) {
             console.log(`[reviewer] Gathered cross-file context: ${crossFileQueries.length} queries, ${crossFileContext.length} chars`);
           }
         }
-        findings = await validateFindings(findings, diff, org.id, confidenceThreshold, crossFileContext || undefined, "[reviewer]");
+
+        // Phase 2: Verification context (new — verify each finding's claims via Qdrant)
+        let verificationContext: Map<number, string> | undefined;
+        const verificationQueries = generateVerificationQueries(findings);
+        if (verificationQueries.length > 0) {
+          verificationContext = await gatherVerificationContext(verificationQueries, repo.id, org.id, fileContentFetcher);
+          if (verificationContext.size > 0) {
+            console.log(`[reviewer] Gathered verification context: ${verificationQueries.length} queries → ${verificationContext.size} findings verified`);
+          }
+        }
+
+        findings = await validateFindings(findings, diff, org.id, confidenceThreshold, crossFileContext || undefined, "[reviewer]", verificationContext);
       } catch (err) {
         console.warn("[reviewer] Two-pass validation failed, keeping all findings:", err);
       }

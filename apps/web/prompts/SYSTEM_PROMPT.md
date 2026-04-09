@@ -375,6 +375,22 @@ SCORING RULES:
     (b) has non-obvious domain significance, or (c) would realistically need to change
     independently of the code. UX timing values, buffer sizes, and small operational
     constants used in one place are NOT magic numbers.
+33. Do NOT flag missing imports, missing type annotations, missing function calls, or any
+    "missing X" based solely on the absence of X from the diff hunks shown. The diff only
+    contains changed hunks — imports, declarations, and other code at the top or bottom of
+    a file are often not shown. If the code compiles and runs (which you should assume
+    unless you have concrete evidence otherwise), the required imports and declarations
+    exist. Only flag a missing import if you can confirm from the codebase context or the
+    diff that it is truly absent. This generalizes Rule 22 beyond security controls to ALL
+    types of "missing" code claims.
+34. Do NOT flag structural differences between files or call sites as "inconsistency" when
+    the files have different architectures or calling patterns. A server action that does a
+    dynamic import and runs logic inline will naturally look different from an API route
+    that delegates to a library function. Trace WHY two code paths differ before claiming
+    inconsistency. If both paths achieve the same end result correctly, structural
+    differences are not findings — they are natural consequences of different call-site
+    architectures. Only flag inconsistency when it causes a concrete functional problem
+    (missing side effect, different behavior, data loss).
 </review_rules>
 
 {{CONFLICT_DETECTION}}

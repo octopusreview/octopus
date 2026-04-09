@@ -32,6 +32,7 @@ import {
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconBug,
+  IconFileText,
 } from "@tabler/icons-react";
 import { CommandPalette } from "@/components/command-palette";
 
@@ -39,6 +40,7 @@ const mainNavItems = [
   { href: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard },
   { href: "/repositories", label: "Repositories", icon: IconGitBranch },
   { href: "/issues", label: "Issues", icon: IconBug },
+  { href: "/review-logs", label: "Review Logs", icon: IconFileText },
   { href: "/timeline", label: "Timeline", icon: IconTimeline },
 ];
 

@@ -258,6 +258,11 @@ export async function POST(request: NextRequest) {
           where: { id: repo.id },
           data: { analysis, analysisStatus: "analyzed", analyzedAt: new Date() },
         });
+        eventBus.emit({
+          type: "repo-analyzed",
+          orgId,
+          repoFullName: fullName,
+        });
       } catch (err) {
         console.error("[github-action] Analyze failed:", err);
       }

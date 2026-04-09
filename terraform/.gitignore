@@ -1,0 +1,28 @@
+# Secret variable files
+*.tfvars
+*.tfvars.json
+
+# Backend config (may contain bucket names / credentials)
+*.conf
+
+# Local state
+*.tfstate
+*.tfstate.backup
+.terraform.tfstate.lock.info
+
+# Terraform working directories
+**/.terraform/
+**/.terraform.lock.hcl
+
+# Crash log files
+crash.log
+crash.*.log
+
+# Override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Keep examples
+!**/*.example

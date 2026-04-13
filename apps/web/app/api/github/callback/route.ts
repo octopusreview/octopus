@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
     },
     select: { organizationId: true },
   });
-  console.log("[github/callback] targetOrgId:", targetOrgId, "cookieOrgId:", cookieStore.get("current_org_id")?.value, "resolved:", membership?.organizationId ?? "null");
+  console.log("[github/callback] resolved orgId:", membership?.organizationId ?? "null");
 
   if (!membership) {
     return NextResponse.redirect(new URL("/dashboard", baseUrl));

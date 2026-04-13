@@ -21,9 +21,11 @@ type GitHubData = {
 export function GitHubIntegrationCard({
   data,
   appSlug,
+  orgId,
 }: {
   data: GitHubData;
   appSlug: string | null;
+  orgId: string;
 }) {
   const [isPending, startTransition] = useTransition();
 
@@ -47,7 +49,7 @@ export function GitHubIntegrationCard({
           {appSlug ? (
             <Button asChild>
               <a
-                href={`https://github.com/apps/${appSlug}/installations/new?state=${encodeURIComponent(`${window.location.origin}/settings/integrations`)}`}
+                href={`https://github.com/apps/${appSlug}/installations/new?state=${encodeURIComponent(`${orgId}|${window.location.origin}/settings/integrations`)}`}
                 onClick={() => trackEvent("cta_click", { location: "settings_integrations", label: "install_github_app" })}
               >
                 <IconBrandGithub className="mr-2 size-4" />
@@ -90,9 +92,7 @@ export function GitHubIntegrationCard({
           {appSlug && (
             <Button size="sm" asChild>
               <a
-                href={`https://github.com/apps/${appSlug}/installations/new`}
-                target="_blank"
-                rel="noopener noreferrer"
+                href={`https://github.com/apps/${appSlug}/installations/new?state=${encodeURIComponent(`${orgId}|${window.location.origin}/settings/integrations`)}`}
               >
                 Manage Repos
               </a>

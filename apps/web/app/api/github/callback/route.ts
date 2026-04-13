@@ -12,6 +12,14 @@ export async function GET(request: NextRequest) {
   let stateParam = request.nextUrl.searchParams.get("state");
   console.log("[github/callback] installationId:", installationId, "state:", stateParam);
 
+  // Extract org ID from state if present (format: "orgId|returnUrl")
+  let targetOrgId: string | null = null;
+  if (stateParam?.includes("|")) {
+    const pipeIndex = stateParam.indexOf("|");
+    targetOrgId = stateParam.substring(0, pipeIndex);
+    stateParam = stateParam.substring(pipeIndex + 1);
+  }
+
   // If state contains a full URL origin, forward the callback to that origin
   if (stateParam?.startsWith("http")) {
     try {
@@ -20,7 +28,11 @@ export async function GET(request: NextRequest) {
       if (stateOrigin !== new URL(baseUrl).origin) {
         const forwardUrl = new URL("/api/github/callback", stateOrigin);
         forwardUrl.searchParams.set("installation_id", installationId || "");
-        forwardUrl.searchParams.set("state", stateUrl.pathname + stateUrl.search);
+        // Re-encode orgId in forwarded state so the target origin can use it
+        const forwardedState = targetOrgId
+          ? `${targetOrgId}|${stateUrl.pathname + stateUrl.search}`
+          : stateUrl.pathname + stateUrl.search;
+        forwardUrl.searchParams.set("state", forwardedState);
         if (request.nextUrl.searchParams.get("setup_action")) {
           forwardUrl.searchParams.set("setup_action", request.nextUrl.searchParams.get("setup_action")!);
         }
@@ -48,9 +60,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", baseUrl));
   }
 
-  // Respect the current org cookie (same logic as dashboard)
+  // Use org ID from state param (reliable, set at flow start) or fall back to cookie
   const cookieStore = await cookies();
-  const currentOrgId = cookieStore.get("current_org_id")?.value;
+  const currentOrgId = targetOrgId || cookieStore.get("current_org_id")?.value;
 
   const membership = await prisma.organizationMember.findFirst({
     where: {
@@ -60,7 +72,7 @@ export async function GET(request: NextRequest) {
     },
     select: { organizationId: true },
   });
-  console.log("[github/callback] currentOrgId cookie:", currentOrgId, "membership:", membership?.organizationId ?? "null");
+  console.log("[github/callback] targetOrgId:", targetOrgId, "cookieOrgId:", cookieStore.get("current_org_id")?.value, "resolved:", membership?.organizationId ?? "null");
 
   if (!membership) {
     return NextResponse.redirect(new URL("/dashboard", baseUrl));
@@ -108,6 +120,7 @@ export async function GET(request: NextRequest) {
           defaultBranch: repo.default_branch,
           installationId: installationIdNum,
           isActive: true,
+          organizationId: membership.organizationId,
         },
       });
     }

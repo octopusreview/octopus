@@ -82,8 +82,10 @@ export async function POST(request: NextRequest) {
             update: {
               name: repo.name,
               fullName: repo.full_name,
+              defaultBranch: repo.default_branch ?? "main",
               isActive: true,
               installationId,
+              organizationId: org.id,
             },
           });
         }
@@ -126,6 +128,7 @@ export async function POST(request: NextRequest) {
               defaultBranch: repo.default_branch,
               isActive: true,
               installationId,
+              organizationId: org.id,
             },
           });
         }

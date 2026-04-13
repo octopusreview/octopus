@@ -85,7 +85,7 @@ export default async function IntegrationsPage({
   return (
     <div className="space-y-6">
       {bbDebug && <BitbucketDebugBanner debugJson={bbDebug} />}
-      <GitHubIntegrationCard data={githubData} appSlug={appSlug} />
+      <GitHubIntegrationCard data={githubData} appSlug={appSlug} orgId={orgId} />
       <BitbucketIntegrationCard data={bitbucketIntegration} />
       <SlackIntegrationCard data={slackIntegration} />
       <LinearIntegrationCard data={linearIntegration} />

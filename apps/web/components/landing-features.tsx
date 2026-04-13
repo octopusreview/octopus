@@ -50,19 +50,17 @@ export function LandingFeatures() {
         </p>
       </div>
 
-      {/* Bento Grid */}
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* RAG Chat — tall left */}
-        <BentoCard
-          title="RAG Chat"
-          description="Ask questions about your codebase. Vector search + reranking for precise answers."
-          icon={<IconSearch className="size-4" />}
-          className="md:row-span-2"
-        >
-          <PreviewRagChat />
-        </BentoCard>
+      {/* Hero Feature */}
+      <HeroCard
+        title="RAG Chat"
+        description="Ask questions about your codebase. Vector search + reranking delivers precise, context-aware answers grounded in your actual code."
+        icon={<IconSearch className="size-5" />}
+      >
+        <PreviewRagChat />
+      </HeroCard>
 
-        {/* CLI Tool */}
+      {/* 3-Column Grid */}
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <BentoCard
           title="CLI Tool"
           description="Review PRs, query code, and manage repos from your terminal."
@@ -71,7 +69,6 @@ export function LandingFeatures() {
           <PreviewCli />
         </BentoCard>
 
-        {/* Codebase Indexing */}
         <BentoCard
           title="Codebase Indexing"
           description="Chunks, embeds, and indexes your entire codebase for instant retrieval."
@@ -80,7 +77,6 @@ export function LandingFeatures() {
           <PreviewIndexing />
         </BentoCard>
 
-        {/* Knowledge Base */}
         <BentoCard
           title="Knowledge Base"
           description="Feed your org's standards, docs, and conventions. Reviews get smarter over time."
@@ -88,26 +84,60 @@ export function LandingFeatures() {
         >
           <PreviewKnowledge />
         </BentoCard>
+      </div>
 
-        {/* Analytics */}
-        <BentoCard
-          title="Analytics"
-          description="Track review quality, token usage, cost per repo, and developer velocity."
-          icon={<IconChartBar className="size-4" />}
-        >
-          <PreviewAnalytics />
-        </BentoCard>
-
-        {/* Team Sharing — tall right */}
+      {/* Bottom Row: Wide + Narrow */}
+      <div className="mt-4 grid gap-4 md:grid-cols-5">
         <BentoCard
           title="Team Sharing"
           description="Organization-level config, shared knowledge, and team-wide review standards."
           icon={<IconUsers className="size-4" />}
-          className="md:row-span-2 md:-order-1"
+          className="md:col-span-3"
         >
           <PreviewTeam />
         </BentoCard>
+
+        <BentoCard
+          title="Analytics"
+          description="Track review quality, token usage, cost per repo, and developer velocity."
+          icon={<IconChartBar className="size-4" />}
+          className="md:col-span-2"
+        >
+          <PreviewAnalytics />
+        </BentoCard>
       </div>
+    </div>
+  );
+}
+
+function HeroCard({
+  title,
+  description,
+  icon,
+  children,
+}: {
+  title: string;
+  description: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const ref = useInView();
+
+  return (
+    <div
+      ref={ref}
+      className="group grid overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.02] transition-colors hover:border-white/[0.12] md:grid-cols-2"
+    >
+      {/* Text side */}
+      <div className="flex flex-col justify-center p-8 md:p-10">
+        <div className="mb-4 flex size-11 items-center justify-center rounded-xl bg-white/[0.06] text-[#888] transition-colors group-hover:bg-white/[0.1]">
+          {icon}
+        </div>
+        <h3 className="text-2xl font-semibold text-white">{title}</h3>
+        <p className="mt-2 text-sm leading-relaxed text-[#666] md:text-base">{description}</p>
+      </div>
+      {/* Preview side */}
+      <div className="p-4 md:p-6">{children}</div>
     </div>
   );
 }

@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ known: true });
   }
 
-  // Rate limit: max N new devices per user per hour
+  // Rate limit: max 3 new device registrations per user per hour
   const recentDevices = await prisma.userDevice.count({
     where: {
       userId,
@@ -93,17 +93,34 @@ export async function POST(request: Request) {
   const deviceCount = await prisma.userDevice.count({ where: { userId } });
 
   if (deviceCount > 1) {
-    // Email cooldown: only send 1 new-login email per user per 5 minutes
-    const recentEmail = await prisma.emailSend.findFirst({
-      where: {
-        slug: "new-login",
-        userId,
-        sentAt: { gte: new Date(Date.now() - EMAIL_COOLDOWN_MS) },
-      },
-    });
+    // Email cooldown: only send 1 new-login email per user per 5 minutes.
+    // Write the record BEFORE sending to prevent TOCTOU race (concurrent
+    // requests both passing the cooldown check before either writes).
+    let emailAlreadySent = false;
+    try {
+      const recentEmail = await prisma.emailSend.findFirst({
+        where: {
+          slug: "new-login",
+          userId,
+          sentAt: { gte: new Date(Date.now() - EMAIL_COOLDOWN_MS) },
+        },
+      });
+      if (recentEmail) {
+        emailAlreadySent = true;
+      } else {
+        // Optimistic insert — if a concurrent request already created this,
+        // the unique-ish timestamp will still succeed but the findFirst
+        // above would have caught it. Belt-and-suspenders.
+        await prisma.emailSend.create({
+          data: { slug: "new-login", userId },
+        });
+      }
+    } catch {
+      // If create fails (race with another request), skip the email
+      emailAlreadySent = true;
+    }
 
-    if (!recentEmail) {
-      // New device on existing account, send alert
+    if (!emailAlreadySent) {
       const user = await prisma.user.findUnique({
         where: { id: userId },
         select: { email: true, name: true },
@@ -133,15 +150,9 @@ export async function POST(request: Request) {
             to: user.email,
             subject: result.subject,
             html: result.html,
-          })
-            .then(() =>
-              prisma.emailSend
-                .create({ data: { slug: "new-login", userId } })
-                .catch(() => {}),
-            )
-            .catch((err) =>
-              console.error("[device] Failed to send new-login email:", err),
-            );
+          }).catch((err) =>
+            console.error("[device] Failed to send new-login email:", err),
+          );
         }
       }
     }

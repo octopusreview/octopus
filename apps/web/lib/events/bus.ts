@@ -10,6 +10,8 @@ class EventBus {
   }
 
   emit(event: AppEvent): void {
+    const listenerCount = this.emitter.listenerCount(event.type);
+    console.log(`[event-bus] emit "${event.type}" → ${listenerCount} listener(s)`);
     this.emitter.emit(event.type, event);
   }
 
@@ -45,7 +47,6 @@ if (process.env.NODE_ENV !== "production") {
   globalForEventBus.eventBus = eventBus;
 }
 
-// Auto-initialize observers on first import
-import("./observers").then(({ initializeObservers }) =>
-  initializeObservers(),
-);
+// Auto-initialize observers on first import (sync to avoid race conditions)
+import { initializeObservers } from "./observers";
+initializeObservers();

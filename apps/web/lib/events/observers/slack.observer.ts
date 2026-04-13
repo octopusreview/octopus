@@ -19,7 +19,10 @@ async function sendSlackMessage(
     include: { eventConfigs: true },
   });
 
-  if (!integration || !integration.channelId) return;
+  if (!integration || !integration.channelId) {
+    console.log(`[slack-observer] No integration or channelId for org ${orgId}`);
+    return;
+  }
 
   const config = integration.eventConfigs.find(
     (c) => c.eventType === eventType,
@@ -43,6 +46,8 @@ async function sendSlackMessage(
     const data = await res.json();
     if (!data.ok) {
       console.error(`[slack-observer] Failed to post message: ${data.error}`);
+    } else {
+      console.log(`[slack-observer] Message sent to ${integration.channelName} for ${eventType}`);
     }
   } catch (err) {
     console.error("[slack-observer] Error sending Slack notification:", err);

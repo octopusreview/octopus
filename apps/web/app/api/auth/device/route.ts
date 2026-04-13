@@ -5,6 +5,10 @@ import { sendEmail } from "@/lib/email";
 import { renderEmailTemplate } from "@/lib/email-renderer";
 import { headers } from "next/headers";
 
+const FINGERPRINT_REGEX = /^[a-f0-9]{64}$/;
+const MAX_NEW_DEVICES_PER_HOUR = 3;
+const EMAIL_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+
 export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
@@ -15,6 +19,14 @@ export async function POST(request: Request) {
   if (!fingerprint || typeof fingerprint !== "string") {
     return NextResponse.json(
       { error: "Fingerprint required" },
+      { status: 400 },
+    );
+  }
+
+  // Validate fingerprint format (must be a SHA-256 hex hash)
+  if (!FINGERPRINT_REGEX.test(fingerprint)) {
+    return NextResponse.json(
+      { error: "Invalid fingerprint format" },
       { status: 400 },
     );
   }
@@ -36,6 +48,20 @@ export async function POST(request: Request) {
       },
     });
     return NextResponse.json({ known: true });
+  }
+
+  // Rate limit: max 3 new device registrations per user per hour
+  const recentDevices = await prisma.userDevice.count({
+    where: {
+      userId,
+      createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) },
+    },
+  });
+  if (recentDevices >= MAX_NEW_DEVICES_PER_HOUR) {
+    return NextResponse.json(
+      { error: "Too many new devices. Try again later." },
+      { status: 429 },
+    );
   }
 
   // New device — save it
@@ -67,39 +93,67 @@ export async function POST(request: Request) {
   const deviceCount = await prisma.userDevice.count({ where: { userId } });
 
   if (deviceCount > 1) {
-    // New device on existing account, send alert
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { email: true, name: true },
-    });
+    // Email cooldown: only send 1 new-login email per user per 5 minutes.
+    // Write the record BEFORE sending to prevent TOCTOU race (concurrent
+    // requests both passing the cooldown check before either writes).
+    let emailAlreadySent = false;
+    try {
+      const recentEmail = await prisma.emailSend.findFirst({
+        where: {
+          slug: "new-login",
+          userId,
+          sentAt: { gte: new Date(Date.now() - EMAIL_COOLDOWN_MS) },
+        },
+      });
+      if (recentEmail) {
+        emailAlreadySent = true;
+      } else {
+        // Optimistic insert — if a concurrent request already created this,
+        // the unique-ish timestamp will still succeed but the findFirst
+        // above would have caught it. Belt-and-suspenders.
+        await prisma.emailSend.create({
+          data: { slug: "new-login", userId },
+        });
+      }
+    } catch {
+      // If create fails (race with another request), skip the email
+      emailAlreadySent = true;
+    }
 
-    if (user) {
-      const firstName = user.name?.split(" ")[0] || "there";
-      const appUrl =
-        process.env.BETTER_AUTH_URL ||
-        process.env.NEXT_PUBLIC_APP_URL ||
-        "http://localhost:3000";
-
-      const result = await renderEmailTemplate("new-login", {
-        firstName,
-        appUrl,
-        ipAddress: ip,
-        location,
-        browser,
-        loginTime: new Date().toLocaleString("en-US", {
-          dateStyle: "medium",
-          timeStyle: "short",
-        }),
+    if (!emailAlreadySent) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true, name: true },
       });
 
-      if (result) {
-        sendEmail({
-          to: user.email,
-          subject: result.subject,
-          html: result.html,
-        }).catch((err) =>
-          console.error("[device] Failed to send new-login email:", err),
-        );
+      if (user) {
+        const firstName = user.name?.split(" ")[0] || "there";
+        const appUrl =
+          process.env.BETTER_AUTH_URL ||
+          process.env.NEXT_PUBLIC_APP_URL ||
+          "http://localhost:3000";
+
+        const result = await renderEmailTemplate("new-login", {
+          firstName,
+          appUrl,
+          ipAddress: ip,
+          location,
+          browser,
+          loginTime: new Date().toLocaleString("en-US", {
+            dateStyle: "medium",
+            timeStyle: "short",
+          }),
+        });
+
+        if (result) {
+          sendEmail({
+            to: user.email,
+            subject: result.subject,
+            html: result.html,
+          }).catch((err) =>
+            console.error("[device] Failed to send new-login email:", err),
+          );
+        }
       }
     }
   }

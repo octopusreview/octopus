@@ -20,7 +20,9 @@ async function sendSlackMessage(
   });
 
   if (!integration || !integration.channelId) {
-    console.log(`[slack-observer] No integration or channelId for org ${orgId}`);
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[slack-observer] No integration or channelId for org ${orgId}`);
+    }
     return;
   }
 
@@ -46,7 +48,7 @@ async function sendSlackMessage(
     const data = await res.json();
     if (!data.ok) {
       console.error(`[slack-observer] Failed to post message: ${data.error}`);
-    } else {
+    } else if (process.env.NODE_ENV !== "production") {
       console.log(`[slack-observer] Message sent to ${integration.channelName} for ${eventType}`);
     }
   } catch (err) {

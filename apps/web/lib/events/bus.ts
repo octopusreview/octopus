@@ -10,8 +10,10 @@ class EventBus {
   }
 
   emit(event: AppEvent): void {
-    const listenerCount = this.emitter.listenerCount(event.type);
-    console.log(`[event-bus] emit "${event.type}" → ${listenerCount} listener(s)`);
+    if (process.env.NODE_ENV !== "production") {
+      const listenerCount = this.emitter.listenerCount(event.type);
+      console.log(`[event-bus] emit "${event.type}" → ${listenerCount} listener(s)`);
+    }
     this.emitter.emit(event.type, event);
   }
 

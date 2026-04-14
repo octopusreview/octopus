@@ -60,14 +60,36 @@ export async function redeemCoupon(code: string) {
 
   const creditAmount = Number(coupon.creditAmount);
 
-  await prisma.couponRedemption.create({
-    data: {
-      couponId: coupon.id,
-      organizationId: orgId,
-      redeemedById: session.user.id,
-      creditAmount: creditAmount,
-    },
-  });
+  // Atomic: create redemption inside transaction with re-checked limits.
+  // Unique constraints on (couponId, organizationId) and (couponId, redeemedById)
+  // provide DB-level protection against concurrent redemptions.
+  try {
+    await prisma.$transaction(async (tx) => {
+      if (coupon.maxRedemptions) {
+        const currentCount = await tx.couponRedemption.count({
+          where: { couponId: coupon.id },
+        });
+        if (currentCount >= coupon.maxRedemptions) {
+          throw new Error("COUPON_LIMIT_REACHED");
+        }
+      }
+
+      await tx.couponRedemption.create({
+        data: {
+          couponId: coupon.id,
+          organizationId: orgId,
+          redeemedById: session.user.id,
+          creditAmount: creditAmount,
+        },
+      });
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message === "COUPON_LIMIT_REACHED") {
+      return { error: "This coupon has reached its usage limit" };
+    }
+    // Unique constraint violation — concurrent redemption
+    return { error: "This coupon has already been redeemed" };
+  }
 
   await addCredits(orgId, creditAmount, "coupon", `Coupon: ${normalizedCode}`);
 

@@ -32,11 +32,19 @@ export async function createCoupon(formData: FormData) {
     return { error: "Coupon code is required" };
   }
 
+  const code = rawCode.trim().toUpperCase();
+
+  if (code.length > 50) {
+    return { error: "Coupon code must be 50 characters or less" };
+  }
+
+  if (!/^[A-Z0-9_-]+$/.test(code)) {
+    return { error: "Coupon code can only contain letters, numbers, hyphens, and underscores" };
+  }
+
   if (!creditAmount || creditAmount <= 0) {
     return { error: "Credit amount must be greater than 0" };
   }
-
-  const code = rawCode.trim().toUpperCase();
 
   const existing = await prisma.coupon.findFirst({
     where: { code, deletedAt: null },

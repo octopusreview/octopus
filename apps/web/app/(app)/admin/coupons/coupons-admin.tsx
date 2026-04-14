@@ -189,7 +189,7 @@ export function CouponsAdmin({ coupons }: Props) {
                     <code className="text-sm font-bold">{coupon.code}</code>
                     {getStatusBadge(coupon)}
                     <span className="text-sm font-medium text-green-600 dark:text-green-400">
-                      ${coupon.creditAmount}
+                      ${coupon.creditAmount.toFixed(2)}
                     </span>
                   </div>
                   <div className="flex items-center gap-3 text-xs text-muted-foreground">

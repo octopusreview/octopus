@@ -101,7 +101,12 @@ export async function getOrgMonthlySpend(orgId: string): Promise<number> {
   return total;
 }
 
-export async function isOrgOverSpendLimit(orgId: string): Promise<boolean> {
+export type SpendLimitResult =
+  | { blocked: false }
+  | { blocked: true; reason: "no_credits" }
+  | { blocked: true; reason: "spend_limit"; limitUsd: number };
+
+export async function getOrgSpendLimitStatus(orgId: string): Promise<SpendLimitResult> {
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
     select: {
@@ -114,20 +119,29 @@ export async function isOrgOverSpendLimit(orgId: string): Promise<boolean> {
     },
   });
 
-  if (!org) return false;
+  if (!org) return { blocked: false };
 
   // Orgs with their own keys for all LLM providers have no platform limit
-  if (org.anthropicApiKey && org.openaiApiKey && org.googleApiKey) return false;
+  if (org.anthropicApiKey && org.openaiApiKey && org.googleApiKey) return { blocked: false };
 
   // Check credit balance — if both free and purchased are <= 0, block usage
   const totalCredits = Number(org.creditBalance) + Number(org.freeCreditBalance);
-  if (totalCredits <= 0) return true;
+  if (totalCredits <= 0) return { blocked: true, reason: "no_credits" };
 
   // null limit means unlimited
-  if (org.monthlySpendLimitUsd == null) return false;
+  if (org.monthlySpendLimitUsd == null) return { blocked: false };
 
   const spend = await getOrgMonthlySpend(orgId);
-  return spend >= org.monthlySpendLimitUsd;
+  if (spend >= org.monthlySpendLimitUsd) {
+    return { blocked: true, reason: "spend_limit", limitUsd: org.monthlySpendLimitUsd };
+  }
+
+  return { blocked: false };
+}
+
+export async function isOrgOverSpendLimit(orgId: string): Promise<boolean> {
+  const status = await getOrgSpendLimitStatus(orgId);
+  return status.blocked;
 }
 
 export function formatUsd(n: number): string {

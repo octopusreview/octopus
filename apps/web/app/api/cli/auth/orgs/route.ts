@@ -27,8 +27,9 @@ export async function GET() {
     try {
       const userName = session.user.name || session.user.email?.split("@")[0] || "User";
       await createOrgForUser(session.user.id, userName);
-    } catch {
-      // Ignore — likely a concurrent request already created the org
+    } catch (err) {
+      // Likely a concurrent request already created the org, or org limit reached
+      console.warn("[cli/orgs] Auto-create org failed:", err instanceof Error ? err.message : err);
     }
 
     memberships = await prisma.organizationMember.findMany({

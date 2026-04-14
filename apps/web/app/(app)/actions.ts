@@ -13,6 +13,8 @@ import type { LogLevel } from "@/lib/indexer";
 import { createAbortController, abortIndexing } from "@/lib/indexing-abort";
 import { runIndexingInBackground } from "@/lib/indexing-runner";
 import { toBaseSlug, randomSlugSuffix } from "@/lib/slug";
+import { canUserCreateOrg } from "@/lib/org-limits";
+import { MAX_OWNED_ORGS_PER_USER } from "@/lib/constants";
 
 export async function clearOrgCookie() {
   const cookieStore = await cookies();
@@ -57,6 +59,12 @@ export async function createOrganization(
   formData: FormData,
 ): Promise<{ error?: string }> {
   const user = await getUser();
+
+  const allowed = await canUserCreateOrg(user.id);
+  if (!allowed) {
+    return { error: `You can own at most ${MAX_OWNED_ORGS_PER_USER} organizations.` };
+  }
+
   const name = formData.get("name") as string;
 
   if (!name || name.trim().length < 2) {
@@ -76,26 +84,48 @@ export async function createOrganization(
     slug = `${baseSlug}-${randomSlugSuffix()}`;
   }
 
-  const org = await prisma.organization.create({
-    data: {
-      name: name.trim(),
-      slug,
-      members: {
-        create: {
-          userId: user.id,
-          role: "owner",
+  // Re-check limit and create atomically to prevent TOCTOU race
+  let org;
+  try {
+    org = await prisma.$transaction(async (tx) => {
+      const ownedCount = await tx.organizationMember.count({
+        where: { userId: user.id, role: "owner", deletedAt: null, organization: { deletedAt: null } },
+      });
+      if (ownedCount >= MAX_OWNED_ORGS_PER_USER) {
+        throw new Error("ORG_LIMIT_REACHED");
+      }
+
+      const firstOrg = ownedCount === 0;
+
+      return tx.organization.create({
+        data: {
+          name: name.trim(),
+          slug,
+          members: {
+            create: {
+              userId: user.id,
+              role: "owner",
+            },
+          },
+          ...(firstOrg && {
+            creditTransactions: {
+              create: {
+                amount: 150,
+                type: "free_credit",
+                description: "Welcome bonus — $150 free credits",
+                balanceAfter: 150,
+              },
+            },
+          }),
         },
-      },
-      creditTransactions: {
-        create: {
-          amount: 150,
-          type: "free_credit",
-          description: "Welcome bonus — $150 free credits",
-          balanceAfter: 150,
-        },
-      },
-    },
-  });
+      });
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message === "ORG_LIMIT_REACHED") {
+      return { error: `You can own at most ${MAX_OWNED_ORGS_PER_USER} organizations.` };
+    }
+    throw err;
+  }
 
   const cookieStore = await cookies();
   cookieStore.set("current_org_id", org.id, {

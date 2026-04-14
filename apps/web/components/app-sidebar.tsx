@@ -57,6 +57,7 @@ type SidebarProps = {
   orgs: Org[];
   currentOrg: Org;
   isAdmin?: boolean;
+  canCreateOrg?: boolean;
 };
 
 function SidebarTooltip({
@@ -81,6 +82,7 @@ function SidebarContent({
   orgs,
   currentOrg,
   isAdmin,
+  canCreateOrg,
   collapsed,
   onToggleCollapse,
   onNavigate,
@@ -95,14 +97,14 @@ function SidebarContent({
         <div className="flex items-center justify-center border-b py-3">
           <SidebarTooltip label={currentOrg.name}>
             <div>
-              <OrgSwitcher orgs={orgs} currentOrg={currentOrg} collapsed />
+              <OrgSwitcher orgs={orgs} currentOrg={currentOrg} canCreateOrg={canCreateOrg} collapsed />
             </div>
           </SidebarTooltip>
         </div>
       ) : (
         <>
           <div className="border-b px-3 py-3">
-            <OrgSwitcher orgs={orgs} currentOrg={currentOrg} />
+            <OrgSwitcher orgs={orgs} currentOrg={currentOrg} canCreateOrg={canCreateOrg} />
           </div>
 
           <div className="border-b px-3 py-2">

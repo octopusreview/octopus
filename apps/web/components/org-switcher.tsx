@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { IconSelector, IconCheck, IconPlus, IconBuildingSkyscraper, IconMail } from "@tabler/icons-react";
 import { switchOrganization, createOrganization } from "@/app/(app)/actions";
-import { MAX_OWNED_ORGS_PER_USER } from "@/lib/org-limits";
+import { MAX_OWNED_ORGS_PER_USER } from "@/lib/constants";
 import Link from "next/link";
 
 type Org = {

@@ -13,7 +13,8 @@ import type { LogLevel } from "@/lib/indexer";
 import { createAbortController, abortIndexing } from "@/lib/indexing-abort";
 import { runIndexingInBackground } from "@/lib/indexing-runner";
 import { toBaseSlug, randomSlugSuffix } from "@/lib/slug";
-import { canUserCreateOrg, MAX_OWNED_ORGS_PER_USER } from "@/lib/org-limits";
+import { canUserCreateOrg } from "@/lib/org-limits";
+import { MAX_OWNED_ORGS_PER_USER } from "@/lib/constants";
 
 export async function clearOrgCookie() {
   const cookieStore = await cookies();

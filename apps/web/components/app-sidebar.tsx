@@ -33,8 +33,10 @@ import {
   IconLayoutSidebarLeftExpand,
   IconBug,
   IconFileText,
+  IconTicket,
 } from "@tabler/icons-react";
 import { CommandPalette } from "@/components/command-palette";
+import { CouponDialog } from "@/components/coupon-dialog";
 
 const mainNavItems = [
   { href: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard },
@@ -87,6 +89,7 @@ function SidebarContent({
 }: SidebarProps & { collapsed?: boolean; onToggleCollapse?: () => void; onNavigate?: () => void }) {
   const pathname = usePathname();
   const chat = useChat();
+  const [couponOpen, setCouponOpen] = useState(false);
 
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
@@ -223,6 +226,39 @@ function SidebarContent({
 
       </nav>
 
+      {/* Coupon Banner */}
+      <div className={cn("py-2", collapsed ? "px-2" : "px-3")}>
+        {collapsed ? (
+          <SidebarTooltip label="Redeem Coupon">
+            <button
+              onClick={() => setCouponOpen(true)}
+              className="flex w-full items-center justify-center rounded-md px-2 py-2 text-emerald-500 transition-colors hover:bg-emerald-500/10"
+            >
+              <IconTicket className="size-4" />
+            </button>
+          </SidebarTooltip>
+        ) : (
+          <div className="shimmer-border-emerald">
+            <button
+              onClick={() => setCouponOpen(true)}
+              className="relative flex w-full items-center gap-2.5 overflow-hidden bg-sidebar px-3 py-2 text-left transition-colors hover:bg-muted"
+            >
+              <svg className="pointer-events-none absolute inset-0 size-full opacity-[0.07] dark:opacity-[0.12]" aria-hidden="true">
+                <filter id="coupon-noise">
+                  <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="4" stitchTiles="stitch" />
+                </filter>
+                <rect width="100%" height="100%" filter="url(#coupon-noise)" />
+              </svg>
+              <IconTicket className="relative size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <div className="relative min-w-0">
+                <p className="text-xs font-medium text-foreground/90">Got a code?</p>
+                <p className="text-[10px] text-muted-foreground">Redeem credits</p>
+              </div>
+            </button>
+          </div>
+        )}
+      </div>
+
       <div className={cn("space-y-1 py-2", collapsed ? "px-2" : "px-3")}>
         {bottomNavItems.map(({ href, label, icon: Icon }) => {
           const isActive = pathname === href;
@@ -335,6 +371,8 @@ function SidebarContent({
           </UserMenu>
         )}
       </div>
+
+      <CouponDialog open={couponOpen} onOpenChange={setCouponOpen} />
     </div>
   );
 }

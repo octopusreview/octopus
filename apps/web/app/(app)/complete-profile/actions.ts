@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { toBaseSlug, randomSlugSuffix } from "@/lib/slug";
-import { canUserCreateOrg, MAX_OWNED_ORGS_PER_USER } from "@/lib/org-limits";
+import { canUserCreateOrg } from "@/lib/org-limits";
+import { MAX_OWNED_ORGS_PER_USER } from "@/lib/constants";
 
 export async function completeProfile(
   _prevState: { error?: string },

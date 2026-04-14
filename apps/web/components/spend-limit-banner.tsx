@@ -7,10 +7,14 @@ import type { SpendLimitResult } from "@/lib/cost";
 export function SpendLimitBanner({ spendStatus }: { spendStatus: SpendLimitResult }) {
   if (!spendStatus.blocked) return null;
 
-  const message =
-    spendStatus.reason === "no_credits"
-      ? "Credit balance is $0."
-      : `Monthly AI usage limit reached ($${spendStatus.limitUsd}).`;
+  let message: string;
+  if (spendStatus.reason === "no_credits") {
+    message = "Credit balance is $0.";
+  } else if (spendStatus.limitUsd === 0) {
+    message = "Monthly AI usage limit is set to $0.";
+  } else {
+    message = `Monthly AI usage limit reached ($${spendStatus.limitUsd}).`;
+  }
 
   return (
     <div className="sticky top-0 z-50">

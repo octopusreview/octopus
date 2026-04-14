@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { toBaseSlug, randomSlugSuffix } from "@/lib/slug";
+import { canUserCreateOrg, isFirstOrgForUser, MAX_OWNED_ORGS_PER_USER } from "@/lib/org-limits";
 
 export async function completeProfile(
   _prevState: { error?: string },
@@ -44,6 +45,11 @@ export async function completeProfile(
  * Safe to call from Server Components (layout) and Server Actions.
  */
 export async function createOrgForUser(userId: string, userName: string) {
+  const allowed = await canUserCreateOrg(userId);
+  if (!allowed) {
+    throw new Error(`Organization limit reached (max ${MAX_OWNED_ORGS_PER_USER}).`);
+  }
+
   const firstName = userName.split(" ")[0];
   const orgName = `${firstName}'s Organization`;
   const baseSlug = toBaseSlug(orgName);
@@ -59,6 +65,8 @@ export async function createOrgForUser(userId: string, userName: string) {
     slug = `${baseSlug}-${randomSlugSuffix()}`;
   }
 
+  const firstOrg = await isFirstOrgForUser(userId);
+
   const org = await prisma.organization.create({
     data: {
       name: orgName,
@@ -69,6 +77,16 @@ export async function createOrgForUser(userId: string, userName: string) {
           role: "owner",
         },
       },
+      ...(firstOrg && {
+        creditTransactions: {
+          create: {
+            amount: 150,
+            type: "free_credit",
+            description: "Welcome bonus — $150 free credits",
+            balanceAfter: 150,
+          },
+        },
+      }),
     },
   });
 

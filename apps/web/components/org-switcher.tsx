@@ -17,7 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { IconSelector, IconCheck, IconPlus } from "@tabler/icons-react";
+import { IconSelector, IconCheck, IconPlus, IconBuildingSkyscraper, IconMail } from "@tabler/icons-react";
 import { switchOrganization, createOrganization } from "@/app/(app)/actions";
 import Link from "next/link";
 
@@ -59,12 +59,15 @@ export function OrgSwitcher({
   orgs,
   currentOrg,
   collapsed,
+  canCreateOrg = true,
 }: {
   orgs: Org[];
   currentOrg: Org;
   collapsed?: boolean;
+  canCreateOrg?: boolean;
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [enterpriseDialogOpen, setEnterpriseDialogOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [state, formAction, pending] = useActionState(createOrganization, {});
@@ -183,7 +186,11 @@ export function OrgSwitcher({
             <button
               onClick={() => {
                 setDropdownOpen(false);
-                setDialogOpen(true);
+                if (canCreateOrg) {
+                  setDialogOpen(true);
+                } else {
+                  setEnterpriseDialogOpen(true);
+                }
               }}
               className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-2.5 text-left transition-colors hover:bg-muted focus:bg-muted focus:outline-none"
             >
@@ -235,6 +242,46 @@ export function OrgSwitcher({
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={enterpriseDialogOpen} onOpenChange={setEnterpriseDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Need more organizations?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex items-center justify-center">
+              <div className="flex size-12 items-center justify-center rounded-full bg-primary/10">
+                <IconBuildingSkyscraper className="size-6 text-primary" />
+              </div>
+            </div>
+            <p className="text-center text-sm text-muted-foreground">
+              You&apos;ve reached the maximum of 3 organizations on the free plan.
+              Contact us for an Enterprise plan with unlimited organizations and
+              dedicated support.
+            </p>
+            <div className="flex items-center justify-center gap-2 rounded-md border border-border/50 bg-muted/50 px-3 py-2 text-sm">
+              <IconMail className="size-4 text-muted-foreground" />
+              <a
+                href="mailto:enterprise@octopus-review.ai"
+                className="font-medium text-primary hover:underline"
+              >
+                enterprise@octopus-review.ai
+              </a>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEnterpriseDialogOpen(false)}
+            >
+              Close
+            </Button>
+            <Button asChild>
+              <a href="mailto:enterprise@octopus-review.ai">Contact Sales</a>
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

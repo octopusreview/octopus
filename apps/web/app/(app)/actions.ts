@@ -13,6 +13,7 @@ import type { LogLevel } from "@/lib/indexer";
 import { createAbortController, abortIndexing } from "@/lib/indexing-abort";
 import { runIndexingInBackground } from "@/lib/indexing-runner";
 import { toBaseSlug, randomSlugSuffix } from "@/lib/slug";
+import { canUserCreateOrg, isFirstOrgForUser, MAX_OWNED_ORGS_PER_USER } from "@/lib/org-limits";
 
 export async function clearOrgCookie() {
   const cookieStore = await cookies();
@@ -57,6 +58,12 @@ export async function createOrganization(
   formData: FormData,
 ): Promise<{ error?: string }> {
   const user = await getUser();
+
+  const allowed = await canUserCreateOrg(user.id);
+  if (!allowed) {
+    return { error: `You can own at most ${MAX_OWNED_ORGS_PER_USER} organizations.` };
+  }
+
   const name = formData.get("name") as string;
 
   if (!name || name.trim().length < 2) {
@@ -76,6 +83,8 @@ export async function createOrganization(
     slug = `${baseSlug}-${randomSlugSuffix()}`;
   }
 
+  const firstOrg = await isFirstOrgForUser(user.id);
+
   const org = await prisma.organization.create({
     data: {
       name: name.trim(),
@@ -86,14 +95,16 @@ export async function createOrganization(
           role: "owner",
         },
       },
-      creditTransactions: {
-        create: {
-          amount: 150,
-          type: "free_credit",
-          description: "Welcome bonus — $150 free credits",
-          balanceAfter: 150,
+      ...(firstOrg && {
+        creditTransactions: {
+          create: {
+            amount: 150,
+            type: "free_credit",
+            description: "Welcome bonus — $150 free credits",
+            balanceAfter: 150,
+          },
         },
-      },
+      }),
     },
   });
 

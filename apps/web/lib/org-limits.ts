@@ -19,6 +19,7 @@ export async function isFirstOrgForUser(userId: string): Promise<boolean> {
     where: {
       userId,
       role: "owner",
+      organization: { deletedAt: null },
     },
   });
   return count === 0;

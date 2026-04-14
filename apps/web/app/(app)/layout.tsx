@@ -8,7 +8,7 @@ import { PermissionBanner } from "@/components/permission-banner";
 import { SpendLimitBanner } from "@/components/spend-limit-banner";
 import { getInstallationPermissions } from "@/lib/github";
 import { isAdminEmail } from "@/lib/admin";
-import { getOrgSpendLimitStatus } from "@/lib/cost";
+import { isOrgOverSpendLimit } from "@/lib/cost";
 import { canUserCreateOrg } from "@/lib/org-limits";
 import { OrgCookieSync } from "@/components/org-cookie-sync";
 import { DeviceReporter } from "@/components/device-reporter";
@@ -151,7 +151,7 @@ export default async function AppLayout({
   }
 
   // Check spend limit for current org (only if no own API key)
-  const spendStatus = await getOrgSpendLimitStatus(currentOrg.id);
+  const spendOverLimit = await isOrgOverSpendLimit(currentOrg.id);
 
   return (
     <ChatWrapper orgId={currentOrg.id} userId={session.user.id} userName={session.user.name}>
@@ -164,7 +164,7 @@ export default async function AppLayout({
             orgs={orgsNeedingPermission.map((o) => ({ id: o.id, name: o.name }))}
           />
         )}
-        <SpendLimitBanner spendStatus={spendStatus} />
+        <SpendLimitBanner isOverLimit={spendOverLimit} />
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
           <AppSidebar {...sidebarProps} />
           <div className="flex min-h-0 flex-1 flex-col">

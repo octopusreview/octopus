@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { IconSelector, IconCheck, IconPlus, IconBuildingSkyscraper, IconMail } from "@tabler/icons-react";
 import { switchOrganization, createOrganization } from "@/app/(app)/actions";
+import { MAX_OWNED_ORGS_PER_USER } from "@/lib/org-limits";
 import Link from "next/link";
 
 type Org = {
@@ -257,7 +258,7 @@ export function OrgSwitcher({
               </div>
             </div>
             <p className="text-center text-sm text-muted-foreground">
-              You&apos;ve reached the maximum of 3 organizations on the free plan.
+              You&apos;ve reached the maximum of {MAX_OWNED_ORGS_PER_USER} organizations on the free plan.
               Contact us for an Enterprise plan with unlimited organizations and
               dedicated support.
             </p>

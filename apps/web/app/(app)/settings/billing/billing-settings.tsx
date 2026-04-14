@@ -81,6 +81,8 @@ function typeBadgeVariant(type: string) {
       return "outline" as const;
     case "auto_reload":
       return "default" as const;
+    case "coupon":
+      return "outline" as const;
     default:
       return "secondary" as const;
   }
@@ -94,6 +96,8 @@ function typeBadgeClass(type: string) {
       return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800";
     case "auto_reload":
       return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800";
+    case "coupon":
+      return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200 dark:border-purple-800";
     default:
       return "";
   }

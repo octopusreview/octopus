@@ -21,6 +21,7 @@ import {
   IconMail,
   IconSend,
   IconClockPlay,
+  IconTicket,
 } from "@tabler/icons-react";
 
 const sections = [
@@ -31,6 +32,7 @@ const sections = [
       { href: "/admin/users", label: "Users", icon: IconUsers },
       { href: "/admin/organizations", label: "Organizations", icon: IconBuilding },
       { href: "/admin/community", label: "Community", icon: IconWorld },
+      { href: "/admin/coupons", label: "Coupons", icon: IconTicket },
     ],
   },
   {

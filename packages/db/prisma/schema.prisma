@@ -145,6 +145,7 @@ model Organization {
   packageAnalyses       PackageAnalysis[]
   safePackageRequests   SafePackageRequest[]
   packageDeepDives      PackageDeepDive[]
+  couponRedemptions     CouponRedemption[]
 
   @@map("organizations")
 }
@@ -567,7 +568,7 @@ model DaySummary {
 model CreditTransaction {
   id                    String   @id @default(cuid())
   amount                Decimal  @db.Decimal(12, 4)
-  type                  String   // "purchase" | "usage" | "free_credit" | "refund" | "auto_reload"
+  type                  String   // "purchase" | "usage" | "free_credit" | "refund" | "auto_reload" | "coupon"
   description           String?
   stripeSessionId       String?  @unique
   receiptUrl            String?
@@ -1042,4 +1043,39 @@ model UserDevice {
   @@unique([userId, fingerprint])
   @@index([userId])
   @@map("user_devices")
+}
+
+model Coupon {
+  id              String    @id @default(cuid())
+  code            String    @unique // stored UPPERCASE for case-insensitive matching
+  description     String?
+  creditAmount    Decimal   @db.Decimal(12, 4)
+  maxRedemptions  Int?      // null = unlimited
+  expiresAt       DateTime?
+  isActive        Boolean   @default(true)
+  createdById     String?
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  redemptions CouponRedemption[]
+
+  @@index([code])
+  @@map("coupons")
+}
+
+model CouponRedemption {
+  id             String   @id @default(cuid())
+  couponId       String
+  coupon         Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  redeemedById   String
+  creditAmount   Decimal  @db.Decimal(12, 4)
+  createdAt      DateTime @default(now())
+
+  @@unique([couponId, organizationId])
+  @@unique([couponId, redeemedById])
+  @@index([organizationId])
+  @@map("coupon_redemptions")
 }

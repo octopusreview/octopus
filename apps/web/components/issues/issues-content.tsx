@@ -33,7 +33,6 @@ import {
   IconExternalLink,
   IconGitFork,
 } from "@tabler/icons-react";
-import { CreateCollabTaskButton } from "@/components/create-collab-task-dialog";
 import { CreateLinearIssueButton } from "@/components/create-linear-issue-dialog";
 import { CreateGitHubIssueButton } from "@/components/create-github-issue-dialog";
 import { FeedbackButtons } from "@/components/issues/feedback-buttons";
@@ -66,7 +65,6 @@ interface IssuesContentProps {
   currentSeverity: string;
   currentPeriod: string;
   currentStatus: string;
-  collabConnected: boolean;
   linearConnected: boolean;
   githubConnected: boolean;
 }
@@ -160,7 +158,6 @@ export function IssuesContent({
   currentSeverity,
   currentPeriod,
   currentStatus,
-  collabConnected,
   linearConnected,
   githubConnected,
 }: IssuesContentProps) {
@@ -344,9 +341,6 @@ export function IssuesContent({
                             <div className="ml-auto flex items-center gap-1">
                               {githubConnected && issue.repoProvider === "github" && !issue.githubIssueNumber && !issue.acknowledged && (
                                 <CreateGitHubIssueButton issueId={issue.id} />
-                              )}
-                              {collabConnected && !issue.acknowledged && (
-                                <CreateCollabTaskButton issueId={issue.id} />
                               )}
                               {linearConnected && !issue.linearIssueId && !issue.acknowledged && (
                                 <CreateLinearIssueButton issueId={issue.id} />

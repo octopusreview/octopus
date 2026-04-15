@@ -28,7 +28,7 @@ import {
   saveLinearTeamMapping,
   createLinearIssueFromReview,
 } from "@/app/(app)/settings/integrations/linear-task-action";
-import { generateIssueContent } from "@/app/(app)/settings/integrations/collab-task-action";
+import { generateIssueContent } from "@/app/(app)/settings/integrations/issue-content-action";
 
 type Step = "loading" | "select_team" | "generating" | "preview" | "creating" | "done" | "error";
 

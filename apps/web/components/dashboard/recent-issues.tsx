@@ -27,7 +27,6 @@ import {
   IconCheck,
   IconExternalLink,
 } from "@tabler/icons-react";
-import { CreateCollabTaskButton } from "@/components/create-collab-task-dialog";
 import { CreateLinearIssueButton } from "@/components/create-linear-issue-dialog";
 import { CreateGitHubIssueButton } from "@/components/create-github-issue-dialog";
 import { FeedbackButtons } from "@/components/issues/feedback-buttons";
@@ -100,13 +99,11 @@ function AcknowledgeButton({ issueId }: { issueId: string }) {
 
 export function RecentIssuesCard({
   issues = [],
-  collabConnected = false,
   linearConnected = false,
   githubConnected = false,
   issueLinearStatuses = {},
 }: {
   issues?: Issue[];
-  collabConnected?: boolean;
   linearConnected?: boolean;
   githubConnected?: boolean;
   issueLinearStatuses?: Record<string, LinearStatus>;
@@ -242,9 +239,6 @@ export function RecentIssuesCard({
                     <div className="mt-1.5 flex flex-wrap items-center gap-1">
                       {githubConnected && issue.repoProvider === "github" && !issue.githubIssueNumber && (
                         <CreateGitHubIssueButton issueId={issue.id} />
-                      )}
-                      {collabConnected && (
-                        <CreateCollabTaskButton issueId={issue.id} />
                       )}
                       {linearConnected && !issue.linearIssueId && (
                         <CreateLinearIssueButton issueId={issue.id} />

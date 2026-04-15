@@ -385,13 +385,6 @@ export default async function DashboardPage({
     .sort((a, b) => b.prCount - a.prCount)
     .slice(0, 6);
 
-  // Check if Collab integration is active
-  const collabIntegration = await prisma.collabIntegration.findUnique({
-    where: { organizationId: org.id },
-    select: { isActive: true },
-  });
-  const collabConnected = collabIntegration?.isActive ?? false;
-
   // Check if Linear integration is active
   const linearIntegration = await prisma.linearIntegration
     .findUnique({ where: { organizationId: org.id }, select: { accessToken: true } })
@@ -566,7 +559,6 @@ export default async function DashboardPage({
               prTitle: i.pullRequest.title,
               prUrl: i.pullRequest.url,
             }))}
-            collabConnected={collabConnected}
             linearConnected={linearConnected}
             githubConnected={githubConnected}
             issueLinearStatuses={issueLinearStatuses}

@@ -19,7 +19,7 @@ import {
   initGitHubIssueCreation,
   createGitHubIssueFromReview,
 } from "@/app/(app)/settings/integrations/github-issue-action";
-import { generateIssueContent } from "@/app/(app)/settings/integrations/collab-task-action";
+import { generateIssueContent } from "@/app/(app)/settings/integrations/issue-content-action";
 
 type Step = "loading" | "generating" | "preview" | "creating" | "done" | "error";
 

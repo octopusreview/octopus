@@ -80,7 +80,7 @@ export default async function IssuesPage({
         : {}),
   };
 
-  const [issues, allForKpi, collabIntegration, linearIntegration, org] = await Promise.all([
+  const [issues, allForKpi, linearIntegration, org] = await Promise.all([
     prisma.reviewIssue.findMany({
       where,
       select: {
@@ -114,10 +114,6 @@ export default async function IssuesPage({
       where: kpiWhere,
       select: { severity: true },
     }),
-    prisma.collabIntegration.findUnique({
-      where: { organizationId: orgId },
-      select: { isActive: true },
-    }),
     prisma.linearIntegration
       .findUnique({ where: { organizationId: orgId }, select: { accessToken: true } })
       .catch(() => null),
@@ -133,7 +129,6 @@ export default async function IssuesPage({
     if (sev in kpiCounts) kpiCounts[sev]++;
   }
 
-  const collabConnected = collabIntegration?.isActive ?? false;
   const linearConnected = !!linearIntegration;
   const githubConnected = org?.githubInstallationId !== null;
 
@@ -209,7 +204,6 @@ export default async function IssuesPage({
         currentSeverity={filterSeverity || "all"}
         currentPeriod={filterPeriod}
         currentStatus={filterStatus}
-        collabConnected={collabConnected}
         linearConnected={linearConnected}
         githubConnected={githubConnected}
       />

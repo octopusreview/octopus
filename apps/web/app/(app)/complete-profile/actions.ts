@@ -24,7 +24,7 @@ export async function completeProfile(
   if (name.length > 100) {
     return { error: "Name must be at most 100 characters." };
   }
-  if (/[<>"'`{}]/.test(name)) {
+  if (/[<>"{}]/.test(name)) {
     return { error: "Name contains invalid characters." };
   }
 

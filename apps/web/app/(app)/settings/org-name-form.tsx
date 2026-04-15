@@ -41,6 +41,7 @@ export function OrgNameForm({
                   placeholder="Acme Inc."
                   required
                   minLength={2}
+                  maxLength={100}
                   disabled={!isOwner}
                   className="max-w-xs"
                 />

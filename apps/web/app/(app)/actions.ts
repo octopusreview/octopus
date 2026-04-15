@@ -65,10 +65,16 @@ export async function createOrganization(
     return { error: `You can own at most ${MAX_OWNED_ORGS_PER_USER} organizations.` };
   }
 
-  const name = formData.get("name") as string;
+  const name = (formData.get("name") as string)?.trim();
 
-  if (!name || name.trim().length < 2) {
+  if (!name || name.length < 2) {
     return { error: "Organization name must be at least 2 characters." };
+  }
+  if (name.length > 100) {
+    return { error: "Organization name must be at most 100 characters." };
+  }
+  if (/[<>"{}]/.test(name)) {
+    return { error: "Organization name contains invalid characters." };
   }
 
   const baseSlug = toBaseSlug(name);
@@ -169,7 +175,7 @@ export async function updateOrganizationName(
   if (name.length > 100) {
     return { error: "Organization name must be at most 100 characters." };
   }
-  if (/[<>"'`{}]/.test(name)) {
+  if (/[<>"{}]/.test(name)) {
     return { error: "Organization name contains invalid characters." };
   }
 

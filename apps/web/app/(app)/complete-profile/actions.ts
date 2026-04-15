@@ -21,6 +21,12 @@ export async function completeProfile(
   if (!name || name.length < 2) {
     return { error: "Name must be at least 2 characters." };
   }
+  if (name.length > 100) {
+    return { error: "Name must be at most 100 characters." };
+  }
+  if (/[<>"'`{}]/.test(name)) {
+    return { error: "Name contains invalid characters." };
+  }
 
   await prisma.user.update({
     where: { id: session.user.id },

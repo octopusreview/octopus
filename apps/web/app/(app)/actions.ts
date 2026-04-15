@@ -166,6 +166,12 @@ export async function updateOrganizationName(
   if (!name || name.length < 2) {
     return { error: "Organization name must be at least 2 characters." };
   }
+  if (name.length > 100) {
+    return { error: "Organization name must be at most 100 characters." };
+  }
+  if (/[<>"'`{}]/.test(name)) {
+    return { error: "Organization name contains invalid characters." };
+  }
 
   await prisma.organization.update({
     where: { id: orgId },

@@ -44,6 +44,7 @@ export default function CompleteProfilePage() {
                   placeholder="e.g. John"
                   required
                   minLength={2}
+                  maxLength={100}
                   autoFocus
                 />
               </Field>

@@ -62,17 +62,44 @@ export async function POST(req: Request) {
       if (!membership) {
         return new Response("Not a member of this organization", { status: 403 });
       }
+
+      const authResponse = pubby.authenticatePresenceChannel(
+        socket_id,
+        channel_name,
+        session.user.id,
+        { name: session.user.name, image: session.user.image }
+      );
+      return Response.json(authResponse);
     }
 
-    const authResponse = pubby.authenticatePresenceChannel(
-      socket_id,
-      channel_name,
-      session.user.id,
-      { name: session.user.name, image: session.user.image }
-    );
-    return Response.json(authResponse);
+    // Validate presence-org-{orgId} channels
+    const orgMatch = channel_name.match(/^presence-org-(.+)$/);
+    if (orgMatch) {
+      const orgId = orgMatch[1];
+      const membership = await prisma.organizationMember.findFirst({
+        where: {
+          organizationId: orgId,
+          userId: session.user.id,
+          deletedAt: null,
+        },
+      });
+      if (!membership) {
+        return new Response("Not a member of this organization", { status: 403 });
+      }
+
+      const authResponse = pubby.authenticatePresenceChannel(
+        socket_id,
+        channel_name,
+        session.user.id,
+        { name: session.user.name, image: session.user.image }
+      );
+      return Response.json(authResponse);
+    }
+
+    // Deny unrecognized presence channel patterns
+    return new Response("Channel not allowed", { status: 403 });
   }
 
-  const authResponse = pubby.authenticatePrivateChannel(socket_id, channel_name);
-  return Response.json(authResponse);
+  // Deny all other channels for session users
+  return new Response("Channel not allowed", { status: 403 });
 }

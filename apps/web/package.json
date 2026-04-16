@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
+    "@aws-sdk/client-s3": "^3.1030.0",
     "@base-ui/react": "^1.2.0",
     "@elastic/elasticsearch": "^9.3.2",
     "@getpubby/sdk": "^0.2.0",
@@ -48,6 +49,7 @@
     "resend": "^6.9.4",
     "server-only": "^0.0.1",
     "shadcn": "^3.8.5",
+    "sharp": "^0.34.5",
     "sonner": "^2.0.7",
     "stripe": "^20.4.0",
     "tailwind-merge": "^3.5.0",

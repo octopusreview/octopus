@@ -19,6 +19,10 @@ const nextConfig: NextConfig = {
         hostname: "api.producthunt.com",
         pathname: "/widgets/embed-image/**",
       },
+      {
+        protocol: "https",
+        hostname: "cdn.octopus-review.ai",
+      },
     ],
   },
   env: {

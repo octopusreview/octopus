@@ -58,6 +58,7 @@ export default async function AppLayout({
             select: {
               id: true,
               name: true,
+              avatarUrl: true,
               bannedAt: true,
               deletedAt: true,
               needsPermissionGrant: true,
@@ -136,7 +137,7 @@ export default async function AppLayout({
   }
 
   const currentOrg =
-    orgs.find((o) => o.id === currentOrgId) ?? orgs[0] ?? { id: "", name: "Octopus" };
+    orgs.find((o) => o.id === currentOrgId) ?? orgs[0] ?? { id: "", name: "Octopus", avatarUrl: null };
 
   const isAdmin = isAdminEmail(session.user.email);
   const canCreateOrg = await canUserCreateOrg(session.user.id);

@@ -25,6 +25,7 @@ import Link from "next/link";
 type Org = {
   id: string;
   name: string;
+  avatarUrl?: string | null;
 };
 
 function getOrgInitials(name: string) {
@@ -108,11 +109,33 @@ export function OrgSwitcher({
             }
           >
             {collapsed ? (
-              <Image src="/logo.svg" alt="Octopus" width={20} height={20} />
+              currentOrg.avatarUrl ? (
+                <Image
+                  src={currentOrg.avatarUrl}
+                  alt={currentOrg.name}
+                  width={20}
+                  height={20}
+                  unoptimized
+                  className="size-5 rounded-full object-cover"
+                />
+              ) : (
+                <Image src="/logo.svg" alt="Octopus" width={20} height={20} className="size-5" />
+              )
             ) : (
               <>
                 <Link href="/dashboard" onClick={(e) => e.stopPropagation()}>
-                  <Image src="/logo.svg" alt="Octopus" width={24} height={24} />
+                  {currentOrg.avatarUrl ? (
+                    <Image
+                      src={currentOrg.avatarUrl}
+                      alt={currentOrg.name}
+                      width={24}
+                      height={24}
+                      unoptimized
+                      className="size-6 rounded-full object-cover"
+                    />
+                  ) : (
+                    <Image src="/logo.svg" alt="Octopus" width={24} height={24} className="size-6" />
+                  )}
                 </Link>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold">Octopus</div>
@@ -166,11 +189,22 @@ export function OrgSwitcher({
                   }}
                   className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-2.5 text-left transition-colors hover:bg-muted focus:bg-muted focus:outline-none"
                 >
-                  <div
-                    className={`flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white ${getOrgColor(org.id)}`}
-                  >
-                    {getOrgInitials(org.name)}
-                  </div>
+                  {org.avatarUrl ? (
+                    <Image
+                      src={org.avatarUrl}
+                      alt={org.name}
+                      width={32}
+                      height={32}
+                      unoptimized
+                      className="size-8 shrink-0 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div
+                      className={`flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white ${getOrgColor(org.id)}`}
+                    >
+                      {getOrgInitials(org.name)}
+                    </div>
+                  )}
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">
                     {org.name}
                   </span>

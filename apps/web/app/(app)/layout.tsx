@@ -28,7 +28,7 @@ function deriveNameFromEmail(email: string): string | null {
     .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase());
 
   const name = parts.join(" ");
-  if (name.length < 2 || /[<>"{}]/.test(name)) return null;
+  if (name.length < 2 || /[<>"`{}()\\\/;]/.test(name)) return null;
 
   return name.slice(0, 100);
 }

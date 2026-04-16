@@ -3,7 +3,13 @@
 import { useState } from "react";
 import { createApiToken, deleteApiToken } from "./actions";
 import { toast } from "sonner";
-import { IconCopy, IconTrash, IconPlus } from "@tabler/icons-react";
+import {
+  IconCopy,
+  IconTrash,
+  IconPlus,
+  IconTerminal2,
+  IconCheck,
+} from "@tabler/icons-react";
 
 interface Token {
   id: string;
@@ -191,19 +197,104 @@ export function ApiTokensClient({
         </div>
       )}
 
-      <div className="text-muted-foreground space-y-1 text-xs">
-        <p>
-          Install the CLI:{" "}
-          <code className="rounded bg-stone-100 px-1.5 py-0.5 dark:bg-stone-800">
-            npm install -g @octp/cli
-          </code>
+      <CliQuickStart />
+    </div>
+  );
+}
+
+function CodeBlock({ children }: { children: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(children);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback: clipboard API unavailable or denied
+    }
+  }
+
+  return (
+    <div className="group relative">
+      <pre className="overflow-x-auto rounded-md bg-stone-100 px-4 py-3 font-mono text-sm dark:bg-stone-800">
+        <code>{children}</code>
+      </pre>
+      <button
+        onClick={copy}
+        className="absolute right-2 top-2 rounded-md p-1.5 text-stone-400 opacity-0 transition hover:bg-stone-200 hover:text-stone-600 group-hover:opacity-100 dark:hover:bg-stone-700 dark:hover:text-stone-300"
+        title="Copy"
+      >
+        {copied ? (
+          <IconCheck className="size-3.5" />
+        ) : (
+          <IconCopy className="size-3.5" />
+        )}
+      </button>
+    </div>
+  );
+}
+
+function CliQuickStart() {
+  return (
+    <div className="space-y-4 rounded-lg border p-5 dark:border-stone-700">
+      <div className="flex items-center gap-2">
+        <IconTerminal2 className="text-muted-foreground size-5" />
+        <h3 className="text-sm font-semibold">CLI Quick Start</h3>
+      </div>
+
+      <div className="space-y-3">
+        <div>
+          <p className="text-muted-foreground mb-1.5 text-xs font-medium">
+            1. Install the CLI
+          </p>
+          <CodeBlock>npm install -g @octp/cli</CodeBlock>
+        </div>
+
+        <div>
+          <p className="text-muted-foreground mb-1.5 text-xs font-medium">
+            2. Log in (opens browser to authorize)
+          </p>
+          <CodeBlock>octopus login</CodeBlock>
+          <p className="text-muted-foreground mt-1.5 text-xs">
+            Or use an existing token:{" "}
+            <code className="rounded bg-stone-100 px-1 py-0.5 dark:bg-stone-700">
+              octopus login --token oct_...
+            </code>
+          </p>
+        </div>
+
+        <div>
+          <p className="text-muted-foreground mb-1.5 text-xs font-medium">
+            3. Verify your connection
+          </p>
+          <CodeBlock>octopus whoami</CodeBlock>
+        </div>
+      </div>
+
+      <div className="border-t pt-4 dark:border-stone-700">
+        <p className="text-muted-foreground mb-2.5 text-xs font-medium">
+          Common Commands
         </p>
-        <p>
-          Then authenticate:{" "}
-          <code className="rounded bg-stone-100 px-1.5 py-0.5 dark:bg-stone-800">
-            octopus login --token oct_...
-          </code>
-        </p>
+        <div className="space-y-2">
+          <CodeBlock>{`# List your repositories
+octopus repo list
+
+# Index a repository for code search
+octopus repo index
+
+# Review a pull request
+octopus pr review --pr <number>
+
+# Chat with your codebase
+octopus repo chat
+
+# Add knowledge to your org
+octopus knowledge add <file>
+
+# Check your usage
+octopus usage`}</CodeBlock>
+        </div>
       </div>
     </div>
   );

@@ -28,7 +28,7 @@
   ],
   "workspaces": ["apps/*", "packages/*", "tools/*"],
   "dependencies": {
-    "@remotion/player": "^4.0.441",
-    "remotion": "^4.0.448"
+    "@remotion/player": "4.0.448",
+    "remotion": "4.0.448"
   }
 }

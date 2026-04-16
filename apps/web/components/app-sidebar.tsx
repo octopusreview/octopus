@@ -34,7 +34,18 @@ import {
   IconBug,
   IconFileText,
   IconTicket,
+  IconHelpCircle,
+  IconExternalLink,
 } from "@tabler/icons-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { CommandPalette } from "@/components/command-palette";
 import { CouponDialog } from "@/components/coupon-dialog";
 
@@ -50,7 +61,7 @@ const bottomNavItems = [
   { href: "/usage", label: "Usage", icon: IconChartBar },
 ];
 
-type Org = { id: string; name: string };
+type Org = { id: string; name: string; avatarUrl?: string | null };
 
 type SidebarProps = {
   user: { name: string; email: string };
@@ -74,6 +85,130 @@ function SidebarTooltip({
         {label}
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+const helpLinks = [
+  { href: "/docs/self-hosting", label: "Self-Hosting" },
+  { href: "/docs/integrations", label: "Integrations" },
+  { href: "/docs/cli", label: "CLI" },
+  { href: "/docs/faq", label: "FAQ" },
+  { href: "/docs/pricing", label: "Pricing" },
+  { href: "/docs/changelog", label: "Changelog" },
+  { href: "/docs/about", label: "About" },
+];
+
+function HelpMenuContent({ onNavigate }: { onNavigate?: () => void }) {
+  return (
+    <div className="space-y-1">
+      <Link
+        href="/"
+        target="_blank"
+        onClick={onNavigate}
+        className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50"
+      >
+        <IconExternalLink className="size-4 shrink-0" />
+        Homepage
+      </Link>
+      <Link
+        href="/blog"
+        target="_blank"
+        onClick={onNavigate}
+        className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50"
+      >
+        <IconExternalLink className="size-4 shrink-0" />
+        Blog
+      </Link>
+      <div className="px-3 pb-1 pt-3 text-xs font-medium text-muted-foreground">Documentation</div>
+      {helpLinks.map(({ href, label }) => (
+        <Link
+          key={href}
+          href={href}
+          target="_blank"
+          onClick={onNavigate}
+          className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50"
+        >
+          {label}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function HelpMenu({ collapsed, isMobile }: { collapsed?: boolean; isMobile?: boolean }) {
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  const triggerButton = collapsed ? (
+    <button className="flex w-full items-center justify-center rounded-md px-2 py-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50">
+      <IconHelpCircle className="size-4 shrink-0" />
+    </button>
+  ) : (
+    <button className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50">
+      <IconHelpCircle className="size-4 shrink-0" />
+      Help & Docs
+    </button>
+  );
+
+  if (isMobile) {
+    return (
+      <>
+        <button
+          onClick={() => setSheetOpen(true)}
+          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50"
+        >
+          <IconHelpCircle className="size-4 shrink-0" />
+          Help & Docs
+        </button>
+        <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+          <SheetContent side="bottom" className="max-h-[70vh] overflow-y-auto rounded-t-xl px-4 pb-6 pt-4" showCloseButton={false}>
+            <SheetTitle className="text-sm font-semibold">Help & Docs</SheetTitle>
+            <HelpMenuContent onNavigate={() => setSheetOpen(false)} />
+          </SheetContent>
+        </Sheet>
+      </>
+    );
+  }
+
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            {triggerButton}
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        {collapsed && (
+          <TooltipContent side="right" sideOffset={8}>
+            Help & Docs
+          </TooltipContent>
+        )}
+      </Tooltip>
+      <DropdownMenuContent side="right" align="end" className="w-48">
+        <DropdownMenuItem asChild>
+          <Link href="/" target="_blank">
+            <IconExternalLink className="size-4" />
+            Homepage
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/blog" target="_blank">
+            <IconExternalLink className="size-4" />
+            Blog
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Documentation</DropdownMenuLabel>
+        <DropdownMenuGroup>
+          {helpLinks.map(({ href, label }) => (
+            <DropdownMenuItem key={href} asChild>
+              <Link href={href} target="_blank">
+                {label}
+              </Link>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -290,7 +425,8 @@ function SidebarContent({
         })}
       </div>
 
-      <div className={cn("pb-2", collapsed ? "px-2" : "px-3")}>
+      <div className={cn("space-y-1 pb-2", collapsed ? "px-2" : "px-3")}>
+        <HelpMenu collapsed={collapsed} isMobile={!!onNavigate} />
         {collapsed ? (
           <div className="flex flex-col gap-1">
             <SidebarTooltip label="Settings">

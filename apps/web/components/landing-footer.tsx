@@ -4,7 +4,7 @@ import {
   IconBrandGithub,
   IconBrandLinkedin,
   IconBrandReddit,
-  IconBrandX,
+  IconBrandBluesky,
   IconBrandYoutube,
   IconBug,
 } from "@tabler/icons-react";
@@ -41,26 +41,26 @@ export function LandingFooter() {
                 <IconBrandGithub className="size-4" />
               </TrackedAnchor>
               <TrackedAnchor
-                href="https://x.com/octopus_review"
+                href={REDDIT_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 event="footer_click"
-                eventParams={{ label: "x" }}
-                aria-label="X (Twitter)"
+                eventParams={{ label: "reddit" }}
+                aria-label="Reddit"
                 className="text-[#555] transition-colors hover:text-white"
               >
-                <IconBrandX className="size-4" />
+                <IconBrandReddit className="size-4" />
               </TrackedAnchor>
               <TrackedAnchor
-                href="https://www.youtube.com/@OctopusReview"
+                href="https://bsky.app/profile/octopus-review.ai"
                 target="_blank"
                 rel="noopener noreferrer"
                 event="footer_click"
-                eventParams={{ label: "youtube" }}
-                aria-label="YouTube"
+                eventParams={{ label: "bluesky" }}
+                aria-label="Bluesky"
                 className="text-[#555] transition-colors hover:text-white"
               >
-                <IconBrandYoutube className="size-4" />
+                <IconBrandBluesky className="size-4" />
               </TrackedAnchor>
               <TrackedAnchor
                 href={DISCORD_INVITE_URL}
@@ -85,15 +85,15 @@ export function LandingFooter() {
                 <IconBrandLinkedin className="size-4" />
               </TrackedAnchor>
               <TrackedAnchor
-                href={REDDIT_URL}
+                href="https://www.youtube.com/@OctopusReview"
                 target="_blank"
                 rel="noopener noreferrer"
                 event="footer_click"
-                eventParams={{ label: "reddit" }}
-                aria-label="Reddit"
+                eventParams={{ label: "youtube" }}
+                aria-label="YouTube"
                 className="text-[#555] transition-colors hover:text-white"
               >
-                <IconBrandReddit className="size-4" />
+                <IconBrandYoutube className="size-4" />
               </TrackedAnchor>
             </div>
           </div>
@@ -268,6 +268,32 @@ export function LandingFooter() {
               </li>
               <li>
                 <TrackedAnchor
+                  href={REDDIT_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  event="footer_click"
+                  eventParams={{ label: "reddit" }}
+                  className="flex items-center gap-1.5 text-sm text-[#666] transition-colors hover:text-white"
+                >
+                  <IconBrandReddit className="size-3.5" />
+                  Reddit
+                </TrackedAnchor>
+              </li>
+              <li>
+                <TrackedAnchor
+                  href="https://bsky.app/profile/octopus-review.ai"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  event="footer_click"
+                  eventParams={{ label: "bluesky" }}
+                  className="flex items-center gap-1.5 text-sm text-[#666] transition-colors hover:text-white"
+                >
+                  <IconBrandBluesky className="size-3.5" />
+                  Bluesky
+                </TrackedAnchor>
+              </li>
+              <li>
+                <TrackedAnchor
                   href={DISCORD_INVITE_URL}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -294,15 +320,15 @@ export function LandingFooter() {
               </li>
               <li>
                 <TrackedAnchor
-                  href={REDDIT_URL}
+                  href="https://www.youtube.com/@OctopusReview"
                   target="_blank"
                   rel="noopener noreferrer"
                   event="footer_click"
-                  eventParams={{ label: "reddit" }}
+                  eventParams={{ label: "youtube" }}
                   className="flex items-center gap-1.5 text-sm text-[#666] transition-colors hover:text-white"
                 >
-                  <IconBrandReddit className="size-3.5" />
-                  Reddit
+                  <IconBrandYoutube className="size-3.5" />
+                  YouTube
                 </TrackedAnchor>
               </li>
               <li>

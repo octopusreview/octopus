@@ -128,8 +128,8 @@ export async function POST(request: NextRequest) {
 
     const finalSlug = slug || slugify(title);
 
-    // Check slug uniqueness
-    const existing = await prisma.blogPost.findUnique({ where: { slug: finalSlug } });
+    // Check slug uniqueness (exclude soft-deleted posts)
+    const existing = await prisma.blogPost.findFirst({ where: { slug: finalSlug, deletedAt: null } });
     if (existing) {
       return NextResponse.json(
         { error: "A post with this slug already exists" },

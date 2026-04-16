@@ -126,25 +126,27 @@ export function CreateGitHubIssueButton({ issueId }: { issueId: string }) {
           {/* Preview & Edit */}
           {step === "preview" && (
             <>
-              <div className="space-y-2">
-                <Label htmlFor="gh-issue-title">Title</Label>
-                <Input
-                  id="gh-issue-title"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Issue title"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="gh-issue-description">Description</Label>
-                <Textarea
-                  id="gh-issue-description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={7}
-                  className="resize-none font-mono text-xs"
-                  placeholder="Issue description"
-                />
+              <div className="max-h-[50vh] space-y-4 overflow-y-auto pr-1">
+                <div className="space-y-2">
+                  <Label htmlFor="gh-issue-title">Title</Label>
+                  <Input
+                    id="gh-issue-title"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="Issue title"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="gh-issue-description">Description</Label>
+                  <Textarea
+                    id="gh-issue-description"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={10}
+                    className="font-mono text-xs"
+                    placeholder="Issue description"
+                  />
+                </div>
               </div>
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setOpen(false)}>

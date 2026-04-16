@@ -14,6 +14,25 @@ import { OrgCookieSync } from "@/components/org-cookie-sync";
 import { DeviceReporter } from "@/components/device-reporter";
 import { createOrgForUser } from "./complete-profile/actions";
 
+/**
+ * Derives a display name from an email address.
+ * e.g. "john.doe@gmail.com" → "John Doe", "neo@xtreme.game" → "Neo"
+ */
+function deriveNameFromEmail(email: string): string | null {
+  const localPart = email.split("@")[0];
+  if (!localPart || localPart.length < 2) return null;
+
+  const parts = localPart
+    .split(/[._-]+/)
+    .filter((p) => p.length > 0)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase());
+
+  const name = parts.join(" ");
+  if (name.length < 2 || /[<>"{}]/.test(name)) return null;
+
+  return name.slice(0, 100);
+}
+
 export default async function AppLayout({
   children,
 }: {
@@ -70,15 +89,19 @@ export default async function AppLayout({
     }
 
     const hasRealName = user.name && user.name.trim() !== "" && user.name !== user.email;
+    const displayName = hasRealName ? user.name! : deriveNameFromEmail(user.email);
 
-    if (hasRealName) {
-      // Auto-create org server-side, then redirect so the next render picks it up.
-      // We can't set cookies from a Server Component, but the layout's orgs[0]
-      // fallback will select the new org on the next render.
-      await createOrgForUser(session.user.id, user.name!);
+    if (displayName) {
+      if (!hasRealName) {
+        await prisma.user.update({
+          where: { id: session.user.id },
+          data: { name: displayName },
+        });
+      }
+      await createOrgForUser(session.user.id, displayName);
       redirect("/dashboard");
     } else {
-      // No name — show profile completion form
+      // Cannot derive a usable name — show profile completion form
       const headersList = await headers();
       const pathname = headersList.get("x-pathname") || "";
 

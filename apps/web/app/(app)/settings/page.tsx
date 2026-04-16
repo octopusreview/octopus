@@ -2,6 +2,7 @@ import { headers, cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
+import { UserNameForm } from "./user-name-form";
 import { OrgNameForm } from "./org-name-form";
 import { DangerZoneCard } from "./danger-zone-card";
 
@@ -46,6 +47,7 @@ export default async function SettingsPage() {
 
   return (
     <div key={member.organization.id} className="space-y-6">
+      <UserNameForm currentName={session.user.name ?? ""} />
       <OrgNameForm currentName={member.organization.name} isOwner={isOwner} />
       {isOwner && <DangerZoneCard orgSlug={member.organization.slug} isLastOrg={isLastOrg} />}
     </div>

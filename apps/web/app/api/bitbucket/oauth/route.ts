@@ -12,6 +12,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Workspace slug is required" }, { status: 400 });
   }
 
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(workspaceSlug) || workspaceSlug.length > 100) {
+    return NextResponse.json({ error: "Invalid workspace slug format" }, { status: 400 });
+  }
+
   const session = await auth.api.getSession({
     headers: await headers(),
   });

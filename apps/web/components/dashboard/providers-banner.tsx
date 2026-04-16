@@ -199,18 +199,26 @@ export function ProvidersBanner({
               <Input
                 placeholder="Workspace slug (e.g. my-team)"
                 value={workspaceSlug}
-                onChange={(e) => setWorkspaceSlug(e.target.value.toLowerCase().trim())}
+                onChange={(e) => setWorkspaceSlug(e.target.value.toLowerCase())}
+                onBlur={(e) => setWorkspaceSlug(e.target.value.trim())}
               />
               <p className="text-muted-foreground text-xs">
                 Find it in your Bitbucket URL: bitbucket.org/<span className="font-medium text-foreground">{workspaceSlug || "your-workspace"}</span>
               </p>
 
-              <Button className="w-full" size="lg" asChild disabled={!workspaceSlug}>
-                <a href={workspaceSlug ? `/api/bitbucket/oauth?workspace=${encodeURIComponent(workspaceSlug)}` : "#"}>
-                  <IconBrandBitbucket className="mr-2 size-4" />
-                  Connect Bitbucket workspace
-                  <IconArrowRight className="ml-2 size-4" />
-                </a>
+              <Button
+                className="w-full"
+                size="lg"
+                disabled={!workspaceSlug}
+                onClick={() => {
+                  if (workspaceSlug) {
+                    window.location.href = `/api/bitbucket/oauth?workspace=${encodeURIComponent(workspaceSlug)}`;
+                  }
+                }}
+              >
+                <IconBrandBitbucket className="mr-2 size-4" />
+                Connect Bitbucket workspace
+                <IconArrowRight className="ml-2 size-4" />
               </Button>
 
               <p className="text-muted-foreground text-center text-xs">

@@ -145,7 +145,7 @@ export async function createOrganization(
   redirect("/dashboard");
 }
 
-const DANGEROUS_NAME_CHARS = /[<>"'`{}()\\/;]/;
+const DANGEROUS_NAME_CHARS = /[<>"`{}()\\/;]/;
 
 export async function updateUserName(
   _prevState: { error?: string; success?: boolean },

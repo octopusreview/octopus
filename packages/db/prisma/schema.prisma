@@ -231,7 +231,7 @@ model Repository {
   linearTeamMappings    LinearTeamMapping[]
   packageAnalyses       PackageAnalysis[]
 
-  @@unique([provider, externalId])
+  @@unique([provider, externalId, organizationId])
   @@index([organizationId, isActive])
   @@index([organizationId, name])
   @@map("repositories")

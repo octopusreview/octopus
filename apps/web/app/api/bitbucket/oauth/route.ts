@@ -4,7 +4,14 @@ import { headers, cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const workspaceSlug = searchParams.get("workspace")?.toLowerCase().trim();
+
+  if (!workspaceSlug) {
+    return NextResponse.json({ error: "Workspace slug is required" }, { status: 400 });
+  }
+
   const session = await auth.api.getSession({
     headers: await headers(),
   });
@@ -39,13 +46,14 @@ export async function GET() {
 
   // Include a CSRF nonce in the state to prevent state forgery
   const nonce = crypto.randomBytes(16).toString("hex");
-  const state = Buffer.from(JSON.stringify({ orgId, nonce })).toString("base64url");
+  const state = Buffer.from(JSON.stringify({ orgId, nonce, workspaceSlug })).toString("base64url");
 
   const params = new URLSearchParams({
     client_id: clientId,
     response_type: "code",
     redirect_uri: redirectUri,
     state,
+    scope: "account repository pullrequest webhook",
   });
 
   return NextResponse.redirect(

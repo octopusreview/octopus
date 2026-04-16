@@ -100,9 +100,10 @@ export async function GET(request: NextRequest) {
     for (const repo of ghRepos) {
       await prisma.repository.upsert({
         where: {
-          provider_externalId: {
+          provider_externalId_organizationId: {
             provider: "github",
             externalId: String(repo.id),
+            organizationId: membership.organizationId,
           },
         },
         create: {

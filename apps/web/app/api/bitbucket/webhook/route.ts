@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
 
     const repo = await prisma.repository.findUnique({
       where: {
-        provider_externalId: { provider: "bitbucket", externalId: repoUuid },
+        provider_externalId_organizationId: { provider: "bitbucket", externalId: repoUuid, organizationId: orgId },
       },
       select: { id: true, organizationId: true, autoReview: true },
     });
@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
     if (repoUuid && prId && typeof prId === "number") {
       const repo = await prisma.repository.findUnique({
         where: {
-          provider_externalId: { provider: "bitbucket", externalId: repoUuid },
+          provider_externalId_organizationId: { provider: "bitbucket", externalId: repoUuid, organizationId: orgId },
         },
         select: { id: true },
       });
@@ -192,7 +192,7 @@ export async function POST(request: NextRequest) {
 
       const repo = await prisma.repository.findUnique({
         where: {
-          provider_externalId: { provider: "bitbucket", externalId: repoUuid },
+          provider_externalId_organizationId: { provider: "bitbucket", externalId: repoUuid, organizationId: orgId },
         },
         select: { id: true, organizationId: true },
       });

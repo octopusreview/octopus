@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import {
   Card,
   CardContent,
@@ -10,7 +10,8 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { IconBrandBitbucket } from "@tabler/icons-react";
+import { Input } from "@/components/ui/input";
+import { IconBrandBitbucket, IconArrowRight } from "@tabler/icons-react";
 import { disconnectBitbucket } from "./actions";
 
 type BitbucketData = {
@@ -20,6 +21,7 @@ type BitbucketData = {
 
 export function BitbucketIntegrationCard({ data }: { data: BitbucketData }) {
   const [isPending, startTransition] = useTransition();
+  const [workspaceSlug, setWorkspaceSlug] = useState("");
 
   if (!data) {
     return (
@@ -38,12 +40,37 @@ export function BitbucketIntegrationCard({ data }: { data: BitbucketData }) {
           </div>
         </CardHeader>
         <CardContent>
-          <Button asChild>
-            <a href="/api/bitbucket/oauth">
-              <IconBrandBitbucket className="mr-2 size-4" />
-              Connect Bitbucket
-            </a>
-          </Button>
+          <div className="border-t pt-4">
+            <p className="text-sm font-medium mb-3">How it works</p>
+            <ol className="text-sm text-muted-foreground space-y-1.5 list-decimal list-inside mb-5">
+              <li>Enter your workspace slug below</li>
+              <li>Authorize Octopus on Bitbucket</li>
+              <li>Your repositories will be synced automatically</li>
+            </ol>
+
+            <div className="space-y-3">
+              <Input
+                placeholder="Workspace slug (e.g. my-team)"
+                value={workspaceSlug}
+                onChange={(e) => setWorkspaceSlug(e.target.value.toLowerCase().trim())}
+              />
+              <p className="text-muted-foreground text-xs">
+                Find it in your Bitbucket URL: bitbucket.org/<span className="font-medium text-foreground">{workspaceSlug || "your-workspace"}</span>
+              </p>
+
+              <Button className="w-full" size="lg" asChild disabled={!workspaceSlug}>
+                <a href={workspaceSlug ? `/api/bitbucket/oauth?workspace=${encodeURIComponent(workspaceSlug)}` : "#"}>
+                  <IconBrandBitbucket className="mr-2 size-4" />
+                  Connect Bitbucket workspace
+                  <IconArrowRight className="ml-2 size-4" />
+                </a>
+              </Button>
+
+              <p className="text-muted-foreground text-center text-xs">
+                Secure access only - we never store your code.
+              </p>
+            </div>
+          </div>
         </CardContent>
       </Card>
     );

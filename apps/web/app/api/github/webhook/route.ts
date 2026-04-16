@@ -64,9 +64,10 @@ export async function POST(request: NextRequest) {
         for (const repo of added) {
           await prisma.repository.upsert({
             where: {
-              provider_externalId: {
+              provider_externalId_organizationId: {
                 provider: "github",
                 externalId: String(repo.id),
+                organizationId: org.id,
               },
             },
             create: {
@@ -107,9 +108,10 @@ export async function POST(request: NextRequest) {
         for (const repo of ghRepos) {
           await prisma.repository.upsert({
             where: {
-              provider_externalId: {
+              provider_externalId_organizationId: {
                 provider: "github",
                 externalId: String(repo.id),
+                organizationId: org.id,
               },
             },
             create: {
@@ -173,10 +175,8 @@ export async function POST(request: NextRequest) {
     console.log(`[webhook] pull_request ${payload.action} — ${repoFullName}#${prNumber}`);
 
     // Find repository in DB and check autoReview
-    const repo = await prisma.repository.findUnique({
-      where: {
-        provider_externalId: { provider: "github", externalId: repoExternalId },
-      },
+    const repo = await prisma.repository.findFirst({
+      where: { provider: "github", externalId: repoExternalId },
       select: { id: true, organizationId: true, autoReview: true, installationId: true },
     });
 
@@ -270,10 +270,8 @@ export async function POST(request: NextRequest) {
     const prNumber: number = payload.pull_request?.number;
     const installationId = payload.installation?.id as number | undefined;
 
-    const repo = await prisma.repository.findUnique({
-      where: {
-        provider_externalId: { provider: "github", externalId: repoExternalId },
-      },
+    const repo = await prisma.repository.findFirst({
+      where: { provider: "github", externalId: repoExternalId },
       select: { id: true, fullName: true, defaultBranch: true, indexStatus: true, organizationId: true },
     });
 
@@ -365,10 +363,8 @@ export async function POST(request: NextRequest) {
       console.log(`[webhook] @octopus mention detected — repo: ${repoFullName}, PR #${prNumber}, commentId: ${commentId}, installationId: ${installationId}`);
 
       // Find repository in DB
-      const repo = await prisma.repository.findUnique({
-        where: {
-          provider_externalId: { provider: "github", externalId: repoExternalId },
-        },
+      const repo = await prisma.repository.findFirst({
+        where: { provider: "github", externalId: repoExternalId },
         select: { id: true, organizationId: true, installationId: true },
       });
 

@@ -160,7 +160,7 @@ export async function POST(request: NextRequest) {
 
   const repo = await prisma.repository.upsert({
     where: {
-      provider_externalId: { provider: "github", externalId },
+      provider_externalId_organizationId: { provider: "github", externalId, organizationId: orgId },
     },
     create: {
       name: repoName,

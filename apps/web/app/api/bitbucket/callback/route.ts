@@ -34,13 +34,15 @@ export async function GET(request: NextRequest) {
 
   let orgId: string;
   let stateNonce: string;
+  let workspaceSlug: string;
   try {
     const parsed = JSON.parse(
       Buffer.from(stateParam, "base64url").toString("utf-8"),
     );
     orgId = parsed.orgId;
     stateNonce = parsed.nonce;
-    if (!orgId || !stateNonce) throw new Error("Missing state fields");
+    workspaceSlug = parsed.workspaceSlug;
+    if (!orgId || !stateNonce || !workspaceSlug) throw new Error("Missing state fields");
   } catch {
     return NextResponse.redirect(
       new URL("/settings/integrations?error=invalid_state", baseUrl),
@@ -111,39 +113,24 @@ export async function GET(request: NextRequest) {
   const scopes = (tokenData.scopes as string) ?? null;
   const tokenExpiresAt = new Date(Date.now() + expiresIn * 1000);
 
-  // Fetch user's workspaces to determine which one to use
-  const workspacesRes = await fetch(
-    "https://api.bitbucket.org/2.0/workspaces?pagelen=100",
+  // Cross-workspace listing APIs were removed by Bitbucket (CHANGE-2770, April 2026).
+  // Workspace slug is provided by the user before OAuth and passed via state.
+  // Verify the workspace actually exists and the token has access to it.
+  const workspaceRes = await fetch(
+    `https://api.bitbucket.org/2.0/workspaces/${encodeURIComponent(workspaceSlug)}`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
 
-  if (!workspacesRes.ok) {
-    console.error("[bitbucket-callback] Failed to fetch workspaces:", workspacesRes.status);
+  if (!workspaceRes.ok) {
+    const errBody = await workspaceRes.text().catch(() => "");
+    console.error("[bitbucket-callback] Workspace not found or inaccessible:", workspaceRes.status, errBody);
     return NextResponse.redirect(
-      new URL("/settings/integrations?error=workspace_fetch", baseUrl),
+      new URL("/settings/integrations?error=workspace_not_found", baseUrl),
     );
   }
 
-  const workspacesData = await workspacesRes.json();
-  const workspaces = (workspacesData.values ?? []) as { slug: string; name: string }[];
-
-  if (workspaces.length === 0) {
-    return NextResponse.redirect(
-      new URL("/settings/integrations?error=no_workspace", baseUrl),
-    );
-  }
-
-  // Use the first workspace (most common scenario)
-  const workspace = workspaces[0];
-  const workspaceSlug = workspace.slug;
-  const workspaceName = workspace.name;
-
-  if (!workspaceSlug || !workspaceName) {
-    console.error("[bitbucket-callback] Invalid workspace data:", workspace);
-    return NextResponse.redirect(
-      new URL("/settings/integrations?error=invalid_workspace", baseUrl),
-    );
-  }
+  const workspaceData = await workspaceRes.json();
+  const workspaceName = (workspaceData.name as string) || workspaceSlug;
 
   // Generate webhook secret
   const webhookSecret = crypto.randomBytes(32).toString("hex");
@@ -205,9 +192,10 @@ export async function GET(request: NextRequest) {
     for (const repo of bbRepos) {
       await prisma.repository.upsert({
         where: {
-          provider_externalId: {
+          provider_externalId_organizationId: {
             provider: "bitbucket",
             externalId: repo.uuid,
+            organizationId: orgId,
           },
         },
         create: {

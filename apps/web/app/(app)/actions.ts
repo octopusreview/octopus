@@ -145,6 +145,34 @@ export async function createOrganization(
   redirect("/dashboard");
 }
 
+const DANGEROUS_NAME_CHARS = /[<>"`{}()\\/;]/;
+
+export async function updateUserName(
+  _prevState: { error?: string; success?: boolean },
+  formData: FormData,
+): Promise<{ error?: string; success?: boolean }> {
+  const user = await getUser();
+
+  const name = (formData.get("name") as string)?.trim();
+  if (!name || name.length < 2) {
+    return { error: "Name must be at least 2 characters." };
+  }
+  if (name.length > 100) {
+    return { error: "Name must be at most 100 characters." };
+  }
+  if (DANGEROUS_NAME_CHARS.test(name)) {
+    return { error: "Name contains invalid characters." };
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { name },
+  });
+
+  revalidatePath("/");
+  return { success: true };
+}
+
 export async function updateOrganizationName(
   _prevState: { error?: string; success?: boolean },
   formData: FormData,

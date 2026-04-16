@@ -37,7 +37,7 @@ export async function createBlogPost(formData: FormData) {
     return { error: "Title and content are required" };
   }
 
-  const existing = await prisma.blogPost.findUnique({ where: { slug } });
+  const existing = await prisma.blogPost.findFirst({ where: { slug, deletedAt: null } });
   if (existing) {
     return { error: "A post with this slug already exists" };
   }
@@ -74,8 +74,8 @@ export async function updateBlogPost(id: string, formData: FormData) {
     return { error: "Title, slug, and content are required" };
   }
 
-  // Check slug uniqueness (excluding current post)
-  const existing = await prisma.blogPost.findUnique({ where: { slug } });
+  // Check slug uniqueness (excluding current post and soft-deleted posts)
+  const existing = await prisma.blogPost.findFirst({ where: { slug, deletedAt: null } });
   if (existing && existing.id !== id) {
     return { error: "A post with this slug already exists" };
   }

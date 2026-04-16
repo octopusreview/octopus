@@ -271,7 +271,7 @@ Anthropic API key for Claude (reviews and chat).`,
       },
       {
         heading: "Quick Start with Docker",
-        text: `1. Clone the repository: git clone https://github.com/octopus-review/octopus.git
+        text: `1. Clone the repository: git clone https://github.com/octopusreview/octopus.git
 2. Create a .env file with your configuration (an auto-generator is provided on the docs page).
 3. Run with Docker Compose: docker compose up -d --build
 4. Run database migrations: docker compose exec octopus bun run db:migrate

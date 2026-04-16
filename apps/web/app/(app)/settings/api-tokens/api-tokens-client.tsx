@@ -205,10 +205,14 @@ export function ApiTokensClient({
 function CodeBlock({ children }: { children: string }) {
   const [copied, setCopied] = useState(false);
 
-  function copy() {
-    navigator.clipboard.writeText(children);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(children);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback: clipboard API unavailable or denied
+    }
   }
 
   return (

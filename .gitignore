@@ -59,6 +59,9 @@ HEARTBEAT.md
 .claude/settings.local.json
 CLAUDE.md
 
+# root migrations
+/migrations/
+
 # openclaw
 .openclaw/
 

@@ -67,3 +67,5 @@ pentest/
 
 .omt-env
 .mcp.json
+
+.vscode/**

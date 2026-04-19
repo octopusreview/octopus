@@ -500,7 +500,7 @@ RULES:
 - If no relevant context was retrieved for a question, say "I couldn't find relevant code for this query. Try rephrasing or being more specific." Do NOT make up or guess code, endpoints, or file structures.
 - NEVER say "I don't have access to the code" — you DO have access via the retrieved context. If context is empty, the search simply didn't match.
 - For PR/activity questions, use the recent_pull_requests section which contains LIVE data from the database — this is always up to date.
-- ALWAYS respond in the same language the user writes in. If the user writes in Turkish, respond in Turkish. If in English, respond in English. Match the user's language exactly.${repoContext ? `\n- IMPORTANT: This conversation is specifically about the **${repoContext}** repository. Focus all answers on this repository unless the user explicitly asks about something else. When the user says "this", "it", "the repo", etc., they mean ${repoContext}.` : ""}`;
+- Respond in the language of the USER'S LATEST message only. Ignore the language of prior messages, retrieved context, or repository content when deciding output language. If the latest user message is in English, respond in English even if earlier messages were in another language.${repoContext ? `\n- IMPORTANT: This conversation is specifically about the **${repoContext}** repository. Focus all answers on this repository unless the user explicitly asks about something else. When the user says "this", "it", "the repo", etc., they mean ${repoContext}.` : ""}`;
 
   // Dynamic RAG context — only relevant retrieved content, minimal static info
   const systemContext = `<organization_overview>

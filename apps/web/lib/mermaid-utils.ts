@@ -1,5 +1,39 @@
 export type DiagramType = "flowchart" | "sequence" | "er" | "state";
 
+const SEQUENCE_RESERVED_KEYWORDS = new Set([
+  "participant",
+  "actor",
+  "note",
+  "loop",
+  "alt",
+  "else",
+  "opt",
+  "par",
+  "and",
+  "rect",
+  "activate",
+  "deactivate",
+  "autonumber",
+  "end",
+  "link",
+  "links",
+  "properties",
+  "details",
+  "destroy",
+  "create",
+  "box",
+  "break",
+  "critical",
+  "over",
+  "right",
+  "left",
+  "of",
+]);
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export interface MermaidBlock {
   code: string;
   type: DiagramType;
@@ -134,57 +168,70 @@ export function sanitizeMermaidCode(code: string): string {
   //    case-insensitively, so a participant named `Loop` is tokenized as the
   //    `loop` block keyword and breaks every reference to it.
   if (/^\s*sequenceDiagram/m.test(result)) {
-    const reserved = new Set([
-      "participant",
-      "actor",
-      "note",
-      "loop",
-      "alt",
-      "else",
-      "opt",
-      "par",
-      "and",
-      "rect",
-      "activate",
-      "deactivate",
-      "autonumber",
-      "end",
-      "link",
-      "links",
-      "properties",
-      "details",
-      "destroy",
-      "create",
-      "box",
-      "break",
-      "critical",
-      "over",
-      "right",
-      "left",
-      "of",
-    ]);
-    const renames = new Map<string, string>();
-    result = result.replace(
-      /^(\s*(?:participant|actor)\s+)([A-Za-z][A-Za-z0-9_]*)\b/gm,
-      (_match, prefix: string, id: string) => {
-        if (reserved.has(id.toLowerCase())) {
-          const safe = `${id}_`;
-          renames.set(id, safe);
-          return `${prefix}${safe}`;
-        }
-        return _match;
-      },
-    );
-    for (const [orig, safe] of renames) {
-      const wordRe = new RegExp(`\\b${orig}\\b`, "g");
-      result = result.replace(wordRe, safe);
-    }
+    result = renameReservedParticipants(result);
   }
 
   // 6. Remove trailing whitespace
   result = result.replace(/[ \t]+$/gm, "");
 
   return result;
+}
+
+/**
+ * Rename sequence-diagram participant IDs that collide with Mermaid reserved
+ * keywords (case-insensitive). References are rewritten only in positions
+ * where Mermaid expects a participant token (arrow lines before `:`,
+ * activate/deactivate/destroy/create, note over/left of/right of), never in
+ * message text, note bodies, comments, or alias display names.
+ */
+function renameReservedParticipants(code: string): string {
+  const declRe = /^(\s*(?:participant|actor)\s+)([A-Za-z][A-Za-z0-9_]*)\b/gm;
+
+  const existingIds = new Set<string>();
+  for (const match of code.matchAll(declRe)) {
+    existingIds.add(match[2]);
+  }
+
+  const renames = new Map<string, string>();
+  let result = code.replace(declRe, (full, prefix: string, id: string) => {
+    if (!SEQUENCE_RESERVED_KEYWORDS.has(id.toLowerCase())) return full;
+    let safe = `${id}_`;
+    while (existingIds.has(safe)) safe += "_";
+    existingIds.add(safe);
+    renames.set(id, safe);
+    return `${prefix}${safe}`;
+  });
+
+  if (renames.size === 0) return result;
+
+  const replaceInZone = (text: string): string => {
+    let out = text;
+    for (const [orig, safe] of renames) {
+      out = out.replace(new RegExp(`\\b${escapeRegex(orig)}\\b`, "g"), safe);
+    }
+    return out;
+  };
+
+  const lines = result.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trimStart();
+    if (!trimmed || trimmed.startsWith("%%")) continue;
+    // Participant declarations already handled; do not touch their alias text.
+    if (/^(participant|actor)\s/i.test(trimmed)) continue;
+    // For lines with a colon (arrow messages, note bodies), only the segment
+    // before the first colon can contain participant references.
+    const colonIdx = line.indexOf(":");
+    if (colonIdx >= 0) {
+      lines[i] = replaceInZone(line.slice(0, colonIdx)) + line.slice(colonIdx);
+      continue;
+    }
+    // Lines without a colon: activate/deactivate/destroy/create + block
+    // keywords (loop/alt/etc.). Safe to replace globally — message text
+    // cannot appear on these lines.
+    lines[i] = replaceInZone(line);
+  }
+  return lines.join("\n");
 }
 
 /**

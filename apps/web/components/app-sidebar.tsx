@@ -67,7 +67,6 @@ type SidebarProps = {
   user: { name: string; email: string };
   orgs: Org[];
   currentOrg: Org;
-  isAdmin?: boolean;
   canCreateOrg?: boolean;
 };
 
@@ -216,7 +215,6 @@ function SidebarContent({
   user,
   orgs,
   currentOrg,
-  isAdmin,
   canCreateOrg,
   collapsed,
   onToggleCollapse,
@@ -486,7 +484,7 @@ function SidebarContent({
         {collapsed ? (
           <SidebarTooltip label={user.name}>
             <div>
-              <UserMenu name={user.name} email={user.email} isAdmin={isAdmin}>
+              <UserMenu name={user.name} email={user.email}>
                 <button className="flex w-full items-center justify-center rounded-md px-2 py-2 transition-colors hover:bg-sidebar-accent/50">
                   <UserAvatar value={user.email} size={20} />
                 </button>
@@ -494,7 +492,7 @@ function SidebarContent({
             </div>
           </SidebarTooltip>
         ) : (
-          <UserMenu name={user.name} email={user.email} isAdmin={isAdmin}>
+          <UserMenu name={user.name} email={user.email}>
             <button className="flex w-full items-center gap-3 rounded-md px-1 py-1 transition-colors hover:bg-sidebar-accent/50">
               <UserAvatar value={user.email} size={32} />
               <div className="min-w-0 flex-1 text-left">

@@ -210,6 +210,48 @@ describe("sanitizeMermaidCode", () => {
     const result = sanitizeMermaidCode(code);
     expect(result).toContain("(yes)");
   });
+
+  it("renames sequence participants that collide with reserved keywords", () => {
+    const code = [
+      "sequenceDiagram",
+      "    participant User",
+      "    participant CLI as ask.ts",
+      "    participant Loop as runAsk()",
+      "    User->>CLI: run",
+      "    CLI->>Loop: runAsk(opts)",
+      "    Loop-->>CLI: done",
+    ].join("\n");
+    const result = sanitizeMermaidCode(code);
+    expect(result).toContain("participant Loop_ as runAsk()");
+    expect(result).toContain("CLI->>Loop_: runAsk(opts)");
+    expect(result).toContain("Loop_-->>CLI: done");
+    expect(result).not.toMatch(/->>Loop:/);
+  });
+
+  it("renames reserved-keyword participants declared with actor", () => {
+    const code = [
+      "sequenceDiagram",
+      "    actor Note",
+      "    participant Svc",
+      "    Note->>Svc: ping",
+    ].join("\n");
+    const result = sanitizeMermaidCode(code);
+    expect(result).toContain("actor Note_");
+    expect(result).toContain("Note_->>Svc: ping");
+  });
+
+  it("leaves non-reserved participant IDs unchanged", () => {
+    const code = [
+      "sequenceDiagram",
+      "    participant Runner as runAsk()",
+      "    participant Svc",
+      "    Runner->>Svc: call",
+    ].join("\n");
+    const result = sanitizeMermaidCode(code);
+    expect(result).toContain("participant Runner as runAsk()");
+    expect(result).toContain("Runner->>Svc: call");
+    expect(result).not.toContain("Runner_");
+  });
 });
 
 describe("extractNodeLabels", () => {

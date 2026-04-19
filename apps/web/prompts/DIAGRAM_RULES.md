@@ -190,6 +190,7 @@ SEQUENCE DIAGRAM RULES:
 5. Use `note over` for important context
 6. Keep it focused — max 8 participants, max 20 messages
 7. NEVER add `classDef` or `class` statements — they are NOT supported in sequence diagrams and WILL cause parse errors
+8. Participant IDs must NEVER collide with Mermaid reserved keywords (case-insensitive): `loop`, `alt`, `else`, `opt`, `par`, `and`, `rect`, `note`, `over`, `of`, `activate`, `deactivate`, `autonumber`, `end`, `link`, `box`, `break`, `critical`, `create`, `destroy`, `actor`, `participant`. Use `Runner`, `LoopFn`, `NoteSvc`, etc. instead. ❌ `participant Loop as runAsk()` ✅ `participant Runner as runAsk()`
 
 Sequence Diagram Example:
 ```mermaid

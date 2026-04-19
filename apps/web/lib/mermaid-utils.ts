@@ -129,7 +129,59 @@ export function sanitizeMermaidCode(code: string): string {
     );
   }
 
-  // 5. Remove trailing whitespace
+  // 5. Sequence diagrams: rename participants whose IDs collide with Mermaid
+  //    reserved keywords. Mermaid's sequence lexer matches these keywords
+  //    case-insensitively, so a participant named `Loop` is tokenized as the
+  //    `loop` block keyword and breaks every reference to it.
+  if (/^\s*sequenceDiagram/m.test(result)) {
+    const reserved = new Set([
+      "participant",
+      "actor",
+      "note",
+      "loop",
+      "alt",
+      "else",
+      "opt",
+      "par",
+      "and",
+      "rect",
+      "activate",
+      "deactivate",
+      "autonumber",
+      "end",
+      "link",
+      "links",
+      "properties",
+      "details",
+      "destroy",
+      "create",
+      "box",
+      "break",
+      "critical",
+      "over",
+      "right",
+      "left",
+      "of",
+    ]);
+    const renames = new Map<string, string>();
+    result = result.replace(
+      /^(\s*(?:participant|actor)\s+)([A-Za-z][A-Za-z0-9_]*)\b/gm,
+      (_match, prefix: string, id: string) => {
+        if (reserved.has(id.toLowerCase())) {
+          const safe = `${id}_`;
+          renames.set(id, safe);
+          return `${prefix}${safe}`;
+        }
+        return _match;
+      },
+    );
+    for (const [orig, safe] of renames) {
+      const wordRe = new RegExp(`\\b${orig}\\b`, "g");
+      result = result.replace(wordRe, safe);
+    }
+  }
+
+  // 6. Remove trailing whitespace
   result = result.replace(/[ \t]+$/gm, "");
 
   return result;

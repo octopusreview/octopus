@@ -54,8 +54,7 @@ octopus/
 ├── apps/
 │   └── web/              # Next.js web application
 ├── packages/
-│   ├── db/               # Prisma schema & shared DB client
-│   └── agent-helpers/    # SDK for external agents
+│   └── db/               # Prisma schema & shared DB client
 └── tools/
     ├── tsconfig/         # Shared TypeScript configs
     └── eslint-config/    # Shared ESLint config

@@ -193,7 +193,7 @@ function renameReservedParticipants(code: string): string {
   }
 
   const renames = new Map<string, string>();
-  let result = code.replace(declRe, (full, prefix: string, id: string) => {
+  const result = code.replace(declRe, (full, prefix: string, id: string) => {
     if (!SEQUENCE_RESERVED_KEYWORDS.has(id.toLowerCase())) return full;
     let safe = `${id}_`;
     while (existingIds.has(safe)) safe += "_";

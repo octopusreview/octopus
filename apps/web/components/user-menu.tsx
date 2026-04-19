@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useState } from "react";
@@ -26,7 +25,6 @@ import {
   IconSun,
   IconMoon,
   IconDeviceDesktop,
-  IconShieldCog,
   IconChevronRight,
   IconCheck,
 } from "@tabler/icons-react";
@@ -37,12 +35,10 @@ const menuItemClass =
 export function UserMenu({
   name,
   email,
-  isAdmin,
   children,
 }: {
   name: string;
   email: string;
-  isAdmin?: boolean;
   children?: React.ReactNode;
 }) {
   const router = useRouter();
@@ -84,16 +80,6 @@ export function UserMenu({
 
             {/* Menu items */}
             <div className="p-1">
-              {isAdmin && (
-                <Link
-                  href="/admin"
-                  onClick={() => setOpen(false)}
-                  className={menuItemClass}
-                >
-                  <IconShieldCog className="size-4 text-muted-foreground" />
-                  Admin
-                </Link>
-              )}
               <button
                 onClick={() => setView("theme")}
                 className={menuItemClass}

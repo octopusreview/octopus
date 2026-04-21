@@ -62,6 +62,7 @@ type Props = {
     reloadAmount: number;
   } | null;
   initialTransactions: Transaction[];
+  totalTransactions: number;
   monthlySpend: number;
   paymentMethods: PaymentMethod[];
 };
@@ -113,12 +114,13 @@ export function BillingSettings({
   stripeCustomerId,
   autoReloadConfig,
   initialTransactions,
+  totalTransactions,
   monthlySpend,
   paymentMethods,
 }: Props) {
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [transactions, setTransactions] = useState(initialTransactions);
-  const [hasMore, setHasMore] = useState(initialTransactions.length >= 20);
+  const [hasMore, setHasMore] = useState(initialTransactions.length < totalTransactions);
   const [loadingMore, setLoadingMore] = useState(false);
   const [portalLoading, startPortalTransition] = useTransition();
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
@@ -142,17 +144,8 @@ export function BillingSettings({
     setLoadingMore(true);
     try {
       const more = await loadMoreTransactions(orgId, transactions.length, 20);
-      const mapped = more.map((t: { id: string; amount: unknown; type: string; description: string | null; receiptUrl: string | null; balanceAfter: unknown; createdAt: Date }) => ({
-        id: t.id,
-        amount: Number(t.amount),
-        type: t.type,
-        description: t.description,
-        receiptUrl: t.receiptUrl,
-        balanceAfter: Number(t.balanceAfter),
-        createdAt: new Date(t.createdAt).toISOString(),
-      }));
-      setTransactions((prev) => [...prev, ...mapped]);
-      if (mapped.length < 20) setHasMore(false);
+      setTransactions((prev) => [...prev, ...more]);
+      if (more.length < 20) setHasMore(false);
     } finally {
       setLoadingMore(false);
     }
@@ -343,10 +336,14 @@ export function BillingSettings({
             const filtered = typeFilter
               ? transactions.filter((t) => t.type === typeFilter)
               : transactions;
-            const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+            const totalPages = typeFilter
+              ? Math.ceil(filtered.length / PAGE_SIZE)
+              : Math.ceil(totalTransactions / PAGE_SIZE);
             const page = Math.min(currentPage, totalPages || 1);
             const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
             const isLastPage = page >= totalPages;
+            const needsMoreForNextPage =
+              !typeFilter && page * PAGE_SIZE >= transactions.length && hasMore;
 
             return (
               <>
@@ -480,10 +477,12 @@ export function BillingSettings({
                 </div>
 
                 {/* Pagination */}
-                {(totalPages > 1 || (isLastPage && hasMore)) && (
+                {totalPages > 1 && (
                   <div className="flex items-center justify-between pt-3">
                     <span className="text-xs text-muted-foreground">
-                      {filtered.length} transaction{filtered.length !== 1 ? "s" : ""}
+                      {typeFilter
+                        ? `${filtered.length} transaction${filtered.length !== 1 ? "s" : ""}`
+                        : `${totalTransactions} transaction${totalTransactions !== 1 ? "s" : ""}`}
                     </span>
                     <div className="flex items-center gap-1">
                       <Button
@@ -491,41 +490,31 @@ export function BillingSettings({
                         size="icon"
                         className="size-8"
                         onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                        disabled={page <= 1}
+                        disabled={page <= 1 || loadingMore}
                       >
                         <IconChevronLeft className="size-4" />
                       </Button>
                       <span className="text-xs text-muted-foreground px-2">
                         {page} / {totalPages}
                       </span>
-                      {isLastPage && hasMore ? (
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="size-8"
-                          onClick={async () => {
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="size-8"
+                        onClick={async () => {
+                          if (needsMoreForNextPage) {
                             await handleLoadMore();
-                            setCurrentPage((p) => p + 1);
-                          }}
-                          disabled={loadingMore}
-                        >
-                          {loadingMore ? (
-                            <IconLoader2 className="size-4 animate-spin" />
-                          ) : (
-                            <IconChevronRight className="size-4" />
-                          )}
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="size-8"
-                          onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                          disabled={page >= totalPages}
-                        >
+                          }
+                          setCurrentPage((p) => Math.min(totalPages, p + 1));
+                        }}
+                        disabled={isLastPage || loadingMore}
+                      >
+                        {loadingMore ? (
+                          <IconLoader2 className="size-4 animate-spin" />
+                        ) : (
                           <IconChevronRight className="size-4" />
-                        </Button>
-                      )}
+                        )}
+                      </Button>
                     </div>
                   </div>
                 )}

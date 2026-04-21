@@ -145,7 +145,17 @@ export async function loadMoreTransactions(
   orgId: string,
   offset: number,
   limit: number = 20,
-) {
+): Promise<
+  {
+    id: string;
+    amount: number;
+    type: string;
+    description: string | null;
+    receiptUrl: string | null;
+    balanceAfter: number;
+    createdAt: string;
+  }[]
+> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return [];
 
@@ -159,10 +169,20 @@ export async function loadMoreTransactions(
 
   if (!member) return [];
 
-  return prisma.creditTransaction.findMany({
+  const rows = await prisma.creditTransaction.findMany({
     where: { organizationId: orgId },
     orderBy: { createdAt: "desc" },
     skip: offset,
     take: limit,
   });
+
+  return rows.map((t) => ({
+    id: t.id,
+    amount: Number(t.amount),
+    type: t.type,
+    description: t.description,
+    receiptUrl: t.receiptUrl,
+    balanceAfter: Number(t.balanceAfter),
+    createdAt: t.createdAt.toISOString(),
+  }));
 }

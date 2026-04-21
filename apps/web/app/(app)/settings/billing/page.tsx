@@ -41,7 +41,7 @@ export default async function BillingPage() {
   const org = member.organization;
   const isOwner = member.role === "owner" || member.role === "admin";
 
-  const [autoReloadConfig, transactions, monthlySpend, paymentMethods] = await Promise.all([
+  const [autoReloadConfig, transactions, totalTransactions, monthlySpend, paymentMethods] = await Promise.all([
     prisma.autoReloadConfig.findUnique({
       where: { organizationId: org.id },
     }),
@@ -49,6 +49,9 @@ export default async function BillingPage() {
       where: { organizationId: org.id },
       orderBy: { createdAt: "desc" },
       take: 20,
+    }),
+    prisma.creditTransaction.count({
+      where: { organizationId: org.id },
     }),
     getOrgMonthlySpend(org.id),
     org.stripeCustomerId
@@ -84,6 +87,7 @@ export default async function BillingPage() {
         balanceAfter: Number(t.balanceAfter),
         createdAt: t.createdAt.toISOString(),
       }))}
+      totalTransactions={totalTransactions}
       monthlySpend={monthlySpend}
       paymentMethods={paymentMethods}
     />

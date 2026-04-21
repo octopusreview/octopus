@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { APIError } from "better-auth/api";
 import { magicLink } from "better-auth/plugins";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { prisma } from "@octopus/db";
@@ -6,6 +7,8 @@ import { sendEmail } from "./email";
 import { writeAuditLog } from "./audit";
 import { renderEmailTemplate } from "./email-renderer";
 import { enqueueAfter } from "./queue";
+import { reasonToMessage, validateEmailForSignup } from "./email-validator";
+import { normalizeEmail } from "./email-normalize";
 
 export const auth = betterAuth({
   trustedOrigins: [process.env.BETTER_AUTH_URL!],
@@ -36,6 +39,44 @@ export const auth = betterAuth({
     },
     user: {
       create: {
+        before: async (user) => {
+          const normalizedEmail = normalizeEmail(user.email);
+
+          // If an account already owns the canonical identity, fail with a
+          // clear message instead of letting the unique constraint bubble up.
+          const canonicalOwner = await prisma.user.findUnique({
+            where: { email: normalizedEmail },
+            select: { id: true },
+          });
+          if (canonicalOwner) {
+            await writeAuditLog({
+              action: "auth.signup_blocked",
+              category: "auth",
+              actorEmail: normalizedEmail,
+              targetType: "user",
+              metadata: { reason: "canonical_exists", original: user.email },
+            });
+            throw new APIError("BAD_REQUEST", {
+              message:
+                "An account already exists for this email. Please sign in with your existing address.",
+            });
+          }
+
+          const result = await validateEmailForSignup(normalizedEmail);
+          if (!result.ok) {
+            await writeAuditLog({
+              action: "auth.signup_blocked",
+              category: "auth",
+              actorEmail: normalizedEmail,
+              targetType: "user",
+              metadata: { reason: result.reason, original: user.email },
+            });
+            throw new APIError("BAD_REQUEST", {
+              message: reasonToMessage(result.reason),
+            });
+          }
+          return { data: { ...user, email: normalizedEmail } };
+        },
         after: async (user) => {
           await writeAuditLog({
             action: "auth.signup",
@@ -61,6 +102,40 @@ export const auth = betterAuth({
   plugins: [
     magicLink({
       sendMagicLink: async ({ email, url }) => {
+        const normalizedEmail = normalizeEmail(email);
+        const rawLookupEmail = email.trim().toLowerCase();
+        let existing = await prisma.user.findUnique({
+          where: { email: normalizedEmail },
+          select: { id: true },
+        });
+        // Fallback for legacy accounts registered before normalization landed,
+        // whose stored email is still in the dotted/aliased form.
+        if (!existing && rawLookupEmail !== normalizedEmail) {
+          existing = await prisma.user.findUnique({
+            where: { email: rawLookupEmail },
+            select: { id: true },
+          });
+        }
+        if (!existing) {
+          const validation = await validateEmailForSignup(normalizedEmail);
+          if (!validation.ok) {
+            await writeAuditLog({
+              action: "auth.signup_blocked",
+              category: "auth",
+              actorEmail: normalizedEmail,
+              targetType: "user",
+              metadata: {
+                reason: validation.reason,
+                source: "magic_link",
+                original: email,
+              },
+            });
+            throw new APIError("BAD_REQUEST", {
+              message: reasonToMessage(validation.reason),
+            });
+          }
+        }
+
         const result = await renderEmailTemplate("magic-link", {
           magicLinkUrl: url,
         });
@@ -75,7 +150,7 @@ export const auth = betterAuth({
         await writeAuditLog({
           action: "email.magic_link_sent",
           category: "email",
-          actorEmail: email,
+          actorEmail: normalizedEmail,
           targetType: "user",
           metadata: { recipient: email },
         });

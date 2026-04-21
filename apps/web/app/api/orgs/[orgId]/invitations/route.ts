@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { sendInvitationEmail } from "@/lib/invitation-email";
+import { normalizeEmail } from "@/lib/email-normalize";
 
 const INVITATION_EXPIRY_DAYS = 7;
 const DAYS_TO_MS = 24 * 60 * 60 * 1000;
@@ -37,11 +38,13 @@ export async function POST(
   }
 
   const body = await request.json();
-  const { email, role } = body;
+  const { email: rawEmail, role } = body;
 
-  if (!email || typeof email !== "string") {
+  if (!rawEmail || typeof rawEmail !== "string") {
     return NextResponse.json({ error: "Email is required" }, { status: 400 });
   }
+
+  const email = normalizeEmail(rawEmail);
 
   if (role && !VALID_ROLES.includes(role)) {
     return NextResponse.json({ error: `Invalid role. Must be one of: ${VALID_ROLES.join(", ")}` }, { status: 400 });
@@ -84,11 +87,11 @@ export async function POST(
     },
   });
 
-  // Send email (best effort)
+  // Send email to the raw (typed) address — deliverability equivalent for Gmail
   let emailSent = false;
   try {
     await sendInvitationEmail({
-      email,
+      email: rawEmail,
       token: invitation.token,
       organizationName: org.name,
       inviterName: session.user.name || session.user.email,

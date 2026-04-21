@@ -6,6 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { signIn, magicLinkSignIn } from "@/lib/auth-client";
+import { normalizeEmail } from "@/lib/email-normalize";
 import { trackEvent } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,7 +53,8 @@ function LoginContent() {
     setLoading(true);
 
     const formData = new FormData(e.currentTarget);
-    const emailValue = formData.get("email") as string;
+    const rawEmail = formData.get("email") as string;
+    const emailValue = normalizeEmail(rawEmail);
 
     trackEvent("login_method_click", { method: "magic_link" });
 

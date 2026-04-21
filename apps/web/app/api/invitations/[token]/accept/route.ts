@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
+import { normalizeEmail } from "@/lib/email-normalize";
 
 const APP_URL = process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
@@ -76,7 +77,10 @@ async function handleAccept(
     select: { email: true },
   });
 
-  if (!acceptingUser || acceptingUser.email !== invitation.email) {
+  if (
+    !acceptingUser ||
+    normalizeEmail(acceptingUser.email) !== normalizeEmail(invitation.email)
+  ) {
     return NextResponse.json(
       { error: "This invitation was sent to a different email address. Please sign in with the invited email." },
       { status: 403 }

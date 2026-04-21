@@ -30,6 +30,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "cohere-ai": "^7.20.0",
+    "disposable-domains": "^2.0.1",
     "dotenv": "^17.4.0",
     "ignore": "^7.0.5",
     "jdenticon": "^3.3.0",

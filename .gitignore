@@ -56,6 +56,7 @@ HEARTBEAT.md
 # claude code commands
 .claude/commands/
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # openclaw
 .openclaw/

@@ -41,6 +41,27 @@ export const auth = betterAuth({
       create: {
         before: async (user) => {
           const normalizedEmail = normalizeEmail(user.email);
+
+          // If an account already owns the canonical identity, fail with a
+          // clear message instead of letting the unique constraint bubble up.
+          const canonicalOwner = await prisma.user.findUnique({
+            where: { email: normalizedEmail },
+            select: { id: true },
+          });
+          if (canonicalOwner) {
+            await writeAuditLog({
+              action: "auth.signup_blocked",
+              category: "auth",
+              actorEmail: normalizedEmail,
+              targetType: "user",
+              metadata: { reason: "canonical_exists", original: user.email },
+            });
+            throw new APIError("BAD_REQUEST", {
+              message:
+                "An account already exists for this email. Please sign in with your existing address.",
+            });
+          }
+
           const result = await validateEmailForSignup(normalizedEmail);
           if (!result.ok) {
             await writeAuditLog({
@@ -82,10 +103,19 @@ export const auth = betterAuth({
     magicLink({
       sendMagicLink: async ({ email, url }) => {
         const normalizedEmail = normalizeEmail(email);
-        const existing = await prisma.user.findUnique({
+        const rawLookupEmail = email.trim().toLowerCase();
+        let existing = await prisma.user.findUnique({
           where: { email: normalizedEmail },
           select: { id: true },
         });
+        // Fallback for legacy accounts registered before normalization landed,
+        // whose stored email is still in the dotted/aliased form.
+        if (!existing && rawLookupEmail !== normalizedEmail) {
+          existing = await prisma.user.findUnique({
+            where: { email: rawLookupEmail },
+            select: { id: true },
+          });
+        }
         if (!existing) {
           const validation = await validateEmailForSignup(normalizedEmail);
           if (!validation.ok) {

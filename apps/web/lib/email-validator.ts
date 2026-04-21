@@ -1,5 +1,6 @@
 import { promises as dns } from "node:dns";
 import disposableDomains from "disposable-domains";
+import { getRedis } from "./redis";
 
 const DISPOSABLE_LIST = disposableDomains as string[];
 const DISPOSABLE_SET = new Set<string>(DISPOSABLE_LIST);
@@ -22,8 +23,48 @@ const DISPOSABLE_MX_SUFFIXES = [
 type MxCheckResult = "valid" | "invalid" | "disposable_mx";
 type MxCacheEntry = { result: MxCheckResult; expiresAt: number };
 const MX_CACHE = new Map<string, MxCacheEntry>();
-const MX_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const MX_CACHE_TTL_SECONDS = 24 * 60 * 60;
 const MX_LOOKUP_TIMEOUT_MS = 2000;
+const MX_CACHE_KEY_PREFIX = "mx:v1:";
+
+const VALID_RESULTS: readonly MxCheckResult[] = ["valid", "invalid", "disposable_mx"];
+
+async function readMxCache(domain: string): Promise<MxCheckResult | null> {
+  const redis = getRedis();
+  if (redis) {
+    try {
+      const val = await redis.get(MX_CACHE_KEY_PREFIX + domain);
+      if (val && (VALID_RESULTS as readonly string[]).includes(val)) {
+        return val as MxCheckResult;
+      }
+    } catch (err) {
+      console.error("[email-validator] redis get failed:", (err as Error).message);
+    }
+  }
+  const entry = MX_CACHE.get(domain);
+  if (entry && entry.expiresAt > Date.now()) return entry.result;
+  return null;
+}
+
+async function writeMxCache(domain: string, result: MxCheckResult): Promise<void> {
+  const redis = getRedis();
+  if (redis) {
+    try {
+      await redis.set(
+        MX_CACHE_KEY_PREFIX + domain,
+        result,
+        "EX",
+        MX_CACHE_TTL_SECONDS,
+      );
+    } catch (err) {
+      console.error("[email-validator] redis set failed:", (err as Error).message);
+    }
+  }
+  MX_CACHE.set(domain, {
+    result,
+    expiresAt: Date.now() + MX_CACHE_TTL_SECONDS * 1000,
+  });
+}
 
 export type EmailValidationResult =
   | { ok: true }
@@ -53,8 +94,8 @@ function isDisposableMxHost(host: string): boolean {
 }
 
 export async function checkMx(domain: string): Promise<MxCheckResult> {
-  const cached = MX_CACHE.get(domain);
-  if (cached && cached.expiresAt > Date.now()) return cached.result;
+  const cached = await readMxCache(domain);
+  if (cached) return cached;
 
   // Fail-open on timeout or transient DNS errors. Only definitive answers
   // (NXDOMAIN, empty MX, or a hit on the disposable-MX suffix list) block signup.
@@ -77,7 +118,7 @@ export async function checkMx(domain: string): Promise<MxCheckResult> {
     ),
   ]);
 
-  MX_CACHE.set(domain, { result, expiresAt: Date.now() + MX_CACHE_TTL_MS });
+  await writeMxCache(domain, result);
   return result;
 }
 

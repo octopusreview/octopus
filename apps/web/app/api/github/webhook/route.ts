@@ -345,6 +345,27 @@ export async function POST(request: NextRequest) {
     const isPr = !!payload.issue?.pull_request;
     const mentionsOctopus = /@octopus(?:review|-review)?\b/i.test(commentBody);
 
+    // Detect comments authored by our own GitHub App so we don't process
+    // placeholder/review comments we just posted as if they were user input.
+    // Primary signal: performed_via_github_app.id matches our app. Fallback:
+    // comment author is a Bot whose login matches our app slug (covers old
+    // payloads or edge cases where performed_via_github_app is absent).
+    const commentId: number = payload.comment?.id;
+    const ownAppId = process.env.GITHUB_APP_ID;
+    const viaAppId = payload.comment?.performed_via_github_app?.id;
+    const authorType: string | undefined = payload.comment?.user?.type;
+    const authorLogin: string = payload.comment?.user?.login ?? "";
+    const appSlug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG ?? "";
+    const isOwnApp = !!ownAppId && viaAppId != null && String(viaAppId) === String(ownAppId);
+    const isOwnBotLogin =
+      authorType === "Bot" && !!appSlug && authorLogin.toLowerCase() === `${appSlug}[bot]`.toLowerCase();
+    const isOwnComment = isOwnApp || isOwnBotLogin;
+
+    if (isOwnComment) {
+      console.log(`[webhook] issue_comment: own comment (Octopus bot), ignoring — commentId: ${commentId}`);
+      return NextResponse.json({ ok: true });
+    }
+
     console.log(`[webhook] issue_comment received — isPR: ${isPr}, mentionsOctopus: ${mentionsOctopus}, comment: "${commentBody.slice(0, 100)}"`);
 
     if (isPr && mentionsOctopus) {
@@ -357,7 +378,6 @@ export async function POST(request: NextRequest) {
       const repoFullName: string = payload.repository?.full_name ?? "";
       const repoExternalId = String(payload.repository?.id ?? "");
       const [owner, repoName] = repoFullName.split("/");
-      const commentId: number = payload.comment?.id;
       const prNumber: number = payload.issue?.number;
 
       console.log(`[webhook] @octopus mention detected — repo: ${repoFullName}, PR #${prNumber}, commentId: ${commentId}, installationId: ${installationId}`);

@@ -80,7 +80,7 @@ export default async function IssuesPage({
         : {}),
   };
 
-  const [issues, allForKpi, linearIntegration, org] = await Promise.all([
+  const [issues, allForKpi, linearIntegration, jiraIntegration, org] = await Promise.all([
     prisma.reviewIssue.findMany({
       where,
       select: {
@@ -95,6 +95,8 @@ export default async function IssuesPage({
         createdAt: true,
         linearIssueId: true,
         linearIssueUrl: true,
+        jiraIssueKey: true,
+        jiraIssueUrl: true,
         githubIssueNumber: true,
         githubIssueUrl: true,
         githubCommentId: true,
@@ -117,6 +119,19 @@ export default async function IssuesPage({
     prisma.linearIntegration
       .findUnique({ where: { organizationId: orgId }, select: { accessToken: true } })
       .catch(() => null),
+    prisma.jiraIntegration
+      .findUnique({
+        where: { organizationId: orgId },
+        select: {
+          id: true,
+          accessToken: true,
+          refreshToken: true,
+          tokenExpiresAt: true,
+          cloudId: true,
+          siteUrl: true,
+        },
+      })
+      .catch(() => null),
     prisma.organization.findUnique({
       where: { id: orgId },
       select: { githubInstallationId: true },
@@ -130,6 +145,7 @@ export default async function IssuesPage({
   }
 
   const linearConnected = !!linearIntegration;
+  const jiraConnected = !!jiraIntegration;
   const githubConnected = org?.githubInstallationId !== null;
 
   // Schedule background sync of GitHub reactions (runs after response is sent)
@@ -191,6 +207,8 @@ export default async function IssuesPage({
           createdAt: i.createdAt.toISOString(),
           linearIssueId: i.linearIssueId,
           linearIssueUrl: i.linearIssueUrl,
+          jiraIssueKey: i.jiraIssueKey,
+          jiraIssueUrl: i.jiraIssueUrl,
           feedback: i.feedback === "up" || i.feedback === "down" ? i.feedback : null,
           githubIssueNumber: i.githubIssueNumber,
           githubIssueUrl: i.githubIssueUrl,
@@ -205,6 +223,7 @@ export default async function IssuesPage({
         currentPeriod={filterPeriod}
         currentStatus={filterStatus}
         linearConnected={linearConnected}
+        jiraConnected={jiraConnected}
         githubConnected={githubConnected}
       />
     </div>

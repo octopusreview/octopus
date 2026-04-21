@@ -43,6 +43,11 @@ export default async function TimelinePage() {
     .catch(() => null);
   const linearConnected = !!linearIntegration;
 
+  const jiraIntegration = await prisma.jiraIntegration
+    .findUnique({ where: { organizationId: orgId }, select: { id: true } })
+    .catch(() => null);
+  const jiraConnected = !!jiraIntegration;
+
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
     select: { githubInstallationId: true },
@@ -131,7 +136,7 @@ export default async function TimelinePage() {
       </div>
 
       <div className="mt-8">
-        <Timeline initialWeeks={[week, lastWeek]} currentWeekStart={currentWeekStart} linearConnected={linearConnected} githubConnected={githubConnected} />
+        <Timeline initialWeeks={[week, lastWeek]} currentWeekStart={currentWeekStart} linearConnected={linearConnected} jiraConnected={jiraConnected} githubConnected={githubConnected} />
       </div>
     </div>
   );

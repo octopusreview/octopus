@@ -28,6 +28,7 @@ import {
   IconExternalLink,
 } from "@tabler/icons-react";
 import { CreateLinearIssueButton } from "@/components/create-linear-issue-dialog";
+import { CreateJiraIssueButton } from "@/components/create-jira-issue-dialog";
 import { CreateGitHubIssueButton } from "@/components/create-github-issue-dialog";
 import { FeedbackButtons } from "@/components/issues/feedback-buttons";
 import { acknowledgeIssue } from "@/app/(app)/actions";
@@ -36,6 +37,12 @@ type LinearStatus = {
   state: string;
   url: string;
   identifier: string;
+};
+
+type JiraStatus = {
+  state: string;
+  url: string;
+  key: string;
 };
 
 type Issue = {
@@ -47,6 +54,8 @@ type Issue = {
   lineNumber: number | null;
   linearIssueId: string | null;
   linearIssueUrl: string | null;
+  jiraIssueKey: string | null;
+  jiraIssueUrl: string | null;
   githubIssueNumber: number | null;
   githubIssueUrl: string | null;
   feedback: "up" | "down" | null;
@@ -100,13 +109,17 @@ function AcknowledgeButton({ issueId }: { issueId: string }) {
 export function RecentIssuesCard({
   issues = [],
   linearConnected = false,
+  jiraConnected = false,
   githubConnected = false,
   issueLinearStatuses = {},
+  issueJiraStatuses = {},
 }: {
   issues?: Issue[];
   linearConnected?: boolean;
+  jiraConnected?: boolean;
   githubConnected?: boolean;
   issueLinearStatuses?: Record<string, LinearStatus>;
+  issueJiraStatuses?: Record<string, JiraStatus>;
 }) {
   return (
     <Card className="flex flex-col">
@@ -133,6 +146,9 @@ export function RecentIssuesCard({
           issues.map((issue) => {
             const linearStatus = issue.linearIssueId
               ? issueLinearStatuses[issue.linearIssueId]
+              : undefined;
+            const jiraStatus = issue.jiraIssueKey
+              ? issueJiraStatuses[issue.jiraIssueKey]
               : undefined;
 
             return (
@@ -195,7 +211,7 @@ export function RecentIssuesCard({
                       )}
                     </div>
                     {/* Linked issue badges */}
-                    {(issue.githubIssueNumber || issue.linearIssueId) && (
+                    {(issue.githubIssueNumber || issue.linearIssueId || issue.jiraIssueKey) && (
                       <div className="mt-1.5 flex flex-wrap items-center gap-1">
                         {issue.githubIssueNumber && issue.githubIssueUrl && (
                           <a
@@ -232,6 +248,30 @@ export function RecentIssuesCard({
                             <IconExternalLink className="size-2.5" />
                           </a>
                         )}
+                        {issue.jiraIssueKey && jiraStatus && (
+                          <a
+                            href={jiraStatus.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-sm border border-[#0052CC]/30 bg-[#0052CC]/10 px-1.5 py-0.5 text-[10px] font-medium text-[#0052CC] hover:bg-[#0052CC]/20 transition-colors"
+                          >
+                            {jiraStatus.key}
+                            <span className="text-[#0052CC]/70">·</span>
+                            {jiraStatus.state}
+                            <IconExternalLink className="size-2.5" />
+                          </a>
+                        )}
+                        {issue.jiraIssueKey && !jiraStatus && issue.jiraIssueUrl && (
+                          <a
+                            href={issue.jiraIssueUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-sm border border-[#0052CC]/30 bg-[#0052CC]/10 px-1.5 py-0.5 text-[10px] font-medium text-[#0052CC] hover:bg-[#0052CC]/20 transition-colors"
+                          >
+                            {issue.jiraIssueKey}
+                            <IconExternalLink className="size-2.5" />
+                          </a>
+                        )}
                         <FeedbackButtons issueId={issue.id} currentFeedback={issue.feedback} />
                       </div>
                     )}
@@ -242,6 +282,9 @@ export function RecentIssuesCard({
                       )}
                       {linearConnected && !issue.linearIssueId && (
                         <CreateLinearIssueButton issueId={issue.id} />
+                      )}
+                      {jiraConnected && !issue.jiraIssueKey && (
+                        <CreateJiraIssueButton issueId={issue.id} />
                       )}
                       <AcknowledgeButton issueId={issue.id} />
                     </div>

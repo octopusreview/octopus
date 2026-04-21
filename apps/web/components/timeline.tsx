@@ -23,6 +23,7 @@ import {
   loadWeek,
 } from "@/app/(app)/timeline/actions";
 import { CreateLinearIssueButton } from "@/components/create-linear-issue-dialog";
+import { CreateJiraIssueButton } from "@/components/create-jira-issue-dialog";
 import { CreateGitHubIssueButton } from "@/components/create-github-issue-dialog";
 
 // ── Types ─────────────────────────────────────────────────────
@@ -35,6 +36,8 @@ export type TimelineIssue = {
   lineNumber: number | null;
   linearIssueId: string | null;
   linearIssueUrl: string | null;
+  jiraIssueKey: string | null;
+  jiraIssueUrl: string | null;
   githubIssueNumber: number | null;
   githubIssueUrl: string | null;
   repoProvider: string;
@@ -79,11 +82,13 @@ export function Timeline({
   initialWeeks,
   currentWeekStart: _currentWeekStart,
   linearConnected = false,
+  jiraConnected = false,
   githubConnected = false,
 }: {
   initialWeeks: TimelineWeek[];
   currentWeekStart: string;
   linearConnected?: boolean;
+  jiraConnected?: boolean;
   githubConnected?: boolean;
 }) {
   const [weeks, setWeeks] = useState<TimelineWeek[]>(initialWeeks);
@@ -162,7 +167,7 @@ export function Timeline({
       </div>
 
       {weeks.map((week) => (
-        <WeekSection key={week.weekKey} week={week} linearConnected={linearConnected} githubConnected={githubConnected} />
+        <WeekSection key={week.weekKey} week={week} linearConnected={linearConnected} jiraConnected={jiraConnected} githubConnected={githubConnected} />
       ))}
 
       {/* Load previous week */}
@@ -185,7 +190,7 @@ export function Timeline({
 
 // ── Week Section ──────────────────────────────────────────────
 
-function WeekSection({ week, linearConnected, githubConnected }: { week: TimelineWeek; linearConnected: boolean; githubConnected: boolean }) {
+function WeekSection({ week, linearConnected, jiraConnected, githubConnected }: { week: TimelineWeek; linearConnected: boolean; jiraConnected: boolean; githubConnected: boolean }) {
   if (week.days.length === 0) {
     return (
       <div className="mb-8">
@@ -203,7 +208,7 @@ function WeekSection({ week, linearConnected, githubConnected }: { week: Timelin
       <WeekHeader week={week} />
       <div className="relative">
         {week.days.map((day) => (
-          <DaySection key={day.date} day={day} linearConnected={linearConnected} githubConnected={githubConnected} />
+          <DaySection key={day.date} day={day} linearConnected={linearConnected} jiraConnected={jiraConnected} githubConnected={githubConnected} />
         ))}
       </div>
     </div>
@@ -244,7 +249,7 @@ function groupByRepo(items: TimelineItem[]): { repoName: string; items: Timeline
   return Array.from(map.entries()).map(([repoName, items]) => ({ repoName, items }));
 }
 
-function RepoGroup({ repoName, items, linearConnected, githubConnected }: { repoName: string; items: TimelineItem[]; linearConnected: boolean; githubConnected: boolean }) {
+function RepoGroup({ repoName, items, linearConnected, jiraConnected, githubConnected }: { repoName: string; items: TimelineItem[]; linearConnected: boolean; jiraConnected: boolean; githubConnected: boolean }) {
   // Show short name (org/repo → repo)
   const shortName = repoName.includes("/") ? repoName.split("/").pop()! : repoName;
   return (
@@ -256,14 +261,14 @@ function RepoGroup({ repoName, items, linearConnected, githubConnected }: { repo
       </div>
       <div className="ml-5 space-y-2 border-l border-border/50 pl-3">
         {items.map((item, i) => (
-          <PRCard key={i} item={item} linearConnected={linearConnected} githubConnected={githubConnected} />
+          <PRCard key={i} item={item} linearConnected={linearConnected} jiraConnected={jiraConnected} githubConnected={githubConnected} />
         ))}
       </div>
     </div>
   );
 }
 
-function DaySection({ day, linearConnected, githubConnected }: { day: TimelineDay; linearConnected: boolean; githubConnected: boolean }) {
+function DaySection({ day, linearConnected, jiraConnected, githubConnected }: { day: TimelineDay; linearConnected: boolean; jiraConnected: boolean; githubConnected: boolean }) {
   const repoGroups = groupByRepo(day.items);
 
   return (
@@ -295,7 +300,7 @@ function DaySection({ day, linearConnected, githubConnected }: { day: TimelineDa
           </div>
           <div className="mt-3 space-y-4">
             {repoGroups.map((group) => (
-              <RepoGroup key={group.repoName} repoName={group.repoName} items={group.items} linearConnected={linearConnected} githubConnected={githubConnected} />
+              <RepoGroup key={group.repoName} repoName={group.repoName} items={group.items} linearConnected={linearConnected} jiraConnected={jiraConnected} githubConnected={githubConnected} />
             ))}
           </div>
         </div>
@@ -330,7 +335,7 @@ function DaySection({ day, linearConnected, githubConnected }: { day: TimelineDa
             <DaySummary date={day.date} hasReviews={day.prsReviewed > 0} totalPrs={day.items.length} />
             <div className="space-y-4">
               {repoGroups.map((group) => (
-                <RepoGroup key={group.repoName} repoName={group.repoName} items={group.items} linearConnected={linearConnected} githubConnected={githubConnected} />
+                <RepoGroup key={group.repoName} repoName={group.repoName} items={group.items} linearConnected={linearConnected} jiraConnected={jiraConnected} githubConnected={githubConnected} />
               ))}
             </div>
           </div>
@@ -342,7 +347,7 @@ function DaySection({ day, linearConnected, githubConnected }: { day: TimelineDa
 
 // ── PR Card with Issues ───────────────────────────────────────
 
-function PRCard({ item, linearConnected, githubConnected }: { item: TimelineItem; linearConnected: boolean; githubConnected: boolean }) {
+function PRCard({ item, linearConnected, jiraConnected, githubConnected }: { item: TimelineItem; linearConnected: boolean; jiraConnected: boolean; githubConnected: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const hasIssues = item.issues.length > 0;
 
@@ -396,7 +401,7 @@ function PRCard({ item, linearConnected, githubConnected }: { item: TimelineItem
       {hasIssues && expanded && (
         <div className="mt-2 ml-7 space-y-1.5">
           {item.issues.map((issue) => (
-            <IssueRow key={issue.id} issue={issue} linearConnected={linearConnected} githubConnected={githubConnected} />
+            <IssueRow key={issue.id} issue={issue} linearConnected={linearConnected} jiraConnected={jiraConnected} githubConnected={githubConnected} />
           ))}
         </div>
       )}
@@ -413,7 +418,7 @@ const severityColors: Record<string, string> = {
   low: "bg-blue-500/10 text-blue-500 border-blue-500/20",
 };
 
-function IssueRow({ issue, linearConnected, githubConnected }: { issue: TimelineIssue; linearConnected: boolean; githubConnected: boolean }) {
+function IssueRow({ issue, linearConnected, jiraConnected, githubConnected }: { issue: TimelineIssue; linearConnected: boolean; jiraConnected: boolean; githubConnected: boolean }) {
   const colorClass = severityColors[issue.severity] ?? severityColors.medium;
   return (
     <div className="flex items-center gap-2 rounded border px-2.5 py-1.5 text-xs">
@@ -455,6 +460,20 @@ function IssueRow({ issue, linearConnected, githubConnected }: { issue: Timeline
           className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-[#5E6AD2]/30 bg-[#5E6AD2]/10 px-1.5 py-0.5 text-[10px] font-medium text-[#5E6AD2] hover:bg-[#5E6AD2]/20 transition-colors"
         >
           Linear
+          <IconExternalLink className="size-2.5" />
+        </a>
+      )}
+      {jiraConnected && !issue.jiraIssueKey && (
+        <CreateJiraIssueButton issueId={issue.id} />
+      )}
+      {issue.jiraIssueKey && issue.jiraIssueUrl && (
+        <a
+          href={issue.jiraIssueUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-[#0052CC]/30 bg-[#0052CC]/10 px-1.5 py-0.5 text-[10px] font-medium text-[#0052CC] hover:bg-[#0052CC]/20 transition-colors"
+        >
+          {issue.jiraIssueKey}
           <IconExternalLink className="size-2.5" />
         </a>
       )}

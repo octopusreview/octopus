@@ -39,6 +39,7 @@ docker-compose.*.yml
 
 # database
 *.sql
+!packages/db/prisma/migrations/**/migration.sql
 backups/
 
 # internal docs

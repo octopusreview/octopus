@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@octopus/db";
 import { getLinearViewer } from "@/lib/linear";
+import { writeAuditLog } from "@/lib/audit";
 
 export async function GET(request: NextRequest) {
   const baseUrl = process.env.BETTER_AUTH_URL || request.url;
@@ -83,7 +84,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Upsert LinearIntegration
-  await prisma.linearIntegration.upsert({
+  const integration = await prisma.linearIntegration.upsert({
     where: { organizationId: orgId },
     create: {
       organizationId: orgId,
@@ -96,6 +97,15 @@ export async function GET(request: NextRequest) {
       workspaceId,
       workspaceName,
     },
+  });
+
+  await writeAuditLog({
+    action: "integration.connected",
+    category: "system",
+    organizationId: orgId,
+    targetType: "LinearIntegration",
+    targetId: integration.id,
+    metadata: { provider: "linear", workspaceId, workspaceName },
   });
 
   return NextResponse.redirect(

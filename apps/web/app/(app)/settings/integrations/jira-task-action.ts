@@ -7,23 +7,16 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import {
   createJiraIssue,
+  encryptJiraToken,
   getJiraProjects,
+  JIRA_OAUTH_PENDING_COOKIE,
   JiraAuthError,
   type JiraIntegrationRecord,
+  type JiraOAuthPendingPayload,
   type JiraProject,
 } from "@/lib/jira";
 import { decryptJson } from "@/lib/crypto";
 import { writeAuditLog } from "@/lib/audit";
-
-const PENDING_COOKIE = "jira_oauth_pending";
-
-type PendingPayload = {
-  orgId: string;
-  accessToken: string;
-  refreshToken: string;
-  expiresAt: string;
-  sites: { cloudId: string; name: string; url: string }[];
-};
 
 // ── Helpers ──
 
@@ -85,12 +78,12 @@ export async function finalizeJiraSite(formData: FormData): Promise<void> {
   if ("error" in ctx) redirect("/settings/integrations?error=forbidden");
 
   const cookieStore = await cookies();
-  const raw = cookieStore.get(PENDING_COOKIE)?.value;
+  const raw = cookieStore.get(JIRA_OAUTH_PENDING_COOKIE)?.value;
   if (!raw) redirect("/settings/integrations?error=jira_session_expired");
 
-  let payload: PendingPayload;
+  let payload: JiraOAuthPendingPayload;
   try {
-    payload = decryptJson<PendingPayload>(raw);
+    payload = decryptJson<JiraOAuthPendingPayload>(raw);
   } catch {
     redirect("/settings/integrations?error=jira_session_expired");
   }
@@ -108,20 +101,22 @@ export async function finalizeJiraSite(formData: FormData): Promise<void> {
   if (!site) redirect("/settings/integrations?error=invalid_site");
 
   const tokenExpiresAt = new Date(payload.expiresAt);
+  const encryptedAccess = encryptJiraToken(payload.accessToken);
+  const encryptedRefresh = encryptJiraToken(payload.refreshToken);
   const integration = await prisma.jiraIntegration.upsert({
     where: { organizationId: ctx.orgId },
     create: {
       organizationId: ctx.orgId,
-      accessToken: payload.accessToken,
-      refreshToken: payload.refreshToken,
+      accessToken: encryptedAccess,
+      refreshToken: encryptedRefresh,
       tokenExpiresAt,
       cloudId: site.cloudId,
       siteUrl: site.url,
       siteName: site.name,
     },
     update: {
-      accessToken: payload.accessToken,
-      refreshToken: payload.refreshToken,
+      accessToken: encryptedAccess,
+      refreshToken: encryptedRefresh,
       tokenExpiresAt,
       cloudId: site.cloudId,
       siteUrl: site.url,
@@ -139,7 +134,7 @@ export async function finalizeJiraSite(formData: FormData): Promise<void> {
     metadata: { provider: "jira", siteName: site.name, cloudId: site.cloudId },
   });
 
-  cookieStore.delete(PENDING_COOKIE);
+  cookieStore.delete(JIRA_OAUTH_PENDING_COOKIE);
   revalidatePath("/settings/integrations");
   redirect("/settings/integrations?success=jira");
 }

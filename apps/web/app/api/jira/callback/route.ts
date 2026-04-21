@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
-import { getAccessibleResources } from "@/lib/jira";
+import {
+  encryptJiraToken,
+  getAccessibleResources,
+  JIRA_OAUTH_PENDING_COOKIE,
+} from "@/lib/jira";
 import { encryptJson } from "@/lib/crypto";
 import { writeAuditLog } from "@/lib/audit";
 
-const PENDING_COOKIE = "jira_oauth_pending";
 const PENDING_MAX_AGE_SECONDS = 5 * 60;
 
 export async function GET(request: NextRequest) {
@@ -36,6 +40,23 @@ export async function GET(request: NextRequest) {
   } catch {
     return NextResponse.redirect(
       new URL("/settings/integrations?error=invalid_state", baseUrl),
+    );
+  }
+
+  // Verify the authenticated user is an admin of the org referenced in state.
+  // Without this, a crafted callback URL could bind an attacker's Jira tokens
+  // to a victim org.
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) {
+    return NextResponse.redirect(new URL("/login", baseUrl));
+  }
+  const member = await prisma.organizationMember.findFirst({
+    where: { userId: session.user.id, organizationId: orgId, deletedAt: null },
+    select: { role: true },
+  });
+  if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    return NextResponse.redirect(
+      new URL("/settings/integrations?error=forbidden", baseUrl),
     );
   }
 
@@ -104,20 +125,22 @@ export async function GET(request: NextRequest) {
   // Single site: finalize immediately.
   if (sites.length === 1) {
     const site = sites[0];
+    const encryptedAccess = encryptJiraToken(accessToken);
+    const encryptedRefresh = encryptJiraToken(refreshToken);
     const integration = await prisma.jiraIntegration.upsert({
       where: { organizationId: orgId },
       create: {
         organizationId: orgId,
-        accessToken,
-        refreshToken,
+        accessToken: encryptedAccess,
+        refreshToken: encryptedRefresh,
         tokenExpiresAt,
         cloudId: site.cloudId,
         siteUrl: site.url,
         siteName: site.name,
       },
       update: {
-        accessToken,
-        refreshToken,
+        accessToken: encryptedAccess,
+        refreshToken: encryptedRefresh,
         tokenExpiresAt,
         cloudId: site.cloudId,
         siteUrl: site.url,
@@ -150,7 +173,7 @@ export async function GET(request: NextRequest) {
   });
 
   const cookieStore = await cookies();
-  cookieStore.set(PENDING_COOKIE, payload, {
+  cookieStore.set(JIRA_OAUTH_PENDING_COOKIE, payload, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",

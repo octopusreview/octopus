@@ -1,7 +1,18 @@
 import { prisma } from "@octopus/db";
+import { decryptString, encryptString } from "@/lib/crypto";
 
 const AUTH_BASE = "https://auth.atlassian.com";
 const API_BASE = "https://api.atlassian.com";
+
+export const JIRA_OAUTH_PENDING_COOKIE = "jira_oauth_pending";
+
+export type JiraOAuthPendingPayload = {
+  orgId: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: string;
+  sites: { cloudId: string; name: string; url: string }[];
+};
 
 export class JiraAuthError extends Error {
   constructor() {
@@ -12,6 +23,9 @@ export class JiraAuthError extends Error {
   }
 }
 
+// Tokens are stored encrypted at rest (AES-256-GCM, see lib/crypto.ts).
+// JiraIntegrationRecord carries the encrypted ciphertexts; getValidAccessToken
+// decrypts internally and exposes the plaintext access token to callers.
 export type JiraIntegrationRecord = {
   id: string;
   accessToken: string;
@@ -20,6 +34,14 @@ export type JiraIntegrationRecord = {
   cloudId: string;
   siteUrl: string;
 };
+
+export function encryptJiraToken(plaintext: string): string {
+  return encryptString(plaintext);
+}
+
+export function decryptJiraToken(ciphertext: string): string {
+  return decryptString(ciphertext);
+}
 
 export type JiraAccessibleResource = {
   id: string;
@@ -50,7 +72,7 @@ export async function getValidAccessToken(
   const expiresAt = integration.tokenExpiresAt.getTime();
   // refresh if less than 60 seconds remaining
   if (expiresAt - now > 60_000) {
-    return integration.accessToken;
+    return decryptString(integration.accessToken);
   }
 
   const clientId = process.env.JIRA_CLIENT_ID;
@@ -66,7 +88,7 @@ export async function getValidAccessToken(
       grant_type: "refresh_token",
       client_id: clientId,
       client_secret: clientSecret,
-      refresh_token: integration.refreshToken,
+      refresh_token: decryptString(integration.refreshToken),
     }),
   });
 
@@ -85,17 +107,19 @@ export async function getValidAccessToken(
   };
 
   const newExpiresAt = new Date(Date.now() + data.expires_in * 1000);
+  const encryptedAccess = encryptString(data.access_token);
+  const encryptedRefresh = encryptString(data.refresh_token);
   await prisma.jiraIntegration.update({
     where: { id: integration.id },
     data: {
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token,
+      accessToken: encryptedAccess,
+      refreshToken: encryptedRefresh,
       tokenExpiresAt: newExpiresAt,
     },
   });
 
-  integration.accessToken = data.access_token;
-  integration.refreshToken = data.refresh_token;
+  integration.accessToken = encryptedAccess;
+  integration.refreshToken = encryptedRefresh;
   integration.tokenExpiresAt = newExpiresAt;
   return data.access_token;
 }

@@ -1,6 +1,12 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
+import { prisma } from "@octopus/db";
 import { decryptJson } from "@/lib/crypto";
+import {
+  JIRA_OAUTH_PENDING_COOKIE,
+  type JiraOAuthPendingPayload,
+} from "@/lib/jira";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -12,28 +18,36 @@ import {
 } from "@/components/ui/card";
 import { finalizeJiraSite } from "../../jira-task-action";
 
-const PENDING_COOKIE = "jira_oauth_pending";
-
-type PendingPayload = {
-  orgId: string;
-  accessToken: string;
-  refreshToken: string;
-  expiresAt: string;
-  sites: { cloudId: string; name: string; url: string }[];
-};
-
 export default async function SelectJiraSitePage() {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) redirect("/login");
+
   const cookieStore = await cookies();
-  const raw = cookieStore.get(PENDING_COOKIE)?.value;
+  const raw = cookieStore.get(JIRA_OAUTH_PENDING_COOKIE)?.value;
   if (!raw) {
     redirect("/settings/integrations?error=jira_session_expired");
   }
 
-  let payload: PendingPayload;
+  let payload: JiraOAuthPendingPayload;
   try {
-    payload = decryptJson<PendingPayload>(raw);
+    payload = decryptJson<JiraOAuthPendingPayload>(raw);
   } catch {
     redirect("/settings/integrations?error=jira_session_expired");
+  }
+
+  // Prevent rendering another user's pending payload if the session changed
+  // since OAuth began. The final upsert is also re-validated in
+  // finalizeJiraSite; this check avoids UI-level leakage of site names.
+  const member = await prisma.organizationMember.findFirst({
+    where: {
+      userId: session.user.id,
+      organizationId: payload.orgId,
+      deletedAt: null,
+    },
+    select: { role: true },
+  });
+  if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    redirect("/settings/integrations?error=forbidden");
   }
 
   return (

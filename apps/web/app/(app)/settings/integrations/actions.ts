@@ -378,16 +378,29 @@ export async function disconnectJira(): Promise<{ error?: string }> {
   const clientSecret = process.env.JIRA_CLIENT_SECRET;
   if (clientId && clientSecret) {
     try {
-      await fetch("https://auth.atlassian.com/oauth/token/revoke", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          client_id: clientId,
-          client_secret: clientSecret,
-          token: integration.refreshToken,
-          token_type_hint: "refresh_token",
-        }),
-      });
+      const { decryptJiraToken } = await import("@/lib/jira");
+      const revokeResponse = await fetch(
+        "https://auth.atlassian.com/oauth/token/revoke",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            client_id: clientId,
+            client_secret: clientSecret,
+            token: decryptJiraToken(integration.refreshToken),
+            token_type_hint: "refresh_token",
+          }),
+        },
+      );
+      // Consume body so the connection can be released even though we ignore
+      // the result (revoke is best-effort).
+      await revokeResponse.text().catch(() => "");
+      if (!revokeResponse.ok) {
+        console.warn(
+          "[jira] Token revoke returned non-2xx:",
+          revokeResponse.status,
+        );
+      }
     } catch (err) {
       console.error("[jira] Token revoke failed:", err);
     }

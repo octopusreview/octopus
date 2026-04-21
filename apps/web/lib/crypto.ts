@@ -44,3 +44,29 @@ export function decryptJson<T>(token: string): T {
   ]);
   return JSON.parse(plaintext.toString("utf8")) as T;
 }
+
+export function encryptString(value: string): string {
+  const key = getKey();
+  const iv = randomBytes(IV_LENGTH);
+  const cipher = createCipheriv(ALGORITHM, key, iv);
+  const plaintext = Buffer.from(value, "utf8");
+  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, ciphertext]).toString("base64url");
+}
+
+export function decryptString(token: string): string {
+  const key = getKey();
+  const buf = Buffer.from(token, "base64url");
+  if (buf.length < IV_LENGTH + AUTH_TAG_LENGTH) {
+    throw new Error("Ciphertext too short");
+  }
+  const iv = buf.subarray(0, IV_LENGTH);
+  const tag = buf.subarray(IV_LENGTH, IV_LENGTH + AUTH_TAG_LENGTH);
+  const ciphertext = buf.subarray(IV_LENGTH + AUTH_TAG_LENGTH);
+  const decipher = createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString(
+    "utf8",
+  );
+}

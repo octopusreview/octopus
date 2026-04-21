@@ -15,6 +15,7 @@ import {
   upsertFeedbackPattern,
 } from "@/lib/qdrant";
 import { extractAllMermaidBlocks, extractNodeLabels, DIAGRAM_TYPE_LABELS } from "@/lib/mermaid-utils";
+import { loadQueueConfig, computeStaleReclaimMs } from "@/lib/queue";
 import { createEmbeddings } from "@/lib/embeddings";
 import { generateSparseVector } from "@/lib/sparse-vector";
 import { rerankDocuments } from "@/lib/reranker";
@@ -603,8 +604,10 @@ export async function processReview(pullRequestId: string): Promise<void> {
     console.log(`[reviewer] PR ${pullRequestId} already completed, skipping`);
     return;
   }
-  const STALE_REVIEW_MS = 15 * 60 * 1000; // 15 min: longer than any real review
-  const staleBefore = new Date(Date.now() - STALE_REVIEW_MS);
+  // Stale threshold must exceed the pg-boss job timeout so we don't race
+  // with a still-running worker that pg-boss is about to kill for timing out.
+  const queueConfig = await loadQueueConfig();
+  const staleBefore = new Date(Date.now() - computeStaleReclaimMs(queueConfig.reviewTimeoutSeconds));
   const claimed = await prisma.pullRequest.updateMany({
     where: {
       id: pullRequestId,

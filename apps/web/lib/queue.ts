@@ -12,6 +12,16 @@ export const QUEUE_CONFIG_DEFAULTS: QueueConfig = {
   reviewConcurrency: 2,
 };
 
+// Buffer added on top of reviewTimeoutSeconds to decide when an in-flight
+// review is "stuck" and can be claimed by another worker. Must exceed the
+// pg-boss job timeout so we don't race with a still-running worker that
+// pg-boss is about to kill.
+export const STALE_RECLAIM_BUFFER_SECONDS = 300;
+
+export function computeStaleReclaimMs(reviewTimeoutSeconds: number): number {
+  return (reviewTimeoutSeconds + STALE_RECLAIM_BUFFER_SECONDS) * 1000;
+}
+
 const globalForQueue = globalThis as unknown as { pgBoss?: PgBoss };
 
 function getBoss(): PgBoss {
@@ -62,12 +72,19 @@ export async function startQueue(): Promise<PgBoss> {
 
   // Only review-engine containers should register workers. Web containers
   // still need pg-boss started so they can enqueue jobs, but must not consume.
-  const enableWorkers = process.env.ENABLE_REVIEW_WORKERS === "true";
-  if (enableWorkers) {
+  // The flag must be set explicitly: a missing value is a misconfiguration,
+  // not a silent default, so throw rather than pick a side for the operator.
+  const flag = process.env.ENABLE_REVIEW_WORKERS;
+  if (flag !== "true" && flag !== "false") {
+    throw new Error(
+      "ENABLE_REVIEW_WORKERS must be set to \"true\" (review-engine replicas) or \"false\" (web replicas). See .env.example.",
+    );
+  }
+  if (flag === "true") {
     const { registerWorkers } = await import("./queue-workers");
     await registerWorkers(boss, config);
   } else {
-    console.log("[queue] ENABLE_REVIEW_WORKERS not set — skipping worker registration (enqueue-only mode)");
+    console.log("[queue] ENABLE_REVIEW_WORKERS=false — enqueue-only mode, skipping worker registration");
   }
 
   console.log("[queue] pg-boss started");

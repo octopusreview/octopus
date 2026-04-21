@@ -60,9 +60,15 @@ export async function startQueue(): Promise<PgBoss> {
     expireInSeconds: config.reviewTimeoutSeconds,
   }).catch(() => {});
 
-  // Register all workers
-  const { registerWorkers } = await import("./queue-workers");
-  await registerWorkers(boss, config);
+  // Only review-engine containers should register workers. Web containers
+  // still need pg-boss started so they can enqueue jobs, but must not consume.
+  const enableWorkers = process.env.ENABLE_REVIEW_WORKERS === "true";
+  if (enableWorkers) {
+    const { registerWorkers } = await import("./queue-workers");
+    await registerWorkers(boss, config);
+  } else {
+    console.log("[queue] ENABLE_REVIEW_WORKERS not set — skipping worker registration (enqueue-only mode)");
+  }
 
   console.log("[queue] pg-boss started");
 

@@ -8,6 +8,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://octopus:octopus@postgres:5432/octopus
       - QDRANT_URL=http://qdrant:6333
+      - ENABLE_REVIEW_WORKERS=true
     depends_on:
       postgres:
         condition: service_healthy

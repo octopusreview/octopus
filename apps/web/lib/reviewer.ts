@@ -593,16 +593,27 @@ export async function processReview(pullRequestId: string): Promise<void> {
     return;
   }
 
-  // Guard against duplicate processing (e.g. pg-boss jobs replicated to standby DB).
-  // Use atomic UPDATE with WHERE to claim the review — only one server can win.
+  // Guard against duplicate processing (e.g. pg-boss jobs replicated to standby DB,
+  // or webhook retries). Use atomic UPDATE with WHERE to claim the review — only one
+  // server can win. "reviewing" is NOT in the fresh-claim list because that would let
+  // a second worker match an in-flight review and both would post comments. Stuck
+  // reviews are recovered via a separate stale-claim path keyed on updatedAt.
   const serverId = process.env.OCTOPUS_SERVER_ID || "unknown";
   if (pr.status === "completed") {
     console.log(`[reviewer] PR ${pullRequestId} already completed, skipping`);
     return;
   }
+  const STALE_REVIEW_MS = 15 * 60 * 1000; // 15 min: longer than any real review
+  const staleBefore = new Date(Date.now() - STALE_REVIEW_MS);
   const claimed = await prisma.pullRequest.updateMany({
-    where: { id: pullRequestId, status: { in: ["pending", "queued", "failed", "reviewing"] } },
-    data: { status: "reviewing" },
+    where: {
+      id: pullRequestId,
+      OR: [
+        { status: { in: ["pending", "queued", "failed"] } },
+        { status: "reviewing", updatedAt: { lt: staleBefore } },
+      ],
+    },
+    data: { status: "reviewing", updatedAt: new Date() },
   });
   if (claimed.count === 0) {
     console.log(`[reviewer] PR ${pullRequestId} already claimed by another server, skipping on '${serverId}'`);

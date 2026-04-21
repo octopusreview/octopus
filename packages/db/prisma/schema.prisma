@@ -134,6 +134,7 @@ model Organization {
   collabIntegration     CollabIntegration?
   bitbucketIntegration  BitbucketIntegration?
   linearIntegration     LinearIntegration?
+  jiraIntegration       JiraIntegration?
   aiUsages           AiUsage[]
   knowledgeAuditLogs KnowledgeAuditLog[]
   daySummaries       DaySummary[]
@@ -229,6 +230,7 @@ model Repository {
   collabProjectMappings CollabProjectMapping[]
   favoritedBy           FavoriteRepository[]
   linearTeamMappings    LinearTeamMapping[]
+  jiraProjectMappings   JiraProjectMapping[]
   packageAnalyses       PackageAnalysis[]
 
   @@unique([provider, externalId, organizationId])
@@ -280,6 +282,8 @@ model ReviewIssue {
 
   linearIssueId  String?
   linearIssueUrl String?
+  jiraIssueKey   String?
+  jiraIssueUrl   String?
   githubIssueNumber Int?
   githubIssueUrl    String?
   githubCommentId   BigInt?
@@ -532,6 +536,39 @@ model LinearTeamMapping {
 
   @@unique([linearIntegrationId, repositoryId])
   @@map("linear_team_mappings")
+}
+
+model JiraIntegration {
+  id              String   @id @default(cuid())
+  organizationId  String   @unique
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  accessToken     String
+  refreshToken    String
+  tokenExpiresAt  DateTime
+  cloudId         String
+  siteUrl         String
+  siteName        String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  projectMappings JiraProjectMapping[]
+
+  @@map("jira_integrations")
+}
+
+model JiraProjectMapping {
+  id                String   @id @default(cuid())
+  jiraProjectId     String
+  jiraProjectKey    String
+  jiraProjectName   String
+  jiraIssueTypeId   String
+  jiraIssueTypeName String
+  repositoryId      String
+  repository        Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  jiraIntegrationId String
+  jiraIntegration   JiraIntegration @relation(fields: [jiraIntegrationId], references: [id], onDelete: Cascade)
+
+  @@unique([jiraIntegrationId, repositoryId])
+  @@map("jira_project_mappings")
 }
 
 model FavoriteRepository {

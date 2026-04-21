@@ -7,6 +7,7 @@ import { SlackIntegrationCard } from "./slack-integration-card";
 import { BitbucketIntegrationCard } from "./bitbucket-integration-card";
 import { BitbucketDebugBanner } from "./bitbucket-debug-banner";
 import { LinearIntegrationCard } from "./linear-integration-card";
+import { JiraIntegrationCard } from "./jira-integration-card";
 
 export default async function IntegrationsPage({
   searchParams,
@@ -36,7 +37,14 @@ export default async function IntegrationsPage({
 
   const orgId = member.organizationId;
 
-  const [slackIntegration, bitbucketIntegration, githubData, , linearIntegration] = await Promise.all([
+  const [
+    slackIntegration,
+    bitbucketIntegration,
+    githubData,
+    ,
+    linearIntegration,
+    jiraIntegration,
+  ] = await Promise.all([
     prisma.slackIntegration.findUnique({
       where: { organizationId: orgId },
       select: {
@@ -78,6 +86,9 @@ export default async function IntegrationsPage({
     prisma.linearIntegration
       .findUnique({ where: { organizationId: orgId }, select: { workspaceName: true } })
       .catch(() => null),
+    prisma.jiraIntegration
+      .findUnique({ where: { organizationId: orgId }, select: { siteName: true } })
+      .catch(() => null),
   ]);
 
   const appSlug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG ?? null;
@@ -89,6 +100,7 @@ export default async function IntegrationsPage({
       <BitbucketIntegrationCard data={bitbucketIntegration} />
       <SlackIntegrationCard data={slackIntegration} />
       <LinearIntegrationCard data={linearIntegration} />
+      <JiraIntegrationCard data={jiraIntegration} />
     </div>
   );
 }

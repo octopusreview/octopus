@@ -34,6 +34,7 @@ import {
   IconGitFork,
 } from "@tabler/icons-react";
 import { CreateLinearIssueButton } from "@/components/create-linear-issue-dialog";
+import { CreateJiraIssueButton } from "@/components/create-jira-issue-dialog";
 import { CreateGitHubIssueButton } from "@/components/create-github-issue-dialog";
 import { FeedbackButtons } from "@/components/issues/feedback-buttons";
 import { acknowledgeIssue } from "@/app/(app)/actions";
@@ -49,6 +50,8 @@ type Issue = {
   createdAt: string;
   linearIssueId: string | null;
   linearIssueUrl: string | null;
+  jiraIssueKey: string | null;
+  jiraIssueUrl: string | null;
   githubIssueNumber: number | null;
   githubIssueUrl: string | null;
   feedback: "up" | "down" | null;
@@ -66,6 +69,7 @@ interface IssuesContentProps {
   currentPeriod: string;
   currentStatus: string;
   linearConnected: boolean;
+  jiraConnected: boolean;
   githubConnected: boolean;
 }
 
@@ -159,6 +163,7 @@ export function IssuesContent({
   currentPeriod,
   currentStatus,
   linearConnected,
+  jiraConnected,
   githubConnected,
 }: IssuesContentProps) {
   const router = useRouter();
@@ -345,6 +350,9 @@ export function IssuesContent({
                               {linearConnected && !issue.linearIssueId && !issue.acknowledged && (
                                 <CreateLinearIssueButton issueId={issue.id} />
                               )}
+                              {jiraConnected && !issue.jiraIssueKey && !issue.acknowledged && (
+                                <CreateJiraIssueButton issueId={issue.id} />
+                              )}
                               <FeedbackButtons issueId={issue.id} currentFeedback={issue.feedback} />
                               {!issue.acknowledged && (
                                 <AcknowledgeButton issueId={issue.id} />
@@ -397,6 +405,17 @@ export function IssuesContent({
                                 className="inline-flex items-center gap-1 rounded-sm border border-[#5E6AD2]/30 bg-[#5E6AD2]/10 px-1.5 py-0.5 text-[10px] font-medium text-[#5E6AD2] hover:bg-[#5E6AD2]/20 transition-colors"
                               >
                                 Linear
+                                <IconExternalLink className="size-2.5" />
+                              </a>
+                            )}
+                            {issue.jiraIssueKey && issue.jiraIssueUrl && (
+                              <a
+                                href={issue.jiraIssueUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 rounded-sm border border-[#0052CC]/30 bg-[#0052CC]/10 px-1.5 py-0.5 text-[10px] font-medium text-[#0052CC] hover:bg-[#0052CC]/20 transition-colors"
+                              >
+                                {issue.jiraIssueKey}
                                 <IconExternalLink className="size-2.5" />
                               </a>
                             )}

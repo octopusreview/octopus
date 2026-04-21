@@ -141,21 +141,21 @@ export async function updateSpendLimit(
   return { success: true };
 }
 
+export type TransactionDTO = {
+  id: string;
+  amount: number;
+  type: string;
+  description: string | null;
+  receiptUrl: string | null;
+  balanceAfter: number;
+  createdAt: string;
+};
+
 export async function loadMoreTransactions(
   orgId: string,
   offset: number,
   limit: number = 20,
-): Promise<
-  {
-    id: string;
-    amount: number;
-    type: string;
-    description: string | null;
-    receiptUrl: string | null;
-    balanceAfter: number;
-    createdAt: string;
-  }[]
-> {
+): Promise<TransactionDTO[]> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return [];
 

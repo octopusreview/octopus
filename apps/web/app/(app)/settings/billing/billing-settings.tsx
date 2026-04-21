@@ -29,17 +29,10 @@ import {
   updateBillingEmail,
   updateSpendLimit,
   loadMoreTransactions,
+  type TransactionDTO,
 } from "./actions";
 
-type Transaction = {
-  id: string;
-  amount: number;
-  type: string;
-  description: string | null;
-  receiptUrl: string | null;
-  balanceAfter: number;
-  createdAt: string;
-};
+type Transaction = TransactionDTO;
 
 type PaymentMethod = {
   brand: string;
@@ -140,12 +133,17 @@ export function BillingSettings({
 
   const total = creditBalance + freeCreditBalance;
 
-  const handleLoadMore = async () => {
+  const handleLoadMore = async (): Promise<boolean> => {
     setLoadingMore(true);
     try {
       const more = await loadMoreTransactions(orgId, transactions.length, 20);
-      setTransactions((prev) => [...prev, ...more]);
+      if (more.length > 0) {
+        setTransactions((prev) => [...prev, ...more]);
+      }
       if (more.length < 20) setHasMore(false);
+      return more.length > 0;
+    } catch {
+      return false;
     } finally {
       setLoadingMore(false);
     }
@@ -503,7 +501,8 @@ export function BillingSettings({
                         className="size-8"
                         onClick={async () => {
                           if (needsMoreForNextPage) {
-                            await handleLoadMore();
+                            const loaded = await handleLoadMore();
+                            if (!loaded) return;
                           }
                           setCurrentPage((p) => Math.min(totalPages, p + 1));
                         }}

@@ -62,8 +62,39 @@ export default async function BlogPostPage({
 
   if (!post) notFound();
 
+  const canonicalUrl = `https://octopus-review.ai/blog/${slug}`;
+  const blogPostingJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    headline: post.title,
+    description: post.excerpt ?? undefined,
+    image: post.coverImageUrl ? [post.coverImageUrl] : undefined,
+    datePublished: post.publishedAt?.toISOString(),
+    dateModified: (post.updatedAt ?? post.publishedAt)?.toISOString(),
+    author: {
+      "@type": "Person",
+      name: post.authorName,
+    },
+    publisher: {
+      "@type": "Organization",
+      name: "Octopus",
+      logo: {
+        "@type": "ImageObject",
+        url: "https://octopus-review.ai/logo.svg",
+      },
+    },
+    mainEntityOfPage: {
+      "@type": "WebPage",
+      "@id": canonicalUrl,
+    },
+  };
+
   return (
     <div className="min-h-screen bg-[#0c0c0c] text-white">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(blogPostingJsonLd) }}
+      />
       <LandingDesktopNav isLoggedIn={isLoggedIn} />
       <LandingMobileNav isLoggedIn={isLoggedIn} />
 
@@ -79,9 +110,13 @@ export default async function BlogPostPage({
         {post.coverImageUrl && (
           <img
             src={post.coverImageUrl}
-            alt={post.title}
-            className="mb-8 w-full rounded-xl object-cover"
-            loading="lazy"
+            alt={`Cover image for "${post.title}"`}
+            width={1200}
+            height={630}
+            loading="eager"
+            fetchPriority="high"
+            decoding="async"
+            className="mb-8 aspect-[1200/630] w-full rounded-xl object-cover"
           />
         )}
 

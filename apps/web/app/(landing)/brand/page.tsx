@@ -10,6 +10,9 @@ export const metadata: Metadata = {
   title: "Brand Guidelines — Octopus",
   description:
     "Resources for presenting the Octopus brand consistently and professionally. Download logos, view colors, and learn usage guidelines.",
+  alternates: {
+    canonical: "https://octopus-review.ai/brand",
+  },
 };
 
 /* ------------------------------------------------------------------ */

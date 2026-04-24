@@ -3,7 +3,11 @@ import { IconScale } from "@tabler/icons-react";
 
 export const metadata = {
   title: "Terms and Conditions — Octopus",
-  description: "Terms and conditions for using the Octopus platform.",
+  description:
+    "Read the terms and conditions for using Octopus. Covers acceptable use, account responsibilities, billing, liability, and how disputes are handled.",
+  alternates: {
+    canonical: "https://octopus-review.ai/docs/terms",
+  },
 };
 
 export default function TermsPage() {

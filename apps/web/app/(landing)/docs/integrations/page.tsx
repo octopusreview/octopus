@@ -14,7 +14,10 @@ import {
 export const metadata = {
   title: "Integrations — Octopus Docs",
   description:
-    "Connect Octopus with GitHub, Bitbucket, Linear, and Slack for automated code reviews and team workflows.",
+    "Connect Octopus to GitHub, Bitbucket, Linear, and Slack. Automate AI code review across your team's pull request workflow in a few minutes.",
+  alternates: {
+    canonical: "https://octopus-review.ai/docs/integrations",
+  },
 };
 
 export default function IntegrationsPage() {

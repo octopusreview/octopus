@@ -3,7 +3,11 @@ import { IconCookie } from "@tabler/icons-react";
 
 export const metadata = {
   title: "Cookie Policy — Octopus",
-  description: "How Octopus uses cookies and similar technologies.",
+  description:
+    "Read the Octopus cookie policy. Learn which cookies we set, which third-party providers use them, and how you can control or disable cookies.",
+  alternates: {
+    canonical: "https://octopus-review.ai/docs/cookies",
+  },
 };
 
 export default function CookiePolicyPage() {

@@ -5,7 +5,10 @@ import { FaqAccordion } from "./faq-accordion";
 export const metadata = {
   title: "FAQ — Octopus Docs",
   description:
-    "Frequently asked questions about Octopus — AI-powered code review, pricing, security, integrations, and more.",
+    "Answers to the most common questions about AI code review with Octopus. Pricing, security, language support, self-hosting, integrations, and more.",
+  alternates: {
+    canonical: "https://octopus-review.ai/docs/faq",
+  },
 };
 
 const generalFaqs = [

@@ -5,7 +5,10 @@ import { EnvGenerator } from "./env-generator";
 export const metadata = {
   title: "Self-Hosting — Octopus Docs",
   description:
-    "Deploy Octopus on your own infrastructure. Docker setup, environment variables, and production configuration.",
+    "Deploy Octopus on your own infrastructure with Docker. Full setup guide, environment variables, and a production checklist for air-gapped deployments.",
+  alternates: {
+    canonical: "https://octopus-review.ai/docs/self-hosting",
+  },
 };
 
 export default function SelfHostingPage() {

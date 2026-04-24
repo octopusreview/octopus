@@ -2,7 +2,11 @@ import { IconShieldLock } from "@tabler/icons-react";
 
 export const metadata = {
   title: "Privacy Policy — Octopus",
-  description: "How Octopus collects, uses, and protects your data.",
+  description:
+    "Read how Octopus collects, processes, and protects your source code and personal data. GDPR-friendly, with a self-host option to keep code on-prem.",
+  alternates: {
+    canonical: "https://octopus-review.ai/docs/privacy",
+  },
 };
 
 export default function PrivacyPage() {

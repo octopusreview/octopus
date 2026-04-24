@@ -140,7 +140,7 @@ export default async function LandingPage() {
       {/* Hero — dark bg */}
       <section className="relative z-10 px-6 pb-20 pt-28 md:px-8 md:pb-28 md:pt-40">
         <div className="mx-auto max-w-4xl text-center">
-          <div className="animate-fade-in mb-8 inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-4 py-1.5 text-sm text-[#666]">
+          <div className="invisible animate-fade-in mb-8 inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-4 py-1.5 text-sm text-[#666]">
             <span className="relative flex size-1.5">
               <span className="absolute inline-flex size-full animate-ping rounded-full bg-white/40" />
               <span className="relative inline-flex size-1.5 rounded-full bg-white/60" />
@@ -409,7 +409,7 @@ export default async function LandingPage() {
 
             <FaqList faqs={landingFaqs} visibleCount={3} />
 
-            <div className="mt-10 text-center">
+            <div className="mt-10 flex flex-col items-center justify-center gap-3 text-center sm:flex-row sm:gap-8">
               <TrackedLink
                 href="/docs/faq"
                 event="faq_click"
@@ -417,6 +417,15 @@ export default async function LandingPage() {
                 className="inline-flex items-center gap-2 text-sm text-[#666] transition-colors hover:text-white"
               >
                 View all FAQs
+                <IconArrowRight className="size-3.5" />
+              </TrackedLink>
+              <TrackedLink
+                href="/compare"
+                event="faq_click"
+                eventParams={{ label: "compare_hub" }}
+                className="inline-flex items-center gap-2 text-sm text-[#666] transition-colors hover:text-white"
+              >
+                Compare with other tools
                 <IconArrowRight className="size-3.5" />
               </TrackedLink>
             </div>

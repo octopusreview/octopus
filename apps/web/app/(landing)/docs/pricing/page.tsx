@@ -11,7 +11,10 @@ import {
 export const metadata = {
   title: "Pricing — Octopus Docs",
   description:
-    "Octopus pricing, credits, and usage-based billing. Free to start, pay only for what you use.",
+    "Transparent credit-based pricing for AI code review. Start with free credits, bring your own API keys, or buy more as you grow. No per-seat fees, ever.",
+  alternates: {
+    canonical: "https://octopus-review.ai/docs/pricing",
+  },
 };
 
 export default function PricingPage() {
@@ -186,6 +189,34 @@ export default function PricingPage() {
           When you self-host Octopus, you use your own API keys directly. There
           are no credits, no platform fees, and no billing. You only pay your
           AI provider directly for the tokens you consume.
+        </P>
+      </Section>
+
+      {/* Comparison link */}
+      <Section title="Comparing Options">
+        <P>
+          Evaluating Octopus alongside other AI code review tools? See all
+          side-by-side{" "}
+          <Link
+            href="/compare"
+            className="text-white underline decoration-white/30 underline-offset-2 hover:decoration-white"
+          >
+            comparisons
+          </Link>
+          {" "}including{" "}
+          <Link
+            href="/vs-coderabbit"
+            className="text-white underline decoration-white/30 underline-offset-2 hover:decoration-white"
+          >
+            Octopus vs CodeRabbit
+          </Link>
+          {" "}and{" "}
+          <Link
+            href="/vs-greptile"
+            className="text-white underline decoration-white/30 underline-offset-2 hover:decoration-white"
+          >
+            Octopus vs Greptile
+          </Link>.
         </P>
       </Section>
 

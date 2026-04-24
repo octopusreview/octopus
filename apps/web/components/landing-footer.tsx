@@ -146,6 +146,16 @@ export function LandingFooter() {
               </li>
               <li>
                 <TrackedLink
+                  href="/compare"
+                  event="footer_click"
+                  eventParams={{ label: "compare" }}
+                  className="text-sm text-[#666] transition-colors hover:text-white"
+                >
+                  Compare
+                </TrackedLink>
+              </li>
+              <li>
+                <TrackedLink
                   href="/docs/about"
                   event="footer_click"
                   eventParams={{ label: "about" }}

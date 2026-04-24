@@ -1,6 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const publicPrefixes = ["/login", "/blocked", "/brand", "/blog", "/bug-bounty", "/docs", "/status", "/not-a-rabbit", "/api/auth", "/api/github", "/api/bitbucket/webhook", "/api/pubby", "/api/version", "/api/invitations", "/api/slack/commands", "/api/stripe", "/api/cli", "/api/agent", "/api/newsletter", "/api/analyze-deps", "/api/blog", "/api/ask-octopus", "/api/status"];
+const publicPrefixes = [
+  "/login",
+  "/blocked",
+  "/brand",
+  "/blog",
+  "/bug-bounty",
+  "/docs",
+  "/status",
+  "/not-a-rabbit",
+  "/compare",
+  "/vs-",
+  "/api/auth",
+  "/api/github",
+  "/api/bitbucket/webhook",
+  "/api/pubby",
+  "/api/version",
+  "/api/invitations",
+  "/api/slack/commands",
+  "/api/stripe",
+  "/api/cli",
+  "/api/agent",
+  "/api/newsletter",
+  "/api/analyze-deps",
+  "/api/blog",
+  "/api/ask-octopus",
+  "/api/status",
+];
 const publicExact = ["/"];
 
 export function middleware(request: NextRequest) {

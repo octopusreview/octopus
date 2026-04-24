@@ -85,17 +85,47 @@ function RotatingLabel({ phrases }: { phrases: string[] }) {
 
   useEffect(() => {
     if (phrases.length <= 1) return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
 
-    const tick = window.setInterval(() => {
-      setVisible(false);
-      window.setTimeout(() => {
-        setIndex((i) => (i + 1) % phrases.length);
-        setVisible(true);
-      }, 300);
-    }, 3200);
+    const mql = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    let tick: number | null = null;
+    let fade: number | null = null;
 
-    return () => window.clearInterval(tick);
+    const start = () => {
+      if (tick !== null) return;
+      tick = window.setInterval(() => {
+        setVisible(false);
+        fade = window.setTimeout(() => {
+          setIndex((i) => (i + 1) % phrases.length);
+          setVisible(true);
+          fade = null;
+        }, 300);
+      }, 3200);
+    };
+
+    const stop = () => {
+      if (tick !== null) {
+        window.clearInterval(tick);
+        tick = null;
+      }
+      if (fade !== null) {
+        window.clearTimeout(fade);
+        fade = null;
+      }
+      setVisible(true);
+    };
+
+    if (!mql?.matches) start();
+
+    const onChange = (e: MediaQueryListEvent) => {
+      if (e.matches) stop();
+      else start();
+    };
+    mql?.addEventListener?.("change", onChange);
+
+    return () => {
+      stop();
+      mql?.removeEventListener?.("change", onChange);
+    };
   }, [phrases]);
 
   return (

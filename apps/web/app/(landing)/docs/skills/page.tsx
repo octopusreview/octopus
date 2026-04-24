@@ -16,7 +16,10 @@ import { SkillCard } from "./skill-card";
 export const metadata = {
   title: "Skills | Octopus Docs",
   description:
-    "AI-powered automation skills that streamline your development workflow, from code review to shipping PRs, fully automated.",
+    "AI automation skills that ship PRs, auto-fix review findings, and streamline your dev workflow. See every skill available and how to trigger them.",
+  alternates: {
+    canonical: "https://octopus-review.ai/docs/skills",
+  },
 };
 
 function readSkillFile(filename: string): string {

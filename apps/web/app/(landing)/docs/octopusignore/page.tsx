@@ -5,7 +5,10 @@ import { CodeBlock } from "../self-hosting/code-block";
 export const metadata = {
   title: ".octopusignore — Octopus Docs",
   description:
-    "Configure .octopusignore to exclude files from AI-powered code review and indexing.",
+    "Control what Octopus reviews. Exclude generated files, vendor folders, and secrets from AI code review and indexing with a simple .octopusignore file.",
+  alternates: {
+    canonical: "https://octopus-review.ai/docs/octopusignore",
+  },
 };
 
 export default function OctopusIgnorePage() {

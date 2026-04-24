@@ -5,7 +5,10 @@ import { CodeBlock } from "../../self-hosting/code-block";
 export const metadata = {
   title: "Claude Code Integration — Octopus Docs",
   description:
-    "Use the Octopus plugin for Claude Code to review PRs, auto-fix findings, and chat with your codebase without leaving the terminal.",
+    "Install the Octopus plugin for Claude Code to review PRs, auto-fix findings, and chat with your codebase without leaving the terminal. Works with any repo.",
+  alternates: {
+    canonical: "https://octopus-review.ai/docs/cli/claude-code-integration",
+  },
 };
 
 export default function ClaudeCodeIntegrationPage() {

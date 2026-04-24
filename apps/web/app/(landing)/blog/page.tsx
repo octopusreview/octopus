@@ -106,9 +106,13 @@ export default async function BlogPage({
                     {featured.coverImageUrl && (
                       <img
                         src={featured.coverImageUrl}
-                        alt={featured.title}
-                        className="mb-4 w-full rounded-lg"
-                        loading="lazy"
+                        alt={`Cover image for "${featured.title}"`}
+                        width={1200}
+                        height={630}
+                        loading="eager"
+                        fetchPriority="high"
+                        decoding="async"
+                        className="mb-4 aspect-[1200/630] w-full rounded-lg object-cover"
                       />
                     )}
                     <h2 className="mb-2 text-2xl font-semibold text-white group-hover:text-[#10D8BE] transition-colors">
@@ -144,9 +148,12 @@ export default async function BlogPage({
                           {post.coverImageUrl && (
                             <img
                               src={post.coverImageUrl}
-                              alt={post.title}
-                              className="hidden size-16 shrink-0 rounded-lg object-cover sm:block"
+                              alt={`Cover image for "${post.title}"`}
+                              width={64}
+                              height={64}
                               loading="lazy"
+                              decoding="async"
+                              className="hidden size-16 shrink-0 rounded-lg object-cover sm:block"
                             />
                           )}
                           <div className="min-w-0 flex-1">

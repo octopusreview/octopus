@@ -5,7 +5,10 @@ import { CodeBlock } from "../self-hosting/code-block";
 export const metadata = {
   title: "CLI — Octopus Docs",
   description:
-    "Install and use the Octopus CLI to review PRs, index repos, and chat with your codebase from the terminal.",
+    "Install the Octopus CLI and review pull requests, index repositories, or chat with your codebase from the terminal. Works with GitHub and Bitbucket today.",
+  alternates: {
+    canonical: "https://octopus-review.ai/docs/cli",
+  },
 };
 
 export default function CLIPage() {

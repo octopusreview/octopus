@@ -15,7 +15,10 @@ import {
 export const metadata = {
   title: "Changelog | Octopus Docs",
   description:
-    "See what's new in Octopus — new features, bug fixes, and improvements across every release.",
+    "Every new feature, fix, and improvement in Octopus. Stay up to date with the latest AI code review releases and product updates, shipped weekly.",
+  alternates: {
+    canonical: "https://octopus-review.ai/docs/changelog",
+  },
 };
 
 /* ------------------------------------------------------------------ */

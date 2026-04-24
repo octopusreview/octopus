@@ -4,7 +4,10 @@ import { IconBook2 } from "@tabler/icons-react";
 export const metadata = {
   title: "Glossary — Octopus Docs",
   description:
-    "Definitions for key technical terms used throughout Octopus — embeddings, vector search, severity levels, BYO keys, and more.",
+    "Quick reference for embeddings, vector search, severity levels, BYO keys, and every other technical term used across Octopus. Scan or search in seconds.",
+  alternates: {
+    canonical: "https://octopus-review.ai/docs/glossary",
+  },
 };
 
 const glossary: { term: string; definition: string }[] = [

@@ -12,7 +12,10 @@ import { TrackedAnchor } from "@/components/tracked-link";
 export const metadata = {
   title: "About — Octopus Docs",
   description:
-    "The story behind Octopus, an open source, AI-powered code review tool built by an independent developer.",
+    "Learn the story behind Octopus, an open source AI code review tool built to catch bugs before humans do. Meet the team and see where we are headed.",
+  alternates: {
+    canonical: "https://octopus-review.ai/docs/about",
+  },
 };
 
 export default function AboutPage() {

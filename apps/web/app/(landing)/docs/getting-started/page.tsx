@@ -21,7 +21,10 @@ import {
 export const metadata = {
   title: "Getting Started | Octopus Docs",
   description:
-    "Get started with Octopus. Connect your repo, get your first AI-powered code review, and learn how to get the most out of automated reviews.",
+    "Connect your repo in two minutes and get AI code reviews on every pull request. Step-by-step setup guide for GitHub and Bitbucket, with examples.",
+  alternates: {
+    canonical: "https://octopus-review.ai/docs/getting-started",
+  },
 };
 
 export default function GettingStartedPage() {

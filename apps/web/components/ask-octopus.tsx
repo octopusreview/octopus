@@ -230,7 +230,7 @@ export function AskOctopus() {
                 <IconMessageCircle className="size-4 text-[#10D8BE]" />
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-white">Ask Octopus</h3>
+                <h3 className="text-sm font-semibold text-white">Ask anything</h3>
                 <p className="text-[10px] text-[#666]">AI-powered answers about Octopus</p>
               </div>
             </div>

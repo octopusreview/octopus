@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "@/components/user-menu";
 import { UserAvatar } from "@/components/user-avatar";
@@ -36,6 +36,7 @@ import {
   IconTicket,
   IconHelpCircle,
   IconExternalLink,
+  IconSparkles,
 } from "@tabler/icons-react";
 import {
   DropdownMenu,
@@ -69,6 +70,45 @@ type SidebarProps = {
   currentOrg: Org;
   canCreateOrg?: boolean;
 };
+
+const ASK_PHRASES = [
+  "Ask anything",
+  "What changed today?",
+  "Find a bug",
+  "Explain this PR",
+  "Summarize my repo",
+];
+
+function RotatingLabel({ phrases }: { phrases: string[] }) {
+  const [index, setIndex] = useState(0);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    if (phrases.length <= 1) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+
+    const tick = window.setInterval(() => {
+      setVisible(false);
+      window.setTimeout(() => {
+        setIndex((i) => (i + 1) % phrases.length);
+        setVisible(true);
+      }, 300);
+    }, 3200);
+
+    return () => window.clearInterval(tick);
+  }, [phrases]);
+
+  return (
+    <span
+      className={cn(
+        "inline-block transition-opacity duration-300",
+        visible ? "opacity-100" : "opacity-0"
+      )}
+    >
+      {phrases[index]}
+    </span>
+  );
+}
 
 function SidebarTooltip({
   label,
@@ -144,7 +184,7 @@ function HelpMenu({ collapsed, isMobile }: { collapsed?: boolean; isMobile?: boo
   ) : (
     <button className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50">
       <IconHelpCircle className="size-4 shrink-0" />
-      Help & Docs
+      Resources
     </button>
   );
 
@@ -156,11 +196,11 @@ function HelpMenu({ collapsed, isMobile }: { collapsed?: boolean; isMobile?: boo
           className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50"
         >
           <IconHelpCircle className="size-4 shrink-0" />
-          Help & Docs
+          Resources
         </button>
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetContent side="bottom" className="max-h-[70vh] overflow-y-auto rounded-t-xl px-4 pb-6 pt-4" showCloseButton={false}>
-            <SheetTitle className="text-sm font-semibold">Help & Docs</SheetTitle>
+            <SheetTitle className="text-sm font-semibold">Resources</SheetTitle>
             <HelpMenuContent onNavigate={() => setSheetOpen(false)} />
           </SheetContent>
         </Sheet>
@@ -178,7 +218,7 @@ function HelpMenu({ collapsed, isMobile }: { collapsed?: boolean; isMobile?: boo
         </TooltipTrigger>
         {collapsed && (
           <TooltipContent side="right" sideOffset={8}>
-            Help & Docs
+            Resources
           </TooltipContent>
         )}
       </Tooltip>
@@ -227,7 +267,17 @@ function SidebarContent({
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
       {collapsed ? (
-        <div className="flex items-center justify-center border-b py-3">
+        <div className="flex flex-col items-center gap-2 border-b py-3">
+          {onToggleCollapse && (
+            <SidebarTooltip label="Expand sidebar">
+              <button
+                onClick={onToggleCollapse}
+                className="flex items-center justify-center rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-foreground"
+              >
+                <IconLayoutSidebarLeftExpand className="size-4" />
+              </button>
+            </SidebarTooltip>
+          )}
           <SidebarTooltip label={currentOrg.name}>
             <div>
               <OrgSwitcher orgs={orgs} currentOrg={currentOrg} canCreateOrg={canCreateOrg} collapsed />
@@ -236,8 +286,20 @@ function SidebarContent({
         </div>
       ) : (
         <>
-          <div className="border-b px-3 py-3">
-            <OrgSwitcher orgs={orgs} currentOrg={currentOrg} canCreateOrg={canCreateOrg} />
+          <div className="flex items-center gap-2 border-b px-3 py-3">
+            <div className="min-w-0 flex-1">
+              <OrgSwitcher orgs={orgs} currentOrg={currentOrg} canCreateOrg={canCreateOrg} />
+            </div>
+            {onToggleCollapse && (
+              <SidebarTooltip label="Collapse sidebar">
+                <button
+                  onClick={onToggleCollapse}
+                  className="flex shrink-0 items-center justify-center rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-foreground"
+                >
+                  <IconLayoutSidebarLeftCollapse className="size-4" />
+                </button>
+              </SidebarTooltip>
+            )}
           </div>
 
           <div className="border-b px-3 py-2">
@@ -258,14 +320,15 @@ function SidebarContent({
       {/* Ask Octopus */}
       {collapsed ? (
         <div className="border-b px-2 py-2">
-          <SidebarTooltip label={chat.isOpen ? "Close Ask Octopus" : "Ask Octopus"}>
+          <SidebarTooltip label={chat.isOpen ? "Close" : "Ask anything"}>
             <button
               onClick={() => { chat.toggle(); onNavigate?.(); }}
               className={cn(
-                "flex w-full items-center justify-center rounded-md px-2 py-2 transition-colors",
+                "flex w-full items-center justify-center rounded-lg border transition-colors",
+                "px-2 py-2",
                 chat.isOpen
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                  ? "border-primary/40 bg-primary/15 text-primary"
+                  : "border-primary/25 bg-primary/[0.06] text-primary hover:bg-primary/[0.12]"
               )}
             >
               <IconMessageChatbot className="size-4" />
@@ -277,16 +340,20 @@ function SidebarContent({
           <button
             onClick={() => { chat.toggle(); onNavigate?.(); }}
             className={cn(
-              "flex w-full items-center gap-2 rounded-md border px-3 py-1.5 text-sm transition-colors",
+              "flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors",
               chat.isOpen
-                ? "border-primary/30 bg-primary/10 text-primary"
-                : "border-border bg-muted/50 text-muted-foreground hover:bg-muted"
+                ? "border-primary/40 bg-primary/15 text-primary"
+                : "border-primary/25 bg-primary/[0.06] text-foreground hover:bg-primary/[0.12]"
             )}
           >
-            <IconMessageChatbot className="size-3.5" />
-            <span className="flex-1 text-left">Ask Octopus</span>
-            {chat.isOpen && (
+            <IconMessageChatbot className="size-3.5 shrink-0 text-primary" />
+            <span className="flex-1 overflow-hidden text-left">
+              {chat.isOpen ? "Ask anything" : <RotatingLabel phrases={ASK_PHRASES} />}
+            </span>
+            {chat.isOpen ? (
               <span className="size-1.5 rounded-full bg-primary" />
+            ) : (
+              <IconSparkles className="size-3 shrink-0 text-primary/70" />
             )}
           </button>
         </div>
@@ -359,39 +426,6 @@ function SidebarContent({
 
       </nav>
 
-      {/* Coupon Banner */}
-      <div className={cn("py-2", collapsed ? "px-2" : "px-3")}>
-        {collapsed ? (
-          <SidebarTooltip label="Redeem Coupon">
-            <button
-              onClick={() => setCouponOpen(true)}
-              className="flex w-full items-center justify-center rounded-md px-2 py-2 text-emerald-500 transition-colors hover:bg-emerald-500/10"
-            >
-              <IconTicket className="size-4" />
-            </button>
-          </SidebarTooltip>
-        ) : (
-          <div className="shimmer-border-emerald">
-            <button
-              onClick={() => setCouponOpen(true)}
-              className="relative flex w-full items-center gap-2.5 overflow-hidden bg-sidebar px-3 py-2 text-left transition-colors hover:bg-muted"
-            >
-              <svg className="pointer-events-none absolute inset-0 size-full opacity-[0.07] dark:opacity-[0.12]" aria-hidden="true">
-                <filter id="coupon-noise">
-                  <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="4" stitchTiles="stitch" />
-                </filter>
-                <rect width="100%" height="100%" filter="url(#coupon-noise)" />
-              </svg>
-              <IconTicket className="relative size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-              <div className="relative min-w-0">
-                <p className="text-xs font-medium text-foreground/90">Got a code?</p>
-                <p className="text-[10px] text-muted-foreground">Redeem credits</p>
-              </div>
-            </button>
-          </div>
-        )}
-      </div>
-
       <div className={cn("space-y-1 py-2", collapsed ? "px-2" : "px-3")}>
         {bottomNavItems.map(({ href, label, icon: Icon }) => {
           const isActive = pathname === href;
@@ -424,62 +458,72 @@ function SidebarContent({
       </div>
 
       <div className={cn("space-y-1 pb-2", collapsed ? "px-2" : "px-3")}>
-        <HelpMenu collapsed={collapsed} isMobile={!!onNavigate} />
-        {collapsed ? (
-          <div className="flex flex-col gap-1">
-            <SidebarTooltip label="Settings">
-              <Link
-                href="/settings"
-                onClick={onNavigate}
-                className={cn(
-                  "flex w-full items-center justify-center rounded-md px-2 py-2 text-sm font-medium transition-colors",
-                  pathname.startsWith("/settings")
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground hover:bg-sidebar-accent/50"
-                )}
-              >
-                <IconSettings className="size-4 shrink-0" />
-              </Link>
-            </SidebarTooltip>
-            {onToggleCollapse && (
-              <SidebarTooltip label="Expand sidebar">
-                <button
-                  onClick={onToggleCollapse}
-                  className="flex w-full items-center justify-center rounded-md px-2 py-2 text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-foreground"
-                >
-                  <IconLayoutSidebarLeftExpand className="size-4" />
-                </button>
-              </SidebarTooltip>
-            )}
-          </div>
-        ) : (
-          <div className="flex items-center gap-1">
+        {(() => {
+          const settingsLink = (
             <Link
               href="/settings"
               onClick={onNavigate}
               className={cn(
-                "flex flex-1 items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                "flex items-center rounded-md text-sm font-medium transition-colors",
+                collapsed ? "w-full justify-center px-2 py-2" : "gap-3 px-3 py-2",
                 pathname.startsWith("/settings")
                   ? "bg-sidebar-accent text-sidebar-accent-foreground"
                   : "text-sidebar-foreground hover:bg-sidebar-accent/50"
               )}
             >
               <IconSettings className="size-4 shrink-0" />
-              Settings
+              {!collapsed && "Settings"}
             </Link>
-            {onToggleCollapse && (
-              <SidebarTooltip label="Collapse sidebar">
-                <button
-                  onClick={onToggleCollapse}
-                  className="flex items-center rounded-md px-2 py-2 text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-foreground"
-                >
-                  <IconLayoutSidebarLeftCollapse className="size-4" />
-                </button>
-              </SidebarTooltip>
-            )}
-          </div>
+          );
+          return collapsed ? (
+            <SidebarTooltip label="Settings">{settingsLink}</SidebarTooltip>
+          ) : settingsLink;
+        })()}
+        <HelpMenu collapsed={collapsed} isMobile={!!onNavigate} />
+      </div>
+
+      {/* Coupon Banner */}
+      <div className={cn("pb-2", collapsed ? "px-2" : "px-3")}>
+        {collapsed ? (
+          <SidebarTooltip label="Redeem Coupon">
+            <button
+              onClick={() => setCouponOpen(true)}
+              className="flex w-full items-center justify-center rounded-md px-2 py-2 text-emerald-500 transition-colors hover:bg-emerald-500/10"
+            >
+              <IconTicket className="size-4" />
+            </button>
+          </SidebarTooltip>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setCouponOpen(true)}
+            className="group relative block w-full overflow-hidden rounded-lg border border-border/60 bg-sidebar p-3 text-left transition-colors hover:bg-muted"
+          >
+            <svg className="pointer-events-none absolute inset-0 size-full opacity-[0.07] dark:opacity-[0.12]" aria-hidden="true">
+              <filter id="coupon-noise">
+                <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="4" stitchTiles="stitch" />
+              </filter>
+              <rect width="100%" height="100%" filter="url(#coupon-noise)" />
+            </svg>
+            <IconTicket
+              className="pointer-events-none absolute -right-3 -bottom-3 size-20 text-foreground/[0.06] dark:text-foreground/[0.08]"
+              strokeWidth={1.5}
+              aria-hidden="true"
+            />
+            <div className="relative">
+              <p className="text-sm font-semibold text-foreground">Have a coupon code?</p>
+              <p className="mt-1 text-xs leading-snug text-muted-foreground">
+                Redeem it to unlock free credits on your account.
+              </p>
+              <span className="mt-3 inline-flex items-center gap-1 rounded-md border border-border/80 bg-background/40 px-2.5 py-1 text-xs font-medium text-foreground transition-colors group-hover:bg-background/70">
+                Redeem Now
+                <span aria-hidden="true">›</span>
+              </span>
+            </div>
+          </button>
         )}
       </div>
+
       <div className={cn("border-t py-3", collapsed ? "px-2" : "px-3")}>
         {collapsed ? (
           <SidebarTooltip label={user.name}>
@@ -549,14 +593,15 @@ export function MobileHeader(props: SidebarProps) {
         <button
           onClick={() => chat.toggle()}
           className={cn(
-            "ml-auto flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+            "ml-auto flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
             chat.isOpen
-              ? "bg-primary/10 text-primary"
-              : "text-muted-foreground hover:bg-accent hover:text-foreground"
+              ? "border-primary/40 bg-primary/15 text-primary"
+              : "border-primary/25 bg-primary/[0.06] text-foreground hover:bg-primary/[0.12]"
           )}
         >
-          <IconMessageChatbot className="size-4" />
-          Ask Octopus
+          <IconMessageChatbot className="size-4 text-primary" />
+          {chat.isOpen ? "Ask anything" : <RotatingLabel phrases={ASK_PHRASES} />}
+          {!chat.isOpen && <IconSparkles className="size-3 text-primary/70" />}
         </button>
       </header>
       <Sheet open={open} onOpenChange={setOpen}>

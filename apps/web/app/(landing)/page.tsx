@@ -421,8 +421,8 @@ export default async function LandingPage() {
               </TrackedLink>
               <TrackedLink
                 href="/compare"
-                event="faq_click"
-                eventParams={{ label: "compare_hub" }}
+                event="compare_click"
+                eventParams={{ location: "landing_faq", label: "compare_hub" }}
                 className="inline-flex items-center gap-2 text-sm text-[#666] transition-colors hover:text-white"
               >
                 Compare with other tools

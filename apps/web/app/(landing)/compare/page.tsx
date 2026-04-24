@@ -49,6 +49,18 @@ const comparisons = [
   },
 ];
 
+const itemListJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  name: "Octopus comparisons",
+  itemListElement: comparisons.map((c, i) => ({
+    "@type": "ListItem",
+    position: i + 1,
+    name: `Octopus vs ${c.competitor}`,
+    url: `https://octopus-review.ai/${c.slug}`,
+  })),
+};
+
 export default async function ComparePage() {
   const session = await auth.api
     .getSession({ headers: await headers() })
@@ -56,6 +68,10 @@ export default async function ComparePage() {
 
   return (
     <div className="dark relative min-h-screen bg-[#0c0c0c] text-[#a0a0a0] selection:bg-white/20">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
+      />
       <LandingMobileNav isLoggedIn={!!session} />
       <LandingDesktopNav isLoggedIn={!!session} />
 

@@ -5,7 +5,8 @@ import { auth } from "@/lib/auth";
 import { LandingFooter } from "@/components/landing-footer";
 import { LandingMobileNav } from "@/components/landing-mobile-nav";
 import { LandingDesktopNav } from "@/components/landing-desktop-nav";
-import { IconCheck, IconX } from "@tabler/icons-react";
+import { IconCheck } from "@tabler/icons-react";
+import { Cell, type ComparisonRow } from "../compare/_shared";
 
 export const metadata: Metadata = {
   title: "Octopus vs Greptile — AI Code Review Comparison",
@@ -66,40 +67,23 @@ const faqJsonLd = {
   })),
 };
 
-type Row = {
-  label: string;
-  octopus: string | boolean;
-  greptile: string | boolean;
-};
-
-const rows: Row[] = [
-  { label: "GitHub support", octopus: true, greptile: true },
-  { label: "Bitbucket support", octopus: true, greptile: true },
-  { label: "GitLab support", octopus: "Planned", greptile: true },
-  { label: "Primary product focus", octopus: "Automated PR review + codebase chat", greptile: "Codebase intelligence + PR review" },
-  { label: "Codebase context approach", octopus: "RAG (pre-indexed embeddings + vector search)", greptile: "RAG (pre-indexed embeddings + vector search)" },
-  { label: "Language coverage", octopus: "Language-agnostic (LLM-based)", greptile: "Language-agnostic (LLM-based)" },
-  { label: "Standalone codebase chat / Q&A", octopus: true, greptile: true },
-  { label: "Codebase Q&A API for developers", octopus: true, greptile: true },
-  { label: "Inline PR comments", octopus: true, greptile: true },
-  { label: "Severity-rated findings", octopus: "Critical, Major, Minor, Suggestion, Tip", greptile: "Review comments" },
-  { label: "Open source", octopus: "MIT licensed", greptile: "Proprietary SaaS" },
-  { label: "Self-hosting option", octopus: true, greptile: "Enterprise plans" },
-  { label: "Bring your own LLM API keys", octopus: true, greptile: "Enterprise plans" },
-  { label: "Pricing model", octopus: "Usage-based credits", greptile: "Per-developer subscription" },
-  { label: "Free tier", octopus: "Free credits + free self-host", greptile: "Free trial" },
+const rows: ComparisonRow[] = [
+  { label: "GitHub support", octopus: true, competitor: true },
+  { label: "Bitbucket support", octopus: true, competitor: true },
+  { label: "GitLab support", octopus: "Planned", competitor: true },
+  { label: "Primary product focus", octopus: "Automated PR review + codebase chat", competitor: "Codebase intelligence + PR review" },
+  { label: "Codebase context approach", octopus: "RAG (pre-indexed embeddings + vector search)", competitor: "RAG (pre-indexed embeddings + vector search)" },
+  { label: "Language coverage", octopus: "Language-agnostic (LLM-based)", competitor: "Language-agnostic (LLM-based)" },
+  { label: "Standalone codebase chat / Q&A", octopus: true, competitor: true },
+  { label: "Codebase Q&A API for developers", octopus: true, competitor: true },
+  { label: "Inline PR comments", octopus: true, competitor: true },
+  { label: "Severity-rated findings", octopus: "Critical, Major, Minor, Suggestion, Tip", competitor: "Review comments" },
+  { label: "Open source", octopus: "MIT licensed", competitor: "Proprietary SaaS" },
+  { label: "Self-hosting option", octopus: true, competitor: "Enterprise plans" },
+  { label: "Bring your own LLM API keys", octopus: true, competitor: "Enterprise plans" },
+  { label: "Pricing model", octopus: "Usage-based credits", competitor: "Per-developer subscription" },
+  { label: "Free tier", octopus: "Free credits + free self-host", competitor: "Free trial" },
 ];
-
-function Cell({ value }: { value: string | boolean }) {
-  if (typeof value === "boolean") {
-    return value ? (
-      <IconCheck className="size-5 text-[#10D8BE]" aria-label="Yes" />
-    ) : (
-      <IconX className="size-5 text-[#555]" aria-label="No" />
-    );
-  }
-  return <span className="text-sm text-[#cfcfcf]">{value}</span>;
-}
 
 export default async function VsGreptilePage() {
   const session = await auth.api.getSession({ headers: await headers() }).catch(() => null);
@@ -163,7 +147,7 @@ export default async function VsGreptilePage() {
                       <Cell value={row.octopus} />
                     </td>
                     <td className="px-6 py-4">
-                      <Cell value={row.greptile} />
+                      <Cell value={row.competitor} />
                     </td>
                   </tr>
                 ))}

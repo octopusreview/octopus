@@ -5,7 +5,8 @@ import { auth } from "@/lib/auth";
 import { LandingFooter } from "@/components/landing-footer";
 import { LandingMobileNav } from "@/components/landing-mobile-nav";
 import { LandingDesktopNav } from "@/components/landing-desktop-nav";
-import { IconCheck, IconX } from "@tabler/icons-react";
+import { IconCheck } from "@tabler/icons-react";
+import { Cell, type ComparisonRow } from "../compare/_shared";
 
 export const metadata: Metadata = {
   title: "Octopus vs CodeRabbit — AI Code Review Comparison",
@@ -62,40 +63,23 @@ const faqJsonLd = {
   })),
 };
 
-type Row = {
-  label: string;
-  octopus: string | boolean;
-  coderabbit: string | boolean;
-};
-
-const rows: Row[] = [
-  { label: "GitHub support", octopus: true, coderabbit: true },
-  { label: "Bitbucket support", octopus: true, coderabbit: true },
-  { label: "GitLab support", octopus: "Planned", coderabbit: true },
-  { label: "Primary product focus", octopus: "Automated PR review + codebase chat", coderabbit: "Automated PR review" },
-  { label: "Codebase context approach", octopus: "RAG (pre-indexed embeddings + vector search)", coderabbit: "Dynamic Discovery (on-demand context lookup)" },
-  { label: "Language coverage", octopus: "Language-agnostic (LLM-based)", coderabbit: "Language-agnostic (LLM-based)" },
-  { label: "Standalone codebase chat / Q&A", octopus: true, coderabbit: false },
-  { label: "Codebase Q&A API for developers", octopus: true, coderabbit: false },
-  { label: "Inline PR comments", octopus: true, coderabbit: true },
-  { label: "Severity-rated findings", octopus: "Critical, Major, Minor, Suggestion, Tip", coderabbit: "Review comments" },
-  { label: "Open source", octopus: "MIT licensed", coderabbit: "Proprietary SaaS" },
-  { label: "Self-hosting option", octopus: true, coderabbit: false },
-  { label: "Bring your own LLM API keys", octopus: true, coderabbit: "Enterprise plans" },
-  { label: "Pricing model", octopus: "Usage-based credits", coderabbit: "Per-developer subscription" },
-  { label: "Free tier", octopus: "Free credits + free self-host", coderabbit: "Free for open source repos" },
+const rows: ComparisonRow[] = [
+  { label: "GitHub support", octopus: true, competitor: true },
+  { label: "Bitbucket support", octopus: true, competitor: true },
+  { label: "GitLab support", octopus: "Planned", competitor: true },
+  { label: "Primary product focus", octopus: "Automated PR review + codebase chat", competitor: "Automated PR review" },
+  { label: "Codebase context approach", octopus: "RAG (pre-indexed embeddings + vector search)", competitor: "Dynamic Discovery (on-demand context lookup)" },
+  { label: "Language coverage", octopus: "Language-agnostic (LLM-based)", competitor: "Language-agnostic (LLM-based)" },
+  { label: "Standalone codebase chat / Q&A", octopus: true, competitor: false },
+  { label: "Codebase Q&A API for developers", octopus: true, competitor: false },
+  { label: "Inline PR comments", octopus: true, competitor: true },
+  { label: "Severity-rated findings", octopus: "Critical, Major, Minor, Suggestion, Tip", competitor: "Review comments" },
+  { label: "Open source", octopus: "MIT licensed", competitor: "Proprietary SaaS" },
+  { label: "Self-hosting option", octopus: true, competitor: false },
+  { label: "Bring your own LLM API keys", octopus: true, competitor: "Enterprise plans" },
+  { label: "Pricing model", octopus: "Usage-based credits", competitor: "Per-developer subscription" },
+  { label: "Free tier", octopus: "Free credits + free self-host", competitor: "Free for open source repos" },
 ];
-
-function Cell({ value }: { value: string | boolean }) {
-  if (typeof value === "boolean") {
-    return value ? (
-      <IconCheck className="size-5 text-[#10D8BE]" aria-label="Yes" />
-    ) : (
-      <IconX className="size-5 text-[#555]" aria-label="No" />
-    );
-  }
-  return <span className="text-sm text-[#cfcfcf]">{value}</span>;
-}
 
 export default async function VsCodeRabbitPage() {
   const session = await auth.api.getSession({ headers: await headers() }).catch(() => null);
@@ -160,7 +144,7 @@ export default async function VsCodeRabbitPage() {
                       <Cell value={row.octopus} />
                     </td>
                     <td className="px-6 py-4">
-                      <Cell value={row.coderabbit} />
+                      <Cell value={row.competitor} />
                     </td>
                   </tr>
                 ))}

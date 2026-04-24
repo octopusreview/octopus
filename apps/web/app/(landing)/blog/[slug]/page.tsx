@@ -17,6 +17,10 @@ async function getPost(slug: string) {
   });
 }
 
+function canonicalUrlFor(slug: string) {
+  return `https://octopus-review.ai/blog/${slug}`;
+}
+
 export async function generateMetadata({
   params,
 }: {
@@ -26,7 +30,7 @@ export async function generateMetadata({
   const post = await getPost(slug);
   if (!post) return { title: "Post Not Found" };
 
-  const canonicalUrl = `https://octopus-review.ai/blog/${slug}`;
+  const canonicalUrl = canonicalUrlFor(slug);
 
   return {
     title: `${post.title} — Octopus Blog`,
@@ -62,7 +66,7 @@ export default async function BlogPostPage({
 
   if (!post) notFound();
 
-  const canonicalUrl = `https://octopus-review.ai/blog/${slug}`;
+  const canonicalUrl = canonicalUrlFor(slug);
   const blogPostingJsonLd = {
     "@context": "https://schema.org",
     "@type": "BlogPosting",

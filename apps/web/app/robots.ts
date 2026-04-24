@@ -24,6 +24,5 @@ export default function robots(): MetadataRoute.Robots {
       { userAgent: "CCBot", allow: "/", disallow },
     ],
     sitemap: "https://octopus-review.ai/sitemap.xml",
-    host: "https://octopus-review.ai",
   };
 }

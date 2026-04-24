@@ -84,6 +84,7 @@ export function GitHubIntegrationCard({
   const router = useRouter();
   const [errorOpen, setErrorOpen] = useState<boolean>(Boolean(error));
   const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
+  const [disconnectError, setDisconnectError] = useState<string | null>(null);
 
   useEffect(() => {
     setErrorOpen(Boolean(error));
@@ -225,7 +226,12 @@ export function GitHubIntegrationCard({
               onClick={(e) => {
                 e.preventDefault();
                 startTransition(async () => {
-                  await disconnectGitHub();
+                  const result = await disconnectGitHub();
+                  if (result?.error) {
+                    setDisconnectError(result.error);
+                    return;
+                  }
+                  setDisconnectError(null);
                   setConfirmDisconnectOpen(false);
                 });
               }}
@@ -233,6 +239,14 @@ export function GitHubIntegrationCard({
               {isPending ? "Disconnecting…" : "Disconnect"}
             </AlertDialogAction>
           </AlertDialogFooter>
+          {disconnectError && (
+            <p
+              role="alert"
+              className="mt-2 text-sm text-destructive"
+            >
+              {disconnectError}
+            </p>
+          )}
         </AlertDialogContent>
       </AlertDialog>
     </>

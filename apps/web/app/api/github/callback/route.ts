@@ -36,6 +36,10 @@ export async function GET(request: NextRequest) {
       console.warn(`[github/callback] state replay detected jti=${jti}`);
       return errorRedirect("replay_detected");
     }
+  } else {
+    console.warn(
+      "[github/callback] Redis unavailable — replay protection is disabled for this request",
+    );
   }
 
   if (!installationId) {

@@ -9,11 +9,29 @@ export interface InstallStatePayload {
 }
 
 const STATE_TTL_MS = 10 * 60 * 1000;
+const MIN_SECRET_LENGTH = 32;
+
+// Visible boot-time warning so ops notices a misconfigured secret before the
+// first user click on the install flow, not as a 500 inside the OAuth redirect.
+if (process.env.NODE_ENV !== "test") {
+  const secret = process.env.GITHUB_STATE_SECRET;
+  if (!secret) {
+    console.warn(
+      "[github-install-state] GITHUB_STATE_SECRET is not set — the GitHub install flow will fail until it is.",
+    );
+  } else if (secret.length < MIN_SECRET_LENGTH) {
+    console.warn(
+      `[github-install-state] GITHUB_STATE_SECRET is too short (${secret.length} chars, min ${MIN_SECRET_LENGTH}).`,
+    );
+  }
+}
 
 function getSecret(): Buffer {
   const secret = process.env.GITHUB_STATE_SECRET;
-  if (!secret || secret.length < 32) {
-    throw new Error("GITHUB_STATE_SECRET is missing or too short (min 32 chars)");
+  if (!secret || secret.length < MIN_SECRET_LENGTH) {
+    throw new Error(
+      `GITHUB_STATE_SECRET is missing or too short (min ${MIN_SECRET_LENGTH} chars)`,
+    );
   }
   return Buffer.from(secret, "utf8");
 }

@@ -13,9 +13,19 @@ function getClient(): OpenAI {
   return openai;
 }
 
-// text-embedding-3-large max: 8191 tokens
+// text-embedding-3-large max: 8191 tokens per input
 // Conservative limit: ~3 chars/token for code → 24000 chars stays safely under 8191 tokens
 const MAX_EMBEDDING_CHARS = 24_000;
+
+// OpenAI enforces a 300,000 token total-request cap for embeddings.
+// Keep headroom: target ~250k and estimate tokens as chars/3 (worst case for code).
+const MAX_BATCH_TOKENS = 250_000;
+const MAX_BATCH_ITEMS = 512;
+const CHARS_PER_TOKEN_ESTIMATE = 3;
+
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / CHARS_PER_TOKEN_ESTIMATE);
+}
 
 export async function createEmbeddings(
   texts: string[],
@@ -46,14 +56,27 @@ export async function createEmbeddings(
     return texts.map(() => []);
   }
 
-  // OpenAI allows max 2048 inputs per request
+  // Pre-truncate each input to the per-item char cap.
+  const truncated = validTexts.map((t) =>
+    t.length > MAX_EMBEDDING_CHARS ? t.slice(0, MAX_EMBEDDING_CHARS) : t,
+  );
+
   const validVectors: number[][] = [];
   let totalPromptTokens = 0;
 
-  for (let i = 0; i < validTexts.length; i += 512) {
-    const batch = validTexts
-      .slice(i, i + 512)
-      .map((t) => (t.length > MAX_EMBEDDING_CHARS ? t.slice(0, MAX_EMBEDDING_CHARS) : t));
+  // Dynamic batching: stay under both MAX_BATCH_TOKENS and MAX_BATCH_ITEMS per request.
+  let batchStart = 0;
+  while (batchStart < truncated.length) {
+    let batchTokens = 0;
+    let batchEnd = batchStart;
+    while (batchEnd < truncated.length && batchEnd - batchStart < MAX_BATCH_ITEMS) {
+      const itemTokens = estimateTokens(truncated[batchEnd]);
+      if (batchEnd > batchStart && batchTokens + itemTokens > MAX_BATCH_TOKENS) break;
+      batchTokens += itemTokens;
+      batchEnd++;
+    }
+
+    const batch = truncated.slice(batchStart, batchEnd);
     const res = await client.embeddings.create({
       model: embedModel,
       input: batch,
@@ -62,6 +85,8 @@ export async function createEmbeddings(
       validVectors.push(item.embedding);
     }
     totalPromptTokens += res.usage.prompt_tokens;
+
+    batchStart = batchEnd;
   }
 
   // Map valid vectors back to original positions, empty array for filtered-out texts

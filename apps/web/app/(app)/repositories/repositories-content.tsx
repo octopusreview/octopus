@@ -51,6 +51,7 @@ import {
   IconSettings,
   IconPackage,
   IconMessageCircle,
+  IconAffiliate,
 } from "@tabler/icons-react";
 import {
   Dialog,
@@ -1096,6 +1097,19 @@ function RepoDetail({
               <IconMessageCircle className="mr-1 size-3" />
               Chat
             </Button>
+            {repo.indexStatus === "indexed" && (
+              <Button
+                size="sm"
+                variant="outline"
+                asChild
+                title="Visualize repository graph"
+              >
+                <Link href={`/repositories/${repo.id}/graph`}>
+                  <IconAffiliate className="mr-1 size-3" />
+                  Graph
+                </Link>
+              </Button>
+            )}
             {isIndexing ? (
               <Button
                 size="sm"

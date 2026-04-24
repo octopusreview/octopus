@@ -1,0 +1,18 @@
+# Generated code
+**/generated/**
+**/*.generated.ts
+
+# Lockfiles
+pnpm-lock.yaml
+package-lock.json
+bun.lock
+
+# Test snapshots 
+**/__snapshots__/**
+
+# Large data files
+*.csv
+*.parquet
+
+# Re-include a specific file even if its folder is ignored
+!docs/API.md

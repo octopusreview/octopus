@@ -170,20 +170,21 @@ export async function disconnectGitHub(): Promise<{ error?: string }> {
 
   if (!org?.githubInstallationId) return { error: "No GitHub integration found." };
 
-  // Remove installation ID from org
-  await prisma.organization.update({
-    where: { id: ctx.orgId },
-    data: { githubInstallationId: null },
-  });
-
-  // Deactivate all GitHub repos for this org
-  await prisma.repository.updateMany({
-    where: {
-      organizationId: ctx.orgId,
-      provider: "github",
-    },
-    data: { isActive: false },
-  });
+  // Remove installation ID from org and all repo rows so that a subsequent
+  // syncRepos cannot silently re-fetch and reactivate them via per-repo id.
+  await prisma.$transaction([
+    prisma.organization.update({
+      where: { id: ctx.orgId },
+      data: { githubInstallationId: null },
+    }),
+    prisma.repository.updateMany({
+      where: {
+        organizationId: ctx.orgId,
+        provider: "github",
+      },
+      data: { isActive: false, installationId: null },
+    }),
+  ]);
 
   revalidatePath("/settings/integrations");
   return {};

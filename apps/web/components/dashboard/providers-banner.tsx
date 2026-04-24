@@ -31,12 +31,10 @@ export function ProvidersBanner({
   githubConnected,
   bitbucketConnected,
   githubAppSlug,
-  baseUrl,
 }: {
   githubConnected: boolean;
   bitbucketConnected: boolean;
   githubAppSlug: string | undefined;
-  baseUrl: string;
 }) {
   const [dismissed, setDismissed] = useState(false);
   const [bbDialogOpen, setBbDialogOpen] = useState(false);
@@ -44,9 +42,7 @@ export function ProvidersBanner({
 
   if (dismissed) return null;
 
-  const githubInstallUrl = githubAppSlug
-    ? `https://github.com/apps/${githubAppSlug}/installations/new?state=${encodeURIComponent(`${baseUrl}/dashboard`)}`
-    : null;
+  const githubInstallUrl = githubAppSlug ? "/api/github/install?returnTo=/dashboard" : null;
 
   return (
     <>
@@ -99,7 +95,7 @@ export function ProvidersBanner({
               {githubConnected ? (
                 githubInstallUrl ? (
                   <Button size="sm" variant="outline" className="h-8 w-full text-xs" asChild>
-                    <a href={githubInstallUrl} target="_blank" rel="noopener noreferrer">
+                    <a href={githubInstallUrl}>
                       Manage Repos &rarr;
                     </a>
                   </Button>
@@ -111,7 +107,7 @@ export function ProvidersBanner({
               ) : (
                 githubInstallUrl && (
                   <Button size="sm" variant="cta" className="h-8 w-full text-xs" asChild>
-                    <a href={githubInstallUrl} target="_blank" rel="noopener noreferrer">
+                    <a href={githubInstallUrl}>
                       Connect GitHub &rarr;
                     </a>
                   </Button>

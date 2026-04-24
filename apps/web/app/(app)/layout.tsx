@@ -179,9 +179,8 @@ export default async function AppLayout({
       <OrgCookieSync orgId={currentOrg.id} />
       <DeviceReporter />
       <div className="flex h-screen flex-col">
-        {orgsNeedingPermission.length > 0 && githubAppSlug && (
+        {orgsNeedingPermission.length > 0 && (
           <PermissionBanner
-            githubAppSlug={githubAppSlug}
             orgs={orgsNeedingPermission.map((o) => ({ id: o.id, name: o.name }))}
           />
         )}

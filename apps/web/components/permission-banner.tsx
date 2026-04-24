@@ -4,13 +4,7 @@ import { IconAlertTriangle, IconExternalLink } from "@tabler/icons-react";
 
 type Org = { id: string; name: string };
 
-export function PermissionBanner({
-  githubAppSlug,
-  orgs,
-}: {
-  githubAppSlug: string;
-  orgs: Org[];
-}) {
+export function PermissionBanner({ orgs }: { orgs: Org[] }) {
   if (orgs.length === 0) return null;
 
   const orgNames = orgs.map((o) => o.name).join(", ");
@@ -29,9 +23,7 @@ export function PermissionBanner({
           </p>
         </div>
         <a
-          href={`https://github.com/apps/${githubAppSlug}/installations/new?state=${encodeURIComponent(`${typeof window !== "undefined" ? window.location.origin : ""}/dashboard`)}`}
-          target="_blank"
-          rel="noopener noreferrer"
+          href="/api/github/install?returnTo=/dashboard"
           className="inline-flex shrink-0 items-center gap-1 rounded bg-red-500/20 px-2 py-0.5 text-[11px] font-medium text-red-200 transition-colors hover:bg-red-500/30"
         >
           Grant

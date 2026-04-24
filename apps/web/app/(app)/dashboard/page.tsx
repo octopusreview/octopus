@@ -175,7 +175,6 @@ export default async function DashboardPage({
   const notIndexedRepos = totalRepos - indexedRepos;
   const githubConnected = org.githubInstallationId !== null;
   const githubAppSlug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG;
-  const baseUrl = process.env.BETTER_AUTH_URL || "http://localhost:3000";
 
   const bitbucketIntegration = await prisma.bitbucketIntegration.findUnique({
     where: { organizationId: org.id },
@@ -457,7 +456,6 @@ export default async function DashboardPage({
           githubConnected={githubConnected}
           bitbucketConnected={bitbucketConnected}
           githubAppSlug={githubAppSlug}
-          baseUrl={baseUrl}
         />
       )}
 

@@ -192,8 +192,6 @@ export default async function RepositoriesPage({
     pullRequestCount: r._count.pullRequests,
   }));
 
-  const baseUrl = process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-
   return (
     <RepositoriesContent
       repos={mappedRepos}
@@ -202,7 +200,6 @@ export default async function RepositoriesPage({
       githubAppSlug={process.env.NEXT_PUBLIC_GITHUB_APP_SLUG ?? null}
       favoriteRepoIds={favoriteRepoIds}
       availableModels={availableModels}
-      baseUrl={baseUrl}
       otherOrgs={otherOrgs}
       owners={owners}
       currentSearch={search}

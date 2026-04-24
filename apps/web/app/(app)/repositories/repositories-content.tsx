@@ -1713,7 +1713,6 @@ export function RepositoriesContent({
   githubAppSlug,
   favoriteRepoIds,
   availableModels = [],
-  baseUrl,
   otherOrgs = [],
   owners = [],
   currentSearch = "",
@@ -1730,7 +1729,6 @@ export function RepositoriesContent({
   githubAppSlug: string | null;
   favoriteRepoIds: string[];
   availableModels?: AvailableModel[];
-  baseUrl: string;
   otherOrgs?: OtherOrg[];
   owners?: string[];
   currentSearch?: string;
@@ -1967,11 +1965,7 @@ export function RepositoriesContent({
           <div className="mt-2 flex items-center gap-2">
             {githubAppSlug && (
               <Button size="sm" variant="outline" className="h-8 shrink-0 text-xs" asChild>
-                <a
-                  href={`https://github.com/apps/${githubAppSlug}/installations/new?state=${encodeURIComponent(`${baseUrl}/repositories`)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
+                <a href="/api/github/install?returnTo=/repositories">
                   <IconBrandGithub className="mr-1 size-3" />
                   Manage GitHub
                 </a>

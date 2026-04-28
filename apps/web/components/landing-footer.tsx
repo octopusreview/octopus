@@ -5,6 +5,7 @@ import {
   IconBrandLinkedin,
   IconBrandReddit,
   IconBrandBluesky,
+  IconBrandX,
   IconBrandYoutube,
   IconBug,
 } from "@tabler/icons-react";
@@ -61,6 +62,17 @@ export function LandingFooter() {
                 className="text-[#555] transition-colors hover:text-white"
               >
                 <IconBrandBluesky className="size-4" />
+              </TrackedAnchor>
+              <TrackedAnchor
+                href="https://x.com/octopus_review"
+                target="_blank"
+                rel="noopener noreferrer"
+                event="footer_click"
+                eventParams={{ label: "twitter" }}
+                aria-label="X (Twitter)"
+                className="text-[#555] transition-colors hover:text-white"
+              >
+                <IconBrandX className="size-4" />
               </TrackedAnchor>
               <TrackedAnchor
                 href={DISCORD_INVITE_URL}
@@ -152,6 +164,16 @@ export function LandingFooter() {
                   className="text-sm text-[#666] transition-colors hover:text-white"
                 >
                   Compare
+                </TrackedLink>
+              </li>
+              <li>
+                <TrackedLink
+                  href="/not-a-rabbit"
+                  event="footer_click"
+                  eventParams={{ label: "not_a_rabbit" }}
+                  className="text-sm text-[#666] transition-colors hover:text-white"
+                >
+                  Not a Rabbit
                 </TrackedLink>
               </li>
               <li>
@@ -300,6 +322,19 @@ export function LandingFooter() {
                 >
                   <IconBrandBluesky className="size-3.5" />
                   Bluesky
+                </TrackedAnchor>
+              </li>
+              <li>
+                <TrackedAnchor
+                  href="https://x.com/octopus_review"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  event="footer_click"
+                  eventParams={{ label: "twitter" }}
+                  className="flex items-center gap-1.5 text-sm text-[#666] transition-colors hover:text-white"
+                >
+                  <IconBrandX className="size-3.5" />
+                  X (Twitter)
                 </TrackedAnchor>
               </li>
               <li>

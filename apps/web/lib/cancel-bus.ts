@@ -13,6 +13,7 @@ const handlers: Record<CancelKind, Set<Handler>> = {
 let publisher: Redis | null = null;
 let subscriber: Redis | null = null;
 let subscribed = false;
+let subscribing = false;
 
 function getPublisher(): Redis | null {
   if (publisher) return publisher;
@@ -24,12 +25,12 @@ function getPublisher(): Redis | null {
 }
 
 function ensureSubscribed() {
-  if (subscribed) return;
+  if (subscribed || subscribing) return;
   const url = process.env.REDIS_URL;
   if (!url) return;
+  subscribing = true;
   subscriber = new Redis(url, { lazyConnect: false, maxRetriesPerRequest: null });
   subscriber.on("error", (err) => console.error("[cancel-bus] subscriber error:", err.message));
-  subscriber.subscribe(CHANNEL).catch((err) => console.error("[cancel-bus] subscribe failed:", err));
   subscriber.on("message", (_channel, raw) => {
     try {
       const msg = JSON.parse(raw) as { kind?: CancelKind; repoId?: string };
@@ -43,7 +44,18 @@ function ensureSubscribed() {
       console.error("[cancel-bus] parse error:", err);
     }
   });
-  subscribed = true;
+  subscriber.subscribe(CHANNEL).then(
+    () => {
+      subscribed = true;
+      subscribing = false;
+    },
+    (err) => {
+      console.error("[cancel-bus] subscribe failed:", err);
+      subscribing = false;
+      subscriber?.disconnect();
+      subscriber = null;
+    },
+  );
 }
 
 export function onCancel(kind: CancelKind, handler: Handler): () => void {

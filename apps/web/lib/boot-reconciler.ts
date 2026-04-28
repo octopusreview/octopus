@@ -19,6 +19,8 @@ export async function reconcileStaleRepoStates() {
       console.log(
         `[boot-reconciler] reset stale rows: indexing=${indexing.count} analyzing=${analyzing.count}`,
       );
+    } else {
+      console.log("[boot-reconciler] no stale rows to reset");
     }
   } catch (err) {
     console.error("[boot-reconciler] failed:", err);

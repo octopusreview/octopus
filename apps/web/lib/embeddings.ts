@@ -27,9 +27,11 @@ const MAX_BATCH_ITEMS = 512;
 function estimateTokens(text: string): number {
   let ascii = 0;
   let other = 0;
-  for (let i = 0; i < text.length; i++) {
-    if (text.charCodeAt(i) < 128) ascii++;
+  for (let i = 0; i < text.length; ) {
+    const code = text.codePointAt(i)!;
+    if (code < 128) ascii++;
     else other++;
+    i += code > 0xffff ? 2 : 1;
   }
   return Math.ceil(ascii / 2) + other;
 }

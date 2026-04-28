@@ -700,6 +700,44 @@ export async function getCommentReactions(
   return { thumbsUp, thumbsDown };
 }
 
+/**
+ * Fetch a single repository's metadata. Returns null on 404 (repo missing or
+ * installation has no access). The `installation_repositories` webhook payload
+ * does not include `default_branch`, so this is used to resolve it correctly.
+ */
+export async function getRepositoryDetails(
+  installationId: number,
+  owner: string,
+  repo: string,
+  providedToken?: string,
+): Promise<GitHubRepo | null> {
+  const token = providedToken ?? await getInstallationToken(installationId);
+  const res = await fetchWithRetry(
+    `${GITHUB_API}/repos/${owner}/${repo}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+      },
+    },
+  );
+
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`Failed to get repo details: ${res.status}`);
+  }
+
+  const data = await res.json();
+  return {
+    id: data.id,
+    name: data.name,
+    full_name: data.full_name,
+    private: data.private,
+    default_branch: data.default_branch,
+    html_url: data.html_url,
+  };
+}
+
 export async function listInstallationRepos(
   installationId: number,
 ): Promise<GitHubRepo[]> {

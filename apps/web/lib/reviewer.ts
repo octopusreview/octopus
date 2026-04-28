@@ -877,6 +877,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
             indexDurationMs: indexStats.durationMs,
             contributorCount: indexStats.contributorCount,
             contributors: JSON.parse(JSON.stringify(indexStats.contributors)),
+            ...(indexStats.resolvedDefaultBranch ? { defaultBranch: indexStats.resolvedDefaultBranch } : {}),
           },
         });
 

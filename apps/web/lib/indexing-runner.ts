@@ -40,6 +40,7 @@ export async function runIndexingInBackground(
         contributorCount: stats.contributorCount,
         contributors: JSON.parse(JSON.stringify(stats.contributors)),
         indexDurationMs: stats.durationMs,
+        ...(stats.resolvedDefaultBranch ? { defaultBranch: stats.resolvedDefaultBranch } : {}),
       },
     });
 

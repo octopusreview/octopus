@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@octopus/db";
 import {
   listInstallationRepos,
+  getRepositoryDetails,
   addCommentReaction,
   getPullRequestDetails,
   createCheckRun,
@@ -57,11 +58,28 @@ export async function POST(request: NextRequest) {
     // Sync repos from GitHub
     try {
       if (event === "installation_repositories") {
-        // Incremental sync: only add/remove repos that changed
-        const added = (payload.repositories_added ?? []) as { id: number; name: string; full_name: string; default_branch?: string }[];
+        // Incremental sync: only add/remove repos that changed.
+        // The webhook payload omits `default_branch` for added repos, so we
+        // fetch each repo's metadata to resolve it (otherwise repos with a
+        // `master` default branch get stored as `main` and indexing 404s).
+        const added = (payload.repositories_added ?? []) as { id: number; name: string; full_name: string }[];
         const removed = (payload.repositories_removed ?? []) as { id: number }[];
 
-        for (const repo of added) {
+        const detailed = await Promise.all(
+          added.map(async (repo) => {
+            const [owner, repoName] = repo.full_name.split("/");
+            try {
+              const details = await getRepositoryDetails(installationId, owner, repoName);
+              return { repo, defaultBranch: details?.default_branch };
+            } catch (err) {
+              console.warn(`[webhook] Failed to fetch details for ${repo.full_name}:`, err);
+              return { repo, defaultBranch: undefined };
+            }
+          }),
+        );
+
+        for (const { repo, defaultBranch } of detailed) {
+          const branch = defaultBranch ?? "main";
           await prisma.repository.upsert({
             where: {
               provider_externalId_organizationId: {
@@ -74,7 +92,7 @@ export async function POST(request: NextRequest) {
               name: repo.name,
               fullName: repo.full_name,
               externalId: String(repo.id),
-              defaultBranch: repo.default_branch ?? "main",
+              defaultBranch: branch,
               provider: "github",
               isActive: true,
               installationId,
@@ -83,7 +101,7 @@ export async function POST(request: NextRequest) {
             update: {
               name: repo.name,
               fullName: repo.full_name,
-              defaultBranch: repo.default_branch ?? "main",
+              defaultBranch: branch,
               isActive: true,
               installationId,
               organizationId: org.id,

@@ -4,7 +4,7 @@ import { readFile, readdir, stat, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
-import { getInstallationToken, getFileContent as ghGetFileContent } from "@/lib/github";
+import { getInstallationToken, getFileContent as ghGetFileContent, getRepositoryDetails } from "@/lib/github";
 import * as bitbucketLib from "@/lib/bitbucket";
 import { ensureCollection, upsertChunks, deleteRepoChunks, deleteRepoFileChunks } from "@/lib/qdrant";
 import { generateSparseVectors } from "@/lib/sparse-vector";
@@ -136,6 +136,8 @@ export interface IndexStats {
   contributorCount: number;
   contributors: Contributor[];
   durationMs: number;
+  /** Set when GitHub reported a different default branch than the caller passed in. */
+  resolvedDefaultBranch?: string;
 }
 
 export async function indexRepository(
@@ -164,6 +166,7 @@ export async function indexRepository(
   let skipped = 0;
   let contributorCount = 0;
   let contributors: Contributor[] = [];
+  let resolvedDefaultBranch: string | undefined;
 
   if (provider === "bitbucket" && organizationId) {
     // ── Bitbucket indexing flow (clone-based) ──
@@ -301,18 +304,40 @@ export async function indexRepository(
     };
     onLog("GitHub authentication successful", "success");
 
-    // 1. Get repo tree
-    onLog(`Fetching repository tree for ${fullName}@${defaultBranch}...`);
-    const treeRes = await fetch(
-      `${GITHUB_API}/repos/${fullName}/git/trees/${defaultBranch}?recursive=1`,
+    // 1. Get repo tree. The stored default branch can be stale (e.g. webhook
+    // payload omitted it and we fell back to "main" on a master repo), so on
+    // 404 we re-resolve the branch from the repo metadata before giving up.
+    let activeBranch = defaultBranch;
+
+    onLog(`Fetching repository tree for ${fullName}@${activeBranch}...`);
+    let treeRes = await fetch(
+      `${GITHUB_API}/repos/${fullName}/git/trees/${activeBranch}?recursive=1`,
       { headers },
     );
 
-    if (!treeRes.ok) {
-      if (treeRes.status === 404) {
+    if (!treeRes.ok && treeRes.status === 404) {
+      const [owner, repoName] = fullName.split("/");
+      const details = await getRepositoryDetails(installationId, owner, repoName, token);
+      if (!details) {
         onLog(`Repository not found or GitHub App lacks access to ${fullName}`, "error");
         onLog("Go to GitHub Settings → Applications → Configure to grant access", "warning");
         throw new Error(`GitHub App does not have access to ${fullName}`);
+      }
+      if (details.default_branch !== activeBranch) {
+        onLog(`Default branch mismatch: stored '${activeBranch}', actual '${details.default_branch}' — retrying`, "warning");
+        activeBranch = details.default_branch;
+        resolvedDefaultBranch = details.default_branch;
+        treeRes = await fetch(
+          `${GITHUB_API}/repos/${fullName}/git/trees/${activeBranch}?recursive=1`,
+          { headers },
+        );
+      }
+    }
+
+    if (!treeRes.ok) {
+      if (treeRes.status === 404) {
+        onLog(`Branch '${activeBranch}' not found on ${fullName}`, "error");
+        throw new Error(`Branch '${activeBranch}' not found on ${fullName}`);
       }
       onLog(`Failed to fetch tree: HTTP ${treeRes.status}`, "error");
       throw new Error(`Failed to fetch tree: ${treeRes.status}`);
@@ -327,7 +352,7 @@ export async function indexRepository(
     if (ignoreBlob) {
       try {
         const [owner, repoName] = fullName.split("/");
-        const ignoreContent = await ghGetFileContent(installationId, owner, repoName, defaultBranch, ".octopusignore");
+        const ignoreContent = await ghGetFileContent(installationId, owner, repoName, activeBranch, ".octopusignore");
         if (ignoreContent) {
           ig = parseOctopusIgnore(ignoreContent);
           onLog("Found .octopusignore — applying custom ignore rules", "info");
@@ -376,48 +401,75 @@ export async function indexRepository(
     onLog("Fetching and chunking file contents...");
     const CONCURRENCY = 10;
 
+    // Per-blob fetch timeout. Without this, a stalled GitHub blob response hangs
+    // the whole Promise.all batch indefinitely (see tgoskits incident).
+    const BLOB_FETCH_TIMEOUT_MS = 30_000;
+
+    async function fetchWithTimeout(url: string): Promise<Response> {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), BLOB_FETCH_TIMEOUT_MS);
+      const onParentAbort = () => ctrl.abort();
+      signal?.addEventListener("abort", onParentAbort);
+      try {
+        return await fetch(url, { headers, signal: ctrl.signal });
+      } finally {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onParentAbort);
+      }
+    }
+
+    function skip(filePath: string, reason: string) {
+      skipped++;
+      onLog(`Skipped ${filePath}: ${reason}`, "warning");
+    }
+
     async function fetchBlob(file: TreeItem): Promise<void> {
-      const blobRes = await fetch(
-        `${GITHUB_API}/repos/${fullName}/git/blobs/${file.sha}`,
-        { headers },
-      );
+      try {
+        const url = `${GITHUB_API}/repos/${fullName}/git/blobs/${file.sha}`;
+        const blobRes = await fetchWithTimeout(url);
 
-      if (!blobRes.ok) {
-        if (blobRes.status === 403 || blobRes.status === 429) {
-          const retryAfter = parseInt(blobRes.headers.get("retry-after") ?? "5", 10);
-          onLog(`Rate limited, waiting ${retryAfter}s...`, "warning");
-          await new Promise((r) => setTimeout(r, retryAfter * 1000));
+        if (!blobRes.ok) {
+          if (blobRes.status === 403 || blobRes.status === 429) {
+            const retryAfter = parseInt(blobRes.headers.get("retry-after") ?? "5", 10);
+            onLog(`Rate limited, waiting ${retryAfter}s...`, "warning");
+            await new Promise((r) => setTimeout(r, retryAfter * 1000));
 
-          const retry = await fetch(
-            `${GITHUB_API}/repos/${fullName}/git/blobs/${file.sha}`,
-            { headers },
-          );
-          if (!retry.ok) {
-            skipped++;
+            const retry = await fetchWithTimeout(url);
+            if (!retry.ok) {
+              skip(file.path, `HTTP ${retry.status} after rate-limit retry`);
+              return;
+            }
+            const retryData = await retry.json();
+            processBlob(retryData, file.path);
             return;
           }
-          const retryData = await retry.json();
-          processBlob(retryData, file.path);
+          skip(file.path, `HTTP ${blobRes.status}`);
           return;
         }
-        skipped++;
-        return;
-      }
 
-      const blobData = await blobRes.json();
-      processBlob(blobData, file.path);
+        const blobData = await blobRes.json();
+        processBlob(blobData, file.path);
+      } catch (err) {
+        if (signal?.aborted) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        skip(file.path, msg);
+      }
     }
 
     function processBlob(blobData: { encoding: string; content?: string }, filePath: string) {
-      if (blobData.encoding !== "base64" || !blobData.content) {
-        skipped++;
+      if (blobData.encoding !== "base64") {
+        skip(filePath, `unsupported encoding '${blobData.encoding}'`);
+        return;
+      }
+      if (!blobData.content) {
+        skip(filePath, "empty blob content");
         return;
       }
 
       const content = Buffer.from(blobData.content, "base64").toString("utf-8");
 
       if (content.includes("\0")) {
-        skipped++;
+        skip(filePath, "binary content (null byte)");
         return;
       }
 
@@ -455,6 +507,7 @@ export async function indexRepository(
       contributorCount,
       contributors,
       durationMs: Date.now() - startTime,
+      resolvedDefaultBranch,
     };
   }
 
@@ -525,6 +578,7 @@ export async function indexRepository(
     contributorCount,
     contributors,
     durationMs: Date.now() - startTime,
+    resolvedDefaultBranch,
   };
 }
 

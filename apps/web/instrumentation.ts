@@ -1,6 +1,9 @@
 export async function register() {
   // Only start queue workers on the server (not during build or edge runtime)
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { reconcileStaleRepoStates } = await import("./lib/boot-reconciler");
+    await reconcileStaleRepoStates();
+
     const { startQueue } = await import("./lib/queue");
     const boss = await startQueue();
 

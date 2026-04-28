@@ -295,7 +295,7 @@ function SidebarContent({
   const [couponOpen, setCouponOpen] = useState(false);
 
   return (
-    <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
+    <div className="flex h-full flex-col overflow-y-auto bg-sidebar text-sidebar-foreground">
       {collapsed ? (
         <div className="flex flex-col items-center gap-2 border-b py-3">
           {onToggleCollapse && (
@@ -391,7 +391,7 @@ function SidebarContent({
 
       <CommandPalette orgId={currentOrg.id} />
 
-      <nav className={cn("flex-1 space-y-1 py-4", collapsed ? "px-2" : "px-3")}>
+      <nav className={cn("space-y-1 py-4", collapsed ? "px-2" : "px-3")}>
         {collapsed && (
           <SidebarTooltip label="Search (⌘K)">
             <button
@@ -456,7 +456,7 @@ function SidebarContent({
 
       </nav>
 
-      <div className={cn("space-y-1 py-2", collapsed ? "px-2" : "px-3")}>
+      <div className={cn("mt-auto space-y-1 py-2", collapsed ? "px-2" : "px-3")}>
         {bottomNavItems.map(({ href, label, icon: Icon }) => {
           const isActive = pathname === href;
           const link = (
@@ -554,7 +554,7 @@ function SidebarContent({
         )}
       </div>
 
-      <div className={cn("border-t py-3", collapsed ? "px-2" : "px-3")}>
+      <div className={cn("border-t py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]", collapsed ? "px-2" : "px-3")}>
         {collapsed ? (
           <SidebarTooltip label={user.name}>
             <div>

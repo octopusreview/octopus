@@ -2,34 +2,12 @@ import { IconDownload } from "@tabler/icons-react";
 
 const documents = [
   {
-    title: "Penetration Test",
-    description:
-      "Penetration testing is performed at least annually by a third-party cybersecurity company.",
-    detail: "You can download the Letter of Attestation below.",
-    file: "/documents/penetration-test.pdf",
-  },
-  {
-    title: "SOC 2",
-    description:
-      "Octopus is SOC 2 Type II compliant, a compliance framework developed by AICPA.",
-    detail:
-      "This audit was completed by Vanta & Advantage Partners and covers the period of February 1, 2024 to February 1, 2025.",
-    file: "/documents/soc2.pdf",
-  },
-  {
     title: "DPA",
     description:
       "Data Processing Agreement (DPA) is a contract that regulates data processing conducted for business purposes.",
     detail:
       "The attached DPA is a version signed by us, and is considered fully executed once you sign up to Octopus.",
     file: "/documents/dpa.pdf",
-  },
-  {
-    title: "Form W-9",
-    description:
-      "Form W-9 is a document used in the United States by individuals and entities to provide their taxpayer identification number (TIN) to a person or business that will pay them income.",
-    detail: "You can download the signed Form W-9 below.",
-    file: "/documents/form-w9.pdf",
   },
 ];
 

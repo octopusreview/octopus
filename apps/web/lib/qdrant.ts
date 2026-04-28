@@ -1,5 +1,18 @@
+import { createHash } from "crypto";
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { generateSparseVector } from "@/lib/sparse-vector";
+
+// Qdrant point IDs must be uint or UUID. Map non-UUID strings (e.g. Prisma CUIDs)
+// deterministically into a UUIDv5-shaped string so re-upserts stay idempotent.
+function toQdrantId(id: string): string {
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    return id;
+  }
+  const h = createHash("sha1").update(id).digest("hex");
+  const v = (0x50 | (parseInt(h.slice(12, 14), 16) & 0x0f)).toString(16).padStart(2, "0");
+  const r = (0x80 | (parseInt(h.slice(16, 18), 16) & 0x3f)).toString(16).padStart(2, "0");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${v}${h.slice(14, 16)}-${r}${h.slice(18, 20)}-${h.slice(20, 32)}`;
+}
 
 function isSparseVectorError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
@@ -851,19 +864,21 @@ export async function upsertFeedbackPattern(point: {
   sparseVector?: { indices: number[]; values: number[] };
 }) {
   const qdrant = getQdrantClient();
+  const qdrantId = toQdrantId(point.id);
+  const payload = { ...point.payload, issueId: point.id };
   const qdrantPoint = {
-    id: point.id,
+    id: qdrantId,
     vector: point.sparseVector
       ? { "": point.vector, [SPARSE_VECTOR_NAME]: point.sparseVector }
       : point.vector,
-    payload: point.payload,
+    payload,
   };
   try {
     await qdrant.upsert(FEEDBACK_COLLECTION_NAME, { points: [qdrantPoint] });
   } catch (error) {
     if (!isSparseVectorError(error)) throw error;
     console.warn("[qdrant] Falling back to dense-only upsert", { collection: FEEDBACK_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
-    await qdrant.upsert(FEEDBACK_COLLECTION_NAME, { points: [{ id: point.id, vector: point.vector, payload: point.payload }] });
+    await qdrant.upsert(FEEDBACK_COLLECTION_NAME, { points: [{ id: qdrantId, vector: point.vector, payload }] });
   }
 }
 

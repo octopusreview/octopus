@@ -18,13 +18,22 @@ function getClient(): OpenAI {
 const MAX_EMBEDDING_CHARS = 24_000;
 
 // OpenAI enforces a 300,000 token total-request cap for embeddings.
-// Keep headroom: target ~250k and estimate tokens as chars/3 (worst case for code).
-const MAX_BATCH_TOKENS = 250_000;
+// Keep headroom: target ~200k. Dense content (lock files, .dts, hex blobs, CJK)
+// can tokenize at ~2 chars/token, so ASCII gets chars/2 and non-ASCII counts as
+// 1 token per char (CJK in cl100k/o200k often hits 1+ tokens per char).
+const MAX_BATCH_TOKENS = 200_000;
 const MAX_BATCH_ITEMS = 512;
-const CHARS_PER_TOKEN_ESTIMATE = 3;
 
 function estimateTokens(text: string): number {
-  return Math.ceil(text.length / CHARS_PER_TOKEN_ESTIMATE);
+  let ascii = 0;
+  let other = 0;
+  for (let i = 0; i < text.length; ) {
+    const code = text.codePointAt(i)!;
+    if (code < 128) ascii++;
+    else other++;
+    i += code > 0xffff ? 2 : 1;
+  }
+  return Math.ceil(ascii / 2) + other;
 }
 
 export async function createEmbeddings(
@@ -64,6 +73,26 @@ export async function createEmbeddings(
   const validVectors: number[][] = [];
   let totalPromptTokens = 0;
 
+  // Send a batch, splitting in half on the 300k-token 400 error. Token estimates
+  // can underestimate for dense content; this lets us recover without failing
+  // the whole repo index over one bad batch.
+  async function embedBatch(batch: string[]): Promise<void> {
+    try {
+      const res = await client.embeddings.create({ model: embedModel, input: batch });
+      for (const item of res.data) validVectors.push(item.embedding);
+      totalPromptTokens += res.usage.prompt_tokens;
+    } catch (err) {
+      const isTokenLimit =
+        err instanceof OpenAI.APIError &&
+        err.status === 400 &&
+        /maximum request size|tokens per request/i.test(err.message);
+      if (!isTokenLimit || batch.length <= 1) throw err;
+      const mid = Math.floor(batch.length / 2);
+      await embedBatch(batch.slice(0, mid));
+      await embedBatch(batch.slice(mid));
+    }
+  }
+
   // Dynamic batching: stay under both MAX_BATCH_TOKENS and MAX_BATCH_ITEMS per request.
   let batchStart = 0;
   while (batchStart < truncated.length) {
@@ -76,16 +105,7 @@ export async function createEmbeddings(
       batchEnd++;
     }
 
-    const batch = truncated.slice(batchStart, batchEnd);
-    const res = await client.embeddings.create({
-      model: embedModel,
-      input: batch,
-    });
-    for (const item of res.data) {
-      validVectors.push(item.embedding);
-    }
-    totalPromptTokens += res.usage.prompt_tokens;
-
+    await embedBatch(truncated.slice(batchStart, batchEnd));
     batchStart = batchEnd;
   }
 

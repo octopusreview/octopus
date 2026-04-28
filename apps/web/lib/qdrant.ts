@@ -2,8 +2,11 @@ import { createHash } from "crypto";
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { generateSparseVector } from "@/lib/sparse-vector";
 
-// Qdrant point IDs must be uint or UUID. Map non-UUID strings (e.g. Prisma CUIDs)
-// deterministically into a UUIDv5-shaped string so re-upserts stay idempotent.
+// Qdrant point IDs must be uint or UUID. Existing UUID inputs pass through
+// unchanged (so callers using crypto.randomUUID() are unaffected); non-UUID
+// strings (e.g. Prisma CUIDs) are mapped deterministically into a UUIDv5-shaped
+// string. Applied at every upsert call site so the helper is the single source
+// of truth and any future caller passing a non-UUID is handled correctly.
 function toQdrantId(id: string): string {
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
     return id;
@@ -76,7 +79,7 @@ export async function upsertChunks(
   // Qdrant accepts max 100 points per request
   for (let i = 0; i < points.length; i += 100) {
     const batch = points.slice(i, i + 100).map((p) => ({
-      id: p.id,
+      id: toQdrantId(p.id),
       vector: p.sparseVector
         ? { "": p.vector, [SPARSE_VECTOR_NAME]: p.sparseVector }
         : p.vector,
@@ -88,7 +91,7 @@ export async function upsertChunks(
       if (!isSparseVectorError(error)) throw error;
       console.warn("[qdrant] Falling back to dense-only upsert", { collection: COLLECTION_NAME, error: error instanceof Error ? error.message : error });
       const denseBatch = points.slice(i, i + 100).map((p) => ({
-        id: p.id,
+        id: toQdrantId(p.id),
         vector: p.vector,
         payload: p.payload,
       }));
@@ -297,7 +300,7 @@ export async function upsertKnowledgeChunks(
   const qdrant = getQdrantClient();
   for (let i = 0; i < points.length; i += 100) {
     const batch = points.slice(i, i + 100).map((p) => ({
-      id: p.id,
+      id: toQdrantId(p.id),
       vector: p.sparseVector
         ? { "": p.vector, [SPARSE_VECTOR_NAME]: p.sparseVector }
         : p.vector,
@@ -309,7 +312,7 @@ export async function upsertKnowledgeChunks(
       if (!isSparseVectorError(error)) throw error;
       console.warn("[qdrant] Falling back to dense-only upsert", { collection: KNOWLEDGE_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
       const denseBatch = points.slice(i, i + 100).map((p) => ({
-        id: p.id,
+        id: toQdrantId(p.id),
         vector: p.vector,
         payload: p.payload,
       }));
@@ -453,7 +456,7 @@ export async function upsertReviewChunks(
   const qdrant = getQdrantClient();
   for (let i = 0; i < points.length; i += 100) {
     const batch = points.slice(i, i + 100).map((p) => ({
-      id: p.id,
+      id: toQdrantId(p.id),
       vector: p.sparseVector
         ? { "": p.vector, [SPARSE_VECTOR_NAME]: p.sparseVector }
         : p.vector,
@@ -465,7 +468,7 @@ export async function upsertReviewChunks(
       if (!isSparseVectorError(error)) throw error;
       console.warn("[qdrant] Falling back to dense-only upsert", { collection: REVIEW_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
       const denseBatch = points.slice(i, i + 100).map((p) => ({
-        id: p.id,
+        id: toQdrantId(p.id),
         vector: p.vector,
         payload: p.payload,
       }));
@@ -585,8 +588,9 @@ export async function upsertChatChunk(point: {
   sparseVector?: { indices: number[]; values: number[] };
 }) {
   const qdrant = getQdrantClient();
+  const qdrantId = toQdrantId(point.id);
   const qdrantPoint = {
-    id: point.id,
+    id: qdrantId,
     vector: point.sparseVector
       ? { "": point.vector, [SPARSE_VECTOR_NAME]: point.sparseVector }
       : point.vector,
@@ -597,7 +601,7 @@ export async function upsertChatChunk(point: {
   } catch (error) {
     if (!isSparseVectorError(error)) throw error;
     console.warn("[qdrant] Falling back to dense-only upsert", { collection: CHAT_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
-    await qdrant.upsert(CHAT_COLLECTION_NAME, { points: [{ id: point.id, vector: point.vector, payload: point.payload }] });
+    await qdrant.upsert(CHAT_COLLECTION_NAME, { points: [{ id: qdrantId, vector: point.vector, payload: point.payload }] });
   }
 }
 
@@ -732,8 +736,9 @@ export async function upsertDiagramChunk(point: {
   sparseVector?: { indices: number[]; values: number[] };
 }) {
   const qdrant = getQdrantClient();
+  const qdrantId = toQdrantId(point.id);
   const qdrantPoint = {
-    id: point.id,
+    id: qdrantId,
     vector: point.sparseVector
       ? { "": point.vector, [SPARSE_VECTOR_NAME]: point.sparseVector }
       : point.vector,
@@ -744,7 +749,7 @@ export async function upsertDiagramChunk(point: {
   } catch (error) {
     if (!isSparseVectorError(error)) throw error;
     console.warn("[qdrant] Falling back to dense-only upsert", { collection: DIAGRAM_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
-    await qdrant.upsert(DIAGRAM_COLLECTION_NAME, { points: [{ id: point.id, vector: point.vector, payload: point.payload }] });
+    await qdrant.upsert(DIAGRAM_COLLECTION_NAME, { points: [{ id: qdrantId, vector: point.vector, payload: point.payload }] });
   }
 }
 
@@ -997,7 +1002,7 @@ export async function upsertDocsChunks(
   const qdrant = getQdrantClient();
   for (let i = 0; i < points.length; i += 100) {
     const batch = points.slice(i, i + 100).map((p) => ({
-      id: p.id,
+      id: toQdrantId(p.id),
       vector: p.sparseVector
         ? { "": p.vector, [SPARSE_VECTOR_NAME]: p.sparseVector }
         : p.vector,
@@ -1009,7 +1014,7 @@ export async function upsertDocsChunks(
       if (!isSparseVectorError(error)) throw error;
       console.warn("[qdrant] Falling back to dense-only upsert", { collection: DOCS_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
       const denseBatch = points.slice(i, i + 100).map((p) => ({
-        id: p.id,
+        id: toQdrantId(p.id),
         vector: p.vector,
         payload: p.payload,
       }));

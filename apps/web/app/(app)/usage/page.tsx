@@ -9,18 +9,102 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  IconBrain,
-  IconApi,
-  IconChartBar,
   IconCurrencyDollar,
   IconChevronLeft,
   IconChevronRight,
   IconWallet,
   IconArrowRight,
+  IconGitPullRequest,
+  IconReceipt,
 } from "@tabler/icons-react";
-import { getModelPricing, calcCost, formatUsd, formatNumber } from "@/lib/cost";
+import { getModelPricing, calcCost, formatUsd } from "@/lib/cost";
 import { getOrgBalance } from "@/lib/credits";
 import Link from "next/link";
+
+// ── Activity categories ──────────────────────────────────────────────
+// Group internal pipeline operations into user-facing activities.
+
+type Activity = {
+  key: string;
+  label: string;
+  description: string;
+  operations: string[];
+  // Operations whose call count maps 1:1 to a user-visible unit
+  // (e.g. "review" calls correspond to actual reviews run).
+  unitOperations?: string[];
+  unit?: string;
+};
+
+const ACTIVITIES: Activity[] = [
+  {
+    key: "reviews",
+    label: "Code Reviews",
+    description: "PR reviews and findings",
+    operations: [
+      "review",
+      "review-validation",
+      "review-rerank",
+      "review-findings-followup",
+      "finding-verification",
+      "cross-file-verification",
+      "local-review",
+      "local-review-findings-followup",
+      "generate-issue-content",
+      "feedback-classification",
+    ],
+    unitOperations: ["review", "local-review"],
+    unit: "reviews",
+  },
+  {
+    key: "indexing",
+    label: "Repo Indexing",
+    description: "Understanding your codebase",
+    operations: [
+      "embedding",
+      "analyze",
+      "summarize-repo",
+      "summarize-daily",
+      "knowledge-enhance",
+      "package-analyze-deep-dive",
+    ],
+    unitOperations: ["analyze"],
+    unit: "repos",
+  },
+  {
+    key: "chat",
+    label: "Chat & Assistant",
+    description: "In-app and Slack conversations",
+    operations: [
+      "chat",
+      "chat-rerank",
+      "chat-title",
+      "slack-command",
+      "slack-command-embedding",
+    ],
+    unitOperations: ["chat", "slack-command"],
+    unit: "messages",
+  },
+];
+
+function activityFor(operation: string): Activity | null {
+  for (const a of ACTIVITIES) {
+    if (a.operations.includes(operation)) return a;
+  }
+  return null;
+}
+
+// Map raw model IDs to short, friendly labels for display.
+function shortModelLabel(model: string): string {
+  if (model.startsWith("claude-opus-4-6")) return "Claude Opus 4.6";
+  if (model.startsWith("claude-opus-4")) return "Claude Opus 4";
+  if (model.startsWith("claude-sonnet-4-6")) return "Claude Sonnet 4.6";
+  if (model.startsWith("claude-sonnet-4")) return "Claude Sonnet 4";
+  if (model.startsWith("claude-haiku-4-5")) return "Claude Haiku 4.5";
+  if (model.startsWith("claude-haiku")) return "Claude Haiku";
+  if (model.startsWith("gemini-2.5-pro")) return "Gemini 2.5 Pro";
+  if (model.startsWith("gemini-2.5-flash")) return "Gemini 2.5 Flash";
+  return model;
+}
 
 // ── Month helpers ────────────────────────────────────────────────────
 
@@ -33,7 +117,7 @@ function parseMonth(param: string | undefined): { year: number; month: number } 
   if (y < 2020 || y > 2099 || m < 1 || m > 12) {
     return { year: now.getFullYear(), month: now.getMonth() };
   }
-  return { year: y, month: m - 1 }; // JS months are 0-indexed
+  return { year: y, month: m - 1 };
 }
 
 function monthStart(year: number, month: number): Date {
@@ -101,75 +185,57 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
   const next = nextMonth(year, month);
   const isFutureNext = new Date(next.year, next.month, 1) > now;
 
-  // Run all queries in parallel
-  const [totals, byModel, byOperation, byModelOperation, dailyTrend, pricing, balance] = await Promise.all([
-    prisma.aiUsage.aggregate({
-      where: { organizationId: orgId, createdAt: { gte: periodStart, lt: periodEnd } },
-      _sum: { inputTokens: true, outputTokens: true, cacheReadTokens: true, cacheWriteTokens: true },
-      _count: true,
-    }),
-
-    prisma.aiUsage.groupBy({
-      by: ["model"],
-      where: { organizationId: orgId, createdAt: { gte: periodStart, lt: periodEnd } },
-      _sum: { inputTokens: true, outputTokens: true, cacheReadTokens: true, cacheWriteTokens: true },
-      _count: true,
-      orderBy: { _sum: { inputTokens: "desc" } },
-    }),
-
-    prisma.aiUsage.groupBy({
-      by: ["operation"],
-      where: { organizationId: orgId, createdAt: { gte: periodStart, lt: periodEnd } },
-      _sum: { inputTokens: true, outputTokens: true, cacheReadTokens: true, cacheWriteTokens: true },
-      _count: true,
-      orderBy: { _sum: { inputTokens: "desc" } },
-    }),
-
+  const [byModelOperation, dailyByModel, pricing, balance] = await Promise.all([
     prisma.aiUsage.groupBy({
       by: ["model", "operation"],
       where: { organizationId: orgId, createdAt: { gte: periodStart, lt: periodEnd } },
       _sum: { inputTokens: true, outputTokens: true, cacheReadTokens: true, cacheWriteTokens: true },
+      _count: true,
     }),
 
     prisma.$queryRaw<
-      { day: Date; input_tokens: bigint; output_tokens: bigint; calls: bigint }[]
+      {
+        day: Date;
+        model: string;
+        input_tokens: bigint;
+        output_tokens: bigint;
+        cache_read_tokens: bigint;
+        cache_write_tokens: bigint;
+      }[]
     >`
       SELECT
         date_trunc('day', "createdAt") AS day,
+        model,
         SUM("inputTokens")::bigint AS input_tokens,
         SUM("outputTokens")::bigint AS output_tokens,
-        COUNT(*)::bigint AS calls
+        SUM("cacheReadTokens")::bigint AS cache_read_tokens,
+        SUM("cacheWriteTokens")::bigint AS cache_write_tokens
       FROM ai_usages
       WHERE "organizationId" = ${orgId}
         AND "createdAt" >= ${periodStart}
         AND "createdAt" < ${periodEnd}
-      GROUP BY day
+      GROUP BY day, model
       ORDER BY day ASC
     `,
+
     getModelPricing(),
     getOrgBalance(orgId),
   ]);
 
-  const totalInput = totals._sum.inputTokens ?? 0;
-  const totalOutput = totals._sum.outputTokens ?? 0;
-  const totalTokens = totalInput + totalOutput;
-  const totalCalls = totals._count;
-  const avgTokens = totalCalls > 0 ? Math.round(totalTokens / totalCalls) : 0;
+  // Aggregate cost & calls per activity and per model
+  const activityStats = new Map<
+    string,
+    { cost: number; calls: number; unitCalls: number }
+  >();
+  for (const a of ACTIVITIES) {
+    activityStats.set(a.key, { cost: 0, calls: 0, unitCalls: 0 });
+  }
 
-  const totalCost = byModel.reduce((sum, row) => {
-    return sum + calcCost(
-      pricing,
-      row.model,
-      row._sum?.inputTokens ?? 0,
-      row._sum?.outputTokens ?? 0,
-      row._sum?.cacheReadTokens ?? 0,
-      row._sum?.cacheWriteTokens ?? 0,
-    );
-  }, 0);
+  const modelStats = new Map<string, { cost: number; calls: number }>();
 
-  const operationCostMap: Record<string, number> = {};
+  let totalCost = 0;
+
   for (const row of byModelOperation) {
-    const op = row.operation;
     const cost = calcCost(
       pricing,
       row.model,
@@ -178,27 +244,79 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
       row._sum?.cacheReadTokens ?? 0,
       row._sum?.cacheWriteTokens ?? 0,
     );
-    operationCostMap[op] = (operationCostMap[op] ?? 0) + cost;
+    totalCost += cost;
+
+    const count =
+      typeof row._count === "number"
+        ? row._count
+        : (row._count as Record<string, number>)?._all ?? 0;
+
+    const m = modelStats.get(row.model) ?? { cost: 0, calls: 0 };
+    m.cost += cost;
+    m.calls += count;
+    modelStats.set(row.model, m);
+
+    const activity = activityFor(row.operation);
+    if (!activity) continue;
+
+    const stats = activityStats.get(activity.key)!;
+    stats.cost += cost;
+    stats.calls += count;
+    if (activity.unitOperations?.includes(row.operation)) {
+      stats.unitCalls += count;
+    }
   }
 
-  const dailyData = dailyTrend.map((d) => ({
-    date: new Date(d.day).toISOString().split("T")[0],
-    tokens: Number(d.input_tokens) + Number(d.output_tokens),
-    calls: Number(d.calls),
-  }));
-  const maxDailyTokens = Math.max(...dailyData.map((d) => d.tokens), 1);
+  const reviewsRun = activityStats.get("reviews")?.unitCalls ?? 0;
+  const avgPerReview = reviewsRun > 0 ? totalCost / reviewsRun : 0;
+
+  // Bucket infra-only models (embeddings, rerank) under a single "Other" row.
+  const OTHER_MODEL_PREFIXES = ["text-embedding", "rerank"];
+  const namedRows: { model: string; label: string; cost: number; calls: number }[] = [];
+  const otherBucket = { cost: 0, calls: 0 };
+  for (const [model, s] of modelStats) {
+    if (OTHER_MODEL_PREFIXES.some((p) => model.startsWith(p))) {
+      otherBucket.cost += s.cost;
+      otherBucket.calls += s.calls;
+    } else {
+      namedRows.push({ model, label: shortModelLabel(model), ...s });
+    }
+  }
+  namedRows.sort((a, b) => b.cost - a.cost);
+  const modelRows = [...namedRows];
+  if (otherBucket.cost > 0 || otherBucket.calls > 0) {
+    modelRows.push({ model: "__other__", label: "Other", ...otherBucket });
+  }
+
+  // Daily cost
+  const dailyCostMap = new Map<string, number>();
+  for (const row of dailyByModel) {
+    const date = new Date(row.day).toISOString().split("T")[0];
+    const cost = calcCost(
+      pricing,
+      row.model,
+      Number(row.input_tokens),
+      Number(row.output_tokens),
+      Number(row.cache_read_tokens),
+      Number(row.cache_write_tokens),
+    );
+    dailyCostMap.set(date, (dailyCostMap.get(date) ?? 0) + cost);
+  }
+  const dailyData = Array.from(dailyCostMap.entries())
+    .map(([date, cost]) => ({ date, cost }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const maxDailyCost = Math.max(...dailyData.map((d) => d.cost), 0.0001);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8 p-6 md:p-10">
+    <div className="mx-auto max-w-6xl space-y-6 p-6 md:p-10">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">AI Usage</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Usage</h1>
           <p className="text-muted-foreground text-sm">
-            Token usage and cost analytics
+            Where your credits go
           </p>
         </div>
 
-        {/* Month navigation */}
         <div className="flex items-center gap-1">
           <Link
             href={`/usage?month=${formatMonthParam(prev.year, prev.month)}`}
@@ -225,14 +343,14 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
       </div>
 
       {/* Credit balance banner */}
-      <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-5 py-4">
+      <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-5 py-3.5">
         <div className="flex items-center gap-3">
           <div className="flex size-9 items-center justify-center rounded-full bg-primary/10">
             <IconWallet className="size-4 text-primary" />
           </div>
           <div>
-            <p className="text-sm text-muted-foreground">Credit Balance</p>
-            <p className="text-lg font-semibold">{formatUsd(balance.total)}</p>
+            <p className="text-xs text-muted-foreground">Credit Balance</p>
+            <p className="text-lg font-semibold leading-tight">{formatUsd(balance.total)}</p>
           </div>
           {(balance.free > 0 || balance.purchased > 0) && (
             <div className="ml-4 flex gap-3 text-xs text-muted-foreground">
@@ -250,194 +368,161 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
         </Link>
       </div>
 
-      {/* Stat cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Tokens
+      {/* Stat cards (compact) */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card size="sm">
+          <CardHeader className="flex flex-row items-center justify-between pb-1">
+            <CardTitle className="text-xs font-medium text-muted-foreground">
+              {isCurrentMonth ? "This Month" : formatMonthLabel(year, month)}
             </CardTitle>
-            <IconBrain className="size-4 text-muted-foreground" />
+            <IconCurrencyDollar className="size-3.5 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatNumber(totalTokens)}</div>
-            <p className="text-xs text-muted-foreground">
-              {formatNumber(totalInput)} input / {formatNumber(totalOutput)} output
-            </p>
+            <div className="text-xl font-semibold">{formatUsd(totalCost)}</div>
+            <p className="text-xs text-muted-foreground">Total spend</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              API Calls
+        <Card size="sm">
+          <CardHeader className="flex flex-row items-center justify-between pb-1">
+            <CardTitle className="text-xs font-medium text-muted-foreground">
+              Reviews Run
             </CardTitle>
-            <IconApi className="size-4 text-muted-foreground" />
+            <IconGitPullRequest className="size-3.5 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatNumber(totalCalls)}</div>
-            <p className="text-xs text-muted-foreground">
-              {isCurrentMonth ? "This month" : formatMonthLabel(year, month)}
-            </p>
+            <div className="text-xl font-semibold">{reviewsRun.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">PRs and local reviews</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Avg Tokens/Call
+        <Card size="sm">
+          <CardHeader className="flex flex-row items-center justify-between pb-1">
+            <CardTitle className="text-xs font-medium text-muted-foreground">
+              Avg per Review
             </CardTitle>
-            <IconChartBar className="size-4 text-muted-foreground" />
+            <IconReceipt className="size-3.5 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatNumber(avgTokens)}</div>
-            <p className="text-xs text-muted-foreground">
-              Per API call
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Estimated Cost
-            </CardTitle>
-            <IconCurrencyDollar className="size-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatUsd(totalCost)}</div>
-            <p className="text-xs text-muted-foreground">
-              {isCurrentMonth ? "This month" : formatMonthLabel(year, month)}
-            </p>
+            <div className="text-xl font-semibold">{formatUsd(avgPerReview)}</div>
+            <p className="text-xs text-muted-foreground">Including indexing & chat</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Model & Operation tables */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
+      {/* Two-column: Activity + Models */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card size="sm">
+          <CardHeader>
+            <CardTitle>By Activity</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {totalCost === 0 ? (
+              <p className="text-sm text-muted-foreground">No usage this month</p>
+            ) : (
+              <div className="space-y-2">
+                {ACTIVITIES.map((a) => {
+                  const stats = activityStats.get(a.key) ?? { cost: 0, calls: 0, unitCalls: 0 };
+                  const pct = totalCost > 0 ? (stats.cost / totalCost) * 100 : 0;
+                  return (
+                    <div key={a.key} className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {a.label}
+                          {a.unit && stats.unitCalls > 0 && (
+                            <span className="ml-2 text-xs font-normal text-muted-foreground">
+                              {stats.unitCalls.toLocaleString()} {a.unit}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <p className="text-sm font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                        {formatUsd(stats.cost)}
+                      </p>
+                      <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-primary/60"
+                          style={{ width: `${Math.max(pct, pct > 0 ? 1 : 0)}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground tabular-nums text-right">
+                        {pct.toFixed(0)}%
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card size="sm">
           <CardHeader>
             <CardTitle>By Model</CardTitle>
           </CardHeader>
           <CardContent>
-            {byModel.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No data for this month</p>
+            {modelRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No usage this month</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-muted-foreground">
-                      <th className="pb-2 font-medium">Model</th>
-                      <th className="pb-2 text-right font-medium">Input</th>
-                      <th className="pb-2 text-right font-medium">Output</th>
-                      <th className="pb-2 text-right font-medium">Total</th>
-                      <th className="pb-2 text-right font-medium">Calls</th>
-                      <th className="pb-2 text-right font-medium">Cost</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {byModel.map((row) => {
-                      const input = row._sum?.inputTokens ?? 0;
-                      const output = row._sum?.outputTokens ?? 0;
-                      const cacheRead = row._sum?.cacheReadTokens ?? 0;
-                      const cacheWrite = row._sum?.cacheWriteTokens ?? 0;
-                      const cost = calcCost(pricing, row.model, input, output, cacheRead, cacheWrite);
-                      const count = typeof row._count === "number" ? row._count : (row._count as Record<string, number>)?._all ?? 0;
-                      return (
-                        <tr key={row.model} className="border-b last:border-0">
-                          <td className="py-2 font-mono text-xs">{row.model}</td>
-                          <td className="py-2 text-right">{formatNumber(input)}</td>
-                          <td className="py-2 text-right">{formatNumber(output)}</td>
-                          <td className="py-2 text-right font-medium">
-                            {formatNumber(input + output)}
-                          </td>
-                          <td className="py-2 text-right">{count}</td>
-                          <td className="py-2 text-right font-medium text-emerald-600 dark:text-emerald-400">{formatUsd(cost)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>By Operation</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {byOperation.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No data for this month</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-muted-foreground">
-                      <th className="pb-2 font-medium">Operation</th>
-                      <th className="pb-2 text-right font-medium">Input</th>
-                      <th className="pb-2 text-right font-medium">Output</th>
-                      <th className="pb-2 text-right font-medium">Total</th>
-                      <th className="pb-2 text-right font-medium">Calls</th>
-                      <th className="pb-2 text-right font-medium">Cost</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {byOperation.map((row) => {
-                      const input = row._sum?.inputTokens ?? 0;
-                      const output = row._sum?.outputTokens ?? 0;
-                      const cost = operationCostMap[row.operation] ?? 0;
-                      const count = typeof row._count === "number" ? row._count : (row._count as Record<string, number>)?._all ?? 0;
-                      return (
-                        <tr key={row.operation} className="border-b last:border-0">
-                          <td className="py-2 capitalize">{row.operation.replace(/-/g, " ")}</td>
-                          <td className="py-2 text-right">{formatNumber(input)}</td>
-                          <td className="py-2 text-right">{formatNumber(output)}</td>
-                          <td className="py-2 text-right font-medium">
-                            {formatNumber(input + output)}
-                          </td>
-                          <td className="py-2 text-right">{count}</td>
-                          <td className="py-2 text-right font-medium text-emerald-600 dark:text-emerald-400">{formatUsd(cost)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div className="space-y-2">
+                {modelRows.map((row) => {
+                  const pct = totalCost > 0 ? (row.cost / totalCost) * 100 : 0;
+                  return (
+                    <div key={row.model} className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {row.label}
+                          <span className="ml-2 text-xs font-normal text-muted-foreground">
+                            {row.calls.toLocaleString()} calls
+                          </span>
+                        </p>
+                      </div>
+                      <p className="text-sm font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                        {formatUsd(row.cost)}
+                      </p>
+                      <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-primary/60"
+                          style={{ width: `${Math.max(pct, pct > 0 ? 1 : 0)}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground tabular-nums text-right">
+                        {pct.toFixed(0)}%
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Daily trend */}
-      <Card>
+      {/* Daily breakdown */}
+      <Card size="sm">
         <CardHeader>
-          <CardTitle>Daily Breakdown</CardTitle>
+          <CardTitle>Daily Spend</CardTitle>
         </CardHeader>
         <CardContent>
           {dailyData.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No data for this month</p>
+            <p className="text-sm text-muted-foreground">No usage this month</p>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {dailyData.map((d) => (
                 <div key={d.date} className="flex items-center gap-3 text-sm">
-                  <span className="w-24 shrink-0 text-muted-foreground">
+                  <span className="w-12 shrink-0 text-xs text-muted-foreground tabular-nums">
                     {d.date.slice(5)}
                   </span>
                   <div className="flex-1">
                     <div
-                      className="h-5 rounded bg-primary/20"
+                      className="h-4 rounded bg-primary/20"
                       style={{
-                        width: `${Math.max((d.tokens / maxDailyTokens) * 100, 1)}%`,
+                        width: `${Math.max((d.cost / maxDailyCost) * 100, d.cost > 0 ? 1 : 0)}%`,
                       }}
                     />
                   </div>
-                  <span className="w-20 shrink-0 text-right font-mono text-xs">
-                    {formatNumber(d.tokens)}
-                  </span>
-                  <span className="w-16 shrink-0 text-right text-muted-foreground">
-                    {d.calls} calls
+                  <span className="w-16 shrink-0 text-right font-mono text-xs tabular-nums">
+                    {formatUsd(d.cost)}
                   </span>
                 </div>
               ))}

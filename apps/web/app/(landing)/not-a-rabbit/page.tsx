@@ -165,6 +165,60 @@ export default async function NotARabbitPage() {
         </div>
       </section>
 
+      {/* The Story */}
+      <section className="relative z-10 px-4 pb-12 sm:px-8 md:px-12 md:pb-16">
+        <div className="mx-auto max-w-3xl">
+          <span className="text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
+            The Story
+          </span>
+          <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
+            Where &ldquo;Not a Rabbit&rdquo; came from
+          </h2>
+
+          <div className="mt-8 space-y-5 text-[#999] leading-relaxed">
+            <p>
+              The phrase started as an internal joke. We were building Octopus,
+              an AI code reviewer, and watching how other tools worked. Most of
+              them did the same thing: take a pull request, look at the diff,
+              maybe peek at the few files the diff touches, and start commenting.
+              One trail, followed in a straight line.
+            </p>
+            <p>
+              That is what a rabbit does. A rabbit picks a direction and runs.
+              It is fast, it commits, and it almost always misses what is
+              happening five steps to the left. In code review, &ldquo;five steps
+              to the left&rdquo; is usually where the real bug lives. The
+              function you renamed is called from a service you did not open.
+              The migration you wrote breaks an assumption in a worker queue.
+              The new auth check duplicates a guard that already exists three
+              folders away.
+            </p>
+            <p>
+              We wanted a name and an animal that pushed back against this. An
+              octopus does not chase a single trail. It wraps around an object
+              and senses it from every angle at once. Eight arms, hundreds of
+              suckers, distributed cognition. That is exactly what a code review
+              tool needs to do: see the whole repository at the same time, not
+              one diff in isolation.
+            </p>
+            <p>
+              So &ldquo;Not a Rabbit. Don&rsquo;t follow trails&rdquo; became
+              shorthand for the entire product philosophy. Octopus indexes your
+              full codebase, builds a semantic map of every file, then reviews
+              your pull request with that whole map in memory. It is not faster
+              because it skips work. It is better because it does not need to
+              guess what the surrounding code looks like.
+            </p>
+            <p>
+              We printed the phrase on stickers and brought them to AWS Summit.
+              If you found one and ended up here, that is the whole story. The
+              sticker is the bait. The thesis is on this page. The product is
+              one click away.
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* Explanation */}
       <section className="relative z-10 px-4 pb-16 sm:px-8 md:px-12 md:pb-24">
         <div className="mx-auto max-w-4xl overflow-hidden rounded-3xl border border-white/[0.06] bg-[#161616] px-6 py-16 md:px-12 md:py-20">

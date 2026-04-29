@@ -1,6 +1,10 @@
 import type { PgBoss } from "pg-boss";
 import { sendWelcomeEmail } from "./emails/welcome";
 import { processReview } from "./reviewer";
+import {
+  handleLargeReviewResult,
+  type LargeReviewResultJob,
+} from "./large-review-result";
 import type { QueueConfig } from "./queue";
 
 export interface WelcomeEmailJob {
@@ -37,5 +41,22 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
     },
   );
 
-  console.log("[queue] Workers registered: welcome-email, process-review");
+  // Handle results from internal-cli (large PRs reviewed via clone + claude-cli)
+  await boss.work<LargeReviewResultJob>(
+    "post-large-review-result",
+    { localConcurrency: config.reviewConcurrency },
+    async (jobs) => {
+      for (const job of jobs) {
+        console.log(`[queue] Posting large review result for PR ${job.data.pullRequestId}`);
+        try {
+          await handleLargeReviewResult(job.data);
+        } catch (err) {
+          console.error(`[queue] Large review post failed for PR ${job.data.pullRequestId} (job ${job.id}):`, err);
+          throw err;
+        }
+      }
+    },
+  );
+
+  console.log("[queue] Workers registered: welcome-email, process-review, post-large-review-result");
 }

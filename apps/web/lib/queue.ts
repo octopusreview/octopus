@@ -70,6 +70,20 @@ export async function startQueue(): Promise<PgBoss> {
     expireInSeconds: config.reviewTimeoutSeconds,
   }).catch(() => {});
 
+  // Large PRs (>30k diff or >300 files) are handed to the internal-cli worker
+  // which clones the repo and runs claude-cli over the full git diff.
+  await boss.createQueue("process-large-review", {
+    retryLimit: 1,
+    expireInSeconds: 1800, // 30 min — covers clone + claude run for big repos
+  }).catch(() => {});
+
+  // internal-cli enqueues this back to the engine when it's done; the engine
+  // worker then parses findings and posts the PR comment + inline review.
+  await boss.createQueue("post-large-review-result", {
+    retryLimit: 2,
+    expireInSeconds: 300,
+  }).catch(() => {});
+
   // Only review-engine containers should register workers. Web containers
   // still need pg-boss started so they can enqueue jobs, but must not consume.
   // The flag must be set explicitly: a missing value is a misconfiguration,

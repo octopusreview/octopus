@@ -15,12 +15,13 @@ import {
   upsertFeedbackPattern,
 } from "@/lib/qdrant";
 import { extractAllMermaidBlocks, extractNodeLabels, DIAGRAM_TYPE_LABELS } from "@/lib/mermaid-utils";
-import { loadQueueConfig, computeStaleReclaimMs } from "@/lib/queue";
+import { loadQueueConfig, computeStaleReclaimMs, enqueue } from "@/lib/queue";
 import { createEmbeddings } from "@/lib/embeddings";
 import { generateSparseVector } from "@/lib/sparse-vector";
 import { rerankDocuments } from "@/lib/reranker";
 import {
   getPullRequestDiff as ghGetPullRequestDiff,
+  LargePrError,
   createPullRequestComment as ghCreatePullRequestComment,
   updatePullRequestComment as ghUpdatePullRequestComment,
   createPullRequestReview as ghCreatePullRequestReview,
@@ -120,6 +121,7 @@ type ReviewEvent = {
     | "searching-context"
     | "generating-review"
     | "posting-comment"
+    | "delegating-large-pr"
     | "completed"
     | "failed";
   detail?: string;
@@ -1015,10 +1017,48 @@ export async function processReview(pullRequestId: string): Promise<void> {
       step: "fetching-diff",
     });
 
-    const [rawDiff, repoTree] = await Promise.all([
-      providerGetDiff(pr.number),
-      providerGetTree(repo.defaultBranch),
-    ]);
+    let rawDiff: string;
+    let repoTree: string[];
+    try {
+      [rawDiff, repoTree] = await Promise.all([
+        providerGetDiff(pr.number),
+        providerGetTree(repo.defaultBranch),
+      ]);
+    } catch (err) {
+      // PRs that exceed GitHub's diff size limits get handed off to internal-cli,
+      // which clones the repo and computes the diff with `git diff base..head`.
+      // Only GitHub raises LargePrError; Bitbucket has no equivalent yet.
+      if (err instanceof LargePrError && isGitHub && installationId) {
+        console.warn(
+          `[reviewer] Routing PR #${pr.number} to internal-cli (${err.meta.reason})`,
+        );
+        await emitReviewStatus(org.id, {
+          ...baseEvent,
+          status: "reviewing",
+          step: "delegating-large-pr",
+        });
+        await prisma.pullRequest.update({
+          where: { id: pr.id },
+          data: { status: "queued", updatedAt: new Date() },
+        });
+        await enqueue("process-large-review", {
+          pullRequestId: pr.id,
+          orgId: org.id,
+          repositoryId: repo.id,
+          repoFullName: repo.fullName,
+          installationId,
+          prNumber: pr.number,
+          prTitle: pr.title,
+          prAuthor: pr.author,
+          headSha: pr.headSha ?? null,
+          reviewCommentId: reviewCommentId ?? null,
+          checkRunId: checkRunId ?? null,
+          reason: err.meta.reason,
+        });
+        return;
+      }
+      throw err;
+    }
 
     // Detect committed build artifacts / dependency folders
     const badFiles = detectBadCommits(rawDiff);

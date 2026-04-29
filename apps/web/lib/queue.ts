@@ -5,11 +5,16 @@ import { prisma } from "@octopus/db";
 export interface QueueConfig {
   reviewTimeoutSeconds: number;
   reviewConcurrency: number;
+  // Large reviews (>300 files / >30k diff) hand off to internal-cli, which
+  // clones the repo and runs claude-cli — that's slower than an in-process
+  // review, so it gets a longer timeout.
+  largeReviewTimeoutSeconds: number;
 }
 
 export const QUEUE_CONFIG_DEFAULTS: QueueConfig = {
   reviewTimeoutSeconds: 900,
   reviewConcurrency: 2,
+  largeReviewTimeoutSeconds: 1800,
 };
 
 // Buffer added on top of reviewTimeoutSeconds to decide when an in-flight
@@ -74,7 +79,7 @@ export async function startQueue(): Promise<PgBoss> {
   // which clones the repo and runs claude-cli over the full git diff.
   await boss.createQueue("process-large-review", {
     retryLimit: 1,
-    expireInSeconds: 1800, // 30 min — covers clone + claude run for big repos
+    expireInSeconds: config.largeReviewTimeoutSeconds,
   }).catch(() => {});
 
   // internal-cli enqueues this back to the engine when it's done; the engine

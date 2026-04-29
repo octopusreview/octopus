@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { getLinearTeams, createLinearIssue, LinearAuthError } from "@/lib/linear";
+import { writeAuditLog } from "@/lib/audit";
 
 // ── Helpers ──
 
@@ -198,6 +199,15 @@ export async function createLinearIssueFromReview(
         linearIssueId: result.id,
         linearIssueUrl: result.url,
       },
+    });
+
+    await writeAuditLog({
+      action: "integration.issue_created",
+      category: "system",
+      organizationId: orgId,
+      targetType: "ReviewIssue",
+      targetId: issueId,
+      metadata: { provider: "linear", externalId: result.id, url: result.url, reviewIssueId: issueId },
     });
 
     revalidatePath("/dashboard");

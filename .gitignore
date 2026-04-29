@@ -39,6 +39,7 @@ docker-compose.*.yml
 
 # database
 *.sql
+!packages/db/prisma/migrations/**/migration.sql
 backups/
 
 # internal docs
@@ -57,6 +58,7 @@ HEARTBEAT.md
 .claude/
 .claude/commands/
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 CLAUDE.md
 
 # root migrations

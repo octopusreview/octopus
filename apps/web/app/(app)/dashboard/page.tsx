@@ -390,6 +390,22 @@ export default async function DashboardPage({
     .catch(() => null);
   const linearConnected = !!linearIntegration;
 
+  // Check if Jira integration is active
+  const jiraIntegration = await prisma.jiraIntegration
+    .findUnique({
+      where: { organizationId: org.id },
+      select: {
+        id: true,
+        accessToken: true,
+        refreshToken: true,
+        tokenExpiresAt: true,
+        cloudId: true,
+        siteUrl: true,
+      },
+    })
+    .catch(() => null);
+  const jiraConnected = !!jiraIntegration;
+
   // Recent high-severity issues from code reviews
   const recentIssues = await prisma.reviewIssue.findMany({
     where: {
@@ -408,6 +424,8 @@ export default async function DashboardPage({
       lineNumber: true,
       linearIssueId: true,
       linearIssueUrl: true,
+      jiraIssueKey: true,
+      jiraIssueUrl: true,
       githubIssueNumber: true,
       githubIssueUrl: true,
       feedback: true,
@@ -440,6 +458,26 @@ export default async function DashboardPage({
         }
       } catch (err) {
         console.error("[dashboard] Failed to fetch Linear statuses:", err);
+      }
+    }
+  }
+
+  // Fetch current Jira statuses for issues that have been linked
+  const issueJiraStatuses: Record<string, { state: string; url: string; key: string }> = {};
+  if (jiraIntegration) {
+    const linkedKeys = recentIssues
+      .filter((i) => i.jiraIssueKey)
+      .map((i) => i.jiraIssueKey as string);
+
+    if (linkedKeys.length > 0) {
+      try {
+        const { getJiraIssueStatuses } = await import("@/lib/jira");
+        const statusMap = await getJiraIssueStatuses(jiraIntegration, linkedKeys);
+        for (const [key, status] of statusMap) {
+          issueJiraStatuses[key] = status;
+        }
+      } catch (err) {
+        console.error("[dashboard] Failed to fetch Jira statuses:", err);
       }
     }
   }
@@ -548,6 +586,8 @@ export default async function DashboardPage({
               lineNumber: i.lineNumber,
               linearIssueId: i.linearIssueId,
               linearIssueUrl: i.linearIssueUrl,
+              jiraIssueKey: i.jiraIssueKey,
+              jiraIssueUrl: i.jiraIssueUrl,
               githubIssueNumber: i.githubIssueNumber,
               githubIssueUrl: i.githubIssueUrl,
               feedback: i.feedback === "up" || i.feedback === "down" ? i.feedback : null,
@@ -558,8 +598,10 @@ export default async function DashboardPage({
               prUrl: i.pullRequest.url,
             }))}
             linearConnected={linearConnected}
+            jiraConnected={jiraConnected}
             githubConnected={githubConnected}
             issueLinearStatuses={issueLinearStatuses}
+            issueJiraStatuses={issueJiraStatuses}
           />
           <WeeklySummaryCard repos={weeklySummary} />
         </div>

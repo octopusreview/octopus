@@ -337,7 +337,7 @@ export async function disconnectLinear(): Promise<{ error?: string }> {
 
   const integration = await prisma.linearIntegration.findUnique({
     where: { organizationId: ctx.orgId },
-    select: { id: true },
+    select: { id: true, workspaceName: true },
   });
 
   if (!integration) return { error: "No Linear integration found." };
@@ -345,6 +345,85 @@ export async function disconnectLinear(): Promise<{ error?: string }> {
   // Cascade deletes team mappings
   await prisma.linearIntegration.delete({
     where: { id: integration.id },
+  });
+
+  const { writeAuditLog } = await import("@/lib/audit");
+  await writeAuditLog({
+    action: "integration.disconnected",
+    category: "system",
+    organizationId: ctx.orgId,
+    targetType: "LinearIntegration",
+    targetId: integration.id,
+    metadata: { provider: "linear", workspaceName: integration.workspaceName },
+  });
+
+  revalidatePath("/settings/integrations");
+  return {};
+}
+
+// ── Jira Actions ──
+
+export async function disconnectJira(): Promise<{ error?: string }> {
+  const ctx = await getAdminOrg();
+  if (!ctx) return { error: "Insufficient permissions." };
+
+  const integration = await prisma.jiraIntegration.findUnique({
+    where: { organizationId: ctx.orgId },
+    select: { id: true, siteName: true, cloudId: true, refreshToken: true },
+  });
+
+  if (!integration) return { error: "No Jira integration found." };
+
+  // Best-effort revoke
+  const clientId = process.env.JIRA_CLIENT_ID;
+  const clientSecret = process.env.JIRA_CLIENT_SECRET;
+  if (clientId && clientSecret) {
+    try {
+      const { decryptJiraToken } = await import("@/lib/jira");
+      const revokeResponse = await fetch(
+        "https://auth.atlassian.com/oauth/token/revoke",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            client_id: clientId,
+            client_secret: clientSecret,
+            token: decryptJiraToken(integration.refreshToken),
+            token_type_hint: "refresh_token",
+          }),
+        },
+      );
+      // Consume body so the connection can be released even though we ignore
+      // the result (revoke is best-effort).
+      await revokeResponse.text().catch(() => "");
+      if (!revokeResponse.ok) {
+        console.warn(
+          "[jira] Token revoke returned non-2xx:",
+          revokeResponse.status,
+        );
+      }
+    } catch (err) {
+      console.error("[jira] Token revoke failed:", err);
+    }
+  }
+
+  // Cascade deletes project mappings
+  await prisma.jiraIntegration.delete({
+    where: { id: integration.id },
+  });
+
+  const { writeAuditLog } = await import("@/lib/audit");
+  await writeAuditLog({
+    action: "integration.disconnected",
+    category: "system",
+    organizationId: ctx.orgId,
+    targetType: "JiraIntegration",
+    targetId: integration.id,
+    metadata: {
+      provider: "jira",
+      siteName: integration.siteName,
+      cloudId: integration.cloudId,
+    },
   });
 
   revalidatePath("/settings/integrations");

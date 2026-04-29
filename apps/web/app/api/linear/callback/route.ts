@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { headers } from "next/headers";
+import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { getLinearViewer } from "@/lib/linear";
+import { writeAuditLog } from "@/lib/audit";
 
 export async function GET(request: NextRequest) {
   const baseUrl = process.env.BETTER_AUTH_URL || request.url;
@@ -30,6 +33,22 @@ export async function GET(request: NextRequest) {
   } catch {
     return NextResponse.redirect(
       new URL("/settings/integrations?error=invalid_state", baseUrl),
+    );
+  }
+
+  // Verify the authenticated user is an admin of the org referenced in state
+  // to prevent a crafted callback from binding attacker tokens to a victim org.
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) {
+    return NextResponse.redirect(new URL("/login", baseUrl));
+  }
+  const member = await prisma.organizationMember.findFirst({
+    where: { userId: session.user.id, organizationId: orgId, deletedAt: null },
+    select: { role: true },
+  });
+  if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    return NextResponse.redirect(
+      new URL("/settings/integrations?error=forbidden", baseUrl),
     );
   }
 
@@ -83,7 +102,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Upsert LinearIntegration
-  await prisma.linearIntegration.upsert({
+  const integration = await prisma.linearIntegration.upsert({
     where: { organizationId: orgId },
     create: {
       organizationId: orgId,
@@ -96,6 +115,15 @@ export async function GET(request: NextRequest) {
       workspaceId,
       workspaceName,
     },
+  });
+
+  await writeAuditLog({
+    action: "integration.connected",
+    category: "system",
+    organizationId: orgId,
+    targetType: "LinearIntegration",
+    targetId: integration.id,
+    metadata: { provider: "linear", workspaceId, workspaceName },
   });
 
   return NextResponse.redirect(

@@ -95,6 +95,21 @@ export function extractMermaidCode(text: string | null | undefined): string | nu
  * 3. Ensure `class` statements are each on their own line
  * 4. Remove trailing whitespace on lines
  */
+/**
+ * Find every ```mermaid block in a markdown body and replace its contents with
+ * the sanitized version. Used to clean up the LLM's review body before posting
+ * to the PR — without this, malformed mermaid (unbalanced activate/deactivate,
+ * reserved-keyword participant IDs, etc.) renders as "Unable to render rich
+ * display" on GitHub even though we already sanitize when storing in vector DB.
+ */
+export function sanitizeMermaidInMarkdown(body: string): string {
+  return body.replace(
+    /(```mermaid\s*\n)([\s\S]*?)(\n```)/g,
+    (_match, open: string, code: string, close: string) =>
+      `${open}${sanitizeMermaidCode(code)}${close}`,
+  );
+}
+
 export function sanitizeMermaidCode(code: string): string {
   let result = code;
 

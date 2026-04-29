@@ -4,6 +4,7 @@ import {
   extractAllMermaidBlocks,
   extractMermaidCode,
   sanitizeMermaidCode,
+  sanitizeMermaidInMarkdown,
   extractNodeLabels,
 } from "@/lib/mermaid-utils";
 
@@ -468,5 +469,63 @@ describe("extractNodeLabels", () => {
     const labels = extractNodeLabels(code);
     expect(labels).not.toContain("x");
     expect(labels).toContain("Login Page");
+  });
+});
+
+describe("sanitizeMermaidInMarkdown", () => {
+  it("balances activate/deactivate inside ```mermaid blocks in markdown", () => {
+    const body = `## Review
+
+Some text.
+
+\`\`\`mermaid
+sequenceDiagram
+    participant A
+    activate A
+    alt branch 1
+        deactivate A
+    else branch 2
+        deactivate A
+    end
+\`\`\`
+
+More text.`;
+    const result = sanitizeMermaidInMarkdown(body);
+    // First deactivate kept (depth 1→0); second dropped (would underflow)
+    const matches = result.match(/deactivate A/g) ?? [];
+    expect(matches.length).toBe(1);
+    // Surrounding markdown intact
+    expect(result).toContain("## Review");
+    expect(result).toContain("More text.");
+  });
+
+  it("handles multiple mermaid blocks", () => {
+    const body = `\`\`\`mermaid
+graph TD
+    A["Use \`fn\` here"]
+\`\`\`
+
+text
+
+\`\`\`mermaid
+sequenceDiagram
+    participant Loop
+\`\`\``;
+    const result = sanitizeMermaidInMarkdown(body);
+    // Block 1: backticks in label replaced with single quotes
+    expect(result).toContain("A[\"Use 'fn' here\"]");
+    // Block 2: reserved keyword 'Loop' renamed
+    expect(result).not.toMatch(/^\s*participant Loop\s*$/m);
+    expect(result).toMatch(/participant Loop_/);
+  });
+
+  it("leaves non-mermaid code blocks untouched", () => {
+    const body = "```ts\nactivate Foo\ndeactivate Foo\ndeactivate Foo\n```";
+    expect(sanitizeMermaidInMarkdown(body)).toBe(body);
+  });
+
+  it("returns input unchanged when there are no mermaid blocks", () => {
+    const body = "Just plain markdown with **bold** and `code`.";
+    expect(sanitizeMermaidInMarkdown(body)).toBe(body);
   });
 });

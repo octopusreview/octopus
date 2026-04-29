@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.14] - 2026-04-29
+
+### Added
+- Jira integration: connect a workspace, map repositories to projects, and create issues from review findings (#265)
+- Repository graph view with structural and semantic edges (#287)
+- "The Story" section on landing page and X (Twitter) link in footer (#302)
+- Boot-time reconciliation of stale repository states for improved reliability (#296)
+- Cross-process review cancellation via Redis pub/sub (#294)
+
+### Fixed
+- Embeddings batching splits on 300k-token errors with a tighter estimate (#298)
+- Deterministic UUID mapping in Qdrant for non-UUID point IDs (#300)
+- Default branch now resolved from GitHub repo metadata instead of webhook payload (#290)
+- Sidebar scroll overflow and safe-area inset on the bottom row (#308)
+
+### Changed
+- Usage page redesigned around user-facing activities (#306)
+- Version-update toast redesigned with a changelog link
+
 ## [1.0.13] - 2026-04-24
 
 ### Added
@@ -235,6 +254,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Suppress dismissed findings in Additional findings summary (#25)
 - CI lint failures across all packages (#36)
 
+[1.0.14]: https://github.com/octopusreview/octopus/compare/v1.0.13...v1.0.14
 [1.0.13]: https://github.com/octopusreview/octopus/compare/v1.0.12...v1.0.13
 [1.0.12]: https://github.com/octopusreview/octopus/compare/v1.0.11...v1.0.12
 [1.0.11]: https://github.com/octopusreview/octopus/compare/v1.0.10...v1.0.11

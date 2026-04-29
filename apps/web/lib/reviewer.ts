@@ -1037,10 +1037,11 @@ export async function processReview(pullRequestId: string): Promise<void> {
           status: "reviewing",
           step: "delegating-large-pr",
         });
-        await prisma.pullRequest.update({
-          where: { id: pr.id },
-          data: { status: "queued", updatedAt: new Date() },
-        });
+        // Enqueue BEFORE flipping the PR status so a crash between the two
+        // can't strand the PR in "queued" with no job to process it. If the
+        // enqueue throws we fall through to the outer catch which marks the
+        // PR failed; if the post-update fails we still have a job that will
+        // drive the PR to "completed"/"failed" via post-large-review-result.
         await enqueue("process-large-review", {
           pullRequestId: pr.id,
           orgId: org.id,
@@ -1054,6 +1055,10 @@ export async function processReview(pullRequestId: string): Promise<void> {
           reviewCommentId: reviewCommentId ?? null,
           checkRunId: checkRunId ?? null,
           reason: err.meta.reason,
+        });
+        await prisma.pullRequest.update({
+          where: { id: pr.id },
+          data: { status: "queued", updatedAt: new Date() },
         });
         return;
       }

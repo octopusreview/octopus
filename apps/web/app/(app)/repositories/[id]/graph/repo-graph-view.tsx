@@ -6,17 +6,7 @@ import dynamic from "next/dynamic";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-const ForceGraph2D = dynamic(
-  async () => (await import("react-force-graph-2d")).default,
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-[70vh] items-center justify-center text-muted-foreground">
-        Loading graph…
-      </div>
-    ),
-  },
-) as unknown as ComponentType<Record<string, unknown>>;
+const LEGEND_MAX = 8;
 
 type GraphNode = {
   id: string;
@@ -49,6 +39,8 @@ type GraphPayload = {
   nodes: GraphNode[];
   edges: GraphEdge[];
   highlights: Highlight[];
+  totalFiles?: number;
+  truncated?: boolean;
 };
 
 type NodeObject = GraphNode & { x?: number; y?: number };
@@ -58,6 +50,45 @@ type ForceGraphHandle = {
   centerAt: (x: number, y: number, durationMs?: number) => void;
   zoom: (k: number, durationMs?: number) => void;
 };
+
+type ForceGraphProps = {
+  ref?: (handle: ForceGraphHandle | null) => void;
+  graphData: { nodes: GraphNode[]; links: LinkObject[] };
+  width: number;
+  height: number;
+  backgroundColor?: string;
+  nodeRelSize?: number;
+  nodeVal?: (n: NodeObject) => number;
+  nodeLabel?: (n: NodeObject) => string;
+  nodeColor?: (n: NodeObject) => string;
+  linkColor?: (l: LinkObject) => string;
+  linkWidth?: (l: LinkObject) => number;
+  linkLineDash?: (l: LinkObject) => number[] | null;
+  linkDirectionalArrowLength?: (l: LinkObject) => number;
+  linkDirectionalArrowRelPos?: number;
+  cooldownTicks?: number;
+  onNodeHover?: (n: NodeObject | null) => void;
+  onNodeClick?: (n: NodeObject) => void;
+  nodeCanvasObjectMode?: (n: NodeObject) => "before" | "after" | "replace";
+  nodeCanvasObject?: (
+    node: NodeObject,
+    ctx: CanvasRenderingContext2D,
+    globalScale: number,
+  ) => void;
+};
+
+const ForceGraph2D = dynamic(
+  async () =>
+    (await import("react-force-graph-2d")).default as unknown as ComponentType<ForceGraphProps>,
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-[70vh] items-center justify-center text-muted-foreground">
+        Loading graph…
+      </div>
+    ),
+  },
+) as ComponentType<ForceGraphProps>;
 
 const DIR_PALETTE = [
   "#60a5fa",
@@ -109,7 +140,7 @@ export function RepoGraphView({
   const [showImports, setShowImports] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<ForceGraphHandle | null>(null);
-  const [dims, setDims] = useState({ width: 800, height: 600 });
+  const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
     if (indexStatus !== "indexed") return;
@@ -140,9 +171,15 @@ export function RepoGraphView({
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => {
-      setDims({ width: el.clientWidth, height: Math.max(500, el.clientHeight) });
-    });
+    const measure = () => {
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      if (w > 0 && h > 0) {
+        setDims({ width: w, height: Math.max(500, h) });
+      }
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -153,7 +190,6 @@ export function RepoGraphView({
   );
 
   const [showAllDirs, setShowAllDirs] = useState(false);
-  const LEGEND_MAX = 8;
   const dirList = useMemo(() => [...dirColors.entries()], [dirColors]);
   const visibleDirs = showAllDirs ? dirList : dirList.slice(0, LEGEND_MAX);
 
@@ -206,7 +242,15 @@ export function RepoGraphView({
         </Button>
         {data && (
           <span className="text-xs text-muted-foreground ml-2">
-            {data.nodes.length} files · {data.edges.length} edges
+            {data.truncated && data.totalFiles
+              ? `${data.nodes.length} of ${data.totalFiles} files`
+              : `${data.nodes.length} files`}{" "}
+            · {data.edges.length} edges
+            {data.truncated && (
+              <span className="ml-2 text-amber-500">
+                (showing largest by chunk count)
+              </span>
+            )}
           </span>
         )}
       </div>
@@ -227,7 +271,7 @@ export function RepoGraphView({
                 {error}
               </div>
             )}
-            {data && !loading && !error && (
+            {data && !loading && !error && dims && (
               <ForceGraph2D
                 ref={(r: ForceGraphHandle | null) => {
                   graphRef.current = r;

@@ -30,6 +30,8 @@ export type RepoGraph = {
   nodes: GraphNode[];
   edges: GraphEdge[];
   highlights: GraphHighlight[];
+  totalFiles: number;
+  truncated: boolean;
 };
 
 type ScrollPoint = {
@@ -40,8 +42,10 @@ type ScrollPoint = {
 
 const MAX_CHUNKS_SCANNED = 5000;
 const MAX_NODES = 400;
+const MAX_SEMANTIC_NODES = 250;
 const SEMANTIC_TOP_K_PER_NODE = 3;
 const SEMANTIC_MIN_SCORE = 0.55;
+const SEMANTIC_YIELD_EVERY = 32;
 
 const IMPORT_RE =
   /(?:import\s+[^;'"`]+?from\s+|import\s+|require\(|from\s+)['"]([^'"]+)['"]/g;
@@ -71,21 +75,18 @@ async function scrollRepoChunks(
   return points;
 }
 
+function isNumberArray(v: unknown): v is number[] {
+  return Array.isArray(v) && v.length > 0 && typeof v[0] === "number";
+}
+
 function extractVector(vector: unknown): number[] | null {
   if (!vector) return null;
-  if (Array.isArray(vector) && typeof vector[0] === "number") {
-    return vector as number[];
-  }
-  if (typeof vector === "object") {
-    const named = (vector as Record<string, unknown>)[""];
-    if (Array.isArray(named) && typeof named[0] === "number") {
-      return named as number[];
-    }
-    for (const v of Object.values(vector as Record<string, unknown>)) {
-      if (Array.isArray(v) && typeof v[0] === "number") {
-        return v as number[];
-      }
-    }
+  if (isNumberArray(vector)) return vector;
+  if (typeof vector !== "object") return null;
+  const named = (vector as Record<string, unknown>)[""];
+  if (isNumberArray(named)) return named;
+  for (const v of Object.values(vector as Record<string, unknown>)) {
+    if (isNumberArray(v)) return v;
   }
   return null;
 }
@@ -237,16 +238,16 @@ export async function buildRepoGraph(repoId: string): Promise<RepoGraph> {
   const edges: GraphEdge[] = [];
   const edgeKey = new Set<string>();
 
-  // Structural edges from import statements
+  // Structural edges from import statements.
+  // Uses matchAll (fresh iterator per call) to avoid global-regex lastIndex carryover.
   for (const f of topFiles) {
-    const fromId = pathToId.get(f.path)!;
+    const fromId = pathToId.get(f.path);
+    if (!fromId) continue;
     const blob = f.text.join("\n");
-    IMPORT_RE.lastIndex = 0;
     const seen = new Set<string>();
-    let m: RegExpExecArray | null;
-    while ((m = IMPORT_RE.exec(blob)) !== null) {
+    for (const m of blob.matchAll(IMPORT_RE)) {
       const spec = m[1];
-      if (seen.has(spec)) continue;
+      if (!spec || seen.has(spec)) continue;
       seen.add(spec);
       const resolved = resolveImport(f.path, spec, allPaths);
       if (!resolved || resolved === f.path) continue;
@@ -259,16 +260,24 @@ export async function buildRepoGraph(repoId: string): Promise<RepoGraph> {
     }
   }
 
-  // Semantic edges via cosine similarity on averaged embeddings
-  const withVec = topFiles
-    .map((f) => {
-      if (!f.vectorSum || f.vectorCount === 0) return null;
-      const avg = f.vectorSum.map((x) => x / f.vectorCount);
-      return { path: f.path, id: pathToId.get(f.path)!, vec: normalize(avg) };
-    })
-    .filter((x): x is { path: string; id: string; vec: number[] } => !!x);
+  // Semantic edges via cosine similarity on averaged embeddings.
+  // Capped to MAX_SEMANTIC_NODES (top files by chunk count) so the O(n²) loop
+  // stays bounded; yields to the event loop periodically so it doesn't block.
+  const withVec: { path: string; id: string; vec: number[] }[] = [];
+  for (const f of topFiles) {
+    if (withVec.length >= MAX_SEMANTIC_NODES) break;
+    if (!f.vectorSum || f.vectorCount === 0) continue;
+    const id = pathToId.get(f.path);
+    if (!id) continue;
+    const avg = new Array(f.vectorSum.length);
+    for (let i = 0; i < f.vectorSum.length; i++) avg[i] = f.vectorSum[i] / f.vectorCount;
+    withVec.push({ path: f.path, id, vec: normalize(avg) });
+  }
 
   for (let i = 0; i < withVec.length; i++) {
+    if (i > 0 && i % SEMANTIC_YIELD_EVERY === 0) {
+      await new Promise<void>((r) => setImmediate(r));
+    }
     const a = withVec[i];
     const scored: { id: string; score: number }[] = [];
     for (let j = 0; j < withVec.length; j++) {
@@ -283,7 +292,6 @@ export async function buildRepoGraph(repoId: string): Promise<RepoGraph> {
       const [lo, hi] = a.id < toId ? [a.id, toId] : [toId, a.id];
       const key = `${lo}~${hi}:semantic`;
       if (edgeKey.has(key)) continue;
-      // Skip if a structural edge already exists either direction
       if (
         edgeKey.has(`${a.id}->${toId}:import`) ||
         edgeKey.has(`${toId}->${a.id}:import`)
@@ -297,7 +305,13 @@ export async function buildRepoGraph(repoId: string): Promise<RepoGraph> {
 
   const highlights = computeHighlights(nodes, edges);
 
-  return { nodes, edges, highlights };
+  return {
+    nodes,
+    edges,
+    highlights,
+    totalFiles: files.size,
+    truncated: files.size > nodes.length,
+  };
 }
 
 function classifyFile(

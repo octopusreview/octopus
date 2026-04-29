@@ -14,7 +14,7 @@ import {
   ensureFeedbackCollection,
   upsertFeedbackPattern,
 } from "@/lib/qdrant";
-import { extractAllMermaidBlocks, extractNodeLabels, DIAGRAM_TYPE_LABELS } from "@/lib/mermaid-utils";
+import { extractAllMermaidBlocks, extractNodeLabels, DIAGRAM_TYPE_LABELS, sanitizeMermaidInMarkdown } from "@/lib/mermaid-utils";
 import { loadQueueConfig, computeStaleReclaimMs, enqueue } from "@/lib/queue";
 import { createEmbeddings } from "@/lib/embeddings";
 import { generateSparseVector } from "@/lib/sparse-vector";
@@ -1493,6 +1493,13 @@ export async function processReview(pullRequestId: string): Promise<void> {
         return "";
       },
     );
+
+    // Sanitize every mermaid block in the review body — fixes unbalanced
+    // activate/deactivate, reserved-keyword participant IDs, escaped quotes,
+    // etc. that would otherwise render as "Unable to render rich display"
+    // on GitHub. Vector-DB storage already runs the same sanitizer; without
+    // this call, the comment posted to the PR is the unsanitized LLM output.
+    reviewBody = sanitizeMermaidInMarkdown(reviewBody);
 
     // Prepend build artifact warning if bad files were detected in the diff
     if (badFiles.length > 0) {

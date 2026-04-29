@@ -280,6 +280,25 @@ export async function createPullRequestReview(
   return data.id as number;
 }
 
+// Thrown when a PR's diff is too large for the standard reviewer path
+// (>300 files for the .diff endpoint, or >30k chars from /files reconstruction).
+// Caller should hand the PR off to the internal-cli worker which clones the
+// repo and computes the diff via `git diff base..head`.
+export class LargePrError extends Error {
+  constructor(
+    message: string,
+    public readonly meta: {
+      owner: string;
+      repo: string;
+      prNumber: number;
+      reason: "too-many-files" | "diff-too-large";
+    },
+  ) {
+    super(message);
+    this.name = "LargePrError";
+  }
+}
+
 export async function getPullRequestDiff(
   installationId: number,
   owner: string,
@@ -299,26 +318,40 @@ export async function getPullRequestDiff(
 
   if (res.ok) {
     const diff = await res.text();
-    return truncateDiff(diff);
+    if (diff.length > MAX_DIFF_CHARS) {
+      throw new LargePrError(
+        `Diff exceeds ${MAX_DIFF_CHARS} chars for ${owner}/${repo}#${prNumber}`,
+        { owner, repo, prNumber, reason: "diff-too-large" },
+      );
+    }
+    return diff;
   }
 
-  // GitHub returns 406 when the diff is too large (e.g. bulk file deletions).
-  // Fall back to paginated /files endpoint to reconstruct the diff.
+  // GitHub returns 406 when the .diff endpoint can't render (>300 files).
+  // Try the /files fallback; if it also overflows, escalate to LargePrError.
   if (res.status === 406) {
     console.warn(
-      `[github] Diff too large for ${owner}/${repo}#${prNumber}, falling back to /files endpoint`,
+      `[github] Diff too large for ${owner}/${repo}#${prNumber} (406), trying /files fallback`,
     );
-    return await getPullRequestDiffViaFiles(token, owner, repo, prNumber);
+    const reconstructed = await getPullRequestDiffViaFiles(token, owner, repo, prNumber);
+    if (reconstructed.endsWith(TRUNCATION_MARKER)) {
+      throw new LargePrError(
+        `/files fallback also truncated for ${owner}/${repo}#${prNumber}`,
+        { owner, repo, prNumber, reason: "too-many-files" },
+      );
+    }
+    return reconstructed;
   }
 
   throw new Error(`Failed to get PR diff: ${res.status}`);
 }
 
 const MAX_DIFF_CHARS = 30_000;
+const TRUNCATION_MARKER = "\n\n[... diff truncated at 30,000 chars]";
 
 function truncateDiff(diff: string): string {
   return diff.length > MAX_DIFF_CHARS
-    ? diff.slice(0, MAX_DIFF_CHARS) + "\n\n[... diff truncated at 30,000 chars]"
+    ? diff.slice(0, MAX_DIFF_CHARS) + TRUNCATION_MARKER
     : diff;
 }
 

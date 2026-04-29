@@ -15,12 +15,13 @@ import {
   upsertFeedbackPattern,
 } from "@/lib/qdrant";
 import { extractAllMermaidBlocks, extractNodeLabels, DIAGRAM_TYPE_LABELS, sanitizeMermaidInMarkdown } from "@/lib/mermaid-utils";
-import { loadQueueConfig, computeStaleReclaimMs } from "@/lib/queue";
+import { loadQueueConfig, computeStaleReclaimMs, enqueue } from "@/lib/queue";
 import { createEmbeddings } from "@/lib/embeddings";
 import { generateSparseVector } from "@/lib/sparse-vector";
 import { rerankDocuments } from "@/lib/reranker";
 import {
   getPullRequestDiff as ghGetPullRequestDiff,
+  LargePrError,
   createPullRequestComment as ghCreatePullRequestComment,
   updatePullRequestComment as ghUpdatePullRequestComment,
   createPullRequestReview as ghCreatePullRequestReview,
@@ -120,6 +121,7 @@ type ReviewEvent = {
     | "searching-context"
     | "generating-review"
     | "posting-comment"
+    | "delegating-large-pr"
     | "completed"
     | "failed";
   detail?: string;
@@ -606,14 +608,24 @@ export async function processReview(pullRequestId: string): Promise<void> {
   }
   // Stale threshold must exceed the pg-boss job timeout so we don't race
   // with a still-running worker that pg-boss is about to kill for timing out.
+  // Two windows: the in-process reviewer's timeout for status='reviewing',
+  // and the longer internal-cli timeout for status='queued' (large-PR jobs
+  // sit in 'queued' for the full clone+claude duration).
   const queueConfig = await loadQueueConfig();
-  const staleBefore = new Date(Date.now() - computeStaleReclaimMs(queueConfig.reviewTimeoutSeconds));
+  const reviewingStale = new Date(Date.now() - computeStaleReclaimMs(queueConfig.reviewTimeoutSeconds));
+  const queuedStale = new Date(Date.now() - computeStaleReclaimMs(queueConfig.largeReviewTimeoutSeconds));
   const claimed = await prisma.pullRequest.updateMany({
     where: {
       id: pullRequestId,
       OR: [
-        { status: { in: ["pending", "queued", "failed"] } },
-        { status: "reviewing", updatedAt: { lt: staleBefore } },
+        // Fresh-claim: never seen / explicitly retryable
+        { status: "pending" },
+        { status: "failed" },
+        // Locked-claim: in-flight reviews block re-claim until their stale window passes.
+        // This prevents webhook retries from double-processing a PR that's still being
+        // reviewed (or whose internal-cli clone+claude is still running).
+        { status: "reviewing", updatedAt: { lt: reviewingStale } },
+        { status: "queued", updatedAt: { lt: queuedStale } },
       ],
     },
     data: { status: "reviewing", updatedAt: new Date() },
@@ -1015,10 +1027,53 @@ export async function processReview(pullRequestId: string): Promise<void> {
       step: "fetching-diff",
     });
 
-    const [rawDiff, repoTree] = await Promise.all([
-      providerGetDiff(pr.number),
-      providerGetTree(repo.defaultBranch),
-    ]);
+    // Fetch the diff first, fall back to internal-cli if oversized, then
+    // fetch the tree. Sequencing avoids orphaning a tree request when the
+    // diff fetch throws (which we want to handle separately for large PRs).
+    let rawDiff: string;
+    try {
+      rawDiff = await providerGetDiff(pr.number);
+    } catch (err) {
+      // PRs that exceed GitHub's diff size limits get handed off to internal-cli,
+      // which clones the repo and computes the diff with `git diff base..head`.
+      // Only GitHub raises LargePrError; Bitbucket has no equivalent yet.
+      if (err instanceof LargePrError && isGitHub && installationId) {
+        console.warn(
+          `[reviewer] Routing PR #${pr.number} to internal-cli (${err.meta.reason})`,
+        );
+        await emitReviewStatus(org.id, {
+          ...baseEvent,
+          status: "reviewing",
+          step: "delegating-large-pr",
+        });
+        // Enqueue BEFORE flipping the PR status so a crash between the two
+        // can't strand the PR in "queued" with no job to process it. If the
+        // enqueue throws we fall through to the outer catch which marks the
+        // PR failed; if the post-update fails we still have a job that will
+        // drive the PR to "completed"/"failed" via post-large-review-result.
+        await enqueue("process-large-review", {
+          pullRequestId: pr.id,
+          orgId: org.id,
+          repositoryId: repo.id,
+          repoFullName: repo.fullName,
+          installationId,
+          prNumber: pr.number,
+          prTitle: pr.title,
+          prAuthor: pr.author,
+          headSha: pr.headSha ?? null,
+          reviewCommentId: reviewCommentId ?? null,
+          checkRunId: checkRunId ?? null,
+          reason: err.meta.reason,
+        });
+        await prisma.pullRequest.update({
+          where: { id: pr.id },
+          data: { status: "queued", updatedAt: new Date() },
+        });
+        return;
+      }
+      throw err;
+    }
+    const repoTree = await providerGetTree(repo.defaultBranch);
 
     // Detect committed build artifacts / dependency folders
     const badFiles = detectBadCommits(rawDiff);

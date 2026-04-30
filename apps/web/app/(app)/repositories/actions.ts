@@ -732,6 +732,65 @@ export async function updateReviewConfig(
   return { success: true };
 }
 
+export async function updateRepoConfigSettings(
+  repoId: string,
+  input: {
+    useRepoConfig: boolean;
+    repoConfigFiles: string[];
+  },
+): Promise<{ error?: string; success?: boolean }> {
+  const { normalizeRepoConfigFiles } = await import("@/lib/repo-config-shared");
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+  if (!session) redirect("/login");
+
+  const repo = await prisma.repository.findUnique({
+    where: { id: repoId },
+    select: {
+      id: true,
+      organization: {
+        select: {
+          members: {
+            where: { userId: session.user.id, deletedAt: null },
+            select: { role: true },
+          },
+        },
+      },
+    },
+  });
+
+  if (!repo || repo.organization.members.length === 0) {
+    return { error: "Repository not found." };
+  }
+  if (repo.organization.members[0].role !== "owner") {
+    return { error: "Only organization owners can change repo config settings." };
+  }
+
+  if (input.useRepoConfig && input.repoConfigFiles.length === 0) {
+    return { error: "Add at least one filename, or disable repo config." };
+  }
+
+  const cleaned = normalizeRepoConfigFiles(input.repoConfigFiles);
+  if (input.useRepoConfig && cleaned.length === 0) {
+    return { error: "All provided filenames are invalid." };
+  }
+
+  // Always persist the user-provided filename list, even when disabling, so
+  // the user's custom filenames (e.g. AJAN.md) are still there next time they
+  // re-enable. The list is only consulted when useRepoConfig is true.
+  await prisma.repository.update({
+    where: { id: repoId },
+    data: {
+      useRepoConfig: input.useRepoConfig,
+      repoConfigFiles: cleaned,
+    },
+  });
+
+  revalidatePath(`/repositories/${repoId}/settings`);
+  return { success: true };
+}
+
 export async function getReviewConfig(
   repoId: string,
 ): Promise<Record<string, unknown> | null> {

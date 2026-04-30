@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Repository-level config files (`.octopus.md` / `AGENTS.md` / `CLAUDE.md`, customizable). Opt-in per repo. Each enabled repo runs the file through a sandboxed Haiku extraction pass that strips meta-instructions and emits a clean rule list, cached by content hash. Extracted rules are injected as untrusted data inside the user message, never the system prompt. (#319)
+
 ## [1.0.14] - 2026-04-29
 
 ### Added

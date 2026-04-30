@@ -732,6 +732,62 @@ export async function updateReviewConfig(
   return { success: true };
 }
 
+export async function updateRepoConfigSettings(
+  repoId: string,
+  input: {
+    useRepoConfig: boolean;
+    repoConfigFiles: string[];
+  },
+): Promise<{ error?: string; success?: boolean }> {
+  const { normalizeRepoConfigFiles, DEFAULT_REPO_CONFIG_FILES } = await import("@/lib/repo-config-shared");
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+  if (!session) redirect("/login");
+
+  const repo = await prisma.repository.findUnique({
+    where: { id: repoId },
+    select: {
+      id: true,
+      organization: {
+        select: {
+          members: {
+            where: { userId: session.user.id, deletedAt: null },
+            select: { role: true },
+          },
+        },
+      },
+    },
+  });
+
+  if (!repo || repo.organization.members.length === 0) {
+    return { error: "Repository not found." };
+  }
+  if (repo.organization.members[0].role !== "owner") {
+    return { error: "Only organization owners can change repo config settings." };
+  }
+
+  if (input.useRepoConfig && input.repoConfigFiles.length === 0) {
+    return { error: "Add at least one filename, or disable repo config." };
+  }
+
+  const cleaned = normalizeRepoConfigFiles(input.repoConfigFiles);
+  if (input.useRepoConfig && cleaned.length === 0) {
+    return { error: "All provided filenames are invalid." };
+  }
+
+  await prisma.repository.update({
+    where: { id: repoId },
+    data: {
+      useRepoConfig: input.useRepoConfig,
+      repoConfigFiles: input.useRepoConfig ? cleaned : DEFAULT_REPO_CONFIG_FILES,
+    },
+  });
+
+  revalidatePath(`/repositories/${repoId}/settings`);
+  return { success: true };
+}
+
 export async function getReviewConfig(
   repoId: string,
 ): Promise<Record<string, unknown> | null> {

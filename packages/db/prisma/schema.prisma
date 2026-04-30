@@ -220,6 +220,8 @@ model Repository {
   reviewModelId  String?
   embedModelId   String?
   reviewConfig   Json     @default("{}")
+  useRepoConfig    Boolean  @default(false) // read repo-level config files from this repo
+  repoConfigFiles  Json     @default("[\".octopus.md\", \"AGENTS.md\", \"CLAUDE.md\"]") // ordered candidate filenames at repo root
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -232,11 +234,29 @@ model Repository {
   linearTeamMappings    LinearTeamMapping[]
   jiraProjectMappings   JiraProjectMapping[]
   packageAnalyses       PackageAnalysis[]
+  repoConfigExtractions RepoConfigExtraction[]
 
   @@unique([provider, externalId, organizationId])
   @@index([organizationId, isActive])
   @@index([organizationId, name])
   @@map("repositories")
+}
+
+model RepoConfigExtraction {
+  id              String   @id @default(cuid())
+  repositoryId    String
+  source          String   // filename that was read, e.g. "AGENTS.md"
+  contentHash     String   // sha256 of the raw file content
+  extractedRules  String   // sandboxed-LLM-extracted bullet list of rules (English)
+  rawByteSize     Int
+  truncated       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@unique([repositoryId, contentHash])
+  @@index([repositoryId, createdAt])
+  @@map("repo_config_extractions")
 }
 
 model PullRequest {

@@ -3,6 +3,8 @@ import { redirect, notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { ReviewConfigForm } from "./review-config-form";
+import { RepoConfigForm } from "./repo-config-form";
+import { DEFAULT_REPO_CONFIG_FILES, normalizeRepoConfigFiles } from "@/lib/repo-config-shared";
 
 export default async function RepoSettingsPage({
   params,
@@ -22,6 +24,8 @@ export default async function RepoSettingsPage({
       name: true,
       fullName: true,
       reviewConfig: true,
+      useRepoConfig: true,
+      repoConfigFiles: true,
       organization: {
         select: {
           members: {
@@ -37,6 +41,8 @@ export default async function RepoSettingsPage({
 
   const isOwner = repo.organization.members[0].role === "owner";
   const reviewConfig = (repo.reviewConfig as Record<string, unknown>) ?? {};
+  const initialFiles = normalizeRepoConfigFiles(repo.repoConfigFiles);
+  const initialFilesOrDefault = initialFiles.length > 0 ? initialFiles : [...DEFAULT_REPO_CONFIG_FILES];
 
   return (
     <div className="container mx-auto max-w-2xl py-8 space-y-6">
@@ -48,6 +54,12 @@ export default async function RepoSettingsPage({
         repoId={repo.id}
         isOwner={isOwner}
         initialConfig={reviewConfig}
+      />
+      <RepoConfigForm
+        repoId={repo.id}
+        isOwner={isOwner}
+        initialEnabled={repo.useRepoConfig}
+        initialFiles={initialFilesOrDefault}
       />
     </div>
   );

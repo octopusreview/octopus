@@ -357,13 +357,7 @@ export function buildInlineComments(
     }
     if (!targetLine) continue;
 
-    const originalRangeText =
-      f.startLine === f.endLine ? `L${f.startLine}` : `L${f.startLine}-L${f.endLine}`;
-    const snapNote = snapped
-      ? `\n\n_Note: original finding referenced ${originalRangeText}; attached to nearest changed line (L${targetLine})._`
-      : "";
-
-    let body = `**${f.severity} ${f.title}**\n\n${f.description}${snapNote}`;
+    let body = `**${f.severity} ${f.title}**\n\n${f.description}`;
     if (f.suggestion) {
       // GitHub supports native ```suggestion blocks; Bitbucket uses plain code blocks
       const suggestionBlock = provider === "github"
@@ -382,6 +376,15 @@ export function buildInlineComments(
       aiPrompt += `\n\nSuggested fix:\n${f.suggestion}`;
     }
     body += `\n\n<details><summary>🤖 AI Fix Prompt</summary>\n\n\`\`\`\n${aiPrompt}\n\`\`\`\n\n</details>`;
+
+    // Snap note last — it's a footnote-style hint about where the comment
+    // landed, not part of the description or suggestion. Keeping it at the
+    // bottom keeps the description→suggestion→fix-prompt reading order clean.
+    if (snapped) {
+      const originalRangeText =
+        f.startLine === f.endLine ? `L${f.startLine}` : `L${f.startLine}-L${f.endLine}`;
+      body += `\n\n_Note: original finding referenced ${originalRangeText}; attached to nearest changed line (L${targetLine})._`;
+    }
 
     comments.push({
       path: f.filePath,

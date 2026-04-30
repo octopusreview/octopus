@@ -8,11 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- Inline comments are now attached for findings whose line range partially misses the diff: the comment snaps to the nearest changed line within ±10 lines, with a small note. Previously these dropped to a summary table even at high severity. (#321)
-- Re-reviews with no new findings now show "✅ No new issues detected since the last review" instead of looking like an empty review.
+- Snap findings whose line range partially misses the diff onto the nearest changed line within ±10 lines, with a small note. Previously high-severity findings could drop to the summary table even when the change was within reach. (#321)
+- Show "✅ No new issues detected since the last review" on re-reviews with zero findings, instead of leaving the comment looking empty. (#321)
 
 ### Changed
-- Tightened the LLM prompt to require finding line numbers be added (`+`) lines in the diff, not context lines. (#321)
+- Tighten the LLM prompt to require finding line numbers reference added (`+`) lines in the diff, not context lines. (#321)
 
 ## [1.0.14] - 2026-04-29
 

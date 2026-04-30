@@ -15,6 +15,7 @@ import {
 } from "@/lib/qdrant";
 import { createEmbeddings } from "@/lib/embeddings";
 import { rerankDocuments } from "@/lib/reranker";
+import { resolveReviewLanguage } from "@/lib/review-language";
 import {
   type InlineFinding,
   parseFindings,
@@ -314,6 +315,7 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
     : touchesSharedFiles(diff);
   const conflictPrompt = enableConflict ? getConflictDetectionPrompt() : "";
 
+  const reviewLanguage = resolveReviewLanguage(org.reviewLanguage, repo.reviewLanguage);
   const systemPrompt = getSystemPrompt()
     .replace("{{CODEBASE_CONTEXT}}", codebaseContext)
     .replace("{{FILE_TREE}}", fileTreeStr)
@@ -323,7 +325,9 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
     .replace("{{PROVIDER}}", "local")
     .replace("{{FALSE_POSITIVE_CONTEXT}}", falsePositiveContext)
     .replace("{{RE_REVIEW_CONTEXT}}", "")
-    .replace("{{CONFLICT_DETECTION}}", conflictPrompt);
+    .replace("{{CONFLICT_DETECTION}}", conflictPrompt)
+    .replace(/\{\{REVIEW_LANGUAGE\}\}/g, reviewLanguage.code)
+    .replace(/\{\{REVIEW_LANGUAGE_NAME\}\}/g, reviewLanguage.promptName);
 
   const response = await createAiMessage(
     {

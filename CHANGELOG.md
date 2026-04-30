@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Knowledge Center: pin documents to always include in every review, regardless of diff similarity (#317)
+- Review output language: organization-level setting for the prose language of summaries, finding titles, and descriptions. Code, identifiers, and `suggestion` fields stay in the source language. (#318)
 
 ## [1.0.14] - 2026-04-29
 

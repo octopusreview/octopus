@@ -5,6 +5,7 @@ import { prisma } from "@octopus/db";
 import { ReviewSettingsForm } from "./review-settings-form";
 import { ReviewsPausedSwitch } from "./reviews-paused-switch";
 import { OrgReviewConfigForm } from "./org-review-config-form";
+import { ReviewLanguageForm } from "./review-language-form";
 import { BlockedAuthorsForm } from "./blocked-authors-form";
 
 export default async function ReviewsSettingsPage() {
@@ -30,6 +31,7 @@ export default async function ReviewsSettingsPage() {
           checkFailureThreshold: true,
           reviewsPaused: true,
           defaultReviewConfig: true,
+          reviewLanguage: true,
           blockedAuthors: true,
         },
       },
@@ -60,6 +62,10 @@ export default async function ReviewsSettingsPage() {
       <OrgReviewConfigForm
         isOwner={member.role === "owner"}
         initialConfig={orgReviewConfig}
+      />
+      <ReviewLanguageForm
+        isOwner={member.role === "owner"}
+        initialLanguage={member.organization.reviewLanguage ?? "en"}
       />
       <BlockedAuthorsForm
         isOwner={member.role === "owner"}

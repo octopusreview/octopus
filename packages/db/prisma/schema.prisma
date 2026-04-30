@@ -107,6 +107,7 @@ model Organization {
   reviewsPaused           Boolean  @default(false)
   blockedAuthors          Json     @default("[]") // string[] of PR author usernames to skip review
   defaultReviewConfig     Json     @default("{}")
+  reviewLanguage          String   @default("en") // BCP-47 code; review prose output language
   stripeCustomerId        String?  @unique
   creditBalance           Decimal  @default(0) @db.Decimal(12, 4)
   freeCreditBalance       Decimal  @default(150) @db.Decimal(12, 4)

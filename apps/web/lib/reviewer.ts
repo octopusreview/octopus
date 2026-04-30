@@ -19,6 +19,7 @@ import { loadQueueConfig, computeStaleReclaimMs, enqueue } from "@/lib/queue";
 import { createEmbeddings } from "@/lib/embeddings";
 import { generateSparseVector } from "@/lib/sparse-vector";
 import { rerankDocuments } from "@/lib/reranker";
+import { resolveReviewLanguage } from "@/lib/review-language";
 import { getAlwaysIncludeKnowledge, mergeKnowledgeChunks } from "@/lib/knowledge-context";
 import {
   getPullRequestDiff as ghGetPullRequestDiff,
@@ -1465,6 +1466,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
       ? reviewConfig.enableConflictDetection
       : touchesSharedFiles(diff);
     const conflictPrompt = enableConflict ? getConflictDetectionPrompt() : "";
+    const reviewLanguage = resolveReviewLanguage(org.reviewLanguage);
     const systemPrompt = getSystemPrompt()
       .replace("{{CODEBASE_CONTEXT}}", codebaseContext)
       .replace("{{FILE_TREE}}", fileTree)
@@ -1474,7 +1476,9 @@ export async function processReview(pullRequestId: string): Promise<void> {
       .replace("{{PROVIDER}}", isGitHub ? "GitHub" : isBitbucket ? "Bitbucket" : repo.provider)
       .replace("{{FALSE_POSITIVE_CONTEXT}}", falsePositiveContext)
       .replace("{{RE_REVIEW_CONTEXT}}", priorReviewContext)
-      .replace("{{CONFLICT_DETECTION}}", conflictPrompt);
+      .replace("{{CONFLICT_DETECTION}}", conflictPrompt)
+      .replace("{{REVIEW_LANGUAGE}}", reviewLanguage.code)
+      .replace("{{REVIEW_LANGUAGE_NAME}}", reviewLanguage.promptName);
 
     const response = await createAiMessage(
       {

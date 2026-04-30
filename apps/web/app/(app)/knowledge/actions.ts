@@ -573,6 +573,60 @@ Output ONLY the enhanced document content. Do not add meta-commentary or explana
   }
 }
 
+export async function setKnowledgeAlwaysInclude(
+  documentId: string,
+  alwaysInclude: boolean,
+): Promise<{ error?: string }> {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+  if (!session) redirect("/login");
+
+  const cookieStore = await cookies();
+  const orgId = cookieStore.get("current_org_id")?.value;
+  if (!orgId) return { error: "No organization selected." };
+
+  const doc = await prisma.knowledgeDocument.findUnique({
+    where: { id: documentId },
+    select: {
+      organizationId: true,
+      organization: {
+        select: {
+          members: {
+            where: { userId: session.user.id, deletedAt: null },
+            select: { id: true },
+          },
+        },
+      },
+    },
+  });
+
+  if (!doc || doc.organization.members.length === 0) {
+    return { error: "Document not found." };
+  }
+  if (doc.organizationId !== orgId) {
+    return { error: "Document does not belong to this organization." };
+  }
+
+  await prisma.knowledgeDocument.update({
+    where: { id: documentId },
+    data: { alwaysInclude },
+  });
+
+  await prisma.knowledgeAuditLog.create({
+    data: {
+      action: "updated",
+      details: alwaysInclude ? "Pinned to all reviews" : "Unpinned from all reviews",
+      documentId,
+      userId: session.user.id,
+      organizationId: orgId,
+    },
+  });
+
+  revalidatePath("/knowledge");
+  return {};
+}
+
 export async function getKnowledgeAuditLogs(documentId: string) {
   const session = await auth.api.getSession({
     headers: await headers(),

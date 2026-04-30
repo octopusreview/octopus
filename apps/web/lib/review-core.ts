@@ -16,6 +16,7 @@ import {
 import { createEmbeddings } from "@/lib/embeddings";
 import { rerankDocuments } from "@/lib/reranker";
 import { resolveReviewLanguage } from "@/lib/review-language";
+import { getAlwaysIncludeKnowledge, mergeKnowledgeChunks } from "@/lib/knowledge-context";
 import {
   type InlineFinding,
   parseFindings,
@@ -206,12 +207,13 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
 
   const rerankQuery = `${title ?? "Local Review"}\n${diff.slice(0, 2000)}`;
 
-  const [rawCodeChunks, rawKnowledgeChunks] = await Promise.all([
+  const [rawCodeChunks, rawKnowledgeChunks, alwaysIncludeKnowledge] = await Promise.all([
     searchSimilarChunks(repo.id, queryVector, 50, rerankQuery),
     searchKnowledgeChunks(org.id, queryVector, 25, rerankQuery).catch(() => [] as { title: string; text: string; score: number }[]),
+    getAlwaysIncludeKnowledge(org.id).catch(() => []),
   ]);
 
-  const [contextChunks, knowledgeChunks] = await Promise.all([
+  const [contextChunks, similarityKnowledgeChunks] = await Promise.all([
     rerankDocuments(rerankQuery, rawCodeChunks, {
       topK: 15,
       scoreThreshold: 0.25,
@@ -228,6 +230,8 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
     }),
   ]);
 
+  const knowledgeChunks = mergeKnowledgeChunks(alwaysIncludeKnowledge, similarityKnowledgeChunks);
+
   const codebaseContext = contextChunks
     .map((c) => `// ${c.filePath}:L${c.startLine}-L${c.endLine}\n${c.text}`)
     .join("\n\n---\n\n");
@@ -237,7 +241,7 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
     : "";
 
   console.log(
-    `[review-core] Context: ${contextChunks.length}/${rawCodeChunks.length} code chunks, ${knowledgeChunks.length}/${rawKnowledgeChunks.length} knowledge chunks (after rerank)`,
+    `[review-core] Context: ${contextChunks.length}/${rawCodeChunks.length} code chunks, ${knowledgeChunks.length} knowledge chunks (${alwaysIncludeKnowledge.length} pinned + ${similarityKnowledgeChunks.length}/${rawKnowledgeChunks.length} from search)`,
   );
 
   // Step 2: Build false positive context from past feedback

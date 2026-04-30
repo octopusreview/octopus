@@ -308,6 +308,7 @@ model KnowledgeDocument {
   totalVectors   Int      @default(0)
   processingMs   Int?
   templateId     String?
+  alwaysInclude  Boolean  @default(false)
   deletedAt      DateTime?
   deletedById    String?
   createdAt      DateTime @default(now())
@@ -319,6 +320,7 @@ model KnowledgeDocument {
   auditLogs      KnowledgeAuditLog[]
 
   @@index([organizationId, status, deletedAt])
+  @@index([organizationId, alwaysInclude, deletedAt])
   @@map("knowledge_documents")
 }
 

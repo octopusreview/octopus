@@ -20,6 +20,7 @@ import { createEmbeddings } from "@/lib/embeddings";
 import { generateSparseVector } from "@/lib/sparse-vector";
 import { rerankDocuments } from "@/lib/reranker";
 import { resolveReviewLanguage } from "@/lib/review-language";
+import { getAlwaysIncludeKnowledge, mergeKnowledgeChunks } from "@/lib/knowledge-context";
 import {
   getPullRequestDiff as ghGetPullRequestDiff,
   LargePrError,
@@ -1162,12 +1163,13 @@ export async function processReview(pullRequestId: string): Promise<void> {
     // Over-fetch from Qdrant, then rerank with Cohere
     const rerankQuery = `${pr.title}\n${diff.slice(0, 2000)}`;
 
-    const [rawCodeChunks, rawKnowledgeChunks] = await Promise.all([
+    const [rawCodeChunks, rawKnowledgeChunks, alwaysIncludeKnowledge] = await Promise.all([
       searchSimilarChunks(repo.id, queryVector, 50, rerankQuery),
       searchKnowledgeChunks(org.id, queryVector, 25, rerankQuery).catch(() => [] as { title: string; text: string; score: number }[]),
+      getAlwaysIncludeKnowledge(org.id).catch(() => []),
     ]);
 
-    const [contextChunks, knowledgeChunks] = await Promise.all([
+    const [contextChunks, similarityKnowledgeChunks] = await Promise.all([
       rerankDocuments(rerankQuery, rawCodeChunks, {
         topK: 15,
         scoreThreshold: 0.25,
@@ -1184,6 +1186,8 @@ export async function processReview(pullRequestId: string): Promise<void> {
       }),
     ]);
 
+    const knowledgeChunks = mergeKnowledgeChunks(alwaysIncludeKnowledge, similarityKnowledgeChunks);
+
     const codebaseContext = contextChunks
       .map(
         (c) =>
@@ -1199,11 +1203,11 @@ export async function processReview(pullRequestId: string): Promise<void> {
       ...baseEvent,
       status: "reviewing",
       step: "searching-context",
-      detail: `${contextChunks.length}/${rawCodeChunks.length} code chunks after rerank, ${knowledgeChunks.length}/${rawKnowledgeChunks.length} knowledge chunks after rerank`,
+      detail: `${contextChunks.length}/${rawCodeChunks.length} code chunks after rerank, ${knowledgeChunks.length} knowledge chunks (${alwaysIncludeKnowledge.length} pinned + ${similarityKnowledgeChunks.length}/${rawKnowledgeChunks.length} from search)`,
     });
 
     console.log(
-      `[reviewer] Context: ${contextChunks.length}/${rawCodeChunks.length} code chunks, ${knowledgeChunks.length}/${rawKnowledgeChunks.length} knowledge chunks (after rerank)`,
+      `[reviewer] Context: ${contextChunks.length}/${rawCodeChunks.length} code chunks, ${knowledgeChunks.length} knowledge chunks (${alwaysIncludeKnowledge.length} pinned + ${similarityKnowledgeChunks.length}/${rawKnowledgeChunks.length} from search)`,
     );
 
     // Step 4: Build prompt and call Anthropic

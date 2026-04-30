@@ -184,7 +184,7 @@ export async function handleLargeReviewResult(
   const summaryBody = [
     summaryHeader,
     findingsBlock,
-    `<details><summary>About</summary>\n\nReviewed via [Octopus Review](https://octopus-review.ai) large-PR pipeline. The diff exceeded GitHub's API limits, so the repository was cloned and reviewed against the full \`git diff\`. Inline comments are not posted on this path.\n\n</details>`,
+    `<sub>Reviewed by [Octopus Review](https://octopus-review.ai) (large-PR pipeline, no inline comments).</sub>`,
   ]
     .filter(Boolean)
     .join("\n\n");

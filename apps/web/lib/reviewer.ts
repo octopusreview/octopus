@@ -1917,7 +1917,7 @@ Rules:
       }
       const parts = [header];
       if (findingsBlock) parts.push(findingsBlock);
-      parts.push(`<details><summary>About</summary>\n\n[Octopus Review](https://octopus-review.ai) is an AI-powered code review tool that analyzes your pull requests for bugs, security issues, and code quality.\n\n</details>`);
+      parts.push(`<sub>Reviewed by [Octopus Review](https://octopus-review.ai), an AI-powered PR review tool.</sub>`);
       return parts.join("\n\n");
     };
 

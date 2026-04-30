@@ -65,7 +65,10 @@ import {
   restoreKnowledgeDocument,
   getKnowledgeAuditLogs,
   enhanceKnowledgeContent,
+  setKnowledgeAlwaysInclude,
 } from "./actions";
+import { Switch } from "@/components/ui/switch";
+import { IconPin } from "@tabler/icons-react";
 import { getPubbyClient } from "@/lib/pubby-client";
 import { TemplateBrowser } from "./template-browser";
 
@@ -79,6 +82,7 @@ type Document = {
   totalChunks: number;
   totalVectors: number;
   processingMs: number | null;
+  alwaysInclude: boolean;
   createdAt: string;
 };
 
@@ -319,6 +323,18 @@ export function KnowledgeContent({ documents: initialDocuments, deletedDocuments
     startDeleteTransition(async () => {
       await deleteKnowledgeDocument(documentId);
     });
+  }
+
+  async function handleAlwaysIncludeToggle(documentId: string, next: boolean) {
+    setDocuments((prev) =>
+      prev.map((d) => (d.id === documentId ? { ...d, alwaysInclude: next } : d)),
+    );
+    const result = await setKnowledgeAlwaysInclude(documentId, next);
+    if (result.error) {
+      setDocuments((prev) =>
+        prev.map((d) => (d.id === documentId ? { ...d, alwaysInclude: !next } : d)),
+      );
+    }
   }
 
   function handleRestore(documentId: string) {
@@ -572,6 +588,25 @@ export function KnowledgeContent({ documents: initialDocuments, deletedDocuments
                     {doc.errorMessage}
                   </p>
                 )}
+              </div>
+
+              <div
+                className="flex shrink-0 items-center gap-2"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <label
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none"
+                  title="Pin: include in every review regardless of diff similarity"
+                >
+                  <IconPin className={`size-3.5 ${doc.alwaysInclude ? "text-primary" : ""}`} />
+                  <span className="hidden sm:inline">Pin</span>
+                  <Switch
+                    checked={doc.alwaysInclude}
+                    onCheckedChange={(v) => handleAlwaysIncludeToggle(doc.id, v)}
+                    disabled={doc.status !== "ready"}
+                    aria-label="Always include in reviews"
+                  />
+                </label>
               </div>
 
               <AlertDialog>

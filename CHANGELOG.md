@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Knowledge Center: pin documents to always include in every review, regardless of diff similarity (#317)
+
 ### Fixed
 - Snap findings whose line range partially misses the diff onto the nearest changed line within ±10 lines, with a small note. Previously high-severity findings could drop to the summary table even when the change was within reach. (#321)
 - Show "✅ No new issues detected since the last review" on re-reviews with zero findings, instead of leaving the comment looking empty. (#321)

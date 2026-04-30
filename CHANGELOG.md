@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Knowledge Center: pin documents to always include in every review, regardless of diff similarity (#317)
 - Repository-level config files (`.octopus.md` / `AGENTS.md` / `CLAUDE.md`, customizable). Opt-in per repo. Each enabled repo runs the file through a sandboxed Haiku extraction pass that strips meta-instructions and emits a clean rule list, cached by content hash. Extracted rules are injected as untrusted data inside the user message, never the system prompt. (#319)
 
 ## [1.0.14] - 2026-04-29

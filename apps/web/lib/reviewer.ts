@@ -1560,7 +1560,16 @@ export async function processReview(pullRequestId: string): Promise<void> {
     });
 
     // 5a: Update placeholder (or create new) with review body (findings stripped — they go inline)
-    const mainCommentBody = stripDetailedFindings(reviewBody);
+    let mainCommentBody = stripDetailedFindings(reviewBody);
+
+    // Re-review with zero new findings: surface this as an explicit positive
+    // signal instead of letting the developer wonder if the review failed.
+    if (isReReview && findingsCount === 0) {
+      const commitSuffix = pr.headSha ? ` (commit \`${pr.headSha.slice(0, 7)}\`)` : "";
+      mainCommentBody =
+        `> ✅ No new issues detected since the last review${commitSuffix}.\n\n` +
+        mainCommentBody;
+    }
 
     if (reviewCommentId) {
       await providerUpdateComment(reviewCommentId, mainCommentBody);

@@ -235,7 +235,7 @@ Field rules:
 - **severity**: One of 🔴 🟠 🟡 🔵 💡
 - **title**: Short descriptive title for the finding
 - **filePath**: Relative file path only — no backticks, no `:L42` line suffix
-- **startLine** / **endLine**: Integer line numbers from the diff (endLine = startLine if single line)
+- **startLine** / **endLine**: Integer line numbers from the diff (endLine = startLine if single line). MUST be lines marked `+` in the diff (added lines) — do NOT reference context lines or unchanged lines. If your finding pertains to a region that includes context lines, pick the NEAREST added line. Findings that don't map to an added line cannot be attached inline and end up in a summary table, which is much less useful for the developer.
 - **category**: Bug | Security | Performance | Style | Architecture | Logic Error | Race Condition
 - **description**: Clear explanation of the issue
 - **suggestion**: Plain code string for the suggested fix (no markdown fences inside JSON). Empty string if no suggestion.

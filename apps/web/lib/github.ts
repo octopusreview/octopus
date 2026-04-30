@@ -319,22 +319,30 @@ export async function getPullRequestDiff(
   if (res.ok) {
     const diff = await res.text();
     if (diff.length > MAX_DIFF_CHARS) {
-      throw new LargePrError(
-        `Diff exceeds ${MAX_DIFF_CHARS} chars for ${owner}/${repo}#${prNumber}`,
-        { owner, repo, prNumber, reason: "diff-too-large" },
+      if (isInternalCliEnabled()) {
+        throw new LargePrError(
+          `Diff exceeds ${MAX_DIFF_CHARS} chars for ${owner}/${repo}#${prNumber}`,
+          { owner, repo, prNumber, reason: "diff-too-large" },
+        );
+      }
+      console.warn(
+        `[github] Diff over ${MAX_DIFF_CHARS} chars for ${owner}/${repo}#${prNumber} but ENABLE_INTERNAL_CLI is off — truncating for review engine`,
       );
+      return truncateDiff(diff);
     }
     return diff;
   }
 
   // GitHub returns 406 when the .diff endpoint can't render (>300 files).
-  // Try the /files fallback; if it also overflows, escalate to LargePrError.
+  // Try the /files fallback; if it also overflows, escalate to LargePrError
+  // (only when internal-cli routing is enabled — otherwise return the
+  // truncated reconstruction and let the review engine handle it).
   if (res.status === 406) {
     console.warn(
       `[github] Diff too large for ${owner}/${repo}#${prNumber} (406), trying /files fallback`,
     );
     const reconstructed = await getPullRequestDiffViaFiles(token, owner, repo, prNumber);
-    if (reconstructed.endsWith(TRUNCATION_MARKER)) {
+    if (reconstructed.endsWith(TRUNCATION_MARKER) && isInternalCliEnabled()) {
       throw new LargePrError(
         `/files fallback also truncated for ${owner}/${repo}#${prNumber}`,
         { owner, repo, prNumber, reason: "too-many-files" },
@@ -344,6 +352,12 @@ export async function getPullRequestDiff(
   }
 
   throw new Error(`Failed to get PR diff: ${res.status}`);
+}
+
+// Gates the LargePrError → internal-cli handoff. When off, oversized diffs
+// are truncated and handled by the standard review engine instead.
+function isInternalCliEnabled(): boolean {
+  return process.env.ENABLE_INTERNAL_CLI === "true";
 }
 
 const MAX_DIFF_CHARS = 30_000;

@@ -41,6 +41,7 @@ export default async function KnowledgePage() {
         totalChunks: true,
         totalVectors: true,
         processingMs: true,
+        alwaysInclude: true,
         createdAt: true,
       },
       orderBy: { createdAt: "desc" },

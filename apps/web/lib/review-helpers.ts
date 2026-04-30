@@ -285,8 +285,38 @@ export function stripDetailedFindings(reviewBody: string): string {
 
 // ─── Inline Comments ────────────────────────────────────────────────────────
 
+/** Maximum distance (in lines) when snapping a finding to the nearest changed
+ *  line in the same file. Beyond this distance the finding falls back to the
+ *  summary table instead of being attached inline. */
+export const NEAREST_LINE_FALLBACK_RADIUS = 10;
+
+/** Find the changed line in the file closest to a given line number, or null. */
+function findNearestChangedLine(
+  validLines: Set<number>,
+  preferredLine: number,
+  radius: number,
+): number | null {
+  if (validLines.has(preferredLine)) return preferredLine;
+  for (let delta = 1; delta <= radius; delta++) {
+    if (validLines.has(preferredLine - delta)) return preferredLine - delta;
+    if (validLines.has(preferredLine + delta)) return preferredLine + delta;
+  }
+  return null;
+}
+
 /**
  * Convert parsed findings into GitHub review comments, filtering to valid diff lines.
+ *
+ * Mapping order:
+ *   1. Exact match for f.endLine
+ *   2. Exact match for f.startLine
+ *   3. Any valid line within [startLine, endLine]
+ *   4. Nearest changed line within ±NEAREST_LINE_FALLBACK_RADIUS of either
+ *      end of the range (snapped). The finding still attaches inline, with a
+ *      small note indicating the snap.
+ *
+ * If none of the above match, the finding is skipped here and ends up in the
+ * summary table.
  */
 export function buildInlineComments(
   findings: InlineFinding[],
@@ -313,9 +343,27 @@ export function buildInlineComments(
         }
       }
     }
+
+    // Fallback: snap to the nearest changed line within ±radius of the range.
+    let snapped = false;
+    if (!targetLine) {
+      const candidate =
+        findNearestChangedLine(validLines, f.endLine, NEAREST_LINE_FALLBACK_RADIUS) ??
+        findNearestChangedLine(validLines, f.startLine, NEAREST_LINE_FALLBACK_RADIUS);
+      if (candidate !== null) {
+        targetLine = candidate;
+        snapped = true;
+      }
+    }
     if (!targetLine) continue;
 
-    let body = `**${f.severity} ${f.title}**\n\n${f.description}`;
+    const originalRangeText =
+      f.startLine === f.endLine ? `L${f.startLine}` : `L${f.startLine}-L${f.endLine}`;
+    const snapNote = snapped
+      ? `\n\n_Note: original finding referenced ${originalRangeText}; attached to nearest changed line (L${targetLine})._`
+      : "";
+
+    let body = `**${f.severity} ${f.title}**\n\n${f.description}${snapNote}`;
     if (f.suggestion) {
       // GitHub supports native ```suggestion blocks; Bitbucket uses plain code blocks
       const suggestionBlock = provider === "github"

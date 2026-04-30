@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Inline comments are now attached for findings whose line range partially misses the diff: the comment snaps to the nearest changed line within ±10 lines, with a small note. Previously these dropped to a summary table even at high severity. (#321)
+- Re-reviews with no new findings now show "✅ No new issues detected since the last review" instead of looking like an empty review.
+
+### Changed
+- Tightened the LLM prompt to require finding line numbers be added (`+`) lines in the diff, not context lines. (#321)
+
 ## [1.0.14] - 2026-04-29
 
 ### Added

@@ -739,7 +739,7 @@ export async function updateRepoConfigSettings(
     repoConfigFiles: string[];
   },
 ): Promise<{ error?: string; success?: boolean }> {
-  const { normalizeRepoConfigFiles, DEFAULT_REPO_CONFIG_FILES } = await import("@/lib/repo-config-shared");
+  const { normalizeRepoConfigFiles } = await import("@/lib/repo-config-shared");
   const session = await auth.api.getSession({
     headers: await headers(),
   });
@@ -776,11 +776,14 @@ export async function updateRepoConfigSettings(
     return { error: "All provided filenames are invalid." };
   }
 
+  // Always persist the user-provided filename list, even when disabling, so
+  // the user's custom filenames (e.g. AJAN.md) are still there next time they
+  // re-enable. The list is only consulted when useRepoConfig is true.
   await prisma.repository.update({
     where: { id: repoId },
     data: {
       useRepoConfig: input.useRepoConfig,
-      repoConfigFiles: input.useRepoConfig ? cleaned : DEFAULT_REPO_CONFIG_FILES,
+      repoConfigFiles: cleaned,
     },
   });
 

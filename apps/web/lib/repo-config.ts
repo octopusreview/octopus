@@ -140,7 +140,7 @@ export async function extractRepoConfigRules(
     "</file>",
   ].join("\n");
 
-  let extractedRules = "NO_RULES";
+  let extractedRules: string;
   try {
     const response = await createAiMessage(
       {

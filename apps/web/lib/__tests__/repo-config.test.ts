@@ -67,4 +67,19 @@ describe("buildRepoConfigUserBlock", () => {
     expect(block).toContain("UNTRUSTED");
     expect(block).toContain("- Use snake_case");
   });
+
+  it("escapes special characters in the source attribute (defense-in-depth)", () => {
+    // normalizeRepoConfigFiles forbids these chars upstream, but the rendering
+    // function must not be the weak link if a future caller bypasses it.
+    const block = buildRepoConfigUserBlock({
+      source: 'evil"><script>alert(1)</script>',
+      rules: "- noop",
+      contentHash: "abc",
+      cached: false,
+    });
+    expect(block).not.toContain('"><script>');
+    expect(block).toContain("&quot;");
+    expect(block).toContain("&lt;script&gt;");
+    expect(block).toContain("</repo_config>"); // closing tag intact, not closed early
+  });
 });

@@ -19,6 +19,7 @@ import { loadQueueConfig, computeStaleReclaimMs, enqueue } from "@/lib/queue";
 import { createEmbeddings } from "@/lib/embeddings";
 import { generateSparseVector } from "@/lib/sparse-vector";
 import { rerankDocuments } from "@/lib/reranker";
+import { resolveReviewLanguage } from "@/lib/review-language";
 import { getAlwaysIncludeKnowledge, mergeKnowledgeChunks } from "@/lib/knowledge-context";
 import {
   fetchRepoConfigFile,
@@ -1471,6 +1472,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
       ? reviewConfig.enableConflictDetection
       : touchesSharedFiles(diff);
     const conflictPrompt = enableConflict ? getConflictDetectionPrompt() : "";
+    const reviewLanguage = resolveReviewLanguage(org.reviewLanguage);
 
     // Repo-level config: opt-in per repo. Fetch from repo at PR head, then run a
     // sandboxed Haiku pass to extract a clean rule list. Cached by content hash.
@@ -1511,7 +1513,9 @@ export async function processReview(pullRequestId: string): Promise<void> {
       .replace("{{PROVIDER}}", isGitHub ? "GitHub" : isBitbucket ? "Bitbucket" : repo.provider)
       .replace("{{FALSE_POSITIVE_CONTEXT}}", falsePositiveContext)
       .replace("{{RE_REVIEW_CONTEXT}}", priorReviewContext)
-      .replace("{{CONFLICT_DETECTION}}", conflictPrompt);
+      .replace("{{CONFLICT_DETECTION}}", conflictPrompt)
+      .replace("{{REVIEW_LANGUAGE}}", reviewLanguage.code)
+      .replace("{{REVIEW_LANGUAGE_NAME}}", reviewLanguage.promptName);
 
     const response = await createAiMessage(
       {
@@ -1593,7 +1597,16 @@ export async function processReview(pullRequestId: string): Promise<void> {
     });
 
     // 5a: Update placeholder (or create new) with review body (findings stripped — they go inline)
-    const mainCommentBody = stripDetailedFindings(reviewBody);
+    let mainCommentBody = stripDetailedFindings(reviewBody);
+
+    // Re-review with zero new findings: surface this as an explicit positive
+    // signal instead of letting the developer wonder if the review failed.
+    if (isReReview && findingsCount === 0) {
+      const commitSuffix = pr.headSha ? ` (commit \`${pr.headSha.slice(0, 7)}\`)` : "";
+      mainCommentBody =
+        `> ✅ No new issues detected since the last review${commitSuffix}.\n\n` +
+        mainCommentBody;
+    }
 
     if (reviewCommentId) {
       await providerUpdateComment(reviewCommentId, mainCommentBody);

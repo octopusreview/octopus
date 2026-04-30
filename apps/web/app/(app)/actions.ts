@@ -853,6 +853,38 @@ export async function updateOrgDefaultReviewConfig(
   return { success: true };
 }
 
+export async function updateOrgReviewLanguage(
+  language: string,
+): Promise<{ error?: string; success?: boolean }> {
+  const { isSupportedReviewLanguage } = await import("@/lib/review-language");
+  const user = await getUser();
+  const cookieStore = await cookies();
+  const orgId = cookieStore.get("current_org_id")?.value;
+
+  if (!orgId) return { error: "No organization selected." };
+
+  const member = await prisma.organizationMember.findFirst({
+    where: { organizationId: orgId, userId: user.id, deletedAt: null },
+    select: { role: true },
+  });
+
+  if (!member || member.role !== "owner") {
+    return { error: "Only organization owners can change the review language." };
+  }
+
+  if (!isSupportedReviewLanguage(language)) {
+    return { error: "Unsupported review language." };
+  }
+
+  await prisma.organization.update({
+    where: { id: orgId },
+    data: { reviewLanguage: language },
+  });
+
+  revalidatePath("/settings/reviews");
+  return { success: true };
+}
+
 export async function updateOrgBlockedAuthors(
   authors: string[],
 ): Promise<{ error?: string; success?: boolean }> {

@@ -9,7 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Knowledge Center: pin documents to always include in every review, regardless of diff similarity (#317)
+- Review output language: organization-level setting for the prose language of summaries, finding titles, and descriptions. Code, identifiers, and `suggestion` fields stay in the source language. (#318)
 - Repository-level config files (`.octopus.md` / `AGENTS.md` / `CLAUDE.md`, customizable). Opt-in per repo. Each enabled repo runs the file through a sandboxed Haiku extraction pass that strips meta-instructions and emits a clean rule list, cached by content hash. Extracted rules are injected as untrusted data inside the user message, never the system prompt. (#319)
+
+### Fixed
+- Snap findings whose line range partially misses the diff onto the nearest changed line within ±10 lines, with a small note. Previously high-severity findings could drop to the summary table even when the change was within reach. (#321)
+- Show "✅ No new issues detected since the last review" on re-reviews with zero findings, instead of leaving the comment looking empty. (#321)
+
+### Changed
+- Tighten the LLM prompt to require finding line numbers reference added (`+`) lines in the diff, not context lines. (#321)
 
 ## [1.0.14] - 2026-04-29
 

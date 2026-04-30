@@ -28,14 +28,13 @@ export function reviewLanguageName(code: string | null | undefined): string {
 }
 
 /**
- * Resolve the effective review language for a (org, repo) pair.
- * Repo override wins; otherwise falls back to org default; otherwise "en".
+ * Resolve the effective review language for an organization. Falls back to
+ * "en" for unsupported or empty values.
  */
 export function resolveReviewLanguage(
   orgLanguage: string | null | undefined,
-  repoLanguage: string | null | undefined,
 ): { code: string; promptName: string } {
-  const candidate = repoLanguage?.trim() || orgLanguage?.trim() || "en";
+  const candidate = orgLanguage?.trim() || "en";
   const code = isSupportedReviewLanguage(candidate) ? candidate : "en";
   return { code, promptName: reviewLanguageName(code) };
 }

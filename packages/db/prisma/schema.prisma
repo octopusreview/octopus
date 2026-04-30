@@ -220,7 +220,6 @@ model Repository {
   analyzedAt     DateTime?
   reviewModelId  String?
   embedModelId   String?
-  reviewLanguage String?  // BCP-47 code; overrides Organization.reviewLanguage when set
   reviewConfig   Json     @default("{}")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt

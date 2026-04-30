@@ -315,7 +315,7 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
     : touchesSharedFiles(diff);
   const conflictPrompt = enableConflict ? getConflictDetectionPrompt() : "";
 
-  const reviewLanguage = resolveReviewLanguage(org.reviewLanguage, repo.reviewLanguage);
+  const reviewLanguage = resolveReviewLanguage(org.reviewLanguage);
   const systemPrompt = getSystemPrompt()
     .replace("{{CODEBASE_CONTEXT}}", codebaseContext)
     .replace("{{FILE_TREE}}", fileTreeStr)
@@ -326,8 +326,8 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
     .replace("{{FALSE_POSITIVE_CONTEXT}}", falsePositiveContext)
     .replace("{{RE_REVIEW_CONTEXT}}", "")
     .replace("{{CONFLICT_DETECTION}}", conflictPrompt)
-    .replace(/\{\{REVIEW_LANGUAGE\}\}/g, reviewLanguage.code)
-    .replace(/\{\{REVIEW_LANGUAGE_NAME\}\}/g, reviewLanguage.promptName);
+    .replace("{{REVIEW_LANGUAGE}}", reviewLanguage.code)
+    .replace("{{REVIEW_LANGUAGE_NAME}}", reviewLanguage.promptName);
 
   const response = await createAiMessage(
     {

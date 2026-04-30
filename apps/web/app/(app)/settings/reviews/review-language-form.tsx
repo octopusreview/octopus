@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -24,17 +24,25 @@ export function ReviewLanguageForm({
   const [language, setLanguage] = useState(initialLanguage);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const savedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
+    };
+  }, []);
 
   const handleSave = () => {
     setError("");
     setSaved(false);
+    if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
     startTransition(async () => {
       const result = await updateOrgReviewLanguage(language);
       if (result.error) {
         setError(result.error);
       } else {
         setSaved(true);
-        setTimeout(() => setSaved(false), 3000);
+        savedTimeoutRef.current = setTimeout(() => setSaved(false), 3000);
       }
     });
   };

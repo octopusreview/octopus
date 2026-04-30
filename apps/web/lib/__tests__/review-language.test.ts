@@ -21,20 +21,20 @@ describe("review-language", () => {
     expect(reviewLanguageName("xx")).toBe("English");
   });
 
-  it("resolves repo override over org default", () => {
-    expect(resolveReviewLanguage("en", "zh-CN").code).toBe("zh-CN");
-    expect(resolveReviewLanguage("zh-CN", null).code).toBe("zh-CN");
-    expect(resolveReviewLanguage("zh-CN", "").code).toBe("zh-CN");
+  it("resolves the org-level setting", () => {
+    expect(resolveReviewLanguage("zh-CN").code).toBe("zh-CN");
+    expect(resolveReviewLanguage("ja").code).toBe("ja");
   });
 
   it("falls back to en for unsupported values", () => {
-    expect(resolveReviewLanguage("xx", null).code).toBe("en");
-    expect(resolveReviewLanguage(null, "yy").code).toBe("en");
-    expect(resolveReviewLanguage(undefined, undefined).code).toBe("en");
+    expect(resolveReviewLanguage("xx").code).toBe("en");
+    expect(resolveReviewLanguage(null).code).toBe("en");
+    expect(resolveReviewLanguage(undefined).code).toBe("en");
+    expect(resolveReviewLanguage("").code).toBe("en");
   });
 
   it("includes the prompt name in the resolved result", () => {
-    const r = resolveReviewLanguage("en", "ja");
+    const r = resolveReviewLanguage("ja");
     expect(r.code).toBe("ja");
     expect(r.promptName).toBe("Japanese");
   });

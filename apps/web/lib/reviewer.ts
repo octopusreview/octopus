@@ -1968,10 +1968,15 @@ Rules:
     // This gets set by the GitHub/Bitbucket posting logic below
     let effectiveFindingsCount = 0;
 
+    // Resolved-count signal: only meaningful on a re-review. A prior bot
+    // inline comment is considered resolved when GitHub marks it `isOutdated`
+    // (the diff hunk it lived on has changed since the comment was posted).
+    // First reviews never show a resolved count — there is nothing to resolve.
+    const resolvedCount = isReReview ? botComments.filter((c) => c.isOutdated).length : 0;
+
     // Build the review summary body with non-inline findings embedded
     const buildReviewSummary = (findingsBlock: string, visibleCount: number) => {
       let header = `${filesChanged} file${filesChanged !== 1 ? "s" : ""} reviewed, ${visibleCount} finding${visibleCount !== 1 ? "s" : ""}`;
-      const resolvedCount = Math.max(0, findingsCount - visibleCount);
       if (resolvedCount > 0) {
         header += ` (${resolvedCount} resolved)`;
       }

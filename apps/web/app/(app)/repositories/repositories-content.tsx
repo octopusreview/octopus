@@ -4,6 +4,7 @@ import { useState, useTransition, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { REVIEW_CATEGORIES } from "@/lib/review-categories";
 import {
   Card,
   CardContent,
@@ -1011,15 +1012,20 @@ function RepoDetail({
   const [reviewConfigSaved, setReviewConfigSaved] = useState(false);
   const [reviewConfigError, setReviewConfigError] = useState("");
   const [rcMaxFindings, setRcMaxFindings] = useState<number>((repo.reviewConfig?.maxFindings as number) ?? 30);
-  const [rcInlineThreshold, setRcInlineThreshold] = useState<string>((repo.reviewConfig?.inlineThreshold as string) ?? "medium");
+  const [rcInlineThreshold, setRcInlineThreshold] = useState<string>((repo.reviewConfig?.inlineThreshold as string) ?? "low");
   const [rcConfidenceThreshold, setRcConfidenceThreshold] = useState<string>((repo.reviewConfig?.confidenceThreshold as string) ?? "MEDIUM");
   const [rcEnableConflict, setRcEnableConflict] = useState<string>(
     repo.reviewConfig?.enableConflictDetection === undefined ? "auto" : repo.reviewConfig?.enableConflictDetection ? "always" : "never"
   );
   const [rcTwoPass, setRcTwoPass] = useState<boolean>((repo.reviewConfig?.enableTwoPassReview as boolean) ?? false);
-  const [rcDisabledCategories, setRcDisabledCategories] = useState<string>(
-    ((repo.reviewConfig?.disabledCategories as string[]) ?? []).join(", ")
+  const [rcDisabledCategories, setRcDisabledCategories] = useState<string[]>(
+    (repo.reviewConfig?.disabledCategories as string[]) ?? []
   );
+  const toggleRcCategory = (cat: string) => {
+    setRcDisabledCategories((prev) =>
+      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat],
+    );
+  };
   const router = useRouter();
   const isIndexing = repo.indexStatus === "indexing" || indexPending;
   const canAutoReview = (repo.indexStatus === "indexed" || repo.indexStatus === "stale") && (analysisStatus === "analyzed" || analysisStatus === "completed");
@@ -1367,7 +1373,8 @@ function RepoDetail({
                 onChange={(e) => setRcInlineThreshold(e.target.value)}
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
               >
-                <option value="medium">Medium & above (default)</option>
+                <option value="low">Low & above (default)</option>
+                <option value="medium">Medium & above</option>
                 <option value="high">High & above</option>
                 <option value="critical">Critical only</option>
               </select>
@@ -1416,13 +1423,28 @@ function RepoDetail({
 
             <div className="space-y-2">
               <Label className="text-sm">Disabled categories</Label>
-              <Input
-                value={rcDisabledCategories}
-                onChange={(e) => setRcDisabledCategories(e.target.value)}
-                placeholder="e.g. Style, Performance"
-              />
+              <div className="flex flex-wrap gap-1.5">
+                {REVIEW_CATEGORIES.map((cat) => {
+                  const active = rcDisabledCategories.includes(cat);
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => toggleRcCategory(cat)}
+                      className={
+                        "rounded-full border px-3 py-1 text-xs transition-colors " +
+                        (active
+                          ? "border-destructive bg-destructive/10 text-destructive line-through"
+                          : "border-input bg-background hover:bg-accent")
+                      }
+                    >
+                      {cat}
+                    </button>
+                  );
+                })}
+              </div>
               <p className="text-xs text-muted-foreground">
-                Comma-separated. Findings in these categories will be suppressed.
+                Click a category to suppress its findings. Strikethrough = disabled.
               </p>
             </div>
 
@@ -1453,8 +1475,7 @@ function RepoDetail({
                   if (rcEnableConflict !== "auto") {
                     config.enableConflictDetection = rcEnableConflict === "always";
                   }
-                  const cats = rcDisabledCategories.split(",").map((c) => c.trim()).filter(Boolean);
-                  if (cats.length > 0) config.disabledCategories = cats;
+                  if (rcDisabledCategories.length > 0) config.disabledCategories = rcDisabledCategories;
 
                   const result = await updateReviewConfig(repo.id, config);
                   if (result.error) {

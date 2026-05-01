@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { updateReviewConfig } from "../../actions";
+import { REVIEW_CATEGORIES } from "@/lib/review-categories";
 
 type ReviewConfig = {
   maxFindings?: number;
@@ -37,7 +38,7 @@ export function ReviewConfigForm({
   const [success, setSuccess] = useState(false);
 
   const [maxFindings, setMaxFindings] = useState(initialConfig.maxFindings ?? 30);
-  const [inlineThreshold, setInlineThreshold] = useState(initialConfig.inlineThreshold ?? "medium");
+  const [inlineThreshold, setInlineThreshold] = useState(initialConfig.inlineThreshold ?? "low");
   const [enableConflictDetection, setEnableConflictDetection] = useState(
     initialConfig.enableConflictDetection ?? undefined,
   );
@@ -47,9 +48,15 @@ export function ReviewConfigForm({
   const [enableTwoPassReview, setEnableTwoPassReview] = useState(
     initialConfig.enableTwoPassReview ?? false,
   );
-  const [disabledCategories, setDisabledCategories] = useState(
-    (initialConfig.disabledCategories ?? []).join(", "),
+  const [disabledCategories, setDisabledCategories] = useState<string[]>(
+    initialConfig.disabledCategories ?? [],
   );
+
+  const toggleCategory = (cat: string) => {
+    setDisabledCategories((prev) =>
+      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat],
+    );
+  };
 
   function handleSubmit() {
     setError(null);
@@ -64,12 +71,8 @@ export function ReviewConfigForm({
       if (enableConflictDetection !== undefined) {
         config.enableConflictDetection = enableConflictDetection;
       }
-      const cats = disabledCategories
-        .split(",")
-        .map((c) => c.trim())
-        .filter(Boolean);
-      if (cats.length > 0) {
-        config.disabledCategories = cats;
+      if (disabledCategories.length > 0) {
+        config.disabledCategories = disabledCategories;
       }
 
       const result = await updateReviewConfig(repoId, config);
@@ -115,6 +118,7 @@ export function ReviewConfigForm({
               <Label>Inline comment threshold</Label>
               <div className="space-y-2">
                 {[
+                  { value: "low", label: "Low & above (default)", desc: "Inline comments for Critical, High, Medium, and Low findings (Nits go to summary)" },
                   { value: "medium", label: "Medium & above", desc: "Inline comments for Critical, High, and Medium findings" },
                   { value: "high", label: "High & above", desc: "Inline comments for Critical and High findings only" },
                   { value: "critical", label: "Critical only", desc: "Inline comments for Critical findings only" },
@@ -207,15 +211,29 @@ export function ReviewConfigForm({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="disabledCategories">Disabled categories</Label>
-              <Input
-                id="disabledCategories"
-                value={disabledCategories}
-                onChange={(e) => setDisabledCategories(e.target.value)}
-                placeholder="e.g. Style, Performance"
-              />
+              <Label>Disabled categories</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {REVIEW_CATEGORIES.map((cat) => {
+                  const active = disabledCategories.includes(cat);
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => toggleCategory(cat)}
+                      className={
+                        "rounded-full border px-3 py-1 text-xs transition-colors " +
+                        (active
+                          ? "border-destructive bg-destructive/10 text-destructive line-through"
+                          : "border-input bg-background hover:bg-accent")
+                      }
+                    >
+                      {cat}
+                    </button>
+                  );
+                })}
+              </div>
               <p className="text-xs text-muted-foreground">
-                Comma-separated list of finding categories to suppress (e.g. Style, Performance).
+                Click a category to suppress its findings. Strikethrough = disabled.
               </p>
             </div>
           </fieldset>

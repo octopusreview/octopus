@@ -9,6 +9,7 @@ import { logAiUsage } from "@/lib/ai-usage";
 import { createAiMessage } from "@/lib/ai-router";
 import type { InlineFinding } from "@/lib/review-dedup";
 import type { CrossFileQuery, VerificationQuery } from "@/lib/review-helpers";
+import { getCategoryConfidenceThreshold } from "@/lib/review-categories";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -297,9 +298,9 @@ Output ONLY the JSON array, nothing else.`,
         }
         return f;
       })
-      .filter((f) => f.confidence >= confidenceThreshold);
+      .filter((f) => f.confidence >= getCategoryConfidenceThreshold(f.category, confidenceThreshold));
 
-    console.log(`${logPrefix} Two-pass validation: ${validated.length}/${findings.length} findings kept (threshold: ${confidenceThreshold})`);
+    console.log(`${logPrefix} Two-pass validation: ${validated.length}/${findings.length} findings kept (base threshold: ${confidenceThreshold}, per-category)`);
     return validated;
   } catch {
     console.warn(`${logPrefix} Failed to parse two-pass validation response, keeping all findings`);

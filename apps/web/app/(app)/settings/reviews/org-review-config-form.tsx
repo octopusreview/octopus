@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { updateOrgDefaultReviewConfig } from "../../actions";
+import { REVIEW_CATEGORIES } from "@/lib/review-categories";
 
 type ReviewConfig = {
   maxFindings?: number;
@@ -35,15 +36,21 @@ export function OrgReviewConfigForm({
   const [error, setError] = useState("");
 
   const [maxFindings, setMaxFindings] = useState(initialConfig.maxFindings ?? 30);
-  const [inlineThreshold, setInlineThreshold] = useState(initialConfig.inlineThreshold ?? "medium");
+  const [inlineThreshold, setInlineThreshold] = useState(initialConfig.inlineThreshold ?? "low");
   const [confidenceThreshold, setConfidenceThreshold] = useState(initialConfig.confidenceThreshold ?? "MEDIUM");
   const [enableConflict, setEnableConflict] = useState<string>(
     initialConfig.enableConflictDetection === undefined ? "auto" : initialConfig.enableConflictDetection ? "always" : "never",
   );
   const [twoPass, setTwoPass] = useState(initialConfig.enableTwoPassReview ?? false);
-  const [disabledCategories, setDisabledCategories] = useState(
-    (initialConfig.disabledCategories ?? []).join(", "),
+  const [disabledCategories, setDisabledCategories] = useState<string[]>(
+    initialConfig.disabledCategories ?? [],
   );
+
+  const toggleCategory = (cat: string) => {
+    setDisabledCategories((prev) =>
+      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat],
+    );
+  };
 
   const handleSave = () => {
     setError("");
@@ -58,8 +65,7 @@ export function OrgReviewConfigForm({
       if (enableConflict !== "auto") {
         config.enableConflictDetection = enableConflict === "always";
       }
-      const cats = disabledCategories.split(",").map((c) => c.trim()).filter(Boolean);
-      if (cats.length > 0) config.disabledCategories = cats;
+      if (disabledCategories.length > 0) config.disabledCategories = disabledCategories;
 
       const result = await updateOrgDefaultReviewConfig(config);
       if (result.error) {
@@ -101,7 +107,8 @@ export function OrgReviewConfigForm({
                 onChange={(e) => setInlineThreshold(e.target.value)}
                 className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-sm shadow-sm"
               >
-                <option value="medium">Medium & above (default)</option>
+                <option value="low">Low & above (default)</option>
+                <option value="medium">Medium & above</option>
                 <option value="high">High & above</option>
                 <option value="critical">Critical only</option>
               </select>
@@ -143,14 +150,28 @@ export function OrgReviewConfigForm({
 
           <div className="space-y-1.5">
             <Label className="text-xs">Disabled categories</Label>
-            <Input
-              value={disabledCategories}
-              onChange={(e) => setDisabledCategories(e.target.value)}
-              placeholder="e.g. Style, Performance"
-              className="h-8"
-            />
+            <div className="flex flex-wrap gap-1.5">
+              {REVIEW_CATEGORIES.map((cat) => {
+                const active = disabledCategories.includes(cat);
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => toggleCategory(cat)}
+                    className={
+                      "rounded-full border px-2.5 py-0.5 text-xs transition-colors " +
+                      (active
+                        ? "border-destructive bg-destructive/10 text-destructive line-through"
+                        : "border-input bg-background hover:bg-accent")
+                    }
+                  >
+                    {cat}
+                  </button>
+                );
+              })}
+            </div>
             <p className="text-[10px] text-muted-foreground">
-              Comma-separated. Findings in these categories will be suppressed.
+              Click a category to suppress its findings. Strikethrough = disabled.
             </p>
           </div>
 

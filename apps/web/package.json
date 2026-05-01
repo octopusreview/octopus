@@ -35,7 +35,7 @@
     "ignore": "^7.0.5",
     "ioredis": "^5.10.1",
     "jdenticon": "^3.3.0",
-    "mermaid": "^11.12.3",
+    "mermaid": "^11.14.0",
     "next": "16.2.4",
     "next-themes": "^0.4.6",
     "nodemailer": "^8.0.4",

@@ -12,7 +12,7 @@
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.88.0",
+    "@anthropic-ai/sdk": "^0.91.1",
     "@aws-sdk/client-s3": "^3.1030.0",
     "@base-ui/react": "^1.2.0",
     "@elastic/elasticsearch": "^9.3.2",

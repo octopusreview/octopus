@@ -161,6 +161,7 @@ export async function searchSimilarChunks(
   limit = 20,
   queryText?: string,
 ): Promise<{ filePath: string; text: string; startLine: number; endLine: number; score: number }[]> {
+  if (queryVector.length === 0) return [];
   const qdrant = getQdrantClient();
   const filter = { must: [{ key: "repoId", match: { value: repoId } }] };
 
@@ -214,6 +215,7 @@ export async function searchCodeChunksAcrossRepos(
   queryText?: string,
 ): Promise<{ filePath: string; text: string; startLine: number; endLine: number; repoId: string; score: number }[]> {
   if (repoIds.length === 0) return [];
+  if (queryVector.length === 0) return [];
   const qdrant = getQdrantClient();
   const filter = {
     should: repoIds.map((id) => ({
@@ -351,6 +353,7 @@ export async function searchKnowledgeChunks(
   limit = 10,
   queryText?: string,
 ): Promise<{ title: string; text: string; score: number }[]> {
+  if (queryVector.length === 0) return [];
   const qdrant = getQdrantClient();
   const filter = { must: [{ key: "orgId", match: { value: orgId } }] };
 
@@ -508,6 +511,7 @@ export async function searchReviewChunks(
   limit = 10,
   queryText?: string,
 ): Promise<{ text: string; prTitle: string; prNumber: number; repoFullName: string; author: string; reviewDate: string; score: number }[]> {
+  if (queryVector.length === 0) return [];
   const qdrant = getQdrantClient();
   const filter = { must: [{ key: "orgId", match: { value: orgId } }] };
 
@@ -628,6 +632,7 @@ export async function searchChatChunks(
   excludeConversationId?: string,
   queryText?: string,
 ): Promise<{ question: string; answer: string; conversationId: string; conversationTitle: string; score: number }[]> {
+  if (queryVector.length === 0) return [];
   const qdrant = getQdrantClient();
   try {
     const filter: Record<string, unknown> = {
@@ -784,6 +789,7 @@ export async function searchDiagramChunks(
   limit = 3,
   queryText?: string,
 ): Promise<{ mermaidCode: string; diagramType: string; prTitle: string; prNumber: number; repoFullName: string; author: string; reviewDate: string; score: number }[]> {
+  if (queryVector.length === 0) return [];
   const qdrant = getQdrantClient();
   try {
     const filter = { must: [{ key: "orgId", match: { value: orgId } }] };
@@ -912,6 +918,7 @@ export async function searchFeedbackPatterns(
   orgId?: string,
   queryText?: string,
 ): Promise<{ title: string; description: string; feedback: string; repoId: string; score: number }[]> {
+  if (queryVector.length === 0) return [];
   const qdrant = getQdrantClient();
   try {
     // Search repo-scoped patterns first
@@ -1058,6 +1065,7 @@ export async function searchDocsChunks(
   limit = 10,
   queryText?: string,
 ): Promise<{ title: string; text: string; page: string; section: string; score: number }[]> {
+  if (queryVector.length === 0) return [];
   const qdrant = getQdrantClient();
 
   let points: { payload?: Record<string, unknown> | null; score: number }[];

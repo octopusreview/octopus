@@ -191,6 +191,78 @@ button {
   animation: bento-progress 1.2s ease-out 0.3s forwards;
 }
 
+/* Landing feature switcher */
+@keyframes feature-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes feature-cycle {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+
+@keyframes feature-cursor {
+  0%, 45% { opacity: 1; }
+  46%, 100% { opacity: 0; }
+}
+
+@keyframes feature-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(16, 216, 190, 0.32);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(16, 216, 190, 0);
+  }
+}
+
+@keyframes feature-grow-bar {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+
+.feature-panel-enter {
+  animation: feature-panel-enter 420ms ease-out both;
+}
+
+.feature-cycle-progress {
+  animation-name: feature-cycle;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+.typing-cursor {
+  animation: feature-cursor 0.9s steps(1, end) infinite;
+}
+
+.feature-pulse-dot {
+  animation: feature-pulse 1.8s ease-in-out infinite;
+}
+
+.feature-fade-in {
+  animation: bento-fade-up 420ms ease-out both;
+}
+
+.feature-stagger > * {
+  opacity: 0;
+  animation: bento-fade-up 420ms ease-out forwards;
+}
+.feature-stagger > *:nth-child(1) { animation-delay: 80ms; }
+.feature-stagger > *:nth-child(2) { animation-delay: 180ms; }
+.feature-stagger > *:nth-child(3) { animation-delay: 280ms; }
+.feature-stagger > *:nth-child(4) { animation-delay: 380ms; }
+
+.feature-bar {
+  transform-origin: bottom;
+  animation: feature-grow-bar 680ms ease-out forwards;
+}
+
 /* Shimmer border animation */
 @keyframes float {
   0%, 100% {
@@ -328,4 +400,3 @@ html:hover::-webkit-scrollbar-thumb {
     scroll-behavior: auto;
   }
 }
-

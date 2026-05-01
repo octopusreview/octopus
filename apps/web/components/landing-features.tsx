@@ -1,23 +1,83 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { type ComponentType, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import {
+  IconBook,
+  IconChartBar,
+  IconChevronRight,
+  IconDatabase,
+  IconFileText,
   IconSearch,
   IconTerminal2,
-  IconDatabase,
-  IconBook,
   IconUsers,
-  IconChartBar,
-  IconCheck,
-  IconAlertTriangle,
 } from "@tabler/icons-react";
+
+type FeatureId = "chat" | "cli" | "index" | "knowledge" | "team" | "analytics";
+
+type Feature = {
+  id: FeatureId;
+  title: string;
+  description: string;
+  eyebrow: string;
+  icon: ComponentType<{ className?: string }>;
+};
+
+const AUTO_ADVANCE_MS = 5600;
+const INDEXED_FILES = ["packages/api/auth.ts", "apps/web/middleware.ts", "packages/db/schema.prisma"];
+
+const features: Feature[] = [
+  {
+    id: "chat",
+    title: "Ask your codebase",
+    description: "RAG chat answers with source citations from your actual repo.",
+    eyebrow: "RAG Chat",
+    icon: IconSearch,
+  },
+  {
+    id: "cli",
+    title: "Review from terminal",
+    description: "Run PR reviews, query context, and check repo state from the CLI.",
+    eyebrow: "CLI Tool",
+    icon: IconTerminal2,
+  },
+  {
+    id: "index",
+    title: "Keep context fresh",
+    description: "Chunk, embed, and refresh your codebase for instant retrieval.",
+    eyebrow: "Indexing",
+    icon: IconDatabase,
+  },
+  {
+    id: "knowledge",
+    title: "Apply team standards",
+    description: "Knowledge base docs guide every review without repeating yourself.",
+    eyebrow: "Knowledge",
+    icon: IconBook,
+  },
+  {
+    id: "team",
+    title: "Share one setup",
+    description: "Org rules, repositories, and reviewer settings stay aligned.",
+    eyebrow: "Team",
+    icon: IconUsers,
+  },
+  {
+    id: "analytics",
+    title: "Track the loop",
+    description: "See review volume, cost, and signal quality across repositories.",
+    eyebrow: "Analytics",
+    icon: IconChartBar,
+  },
+];
 
 function useInView() {
   const ref = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+
     const obs = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
@@ -27,363 +87,461 @@ function useInView() {
       },
       { threshold: 0.15 },
     );
+
     obs.observe(el);
     return () => obs.disconnect();
   }, []);
+
   return ref;
 }
 
+function getNextFeatureId(currentId: FeatureId) {
+  const currentIndex = features.findIndex((feature) => feature.id === currentId);
+  return features[(currentIndex + 1) % features.length].id;
+}
+
+function useTypewriter(text: string, speed = 24, delay = 300, enabled = true) {
+  const [displayedText, setDisplayedText] = useState("");
+
+  useEffect(() => {
+    setDisplayedText("");
+
+    if (!enabled) return;
+
+    let index = 0;
+    let timeoutId: number;
+
+    const typeNext = () => {
+      index += 1;
+      setDisplayedText(text.slice(0, index));
+
+      if (index < text.length) {
+        timeoutId = window.setTimeout(typeNext, speed);
+      }
+    };
+
+    timeoutId = window.setTimeout(typeNext, delay);
+    return () => window.clearTimeout(timeoutId);
+  }, [delay, enabled, speed, text]);
+
+  return displayedText;
+}
+
 export function LandingFeatures() {
+  const ref = useInView();
+  const [activeId, setActiveId] = useState<FeatureId>("chat");
+  const activeFeature = features.find((feature) => feature.id === activeId) ?? features[0];
+  const ActiveIcon = activeFeature.icon;
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setActiveId((currentId) => getNextFeatureId(currentId));
+    }, AUTO_ADVANCE_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [activeId]);
+
   return (
-    <div className="mx-auto max-w-5xl">
-      {/* Header */}
-      <div className="mb-14">
-        <span className="text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">Features</span>
-        <h2 className="mt-4 text-3xl font-bold leading-[1.1] tracking-tight text-white sm:text-4xl md:text-5xl lg:text-[3.5rem]">
-          Everything you need
-          <br />
-          to ship &amp; review.
-        </h2>
-        <p className="mt-5 max-w-lg text-[#666] sm:text-lg">
-          From RAG-powered chat to CLI tooling — everything
-          happens through a single platform.
+    <div ref={ref} className="mx-auto max-w-5xl">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,0.65fr)] lg:items-end">
+        <div>
+          <span className="text-xs font-semibold uppercase tracking-[0.22em] text-[#10d8be]/75">Features</span>
+          <h2 className="mt-4 text-3xl font-bold leading-[1.05] text-white sm:text-4xl md:text-5xl">
+            Review with context,
+            <br />
+            not noise.
+          </h2>
+        </div>
+        <p className="text-[#858585] sm:text-lg lg:pb-1">
+          Pick a workflow and see how Octopus keeps chat, reviews, standards, and repo context in one calm loop.
         </p>
       </div>
 
-      {/* Hero Feature */}
-      <HeroCard
-        title="RAG Chat"
-        description="Ask questions about your codebase. Vector search + reranking delivers precise, context-aware answers grounded in your actual code."
-        icon={<IconSearch className="size-5" />}
-      >
-        <PreviewRagChat />
-      </HeroCard>
+      <div className="mt-12 overflow-hidden rounded-lg border border-white/[0.08] bg-[#101010] shadow-2xl shadow-black/25">
+        <div className="grid lg:grid-cols-[390px_minmax(0,1fr)]">
+          <div className="border-b border-white/[0.08] bg-white/[0.025] p-3 lg:border-b-0 lg:border-r">
+            <div className="mb-3 flex items-center justify-between px-2 py-2">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#666]">Workspace</p>
+                <h3 className="mt-1 text-lg font-semibold text-white">Everything connected</h3>
+              </div>
+              <span className="rounded-full border border-[#10d8be]/20 bg-[#10d8be]/10 px-2.5 py-1 text-[11px] text-[#10d8be]">
+                Live
+              </span>
+            </div>
 
-      {/* 3-Column Grid */}
-      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <BentoCard
-          title="CLI Tool"
-          description="Review PRs, query code, and manage repos from your terminal."
-          icon={<IconTerminal2 className="size-4" />}
-        >
-          <PreviewCli />
-        </BentoCard>
+            <div className="space-y-1">
+              {features.map((feature) => {
+                const Icon = feature.icon;
+                const isActive = feature.id === activeId;
 
-        <BentoCard
-          title="Codebase Indexing"
-          description="Chunks, embeds, and indexes your entire codebase for instant retrieval."
-          icon={<IconDatabase className="size-4" />}
-        >
-          <PreviewIndexing />
-        </BentoCard>
+                return (
+                  <button
+                    key={feature.id}
+                    type="button"
+                    aria-pressed={isActive}
+                    onClick={() => setActiveId(feature.id)}
+                    className={`group relative grid w-full grid-cols-[40px_1fr_18px] items-center gap-3 overflow-hidden rounded-lg border p-3 text-left transition-colors ${
+                      isActive
+                        ? "border-[#10d8be]/35 bg-[#10d8be]/10"
+                        : "border-transparent hover:border-white/[0.08] hover:bg-white/[0.045]"
+                    }`}
+                  >
+                    <span
+                      className={`flex size-10 items-center justify-center rounded-lg transition-colors ${
+                        isActive ? "bg-[#10d8be] text-[#061210]" : "bg-white/[0.06] text-[#8d8d8d] group-hover:text-white"
+                      }`}
+                    >
+                      <Icon className="size-5" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-white">{feature.title}</span>
+                      <span className="mt-1 line-clamp-2 block text-xs leading-relaxed text-[#808080]">
+                        {feature.description}
+                      </span>
+                    </span>
+                    <IconChevronRight
+                      className={`size-4 transition-colors ${isActive ? "text-[#10d8be]" : "text-[#444] group-hover:text-[#888]"}`}
+                    />
+                    {isActive && (
+                      <span
+                        key={activeId}
+                        className="feature-cycle-progress absolute bottom-0 left-0 h-px bg-[#10d8be]"
+                        style={{ animationDuration: `${AUTO_ADVANCE_MS}ms` }}
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-        <BentoCard
-          title="Knowledge Base"
-          description="Feed your org's standards, docs, and conventions. Reviews get smarter over time."
-          icon={<IconBook className="size-4" />}
-        >
-          <PreviewKnowledge />
-        </BentoCard>
+          <div className="relative min-h-[560px] overflow-hidden bg-[#0b0b0b] p-5 sm:p-8">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_70%_10%,rgba(16,216,190,0.14),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.045),transparent)]" />
+
+            <div className="relative flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex size-11 items-center justify-center rounded-lg bg-[#10d8be]/12 text-[#10d8be]">
+                  <ActiveIcon className="size-5" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#666]">{activeFeature.eyebrow}</p>
+                  <h3 className="mt-1 text-2xl font-semibold text-white">{activeFeature.title}</h3>
+                </div>
+              </div>
+              <span className="hidden rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1 text-xs text-[#8d8d8d] sm:block">
+                {activeFeature.description}
+              </span>
+            </div>
+
+            <div key={activeId} className="feature-panel-enter relative mt-8">
+              <FeaturePreview featureId={activeId} />
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Bottom Row: Wide + Narrow */}
-      <div className="mt-4 grid gap-4 md:grid-cols-5">
-        <BentoCard
-          title="Team Sharing"
-          description="Organization-level config, shared knowledge, and team-wide review standards."
-          icon={<IconUsers className="size-4" />}
-          className="md:col-span-3"
-        >
-          <PreviewTeam />
-        </BentoCard>
-
-        <BentoCard
-          title="Analytics"
-          description="Track review quality, token usage, cost per repo, and developer velocity."
-          icon={<IconChartBar className="size-4" />}
-          className="md:col-span-2"
-        >
-          <PreviewAnalytics />
-        </BentoCard>
+      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        <FeatureMetric value="Source-backed" label="answers point to real code" />
+        <FeatureMetric value="Every PR" label="reviews start automatically" />
+        <FeatureMetric value="Rules synced" label="team standards stay aligned" />
       </div>
     </div>
   );
 }
 
-function HeroCard({
-  title,
-  description,
-  icon,
-  children,
-}: {
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const ref = useInView();
-
-  return (
-    <div
-      ref={ref}
-      className="group grid overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.02] transition-colors hover:border-white/[0.12] md:grid-cols-2"
-    >
-      {/* Text side */}
-      <div className="flex flex-col justify-center p-8 md:p-10">
-        <div className="mb-4 flex size-11 items-center justify-center rounded-xl bg-white/[0.06] text-[#888] transition-colors group-hover:bg-white/[0.1]">
-          {icon}
-        </div>
-        <h3 className="text-2xl font-semibold text-white">{title}</h3>
-        <p className="mt-2 text-sm leading-relaxed text-[#666] md:text-base">{description}</p>
-      </div>
-      {/* Preview side */}
-      <div className="p-4 md:p-6">{children}</div>
-    </div>
-  );
+function FeaturePreview({ featureId }: { featureId: FeatureId }) {
+  switch (featureId) {
+    case "chat":
+      return <ChatPreview />;
+    case "cli":
+      return <CliPreview />;
+    case "index":
+      return <IndexPreview />;
+    case "knowledge":
+      return <KnowledgePreview />;
+    case "team":
+      return <TeamPreview />;
+    case "analytics":
+      return <AnalyticsPreview />;
+  }
 }
 
-function BentoCard({
-  title,
-  description,
-  icon,
-  className = "",
-  children,
-}: {
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-  className?: string;
-  children: React.ReactNode;
-}) {
-  const ref = useInView();
+function ChatPreview() {
+  const question = "How does the auth middleware validate tokens?";
+  const answer =
+    "It extracts the JWT from the Authorization header, verifies it with jose.jwtVerify(), then attaches the decoded user to request context.";
+  const typedQuestion = useTypewriter(question, 20, 250);
+  const questionDone = typedQuestion.length === question.length;
+  const typedAnswer = useTypewriter(answer, 18, 260, questionDone);
+  const answerDone = typedAnswer.length === answer.length;
 
   return (
-    <div
-      ref={ref}
-      className={`group flex flex-col overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.02] transition-colors hover:border-white/[0.12] ${className}`}
-    >
-      {/* Header */}
-      <div className="p-6 pb-3">
-        <div className="mb-3 flex size-9 items-center justify-center rounded-xl bg-white/[0.06] text-[#888] transition-colors group-hover:bg-white/[0.1]">
-          {icon}
+    <div className="mx-auto max-w-2xl rounded-lg border border-white/[0.08] bg-[#111] p-4 shadow-2xl shadow-black/30">
+      <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+        <div className="flex items-center gap-2 text-sm text-[#a8a8a8]">
+          <span className="feature-pulse-dot size-2 rounded-full bg-[#10d8be]" />
+          auth-service
         </div>
-        <h3 className="text-lg font-semibold text-white">{title}</h3>
-        <p className="mt-1 text-sm leading-relaxed text-[#666]">{description}</p>
+        <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-xs text-[#858585]">3 sources</span>
       </div>
-      {/* Preview content */}
-      <div className="flex-1 px-6 pb-6 pt-2">{children}</div>
-    </div>
-  );
-}
 
-/* ------------------------------------------------------------------ */
-/* Preview panels                                                      */
-/* ------------------------------------------------------------------ */
-
-function PreviewRagChat() {
-  return (
-    <div className="bento-stagger space-y-3 rounded-xl bg-[#111] p-4">
-      {/* User message */}
-      <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-white/[0.08] px-3.5 py-2 text-xs text-[#ccc]">
-        How does the auth middleware validate tokens?
-      </div>
-      {/* AI response */}
-      <div className="flex items-start gap-2.5">
-        <Image src="/logo.svg" alt="" width={20} height={20} className="mt-1 shrink-0" />
-        <div className="space-y-2 rounded-2xl rounded-bl-md bg-white/[0.04] px-3.5 py-2.5 text-xs">
-          <p className="text-[#ccc]">
-            The middleware extracts the JWT from the{" "}
-            <code className="rounded bg-white/[0.06] px-1 py-0.5 text-[10px] text-white">Authorization</code> header,
-            validates it using{" "}
-            <code className="rounded bg-white/[0.06] px-1 py-0.5 text-[10px] text-white">jose.jwtVerify()</code>,
-            checks token expiry, and attaches the decoded user to context.
-          </p>
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-[#888]">auth.ts:12</span>
-            <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-[#888]">jwt.ts:45</span>
-            <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-[#888]">types.ts:8</span>
+      <div className="mt-5 space-y-4">
+        <div className="ml-auto min-h-11 max-w-[82%] rounded-lg bg-white/[0.08] px-4 py-3 text-sm text-[#dfdfdf]">
+          {typedQuestion}
+          {!questionDone && <TypingCursor />}
+        </div>
+        {questionDone && (
+          <div className="feature-fade-in flex items-start gap-3">
+            <Image src="/logo.svg" alt="" width={24} height={24} className="mt-1 shrink-0" />
+            <div className="min-h-36 min-w-0 flex-1 rounded-lg border border-white/[0.08] bg-white/[0.045] p-4 text-sm leading-relaxed text-[#d0d0d0]">
+              {typedAnswer}
+              {!answerDone && <TypingCursor />}
+              {answerDone && (
+                <div className="feature-fade-in mt-4 flex flex-wrap gap-2">
+                  <Citation active>auth.ts:12</Citation>
+                  <Citation>jwt.ts:45</Citation>
+                  <Citation>types.ts:8</Citation>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      </div>
-      {/* Another user message */}
-      <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-white/[0.08] px-3.5 py-2 text-xs text-[#ccc]">
-        What happens if the token is expired?
-      </div>
-      <div className="flex items-start gap-2.5">
-        <Image src="/logo.svg" alt="" width={20} height={20} className="mt-1 shrink-0" />
-        <div className="rounded-2xl rounded-bl-md bg-white/[0.04] px-3.5 py-2.5 text-xs text-[#999]">
-          <span className="inline-flex gap-1"><span className="animate-pulse">...</span></span>
-        </div>
+        )}
       </div>
     </div>
   );
 }
 
-function PreviewCli() {
-  return (
-    <div className="bento-stagger space-y-2.5 rounded-xl bg-[#111] p-4 font-mono text-[11px] leading-relaxed">
-      <div>
-        <span className="text-[#555]">$</span>{" "}
-        <span className="text-[#ccc]">octopus pr review 42</span>
-      </div>
-      <div className="text-[#666]">
-        Fetching diff for PR #42...<br />
-        Reviewing 3 changed files with 847 context chunks...
-      </div>
-      <div className="space-y-1 rounded-lg bg-white/[0.03] p-2.5">
-        <div className="flex items-start gap-2">
-          <IconAlertTriangle className="mt-0.5 size-3 shrink-0 text-[#fbbf24]" />
-          <span className="text-[#999]"><span className="text-[#ccc]">auth.ts:12</span> — Consider rate limiting</span>
-        </div>
-        <div className="flex items-start gap-2">
-          <IconCheck className="mt-0.5 size-3 shrink-0 text-[#4ade80]" />
-          <span className="text-[#999]"><span className="text-[#ccc]">middleware.ts:8</span> — Good error handling</span>
-        </div>
-      </div>
-      <div className="border-t border-white/[0.04] pt-2.5">
-        <span className="text-[#555]">$</span>{" "}
-        <span className="text-[#ccc]">octopus repo status</span>
-      </div>
-      <div className="text-[#666]">
-        <span className="text-[#4ade80]">Indexed</span> · 4,832 chunks · Last review: 2m ago
-      </div>
-    </div>
-  );
-}
+function CliPreview() {
+  const command = "octopus pr review 42";
+  const output = "Fetching diff for PR #42...\nRetrieving 847 context chunks...\nPosting inline findings to GitHub...";
+  const typedCommand = useTypewriter(command, 45, 250);
+  const typedOutput = useTypewriter(output, 28, 1300);
+  const commandDone = typedCommand.length === command.length;
+  const outputDone = typedOutput.length === output.length;
 
-function PreviewIndexing() {
   return (
-    <div className="bento-stagger space-y-2.5 rounded-xl bg-[#111] p-4 font-mono text-[11px] leading-relaxed">
-      <div className="text-[#666]">
-        Chunking 1,247 files <span className="text-[#555]">(1500 chars, 200 overlap)</span>
+    <div className="mx-auto max-w-2xl overflow-hidden rounded-lg border border-white/[0.08] bg-[#080808] font-mono shadow-2xl shadow-black/30">
+      <div className="flex gap-1 border-b border-white/[0.06] px-4 py-3">
+        <span className="size-2 rounded-full bg-[#ff6b5f]/70" />
+        <span className="size-2 rounded-full bg-[#f9c74f]/70" />
+        <span className="size-2 rounded-full bg-[#10d8be]/70" />
       </div>
-      <div className="space-y-2 rounded-lg bg-white/[0.03] p-2.5">
-        <div className="flex items-center justify-between text-[#888]">
-          <span>Embedding progress</span>
-          <span className="text-[#ccc]">78%</span>
-        </div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-          <div className="bento-progress-fill h-full rounded-full bg-gradient-to-r from-[#4ade80]/60 to-[#4ade80]" />
-        </div>
-        <div className="grid grid-cols-3 gap-2 pt-1 text-[10px]">
-          <div className="rounded bg-white/[0.04] p-1.5 text-center">
-            <div className="text-[#ccc]">4,832</div>
-            <div className="text-[#555]">chunks</div>
-          </div>
-          <div className="rounded bg-white/[0.04] p-1.5 text-center">
-            <div className="text-[#ccc]">3,072</div>
-            <div className="text-[#555]">dims</div>
-          </div>
-          <div className="rounded bg-white/[0.04] p-1.5 text-center">
-            <div className="text-[#ccc]">Qdrant</div>
-            <div className="text-[#555]">storage</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PreviewKnowledge() {
-  return (
-    <div className="bento-stagger space-y-2 rounded-xl bg-[#111] p-4">
-      {[
-        { title: "Error Handling Standards", type: "Convention" },
-        { title: "API Response Format", type: "Standard" },
-        { title: "Authentication Flow", type: "Architecture" },
-      ].map((item) => (
-        <div key={item.title} className="flex items-center gap-2.5 rounded-lg bg-white/[0.03] p-2.5">
-          <IconBook className="size-3.5 shrink-0 text-[#888]" />
-          <div className="min-w-0 flex-1">
-            <div className="text-[11px] font-medium text-[#ccc]">{item.title}</div>
-          </div>
-          <span className="shrink-0 rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-[#888]">{item.type}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function PreviewTeam() {
-  return (
-    <div className="bento-stagger space-y-2 rounded-xl bg-[#111] p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <span className="text-xs font-medium text-white">Team Members</span>
-        <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-[#888]">Acme Corp</span>
-      </div>
-      {[
-        { name: "Sarah Chen", role: "Admin", repos: 8, avatar: "SC" },
-        { name: "Alex Rivera", role: "Reviewer", repos: 5, avatar: "AR" },
-        { name: "Jordan Kim", role: "Reviewer", repos: 3, avatar: "JK" },
-        { name: "Morgan Lee", role: "Member", repos: 6, avatar: "ML" },
-      ].map((m) => (
-        <div key={m.name} className="flex items-center gap-2.5 rounded-lg bg-white/[0.03] p-2.5">
-          <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-[9px] font-medium text-[#ccc]">
-            {m.avatar}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-[11px] font-medium text-[#ccc]">{m.name}</div>
-            <div className="text-[10px] text-[#555]">{m.repos} repos</div>
-          </div>
-          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] ${m.role === "Admin" ? "bg-[#4ade80]/10 text-[#4ade80]" : "bg-white/[0.06] text-[#888]"}`}>
-            {m.role}
+      <div className="feature-stagger space-y-4 p-5 text-sm">
+        <p>
+          <span className="text-[#555]">$</span>{" "}
+          <span className="text-[#e7e7e7]">
+            {typedCommand}
+            {!commandDone && <TypingCursor />}
           </span>
+        </p>
+        <div className="min-h-[66px] whitespace-pre-line text-[#777]">
+          {typedOutput}
+          {commandDone && !outputDone && <TypingCursor />}
         </div>
-      ))}
-      <div className="mt-1 rounded-lg border border-dashed border-white/[0.08] p-2.5 text-center text-[11px] text-[#555]">
-        Shared review config across 8 repositories
+        {outputDone && (
+          <div className="feature-fade-in space-y-2 rounded-lg border border-white/[0.08] bg-white/[0.04] p-3">
+            <TerminalFinding tone="warn" file="auth.ts:12" text="Consider rate limiting token validation" />
+            <TerminalFinding tone="ok" file="middleware.ts:8" text="Error handling matches project pattern" />
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function PreviewAnalytics() {
-  const bars = [
-    { label: "Mon", h: 50, reviews: 12, delay: 0 },
-    { label: "Tue", h: 36, reviews: 8, delay: 80 },
-    { label: "Wed", h: 65, reviews: 15, delay: 160 },
-    { label: "Thu", h: 28, reviews: 6, delay: 240 },
-    { label: "Fri", h: 55, reviews: 13, delay: 320 },
-    { label: "Sat", h: 16, reviews: 3, delay: 400 },
-    { label: "Sun", h: 12, reviews: 2, delay: 480 },
-  ];
+function IndexPreview() {
+  const [visibleFileCount, setVisibleFileCount] = useState(0);
+
+  useEffect(() => {
+    setVisibleFileCount(0);
+
+    const timeoutIds = INDEXED_FILES.map((_, index) =>
+      window.setTimeout(() => {
+        setVisibleFileCount(index + 1);
+      }, 1350 + index * 320),
+    );
+
+    return () => {
+      timeoutIds.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    };
+  }, []);
 
   return (
-    <div className="space-y-3 rounded-xl bg-[#111] p-4">
+    <div className="mx-auto max-w-2xl rounded-lg border border-white/[0.08] bg-[#111] p-5 shadow-2xl shadow-black/30">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-white">Weekly Overview</span>
-        <span className="text-[10px] text-[#555]">Mar 10 — Mar 16</span>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#666]">Indexer</p>
+          <h4 className="mt-1 text-xl font-semibold text-white">Repository context refresh</h4>
+        </div>
+        <span className="rounded-full bg-[#10d8be]/10 px-3 py-1 text-xs text-[#10d8be]">78%</span>
       </div>
-      {/* Chart */}
-      <div className="rounded-lg bg-white/[0.03] p-3">
-        <div className="flex items-end gap-1.5">
-          {bars.map((b) => (
-            <div key={b.label} className="flex flex-1 flex-col items-center gap-1">
-              <span className="text-[9px] text-[#888]">{b.reviews}</span>
+      <div className="mt-6 h-2 overflow-hidden rounded-full bg-white/[0.08]">
+        <div className="bento-progress-fill h-full rounded-full bg-[#10d8be]" />
+      </div>
+      <div className="mt-6 grid gap-3 sm:grid-cols-3">
+        <TypingPreviewMetric value="4,832" label="chunks" delay={250} />
+        <TypingPreviewMetric value="3,072" label="dims" delay={520} />
+        <TypingPreviewMetric value="1,247" label="files" delay={790} />
+      </div>
+      <div className="mt-6 min-h-[128px] space-y-2">
+        {INDEXED_FILES.slice(0, visibleFileCount).map((file) => (
+          <div key={file} className="feature-fade-in flex items-center justify-between rounded-lg bg-white/[0.04] px-3 py-2 text-sm">
+            <span className="text-[#bdbdbd]">{file}</span>
+            <span className="text-[#666]">indexed</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function KnowledgePreview() {
+  return (
+    <div className="mx-auto max-w-2xl rounded-lg border border-white/[0.08] bg-[#111] p-5 shadow-2xl shadow-black/30">
+      <div className="feature-stagger grid gap-3">
+        {[
+          ["Error Handling Standards", "Convention"],
+          ["API Response Format", "Standard"],
+          ["Authentication Flow", "Architecture"],
+          ["Rate Limit Policy", "Security"],
+        ].map(([title, label]) => (
+          <div key={title} className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-white/[0.04] p-4">
+            <IconFileText className="size-5 shrink-0 text-[#10d8be]" />
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-white">{title}</p>
+              <p className="mt-1 text-sm text-[#777]">Used automatically during reviews</p>
+            </div>
+            <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-xs text-[#8a8a8a]">{label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TeamPreview() {
+  return (
+    <div className="mx-auto max-w-2xl rounded-lg border border-white/[0.08] bg-[#111] p-5 shadow-2xl shadow-black/30">
+      <div className="mb-4 flex items-center justify-between">
+        <p className="font-semibold text-white">Acme Engineering</p>
+        <span className="rounded-full bg-[#10d8be]/10 px-3 py-1 text-xs text-[#10d8be]">8 repositories</span>
+      </div>
+      <div className="feature-stagger space-y-3">
+        {[
+          ["SC", "Sarah Chen", "Admin"],
+          ["AR", "Alex Rivera", "Reviewer"],
+          ["IK", "Ilya Kolasinac", "Reviewer"],
+          ["ML", "Morgan Lee", "Member"],
+        ].map(([avatar, name, role]) => (
+          <div key={name} className="flex items-center gap-3 rounded-lg bg-white/[0.04] p-3">
+            <span className="flex size-9 items-center justify-center rounded-full bg-white/[0.08] text-xs font-medium text-[#d0d0d0]">
+              {avatar}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-medium text-white">{name}</span>
+              <span className="text-sm text-[#777]">Shared review config</span>
+            </span>
+            <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-xs text-[#8a8a8a]">{role}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AnalyticsPreview() {
+  const bars = [
+    { label: "Mon", reviews: 12, height: 46 },
+    { label: "Tue", reviews: 8, height: 32 },
+    { label: "Wed", reviews: 15, height: 64 },
+    { label: "Thu", reviews: 6, height: 38 },
+    { label: "Fri", reviews: 13, height: 58 },
+    { label: "Sat", reviews: 3, height: 18 },
+    { label: "Sun", reviews: 2, height: 14 },
+  ] as const;
+
+  return (
+    <div className="mx-auto max-w-2xl rounded-lg border border-white/[0.08] bg-[#111] p-5 shadow-2xl shadow-black/30">
+      <div className="flex items-center justify-between">
+        <p className="font-semibold text-white">Weekly review signal</p>
+        <span className="text-sm text-[#777]">Mar 10 - Mar 16</span>
+      </div>
+      <div className="mt-6 rounded-lg border border-white/[0.06] bg-white/[0.04] p-4">
+        <div className="flex h-44 items-end gap-3">
+          {bars.map((bar, index) => (
+            <div key={bar.label} className="flex h-full flex-1 flex-col items-center justify-end gap-2">
+              <span className="text-xs font-medium text-[#bdbdbd]">{bar.reviews}</span>
               <div
-                className="bento-bar w-full rounded-sm bg-gradient-to-t from-[#4ade80]/30 to-[#4ade80]/60"
-                style={{ height: `${b.h}px`, animationDelay: `${b.delay}ms` }}
+                className="feature-bar w-full rounded-t bg-gradient-to-t from-[#10d8be]/45 to-[#10d8be]"
+                style={{ height: `${bar.height}%`, animationDelay: `${index * 80}ms` }}
               />
-              <span className="text-[9px] text-[#555]">{b.label}</span>
+              <span className="text-xs text-[#777]">{bar.label}</span>
             </div>
           ))}
         </div>
       </div>
-      {/* Metrics */}
-      <div className="bento-stagger grid grid-cols-3 gap-2">
-        <div className="rounded-lg bg-white/[0.03] p-2 text-center">
-          <div className="text-sm font-bold text-white">59</div>
-          <div className="text-[9px] text-[#555]">Reviews</div>
-        </div>
-        <div className="rounded-lg bg-white/[0.03] p-2 text-center">
-          <div className="text-sm font-bold text-white">1.8h</div>
-          <div className="text-[9px] text-[#555]">Avg merge</div>
-        </div>
-        <div className="rounded-lg bg-white/[0.03] p-2 text-center">
-          <div className="text-sm font-bold text-[#4ade80]">$4.20</div>
-          <div className="text-[9px] text-[#555]">Cost</div>
-        </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <PreviewMetric value="59" label="reviews" />
+        <PreviewMetric value="1.8h" label="avg merge" />
+        <PreviewMetric value="$4.20" label="cost" accent />
       </div>
+    </div>
+  );
+}
+
+function Citation({ children, active = false }: { children: React.ReactNode; active?: boolean }) {
+  return (
+    <span className={`rounded-full px-2 py-1 text-xs ${active ? "bg-[#10d8be]/10 text-[#10d8be]" : "bg-white/[0.06] text-[#8a8a8a]"}`}>
+      {children}
+    </span>
+  );
+}
+
+function TypingCursor() {
+  return <span className="typing-cursor ml-0.5 inline-block h-4 w-px translate-y-0.5 bg-[#10d8be]" />;
+}
+
+function TerminalFinding({ file, text, tone }: { file: string; text: string; tone: "warn" | "ok" }) {
+  return (
+    <div className="flex items-start gap-2 text-xs leading-relaxed">
+      <span className={tone === "warn" ? "text-[#f9c74f]" : "text-[#10d8be]"}>{tone === "warn" ? "!" : "✓"}</span>
+      <span className="text-[#999]">
+        <span className="text-[#e7e7e7]">{file}</span> - {text}
+      </span>
+    </div>
+  );
+}
+
+function PreviewMetric({ value, label, accent = false }: { value: string; label: string; accent?: boolean }) {
+  return (
+    <div className="rounded-lg bg-white/[0.045] p-4 text-center">
+      <div className={`text-xl font-semibold ${accent ? "text-[#10d8be]" : "text-white"}`}>{value}</div>
+      <div className="mt-1 text-xs uppercase tracking-[0.16em] text-[#666]">{label}</div>
+    </div>
+  );
+}
+
+function TypingPreviewMetric({ value, label, delay }: { value: string; label: string; delay: number }) {
+  const typedValue = useTypewriter(value, 70, delay);
+  const done = typedValue.length === value.length;
+
+  return (
+    <div className="rounded-lg bg-white/[0.045] p-4 text-center">
+      <div className="min-h-7 text-xl font-semibold text-white">
+        {typedValue}
+        {!done && <TypingCursor />}
+      </div>
+      <div className="mt-1 text-xs uppercase tracking-[0.16em] text-[#666]">{label}</div>
+    </div>
+  );
+}
+
+function FeatureMetric({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="rounded-lg border border-white/[0.08] bg-white/[0.035] px-4 py-4 transition-colors hover:border-[#10d8be]/25 hover:bg-[#10d8be]/[0.055]">
+      <div className="text-base font-semibold text-white sm:text-lg">{value}</div>
+      <div className="text-sm text-[#7d7d7d]">{label}</div>
     </div>
   );
 }

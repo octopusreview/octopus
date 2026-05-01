@@ -118,6 +118,7 @@ export async function POST(request: NextRequest) {
   // ── Dual auth ─────────────────────────────────────────────────────────────
 
   const apiAuth = await authenticateApiToken(request);
+  const hasAuthHeader = request.headers.get("authorization")?.startsWith("Bearer ") ?? false;
   let orgId: string;
   let isCommunityMode = false;
   let communityDailyLimit = 5;
@@ -125,6 +126,12 @@ export async function POST(request: NextRequest) {
   if (apiAuth) {
     // Mode 1: API key present → use real org
     orgId = apiAuth.org.id;
+  } else if (hasAuthHeader) {
+    // Token was sent but invalid/expired/banned — do NOT fall back to community.
+    return Response.json(
+      { error: "Invalid or expired octopus-api-key" },
+      { status: 401 },
+    );
   } else {
     // Mode 2: No API key → community mode (public repos only)
     const repoInfo = await fetchGitHubRepoInfo(githubToken, owner, repoName);

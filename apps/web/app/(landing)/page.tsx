@@ -138,27 +138,18 @@ export default async function LandingPage() {
       <LandingDesktopNav isLoggedIn={!!session} />
 
       {/* Hero — dark bg */}
-      <section className="relative z-10 px-6 pb-20 pt-28 md:px-8 md:pb-28 md:pt-40">
+      <section className="relative z-10 px-6 pb-20 pt-32 md:px-8 md:pb-28 md:pt-44">
         <div className="mx-auto max-w-4xl text-center">
-          <div className="invisible animate-fade-in mb-8 inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-4 py-1.5 text-sm text-[#666]">
-            <span className="relative flex size-1.5">
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-white/40" />
-              <span className="relative inline-flex size-1.5 rounded-full bg-white/60" />
-            </span>
-            AI-powered code review automation
-          </div>
-
           <h1 className="animate-fade-in text-4xl font-bold leading-[1.1] tracking-tight text-white [animation-delay:100ms] sm:text-5xl md:text-6xl lg:text-7xl">
-            Your AI code reviewer
+            Review every PR
             <br />
-            <span className="text-[#666]">
-              that never sleeps
-            </span>
+            <span className="text-[#777]">with repo context.</span>
           </h1>
 
-          <p className="animate-fade-in mx-auto mt-6 h-14 max-w-2xl text-base text-[#666] [animation-delay:200ms] sm:text-lg">
+          <p className="animate-fade-in mx-auto mt-6 min-h-16 max-w-2xl text-base leading-relaxed text-[#777] [animation-delay:200ms] sm:text-lg">
             <RotatingHeroText
               texts={[
+                "Octopus indexes your codebase, applies team standards,\nand leaves source-backed comments with severity on every pull request.",
                 "Octopus reviews every pull request with deep context awareness.\nCatch bugs, enforce standards, and ship with confidence.",
                 "Learns your codebase and reviews PRs like your senior engineer",
                 "Catches bugs, security issues, and anti-patterns before production",
@@ -225,9 +216,16 @@ export default async function LandingPage() {
               <StepCard
                 step="01"
                 icon={<IconPlugConnected className="size-5" />}
-                title="Connect GitHub"
-                description="Install the Octopus GitHub App and select repositories to monitor."
-              />
+                title="Connect repositories"
+                description="Connect your source provider and choose which repositories Octopus should monitor."
+              >
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <ProviderChip name="GitHub" status="Live" />
+                  <ProviderChip name="Bitbucket" status="Live" />
+                  <ProviderChip name="GitLab" status="Planned" muted />
+                  <ProviderChip name="Gitea" status="Planned" muted />
+                </div>
+              </StepCard>
               <StepCard
                 step="02"
                 icon={<IconBrain className="size-5" />}
@@ -480,7 +478,19 @@ export default async function LandingPage() {
 /* Sub-components                                                      */
 /* ------------------------------------------------------------------ */
 
-function StepCard({ step, icon, title, description }: { step: string; icon: React.ReactNode; title: string; description: string }) {
+function StepCard({
+  step,
+  icon,
+  title,
+  description,
+  children,
+}: {
+  step: string;
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  children?: React.ReactNode;
+}) {
   return (
     <div className="group rounded-xl border border-white/[0.08] bg-white/[0.04] p-6 backdrop-blur-sm transition-colors hover:border-white/[0.15] hover:bg-white/[0.07]">
       <div className="flex items-center gap-4">
@@ -491,7 +501,23 @@ function StepCard({ step, icon, title, description }: { step: string; icon: Reac
       </div>
       <h3 className="mt-4 text-lg font-semibold text-white">{title}</h3>
       <p className="mt-2 text-sm leading-relaxed text-[#888]">{description}</p>
+      {children}
     </div>
   );
 }
 
+function ProviderChip({ name, status, muted = false }: { name: string; status: "Live" | "Planned"; muted?: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${
+        muted
+          ? "border-white/[0.08] bg-white/[0.03] text-[#777]"
+          : "border-[#10D8BE]/25 bg-[#10D8BE]/10 text-[#d8fffa]"
+      }`}
+    >
+      <span className={`size-1.5 rounded-full ${muted ? "bg-[#666]" : "bg-[#10D8BE]"}`} />
+      {name}
+      <span className={muted ? "text-[#666]" : "text-[#10D8BE]"}>{status}</span>
+    </span>
+  );
+}

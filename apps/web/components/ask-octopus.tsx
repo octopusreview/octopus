@@ -243,7 +243,7 @@ export function AskOctopus() {
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-4 py-3">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-3">
             {messages.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center">
                 <div className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-[#10D8BE]/10">
@@ -272,10 +272,10 @@ export function AskOctopus() {
                 {messages.map((msg, i) => (
                   <div
                     key={i}
-                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                    className={`flex min-w-0 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                   >
                     <div
-                      className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed ${
+                      className={`min-w-0 max-w-[85%] overflow-hidden rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed ${
                         msg.role === "user"
                           ? "bg-[#10D8BE]/15 text-white"
                           : "bg-white/[0.05] text-[#ccc]"

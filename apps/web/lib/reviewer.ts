@@ -65,6 +65,7 @@ import {
   resolveIndexClaimWait,
 } from "@/lib/review-helpers";
 import type { ReviewConfig } from "@/lib/review-helpers";
+import { getCategoryConfidenceThreshold } from "@/lib/review-categories";
 import {
   gatherCrossFileContext,
   gatherVerificationContext,
@@ -1728,7 +1729,9 @@ Rules:
     // Save all parsed findings before filtering — these will be shown in the summary comment
     let allParsedFindings = [...findings];
 
-    // Filter out findings below confidence threshold
+    // Filter out findings below confidence threshold (per-category: high-risk
+    // categories like Security/Bug get a relaxed threshold so genuine issues
+    // are not silently dropped — see review-categories.ts).
     const confidenceThreshold =
       typeof reviewConfig.confidenceThreshold === "number"
         ? reviewConfig.confidenceThreshold
@@ -1736,9 +1739,11 @@ Rules:
           ? 85
           : 70;
     const allFindings = findings;
-    findings = findings.filter((f) => f.confidence >= confidenceThreshold);
+    findings = findings.filter(
+      (f) => f.confidence >= getCategoryConfidenceThreshold(f.category, confidenceThreshold),
+    );
     if (allFindings.length !== findings.length) {
-      console.log(`[reviewer] Filtered out ${allFindings.length - findings.length} findings below confidence threshold (${confidenceThreshold})`);
+      console.log(`[reviewer] Filtered out ${allFindings.length - findings.length} findings below per-category confidence threshold (base ${confidenceThreshold})`);
     }
 
     // Filter out disabled categories
@@ -1911,13 +1916,17 @@ Rules:
       console.log(`[reviewer] Capped findings: showing ${findings.length} of ${findings.length + truncatedCount}`);
     }
 
-    // Split findings: inline (above threshold) vs summary-only (below threshold)
-    const inlineThreshold = reviewConfig.inlineThreshold ?? "medium";
+    // Split findings: inline (above threshold) vs summary-only (below threshold).
+    // Default is "low" so 🔵 findings with a mappable file:line still post inline
+    // (where they're easier to act on); 💡 nits go to the collapsed summary table.
+    const inlineThreshold = reviewConfig.inlineThreshold ?? "low";
     const inlineSeverities = inlineThreshold === "critical"
       ? ["🔴"]
       : inlineThreshold === "high"
         ? ["🔴", "🟠"]
-        : ["🔴", "🟠", "🟡"]; // default: medium
+        : inlineThreshold === "medium"
+          ? ["🔴", "🟠", "🟡"]
+          : ["🔴", "🟠", "🟡", "🔵"]; // default: low
     const inlineFindings = findings.filter((f) => inlineSeverities.includes(f.severity));
 
     console.log(`[reviewer] Split: ${inlineFindings.length} inline (${inlineSeverities.join(",")}), severities: ${findings.map((f) => f.severity).join(",")}`);

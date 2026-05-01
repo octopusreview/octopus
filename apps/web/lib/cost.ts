@@ -1,4 +1,5 @@
 import { prisma } from "@octopus/db";
+import { ORG_TYPE } from "@/lib/org-types";
 
 type ModelPricing = { input: number; output: number };
 
@@ -110,6 +111,7 @@ export async function getOrgSpendLimitStatus(orgId: string): Promise<SpendLimitR
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
     select: {
+      type: true,
       anthropicApiKey: true,
       openaiApiKey: true,
       googleApiKey: true,
@@ -120,6 +122,9 @@ export async function getOrgSpendLimitStatus(orgId: string): Promise<SpendLimitR
   });
 
   if (!org) return { blocked: false };
+
+  // Community orgs get rate-limited via communityDailyReviewLimit, not credits.
+  if (org.type === ORG_TYPE.COMMUNITY) return { blocked: false };
 
   // Orgs with their own keys for all LLM providers have no platform limit
   if (org.anthropicApiKey && org.openaiApiKey && org.googleApiKey) return { blocked: false };

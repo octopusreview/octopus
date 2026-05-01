@@ -532,6 +532,22 @@ export function KnowledgeContent({ documents: initialDocuments, deletedDocuments
         </div>
       )}
 
+      {documents.length > 0 && (
+        <div className="mt-6 flex items-start gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+          <IconPin className="mt-0.5 size-4 shrink-0 text-primary" />
+          <div className="text-xs text-muted-foreground sm:text-sm">
+            <span className="font-medium text-foreground">What is Pin?</span>{" "}
+            By default, documents are pulled into a review only when their
+            content is relevant to the changes in the PR. Pinned documents are{" "}
+            <span className="font-medium text-foreground">
+              always included in every review
+            </span>{" "}
+            regardless of the diff, and their rules are strictly enforced. Use
+            this only for rules that must apply to every review.
+          </div>
+        </div>
+      )}
+
       {documents.length === 0 ? (
         <div className="mt-8 flex flex-col items-center justify-center rounded-lg border border-dashed px-4 py-16">
           <IconBook className="mb-3 size-10 text-muted-foreground/40" />

@@ -305,6 +305,17 @@ SCORING RULES:
   the score MUST reflect the improvement (e.g., Security should be 4/5 or 5/5
   if the security issue was fixed). Do NOT carry over old scores from prior reviews.
 - The Notes column must contain a 3-8 word justification for each score
+- BIDIRECTIONAL CONSISTENCY: every concrete issue you reference in a Notes
+  cell (e.g., "Open redirect via ?returnTo", "Token stored with placeholder
+  user", "Raw error codes exposed") MUST also appear as a corresponding entry
+  in the findings JSON array. If an issue is real enough to mention in the
+  scorecard, it is real enough to be a finding. Do not summarize problems in
+  the score table that you did not add as findings.
+- ACTIONABLE NOTES: for any score < 5, the Notes cell must convey what is
+  wrong AND imply the remediation direction (e.g., "Open redirect — validate
+  ?returnTo against allowlist", not just "Open redirect via ?returnTo"). The
+  detailed fix lives in the matching finding's `suggestion`; Notes should
+  point the reader at it.
 </scoring_rubric>
 
 <diagram_generation>

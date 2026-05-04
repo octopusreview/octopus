@@ -25,6 +25,9 @@ import {
   IconPlugConnected,
   IconRocket,
   IconBrain,
+  IconHeartHandshake,
+  IconBolt,
+  IconChecks,
 } from "@tabler/icons-react";
 
 const landingFaqs = [
@@ -322,6 +325,111 @@ export default async function LandingPage() {
                 <IconBrandGithub className="size-4" />
                 Star us on GitHub
               </TrackedAnchor>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Free for Open Source — promo banner */}
+      <section id="oss-program" className="relative z-10 scroll-mt-20 px-4 py-6 sm:px-8 md:px-12">
+        <div className="relative mx-auto max-w-6xl overflow-hidden rounded-3xl border border-[#10D8BE]/25 bg-gradient-to-br from-[#10D8BE]/[0.06] via-[#161616] to-[#161616] px-6 py-20 md:px-12 md:py-24">
+          <div
+            className="pointer-events-none absolute inset-0 opacity-40"
+            aria-hidden="true"
+            style={{
+              backgroundImage:
+                "radial-gradient(circle at 15% 20%, rgba(16,216,190,0.15) 0%, transparent 45%)",
+            }}
+          />
+          <div className="relative grid gap-10 lg:grid-cols-[1.05fr_1fr] lg:items-center">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-[#10D8BE]/30 bg-[#10D8BE]/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-[#a4f3e6]">
+                <IconHeartHandshake className="size-3.5" />
+                New · Open Source Program
+              </div>
+              <h2 className="mt-5 text-3xl font-bold tracking-tight text-white sm:text-4xl">
+                Free, unlimited reviews
+                <br />
+                for open source projects
+              </h2>
+              <p className="mt-4 max-w-xl text-[#aaa] sm:text-lg">
+                If your repository is public and OSI-licensed, Octopus reviews
+                every pull request — forever, on us. No credit card, no monthly
+                quota. Maintainers deserve great tooling.
+              </p>
+
+              <ul className="mt-6 space-y-2.5 text-sm text-[#bbb]">
+                <li className="flex items-start gap-2">
+                  <IconChecks className="mt-0.5 size-4 shrink-0 text-[#10D8BE]" />
+                  <span>Unlimited PR reviews on every public repo</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <IconChecks className="mt-0.5 size-4 shrink-0 text-[#10D8BE]" />
+                  <span>One-file setup with a GitHub Action</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <IconChecks className="mt-0.5 size-4 shrink-0 text-[#10D8BE]" />
+                  <span>Source-backed inline comments with severity levels</span>
+                </li>
+              </ul>
+
+              <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+                <TrackedLink
+                  href="/docs/open-source"
+                  event="cta_click"
+                  eventParams={{ location: "oss_program", label: "read_docs" }}
+                  className="inline-flex items-center gap-2 rounded-full bg-[#10D8BE] px-5 py-2.5 text-sm font-medium text-[#0c0c0c] transition-colors hover:bg-[#0fbfa8]"
+                >
+                  Read the docs
+                  <IconArrowRight className="size-4" />
+                </TrackedLink>
+                <TrackedAnchor
+                  href="https://github.com/marketplace/actions/octopus-review"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  event="cta_click"
+                  eventParams={{ location: "oss_program", label: "marketplace" }}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] px-5 py-2.5 text-sm font-medium text-[#bbb] transition-colors hover:text-white"
+                >
+                  <IconBrandGithub className="size-4" />
+                  GitHub Marketplace
+                </TrackedAnchor>
+              </div>
+            </div>
+
+            <div className="relative">
+              <div className="absolute -left-4 -top-4 hidden items-center gap-2 rounded-full border border-[#10D8BE]/30 bg-[#0c0c0c] px-3 py-1.5 text-[11px] font-medium text-[#a4f3e6] sm:inline-flex">
+                <IconBolt className="size-3.5" />
+                Drop in your workflow
+              </div>
+              <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#0a0a0a] shadow-2xl shadow-black/30">
+                <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="size-2.5 rounded-full bg-[#ff5f56]/70" />
+                    <span className="size-2.5 rounded-full bg-[#ffbd2e]/70" />
+                    <span className="size-2.5 rounded-full bg-[#27c93f]/70" />
+                  </div>
+                  <span className="text-[11px] text-[#666]">
+                    .github/workflows/octopus.yml
+                  </span>
+                </div>
+                <pre className="overflow-x-auto px-4 py-4 text-[12px] leading-relaxed text-[#ddd]">
+                  <code>{`name: Octopus Review
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: octopusreview/action@v1`}</code>
+                </pre>
+              </div>
             </div>
           </div>
         </div>

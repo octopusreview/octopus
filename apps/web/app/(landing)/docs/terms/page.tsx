@@ -91,6 +91,16 @@ export default function TermsPage() {
           <li>Use the Service for any illegal purpose</li>
           <li>Interfere with the operation of the Service or other users&apos; access</li>
         </UL>
+        <P>
+          Good-faith security research conducted in accordance with our{" "}
+          <Link
+            href="/docs/security"
+            className="text-white underline decoration-white/30 underline-offset-2 transition-colors hover:decoration-white"
+          >
+            Security Policy
+          </Link>{" "}
+          is authorized and is not considered a violation of these Terms.
+        </P>
       </Section>
 
       <Section title="7. Usage Limits and Billing">

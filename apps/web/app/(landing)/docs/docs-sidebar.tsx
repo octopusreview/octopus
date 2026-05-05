@@ -13,6 +13,7 @@ import {
   IconShieldLock,
   IconScale,
   IconCookie,
+  IconBug,
   IconQuestionMark,
   IconWand,
   IconBook2,
@@ -42,6 +43,7 @@ const legalItems = [
   { href: "/docs/privacy", label: "Privacy Policy", icon: IconShieldLock },
   { href: "/docs/terms", label: "Terms & Conditions", icon: IconScale },
   { href: "/docs/cookies", label: "Cookie Policy", icon: IconCookie },
+  { href: "/docs/security", label: "Security & Bug Bounty", icon: IconBug },
 ];
 
 export function DocsSidebar() {

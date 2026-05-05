@@ -1,0 +1,6 @@
+Contact: mailto:security@octopus-review.ai
+Expires: 2027-05-05T00:00:00.000Z
+Preferred-Languages: en, fr, de, tr
+Canonical: https://octopus-review.ai/.well-known/security.txt
+Policy: https://octopus-review.ai/docs/security
+Acknowledgments: https://octopus-review.ai/docs/security/hall-of-fame

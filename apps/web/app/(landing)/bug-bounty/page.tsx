@@ -441,6 +441,16 @@ export default async function BugBountyPage() {
             time. <br />Reward amounts are at our discretion based on impact and
             quality of the report.
           </p>
+          <p className="mt-4 text-sm text-[#666]">
+            For the full policy, scope details, and safe-harbor terms, see our{" "}
+            <a
+              href="/docs/security"
+              className="text-teal-400 underline decoration-teal-400/30 underline-offset-2 transition-colors hover:text-teal-300 hover:decoration-teal-300"
+            >
+              Security Policy
+            </a>
+            .
+          </p>
         </div>
       </section>
 

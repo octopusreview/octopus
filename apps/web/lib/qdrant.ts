@@ -37,6 +37,37 @@ function isSparseVectorError(error: unknown): boolean {
   return combined.includes("named vector") || combined.includes("sparse") || combined.includes("Wrong input") || combined.includes("Not existing vector name") || combined.includes("Bad Request");
 }
 
+function isTransientError(error: unknown): boolean {
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  const cause = error instanceof Error && "cause" in error
+    ? (error as Error & { cause?: unknown }).cause
+    : undefined;
+  const code = cause && typeof cause === "object" && cause !== null && "code" in cause
+    ? String((cause as { code?: unknown }).code).toUpperCase()
+    : "";
+  if (["EPIPE", "ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "EAI_AGAIN", "UND_ERR_SOCKET"].includes(code)) return true;
+  return message.includes("fetch failed")
+    || message.includes("socket hang up")
+    || message.includes("network socket disconnected")
+    || message.includes("other side closed");
+}
+
+async function withQdrantRetry<T>(fn: () => Promise<T>, label: string, maxAttempts = 4): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (!isTransientError(error) || attempt === maxAttempts) throw error;
+      const delay = Math.min(500 * 2 ** (attempt - 1), 4000);
+      console.warn(`[qdrant] ${label} transient failure (attempt ${attempt}/${maxAttempts}), retrying in ${delay}ms:`, error instanceof Error ? error.message : error);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw lastError;
+}
+
 const COLLECTION_NAME = "code_chunks";
 const VECTOR_SIZE = 3072; // text-embedding-3-large
 const SPARSE_VECTOR_NAME = "sparse";
@@ -100,7 +131,7 @@ export async function upsertChunks(
       payload: p.payload,
     }));
     try {
-      await qdrant.upsert(COLLECTION_NAME, { points: batch });
+      await withQdrantRetry(() => qdrant.upsert(COLLECTION_NAME, { points: batch }), `upsert ${COLLECTION_NAME}`);
     } catch (error) {
       if (!isSparseVectorError(error)) throw error;
       console.warn("[qdrant] Falling back to dense-only upsert", { collection: COLLECTION_NAME, error: error instanceof Error ? error.message : error });
@@ -109,7 +140,7 @@ export async function upsertChunks(
         vector: p.vector,
         payload: p.payload,
       }));
-      await qdrant.upsert(COLLECTION_NAME, { points: denseBatch });
+      await withQdrantRetry(() => qdrant.upsert(COLLECTION_NAME, { points: denseBatch }), `upsert ${COLLECTION_NAME} dense`);
     }
   }
 }
@@ -324,7 +355,7 @@ export async function upsertKnowledgeChunks(
       payload: p.payload,
     }));
     try {
-      await qdrant.upsert(KNOWLEDGE_COLLECTION_NAME, { points: batch });
+      await withQdrantRetry(() => qdrant.upsert(KNOWLEDGE_COLLECTION_NAME, { points: batch }), `upsert ${KNOWLEDGE_COLLECTION_NAME}`);
     } catch (error) {
       if (!isSparseVectorError(error)) throw error;
       console.warn("[qdrant] Falling back to dense-only upsert", { collection: KNOWLEDGE_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
@@ -333,7 +364,7 @@ export async function upsertKnowledgeChunks(
         vector: p.vector,
         payload: p.payload,
       }));
-      await qdrant.upsert(KNOWLEDGE_COLLECTION_NAME, { points: denseBatch });
+      await withQdrantRetry(() => qdrant.upsert(KNOWLEDGE_COLLECTION_NAME, { points: denseBatch }), `upsert ${KNOWLEDGE_COLLECTION_NAME} dense`);
     }
   }
 }
@@ -482,7 +513,7 @@ export async function upsertReviewChunks(
       payload: p.payload,
     }));
     try {
-      await qdrant.upsert(REVIEW_COLLECTION_NAME, { points: batch });
+      await withQdrantRetry(() => qdrant.upsert(REVIEW_COLLECTION_NAME, { points: batch }), `upsert ${REVIEW_COLLECTION_NAME}`);
     } catch (error) {
       if (!isSparseVectorError(error)) throw error;
       console.warn("[qdrant] Falling back to dense-only upsert", { collection: REVIEW_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
@@ -491,7 +522,7 @@ export async function upsertReviewChunks(
         vector: p.vector,
         payload: p.payload,
       }));
-      await qdrant.upsert(REVIEW_COLLECTION_NAME, { points: denseBatch });
+      await withQdrantRetry(() => qdrant.upsert(REVIEW_COLLECTION_NAME, { points: denseBatch }), `upsert ${REVIEW_COLLECTION_NAME} dense`);
     }
   }
 }
@@ -617,11 +648,11 @@ export async function upsertChatChunk(point: {
     payload,
   };
   try {
-    await qdrant.upsert(CHAT_COLLECTION_NAME, { points: [qdrantPoint] });
+    await withQdrantRetry(() => qdrant.upsert(CHAT_COLLECTION_NAME, { points: [qdrantPoint] }), `upsert ${CHAT_COLLECTION_NAME}`);
   } catch (error) {
     if (!isSparseVectorError(error)) throw error;
     console.warn("[qdrant] Falling back to dense-only upsert", { collection: CHAT_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
-    await qdrant.upsert(CHAT_COLLECTION_NAME, { points: [{ id, vector: point.vector, payload }] });
+    await withQdrantRetry(() => qdrant.upsert(CHAT_COLLECTION_NAME, { points: [{ id, vector: point.vector, payload }] }), `upsert ${CHAT_COLLECTION_NAME} dense`);
   }
 }
 
@@ -766,11 +797,11 @@ export async function upsertDiagramChunk(point: {
     payload,
   };
   try {
-    await qdrant.upsert(DIAGRAM_COLLECTION_NAME, { points: [qdrantPoint] });
+    await withQdrantRetry(() => qdrant.upsert(DIAGRAM_COLLECTION_NAME, { points: [qdrantPoint] }), `upsert ${DIAGRAM_COLLECTION_NAME}`);
   } catch (error) {
     if (!isSparseVectorError(error)) throw error;
     console.warn("[qdrant] Falling back to dense-only upsert", { collection: DIAGRAM_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
-    await qdrant.upsert(DIAGRAM_COLLECTION_NAME, { points: [{ id, vector: point.vector, payload }] });
+    await withQdrantRetry(() => qdrant.upsert(DIAGRAM_COLLECTION_NAME, { points: [{ id, vector: point.vector, payload }] }), `upsert ${DIAGRAM_COLLECTION_NAME} dense`);
   }
 }
 
@@ -903,11 +934,11 @@ export async function upsertFeedbackPattern(point: {
     payload: applied.payload,
   };
   try {
-    await qdrant.upsert(FEEDBACK_COLLECTION_NAME, { points: [qdrantPoint] });
+    await withQdrantRetry(() => qdrant.upsert(FEEDBACK_COLLECTION_NAME, { points: [qdrantPoint] }), `upsert ${FEEDBACK_COLLECTION_NAME}`);
   } catch (error) {
     if (!isSparseVectorError(error)) throw error;
     console.warn("[qdrant] Falling back to dense-only upsert", { collection: FEEDBACK_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
-    await qdrant.upsert(FEEDBACK_COLLECTION_NAME, { points: [{ id: applied.id, vector: point.vector, payload: applied.payload }] });
+    await withQdrantRetry(() => qdrant.upsert(FEEDBACK_COLLECTION_NAME, { points: [{ id: applied.id, vector: point.vector, payload: applied.payload }] }), `upsert ${FEEDBACK_COLLECTION_NAME} dense`);
   }
 }
 
@@ -1035,7 +1066,7 @@ export async function upsertDocsChunks(
       payload: p.payload,
     }));
     try {
-      await qdrant.upsert(DOCS_COLLECTION_NAME, { points: batch });
+      await withQdrantRetry(() => qdrant.upsert(DOCS_COLLECTION_NAME, { points: batch }), `upsert ${DOCS_COLLECTION_NAME}`);
     } catch (error) {
       if (!isSparseVectorError(error)) throw error;
       console.warn("[qdrant] Falling back to dense-only upsert", { collection: DOCS_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
@@ -1044,7 +1075,7 @@ export async function upsertDocsChunks(
         vector: p.vector,
         payload: p.payload,
       }));
-      await qdrant.upsert(DOCS_COLLECTION_NAME, { points: denseBatch });
+      await withQdrantRetry(() => qdrant.upsert(DOCS_COLLECTION_NAME, { points: denseBatch }), `upsert ${DOCS_COLLECTION_NAME} dense`);
     }
   }
 }

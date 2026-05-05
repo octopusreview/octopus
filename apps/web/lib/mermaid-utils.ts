@@ -185,6 +185,7 @@ export function sanitizeMermaidCode(code: string): string {
   if (/^\s*sequenceDiagram/m.test(result)) {
     result = renameReservedParticipants(result);
     result = balanceSequenceActivations(result);
+    result = escapeSemicolonsInMessages(result);
   }
 
   // 6. Remove trailing whitespace
@@ -246,6 +247,30 @@ function renameReservedParticipants(code: string): string {
     // keywords (loop/alt/etc.). Safe to replace globally — message text
     // cannot appear on these lines.
     lines[i] = replaceInZone(line);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Replace semicolons in sequence-diagram message and note text with commas.
+ * Mermaid treats `;` as a statement separator, so a message like
+ * `A->>B: data:image/png;base64,...` is split mid-message and the lexer
+ * throws on the leftover `base64,...`. Only the portion after the first `:`
+ * is rewritten so participant declarations and arrow syntax stay intact.
+ */
+function escapeSemicolonsInMessages(code: string): string {
+  const lines = code.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trimStart();
+    if (!trimmed || trimmed.startsWith("%%")) continue;
+    if (/^(participant|actor)\s/i.test(trimmed)) continue;
+    const colonIdx = line.indexOf(":");
+    if (colonIdx < 0) continue;
+    const head = line.slice(0, colonIdx + 1);
+    const tail = line.slice(colonIdx + 1);
+    if (!tail.includes(";")) continue;
+    lines[i] = head + tail.replace(/;/g, ",");
   }
   return lines.join("\n");
 }

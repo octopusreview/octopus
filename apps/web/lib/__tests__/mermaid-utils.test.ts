@@ -417,6 +417,35 @@ describe("sanitizeMermaidCode", () => {
     expect(deactivateCount).toBe(2);
   });
 
+  it("replaces semicolons in sequence-diagram message text with commas", () => {
+    const code = [
+      "sequenceDiagram",
+      "    participant QRLib",
+      "    participant ProfilePage",
+      "    QRLib-->>ProfilePage: data:image/png;base64,...",
+    ].join("\n");
+    const result = sanitizeMermaidCode(code);
+    expect(result).toContain("data:image/png,base64,...");
+    expect(result).not.toContain("image/png;base64");
+  });
+
+  it("replaces semicolons in sequence-diagram note text", () => {
+    const code = [
+      "sequenceDiagram",
+      "    participant A",
+      "    participant B",
+      "    note over A,B: foo; bar; baz",
+    ].join("\n");
+    const result = sanitizeMermaidCode(code);
+    expect(result).toContain("note over A,B: foo, bar, baz");
+  });
+
+  it("does not touch semicolons in non-sequence diagrams via this rule", () => {
+    const code = "graph TD\n    A --> B\n%% comment with ; semicolon";
+    const result = sanitizeMermaidCode(code);
+    expect(result).toContain("comment with ; semicolon");
+  });
+
   it("does not rebalance non-sequence diagrams", () => {
     const code = [
       "graph TD",

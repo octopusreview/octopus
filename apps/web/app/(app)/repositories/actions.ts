@@ -268,6 +268,16 @@ export async function cancelAnalysis(
   }
 
   abortAnalysis(repoId);
+
+  await prisma.repository.update({
+    where: { id: repoId },
+    data: { analysisStatus: "none" },
+  });
+  pubby.trigger(`presence-org-${repo.organizationId}`, "analysis-status", {
+    repoId,
+    status: "none",
+  });
+  revalidatePath("/repositories");
   return {};
 }
 

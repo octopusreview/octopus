@@ -30,7 +30,33 @@ import {
   IconPlayerStop,
   IconCpu,
   IconGitBranch,
+  IconCopy,
 } from "@tabler/icons-react";
+
+function CopyMessageButton({ content }: { content: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // ignore
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      title={copied ? "Copied" : "Copy"}
+      aria-label={copied ? "Copied" : "Copy message"}
+      className="mt-1.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground opacity-60 transition hover:bg-background/50 hover:text-foreground hover:opacity-100"
+    >
+      {copied ? <IconCheck className="size-3" /> : <IconCopy className="size-3" />}
+      <span>{copied ? "Copied" : "Copy"}</span>
+    </button>
+  );
+}
 
 function useIsMobile(breakpoint = 768) {
   const [isMobile, setIsMobile] = useState(false);
@@ -410,6 +436,9 @@ export function FloatingChat() {
           )}
           {msg.id === "streaming" && (
             <span className="ml-1 inline-block animate-pulse">|</span>
+          )}
+          {msg.role === "assistant" && msg.id !== "streaming" && msg.content && (
+            <CopyMessageButton content={msg.content} />
           )}
         </div>
       </div>

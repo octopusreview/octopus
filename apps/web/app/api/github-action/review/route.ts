@@ -2,6 +2,7 @@ import { authenticateApiToken } from "@/lib/api-auth";
 import { prisma } from "@octopus/db";
 import { generateLocalReview } from "@/lib/review-core";
 import { isOrgOverSpendLimit } from "@/lib/cost";
+import { ORG_TYPE } from "@/lib/org-types";
 import { indexRepository } from "@/lib/indexer";
 import { summarizeRepository } from "@/lib/summarizer";
 import { analyzeRepository } from "@/lib/analyzer";
@@ -41,10 +42,11 @@ async function getOrCreateCommunityOrg(githubOwner: string) {
     create: {
       name: `${githubOwner} (Community)`,
       slug,
-      type: 2, // community
+      type: ORG_TYPE.COMMUNITY,
       freeCreditBalance: 0,
     },
-    update: {},
+    // Backfill type for community orgs created before type was set on create.
+    update: { type: ORG_TYPE.COMMUNITY },
   });
 }
 

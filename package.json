@@ -26,9 +26,5 @@
     "@prisma/engines",
     "prisma"
   ],
-  "workspaces": ["apps/*", "packages/*", "tools/*"],
-  "dependencies": {
-    "@remotion/player": "4.0.448",
-    "remotion": "4.0.454"
-  }
+  "workspaces": ["apps/*", "packages/*", "tools/*"]
 }

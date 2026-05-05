@@ -16,7 +16,6 @@ import { NewsletterForm } from "@/components/landing-newsletter";
 import { CliInstallSection } from "@/components/landing-cli-install";
 import { LandingStats } from "@/components/landing-stats";
 
-import { ReviewEngineReveal } from "@/components/ReviewEngineReveal";
 import { FaqList } from "@/components/FaqList";
 import {
   IconBrandGithub,
@@ -245,8 +244,6 @@ export default async function LandingPage() {
               <CliInstallSection embedded />
             </div>
 
-            {/* Review Engine — expandable */}
-            <ReviewEngineReveal />
           </div>
         </div>
       </section>

@@ -10,7 +10,7 @@ export function LandingDesktopNav({ isLoggedIn }: { isLoggedIn: boolean }) {
   const [resourcesOpen, setResourcesOpen] = useState(false);
 
   return (
-    <nav className="fixed left-1/2 top-4 z-40 hidden -translate-x-1/2 lg:block">
+    <nav className="fixed left-1/2 top-12 z-40 hidden -translate-x-1/2 lg:block">
       <div className="flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.05] px-3 py-1.5 shadow-lg shadow-black/20 backdrop-blur-xl">
         <Link href="/" className="flex items-center gap-2 px-2">
           <Image src="/logo.svg" alt="Octopus" width={24} height={24} priority />

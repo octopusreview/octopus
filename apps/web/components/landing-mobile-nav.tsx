@@ -10,7 +10,7 @@ export function LandingMobileNav({ isLoggedIn }: { isLoggedIn: boolean }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <nav className="fixed left-0 right-0 top-0 z-40 border-b border-white/[0.06] bg-[#0c0c0c]/80 backdrop-blur-xl lg:hidden">
+    <nav className="fixed left-0 right-0 top-9 z-40 border-b border-white/[0.06] bg-[#0c0c0c]/80 backdrop-blur-xl lg:hidden">
       <div className="flex items-center justify-between px-4 py-3">
         <Link href="/" className="flex items-center gap-2">
           <Image src="/logo.svg" alt="Octopus" width={22} height={22} priority />

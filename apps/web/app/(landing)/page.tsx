@@ -26,7 +26,6 @@ import {
   IconRocket,
   IconBrain,
   IconHeartHandshake,
-  IconBolt,
   IconChecks,
 } from "@tabler/icons-react";
 
@@ -133,6 +132,24 @@ export default async function LandingPage() {
         }}
       />
 
+      {/* Announcement bar — Free for OSS */}
+      <TrackedLink
+        href="#oss-program"
+        event="cta_click"
+        eventParams={{ location: "announcement_bar", label: "free_for_oss" }}
+        className="group fixed inset-x-0 top-0 z-[55] flex items-center justify-center gap-2 border-b border-[#10D8BE]/20 bg-gradient-to-r from-[#10D8BE]/[0.08] via-[#10D8BE]/[0.14] to-[#10D8BE]/[0.08] px-4 py-2 text-xs text-[#d8fffa] backdrop-blur-md transition-colors hover:bg-[#10D8BE]/[0.18] sm:text-sm"
+      >
+        <IconHeartHandshake className="size-4 text-[#10D8BE]" />
+        <span className="font-medium">
+          <span className="hidden sm:inline">New: </span>
+          Reviews for open source projects
+        </span>
+        <span className="inline-flex items-center gap-1 font-semibold text-white transition-transform group-hover:translate-x-0.5">
+          Learn more
+          <IconArrowRight className="size-3.5" />
+        </span>
+      </TrackedLink>
+
       {/* Mobile nav — hamburger menu */}
       <LandingMobileNav isLoggedIn={!!session} />
 
@@ -140,7 +157,7 @@ export default async function LandingPage() {
       <LandingDesktopNav isLoggedIn={!!session} />
 
       {/* Hero — dark bg */}
-      <section className="relative z-10 px-6 pb-20 pt-32 md:px-8 md:pb-28 md:pt-44">
+      <section className="relative z-10 px-6 pb-20 pt-40 md:px-8 md:pb-28 md:pt-52">
         <div className="mx-auto max-w-4xl text-center">
           <h1 className="animate-fade-in text-4xl font-bold leading-[1.1] tracking-tight text-white [animation-delay:100ms] sm:text-5xl md:text-6xl lg:text-7xl">
             Review every PR
@@ -398,10 +415,6 @@ export default async function LandingPage() {
             </div>
 
             <div className="relative">
-              <div className="absolute -left-4 -top-4 hidden items-center gap-2 rounded-full border border-[#10D8BE]/30 bg-[#0c0c0c] px-3 py-1.5 text-[11px] font-medium text-[#a4f3e6] sm:inline-flex">
-                <IconBolt className="size-3.5" />
-                Drop in your workflow
-              </div>
               <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#0a0a0a] shadow-2xl shadow-black/30">
                 <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-2.5">
                   <div className="flex items-center gap-2">

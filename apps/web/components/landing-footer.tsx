@@ -8,6 +8,7 @@ import {
   IconBrandX,
   IconBrandYoutube,
   IconBug,
+  IconHeartHandshake,
 } from "@tabler/icons-react";
 import { TrackedLink, TrackedAnchor } from "@/components/tracked-link";
 import { GetInTouchModal } from "@/components/get-in-touch-modal";
@@ -194,6 +195,17 @@ export function LandingFooter() {
                   className="text-sm text-[#666] transition-colors hover:text-white"
                 >
                   System Status
+                </TrackedLink>
+              </li>
+              <li>
+                <TrackedLink
+                  href="/open-source"
+                  event="footer_click"
+                  eventParams={{ label: "open_source" }}
+                  className="flex items-center gap-1.5 text-sm text-[#666] transition-colors hover:text-white"
+                >
+                  <IconHeartHandshake className="size-3 text-[#10D8BE]" />
+                  Free for OSS
                 </TrackedLink>
               </li>
               <li>

@@ -15,6 +15,7 @@ import { RotatingHeroText } from "@/components/landing-rotating-hero";
 import { NewsletterForm } from "@/components/landing-newsletter";
 import { CliInstallSection } from "@/components/landing-cli-install";
 import { LandingStats } from "@/components/landing-stats";
+import { LandingOssWorkflowSnippet } from "@/components/landing-oss-workflow-snippet";
 
 import { FaqList } from "@/components/FaqList";
 import {
@@ -134,7 +135,7 @@ export default async function LandingPage() {
 
       {/* Announcement bar — Free for OSS */}
       <TrackedLink
-        href="#oss-program"
+        href="/open-source"
         event="cta_click"
         eventParams={{ location: "announcement_bar", label: "free_for_oss" }}
         className="group fixed inset-x-0 top-0 z-[55] flex items-center justify-center gap-2 border-b border-[#10D8BE]/20 bg-gradient-to-r from-[#10D8BE]/[0.08] via-[#10D8BE]/[0.14] to-[#10D8BE]/[0.08] px-4 py-2 text-xs text-[#d8fffa] backdrop-blur-md transition-colors hover:bg-[#10D8BE]/[0.18] sm:text-sm"
@@ -392,12 +393,12 @@ export default async function LandingPage() {
 
               <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
                 <TrackedLink
-                  href="/docs/open-source"
+                  href="/open-source"
                   event="cta_click"
-                  eventParams={{ location: "oss_program", label: "read_docs" }}
+                  eventParams={{ location: "oss_program", label: "learn_more" }}
                   className="inline-flex items-center gap-2 rounded-full bg-[#10D8BE] px-5 py-2.5 text-sm font-medium text-[#0c0c0c] transition-colors hover:bg-[#0fbfa8]"
                 >
-                  Read the docs
+                  Learn more
                   <IconArrowRight className="size-4" />
                 </TrackedLink>
                 <TrackedAnchor
@@ -415,34 +416,7 @@ export default async function LandingPage() {
             </div>
 
             <div className="relative">
-              <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#0a0a0a] shadow-2xl shadow-black/30">
-                <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-2.5">
-                  <div className="flex items-center gap-2">
-                    <span className="size-2.5 rounded-full bg-[#ff5f56]/70" />
-                    <span className="size-2.5 rounded-full bg-[#ffbd2e]/70" />
-                    <span className="size-2.5 rounded-full bg-[#27c93f]/70" />
-                  </div>
-                  <span className="text-[11px] text-[#666]">
-                    .github/workflows/octopus.yml
-                  </span>
-                </div>
-                <pre className="overflow-x-auto px-4 py-4 text-[12px] leading-relaxed text-[#ddd]">
-                  <code>{`name: Octopus Review
-on:
-  pull_request:
-    types: [opened, synchronize]
-
-permissions:
-  contents: read
-  pull-requests: write
-
-jobs:
-  review:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: octopusreview/action@v1`}</code>
-                </pre>
-              </div>
+              <LandingOssWorkflowSnippet />
             </div>
           </div>
         </div>

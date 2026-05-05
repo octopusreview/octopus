@@ -17,6 +17,7 @@ import {
   IconShieldLock,
   IconScale,
   IconCookie,
+  IconHeartHandshake,
 } from "@tabler/icons-react";
 import { trackEvent } from "@/lib/analytics";
 import {
@@ -30,6 +31,7 @@ import {
 
 const sidebarItems = [
   { href: "/docs/getting-started", label: "Getting Started", icon: IconRocket },
+  { href: "/docs/open-source", label: "Free for Open Source", icon: IconHeartHandshake },
   { href: "/docs/self-hosting", label: "Self-Hosting", icon: IconServer },
   { href: "/docs/integrations", label: "Integrations", icon: IconPlugConnected },
   { href: "/docs/skills", label: "Skills", icon: IconWand },

@@ -17,12 +17,14 @@ import {
   IconWand,
   IconBook2,
   IconHistory,
+  IconHeartHandshake,
 } from "@tabler/icons-react";
 import { trackEvent } from "@/lib/analytics";
 import { DocsSearch } from "./docs-search";
 
 const sidebarItems = [
   { href: "/docs/getting-started", label: "Getting Started", icon: IconRocket, description: "Connect your repo, first review" },
+  { href: "/docs/open-source", label: "Free for Open Source", icon: IconHeartHandshake, description: "Unlimited reviews on public repos" },
   { href: "/docs/self-hosting", label: "Self-Hosting", icon: IconServer, description: "Deploy on your infrastructure" },
   { href: "/docs/integrations", label: "Integrations", icon: IconPlugConnected, description: "GitHub, Bitbucket, Slack, Linear" },
   { href: "/docs/skills", label: "Skills", icon: IconWand, description: "AI-powered automation workflows" },

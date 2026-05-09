@@ -134,6 +134,7 @@ model Organization {
   slackIntegration      SlackIntegration?
   collabIntegration     CollabIntegration?
   bitbucketIntegration  BitbucketIntegration?
+  gitlabIntegration     GitlabIntegration?
   linearIntegration     LinearIntegration?
   jiraIntegration       JiraIntegration?
   aiUsages           AiUsage[]
@@ -478,6 +479,32 @@ model BitbucketIntegration {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("bitbucket_integrations")
+}
+
+model GitlabIntegration {
+  id             String   @id @default(cuid())
+  // "https://gitlab.com" for cloud, or self-hosted host like "https://gitlab.example.com"
+  gitlabHost     String   @default("https://gitlab.com")
+  // Numeric group/namespace id or username; user-supplied, used to scope project listing & webhook setup
+  namespacePath  String
+  namespaceName  String
+  // Per-org OAuth application credentials (used for self-hosted instances).
+  // When null, fall back to GITLAB_CLIENT_ID/GITLAB_CLIENT_SECRET env vars.
+  // The secret is stored encrypted via lib/crypto.ts.
+  oauthClientId        String?
+  oauthClientSecretEnc String?
+  accessToken    String
+  refreshToken   String
+  tokenExpiresAt DateTime
+  scopes         String?
+  webhookSecret  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("gitlab_integrations")
 }
 
 model CollabIntegration {

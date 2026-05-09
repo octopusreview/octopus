@@ -116,6 +116,139 @@ export async function toggleSlackEvent(
   return {};
 }
 
+// ── GitLab Actions ──
+
+function normalizeGitlabHost(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let host = raw.trim();
+  if (!host) return null;
+  if (!/^https?:\/\//i.test(host)) host = `https://${host}`;
+  host = host.replace(/\/+$/, "");
+  try {
+    const url = new URL(host);
+    if (url.pathname !== "/" && url.pathname !== "") return null;
+    if (url.search || url.hash) return null;
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return null;
+  }
+}
+
+const GITLAB_OAUTH_INIT_COOKIE = "gitlab_oauth_init";
+
+export async function startGitlabOAuth(formData: FormData): Promise<void> {
+  const ctx = await getAdminOrg();
+  if (!ctx) {
+    redirect("/settings/integrations?error=forbidden");
+  }
+
+  const namespacePath = String(formData.get("namespace") ?? "").trim();
+  const hostInput = String(formData.get("host") ?? "");
+  const customClientId = String(formData.get("clientId") ?? "").trim();
+  const customClientSecret = String(formData.get("clientSecret") ?? "");
+
+  if (!namespacePath) {
+    redirect("/settings/integrations?error=missing_namespace");
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9_./-]*$/.test(namespacePath) || namespacePath.length > 200) {
+    redirect("/settings/integrations?error=invalid_namespace");
+  }
+
+  const gitlabHost = normalizeGitlabHost(hostInput) ?? "https://gitlab.com";
+  const isCloud = gitlabHost === "https://gitlab.com";
+
+  // Pick OAuth credentials: per-org for self-hosted, env defaults for gitlab.com
+  let clientId: string;
+  let clientSecretToStore: string | null = null;
+
+  if (!isCloud || customClientId) {
+    if (!customClientId || !customClientSecret) {
+      redirect("/settings/integrations?error=missing_oauth_creds");
+    }
+    clientId = customClientId;
+    clientSecretToStore = customClientSecret;
+  } else {
+    const envClientId = process.env.GITLAB_CLIENT_ID;
+    if (!envClientId) {
+      redirect("/settings/integrations?error=not_configured");
+    }
+    clientId = envClientId;
+  }
+
+  const redirectUri = process.env.GITLAB_REDIRECT_URI;
+  if (!redirectUri) {
+    redirect("/settings/integrations?error=not_configured");
+  }
+
+  // Encrypted, short-lived cookie carries the secret + nonce + context.
+  // Never put the secret in the OAuth state URL.
+  const { encryptJson } = await import("@/lib/crypto");
+  const cryptoNode = await import("node:crypto");
+  const nonce = cryptoNode.randomBytes(16).toString("hex");
+
+  const cookiePayload = encryptJson({
+    nonce,
+    orgId: ctx.orgId,
+    namespacePath,
+    gitlabHost,
+    clientId,
+    clientSecret: clientSecretToStore,
+    issuedAt: Date.now(),
+  });
+
+  const cookieStore = await cookies();
+  cookieStore.set(GITLAB_OAUTH_INIT_COOKIE, cookiePayload, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 10 * 60,
+  });
+
+  // State carries only the nonce — callback re-derives everything else from the cookie.
+  const state = Buffer.from(JSON.stringify({ nonce })).toString("base64url");
+  const params = new URLSearchParams({
+    client_id: clientId,
+    response_type: "code",
+    redirect_uri: redirectUri,
+    state,
+    scope: "api read_api read_user read_repository write_repository",
+  });
+
+  redirect(`${gitlabHost}/oauth/authorize?${params.toString()}`);
+}
+
+export async function disconnectGitlab(): Promise<{ error?: string }> {
+  const ctx = await getAdminOrg();
+  if (!ctx) return { error: "Insufficient permissions." };
+
+  const integration = await prisma.gitlabIntegration.findUnique({
+    where: { organizationId: ctx.orgId },
+    select: { id: true },
+  });
+
+  if (!integration) return { error: "No GitLab integration found." };
+
+  // We don't track per-project hook IDs, so webhooks are left as-is on
+  // GitLab and will simply 401 against the rotated secret. That's safe and
+  // matches the "minimal" Bitbucket-style disconnect flow.
+
+  await prisma.gitlabIntegration.delete({
+    where: { id: integration.id },
+  });
+
+  await prisma.repository.updateMany({
+    where: {
+      organizationId: ctx.orgId,
+      provider: "gitlab",
+    },
+    data: { isActive: false },
+  });
+
+  revalidatePath("/settings/integrations");
+  return {};
+}
+
 // ── Bitbucket Actions ──
 
 export async function disconnectBitbucket(): Promise<{ error?: string }> {

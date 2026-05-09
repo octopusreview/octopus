@@ -4,13 +4,14 @@ import { enqueue } from "@/lib/queue";
 import { eventBus } from "@/lib/events";
 import * as github from "@/lib/github";
 import * as bitbucket from "@/lib/bitbucket";
+import * as gitlab from "@/lib/gitlab";
 
 /**
  * Post a neutral "skipped" check run so the PR isn't blocked forever.
- * GitHub only — Bitbucket has no checks API.
+ * GitHub only — Bitbucket and GitLab have no equivalent checks API in this integration.
  */
 async function postSkippedCheckRun(
-  provider: "github" | "bitbucket",
+  provider: "github" | "bitbucket" | "gitlab",
   installationId: number | undefined,
   repoFullName: string,
   headSha: string,
@@ -32,13 +33,13 @@ async function postSkippedCheckRun(
 
 /**
  * Shared flow: upsert PR -> post placeholder comment -> notify dashboard -> start review.
- * Works for both GitHub and Bitbucket.
+ * Works for GitHub, Bitbucket, and GitLab.
  */
 export async function startReviewFlow(params: {
-  provider: "github" | "bitbucket";
+  provider: "github" | "bitbucket" | "gitlab";
   // GitHub-specific
   installationId?: number;
-  // Bitbucket-specific
+  // Bitbucket / GitLab-specific
   organizationId?: string;
   // Common
   repoFullName: string;
@@ -171,6 +172,8 @@ export async function startReviewFlow(params: {
         await github.updatePullRequestComment(installationId, owner, repoName, existingCommentId, placeholderBody);
       } else if (provider === "bitbucket" && organizationId) {
         await bitbucket.updatePullRequestComment(organizationId, owner, repoName, prNumber, existingCommentId, placeholderBody);
+      } else if (provider === "gitlab" && organizationId) {
+        await gitlab.updatePullRequestComment(organizationId, repoFullName, prNumber, existingCommentId, placeholderBody);
       }
     } else {
       console.log(`[webhook] Posting new placeholder comment to PR #${prNumber}`);
@@ -179,6 +182,8 @@ export async function startReviewFlow(params: {
         newCommentId = await github.createPullRequestComment(installationId, owner, repoName, prNumber, placeholderBody);
       } else if (provider === "bitbucket" && organizationId) {
         newCommentId = await bitbucket.createPullRequestComment(organizationId, owner, repoName, prNumber, placeholderBody);
+      } else if (provider === "gitlab" && organizationId) {
+        newCommentId = await gitlab.createPullRequestComment(organizationId, repoFullName, prNumber, placeholderBody);
       } else {
         throw new Error("Invalid provider configuration");
       }

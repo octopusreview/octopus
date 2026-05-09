@@ -44,6 +44,7 @@ import {
   getCommentReactions as ghGetCommentReactions,
 } from "@/lib/github";
 import * as bitbucket from "@/lib/bitbucket";
+import * as gitlab from "@/lib/gitlab";
 import { parseOctopusIgnore, filterDiff, detectBadCommits } from "@/lib/octopus-ignore";
 import type { ReviewComment } from "@/lib/github";
 import { eventBus } from "@/lib/events";
@@ -665,6 +666,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
 
   const isGitHub = repo.provider === "github";
   const isBitbucket = repo.provider === "bitbucket";
+  const isGitlab = repo.provider === "gitlab";
   const installationId = repo.installationId ?? org.githubInstallationId;
 
   if (isGitHub && !installationId) {
@@ -672,23 +674,32 @@ export async function processReview(pullRequestId: string): Promise<void> {
     return;
   }
 
+  // For GitHub & Bitbucket: workspace/repo. For GitLab: full path with namespace
+  // (which can contain subgroups, so the simple split is only used by github/bitbucket).
   const [owner, repoName] = repo.fullName.split("/");
+  const projectPath = repo.fullName;
 
   // Provider-aware helper functions
   const providerGetDiff = (prNumber: number) =>
     isGitHub
       ? ghGetPullRequestDiff(installationId!, owner, repoName, prNumber)
-      : bitbucket.getPullRequestDiff(org.id, owner, repoName, prNumber);
+      : isGitlab
+        ? gitlab.getPullRequestDiff(org.id, projectPath, prNumber)
+        : bitbucket.getPullRequestDiff(org.id, owner, repoName, prNumber);
 
   const providerCreateComment = (prNumber: number, body: string) =>
     isGitHub
       ? ghCreatePullRequestComment(installationId!, owner, repoName, prNumber, body)
-      : bitbucket.createPullRequestComment(org.id, owner, repoName, prNumber, body);
+      : isGitlab
+        ? gitlab.createPullRequestComment(org.id, projectPath, prNumber, body)
+        : bitbucket.createPullRequestComment(org.id, owner, repoName, prNumber, body);
 
   const providerUpdateComment = async (commentId: number, body: string) => {
     try {
       if (isGitHub) {
         await ghUpdatePullRequestComment(installationId!, owner, repoName, commentId, body);
+      } else if (isGitlab) {
+        await gitlab.updatePullRequestComment(org.id, projectPath, pr.number, commentId, body);
       } else {
         await bitbucket.updatePullRequestComment(org.id, owner, repoName, pr.number, commentId, body);
       }
@@ -711,7 +722,9 @@ export async function processReview(pullRequestId: string): Promise<void> {
   const providerGetTree = (branch: string) =>
     isGitHub
       ? ghGetRepositoryTree(installationId!, owner, repoName, branch)
-      : bitbucket.getRepositoryTree(org.id, owner, repoName, branch);
+      : isGitlab
+        ? gitlab.getRepositoryTree(org.id, projectPath, branch)
+        : bitbucket.getRepositoryTree(org.id, owner, repoName, branch);
   let reviewCommentId = pr.reviewCommentId ? Number(pr.reviewCommentId) : null;
   const baseEvent = {
     repoId: repo.id,
@@ -1099,7 +1112,9 @@ export async function processReview(pullRequestId: string): Promise<void> {
           ? await ghGetFileContent(installationId, owner, repoName, repo.defaultBranch, ".octopusignore")
           : isBitbucket
             ? await bitbucket.getFileContent(org.id, owner, repoName, repo.defaultBranch, ".octopusignore")
-            : null;
+            : isGitlab
+              ? await gitlab.getFileContent(org.id, projectPath, repo.defaultBranch, ".octopusignore")
+              : null;
 
         if (ignoreContent) {
           octopusIg = parseOctopusIgnore(ignoreContent);
@@ -1511,7 +1526,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
       .replace("{{KNOWLEDGE_CONTEXT}}", knowledgeContext)
       .replace("{{PR_NUMBER}}", String(pr.number))
       .replace("{{USER_INSTRUCTION}}", userInstruction)
-      .replace("{{PROVIDER}}", isGitHub ? "GitHub" : isBitbucket ? "Bitbucket" : repo.provider)
+      .replace("{{PROVIDER}}", isGitHub ? "GitHub" : isBitbucket ? "Bitbucket" : isGitlab ? "GitLab" : repo.provider)
       .replace("{{FALSE_POSITIVE_CONTEXT}}", falsePositiveContext)
       .replace("{{RE_REVIEW_CONTEXT}}", priorReviewContext)
       .replace("{{CONFLICT_DETECTION}}", conflictPrompt)
@@ -1809,7 +1824,9 @@ Rules:
             ? async (path) => (await ghGetFileContent(installationId!, owner, repoName, pr.headSha!, path)) ?? ""
             : isBitbucket
               ? (path) => bitbucket.getFileContent(org.id, owner, repoName, pr.headSha ?? repo.defaultBranch ?? "main", path)
-              : undefined;
+              : isGitlab
+                ? (path) => gitlab.getFileContent(org.id, projectPath, pr.headSha ?? repo.defaultBranch ?? "main", path)
+                : undefined;
 
         // Phase 1: Cross-file context (existing — function signatures, types, APIs)
         let crossFileContext = "";
@@ -2084,53 +2101,61 @@ Rules:
           await ghCreatePullRequestComment(installationId, owner, repoName, pr.number, summaryBody);
         }
       }
-    } else if (isBitbucket) {
-      // Bitbucket: post inline comments individually, then a summary comment
-      const bbFailedInlineComments: ReviewComment[] = [];
+    } else if (isBitbucket || isGitlab) {
+      // Bitbucket / GitLab: post inline comments individually, then a summary comment
+      const failedInlineComments: ReviewComment[] = [];
       for (const comment of inlineComments) {
         try {
-          await bitbucket.createInlineComment(
-            org.id, owner, repoName, pr.number,
-            comment.path, comment.line, comment.body,
-          );
+          if (isGitlab) {
+            await gitlab.createInlineComment(
+              org.id, projectPath, pr.number,
+              comment.path, comment.line, comment.body,
+            );
+          } else {
+            await bitbucket.createInlineComment(
+              org.id, owner, repoName, pr.number,
+              comment.path, comment.line, comment.body,
+            );
+          }
         } catch (err) {
-          console.error(`[reviewer] Failed to post Bitbucket inline comment on ${comment.path}:${comment.line}:`, err);
-          bbFailedInlineComments.push(comment);
+          console.error(`[reviewer] Failed to post inline comment on ${comment.path}:${comment.line}:`, err);
+          failedInlineComments.push(comment);
         }
       }
-      const bbInlinePaths = new Set(inlineComments.map((c) => `${c.path}:${c.line}`));
-      const bbNonInlineFindings = allParsedFindings.filter((f) => {
+      const inlinePaths = new Set(inlineComments.map((c) => `${c.path}:${c.line}`));
+      const nonInlineFindings = allParsedFindings.filter((f) => {
         for (let l = f.startLine; l <= f.endLine; l++) {
-          if (bbInlinePaths.has(`${f.filePath}:${l}`)) return false;
+          if (inlinePaths.has(`${f.filePath}:${l}`)) return false;
         }
         return true;
       });
       // Add unmappable findings to summary (inline-severity but couldn't map to diff lines)
       // Also add findings whose inline comments failed to post
-      const bbFailedInlinePaths = new Set(bbFailedInlineComments.map((c) => `${c.path}:${c.line}`));
-      const bbFailedInlineFindings = bbFailedInlineComments.length > 0
+      const failedInlinePaths = new Set(failedInlineComments.map((c) => `${c.path}:${c.line}`));
+      const failedInlineFindings = failedInlineComments.length > 0
         ? inlineFindings.filter((f) => {
             for (let l = f.startLine; l <= f.endLine; l++) {
-              if (bbFailedInlinePaths.has(`${f.filePath}:${l}`)) return true;
+              if (failedInlinePaths.has(`${f.filePath}:${l}`)) return true;
             }
             return false;
           })
         : [];
-      const bbNonInlineWithUnmappable = [
-        ...bbNonInlineFindings,
+      const nonInlineWithUnmappable = [
+        ...nonInlineFindings,
         ...unmappableFindings.filter((uf) =>
-          !bbNonInlineFindings.some((nf) => nf.filePath === uf.filePath && nf.startLine === uf.startLine && nf.title === uf.title),
+          !nonInlineFindings.some((nf) => nf.filePath === uf.filePath && nf.startLine === uf.startLine && nf.title === uf.title),
         ),
-        ...bbFailedInlineFindings,
+        ...failedInlineFindings,
       ];
       // Count only actually-posted inline comments + summary table findings
-      const bbSuccessfulInline = inlineComments.length - bbFailedInlineComments.length;
-      const bbVisibleCount = bbSuccessfulInline + bbNonInlineWithUnmappable.length;
-      effectiveFindingsCount = bbVisibleCount;
-      const findingsBlock = buildLowSeveritySummary(bbNonInlineWithUnmappable);
-      const summaryBody = `${filesChanged} file${filesChanged !== 1 ? "s" : ""} reviewed, ${bbVisibleCount} finding${bbVisibleCount !== 1 ? "s" : ""}${findingsBlock ? "\n\n" + findingsBlock : ""}`;
+      const successfulInline = inlineComments.length - failedInlineComments.length;
+      const visibleCount = successfulInline + nonInlineWithUnmappable.length;
+      effectiveFindingsCount = visibleCount;
+      const findingsBlock = buildLowSeveritySummary(nonInlineWithUnmappable);
+      const summaryBody = `${filesChanged} file${filesChanged !== 1 ? "s" : ""} reviewed, ${visibleCount} finding${visibleCount !== 1 ? "s" : ""}${findingsBlock ? "\n\n" + findingsBlock : ""}`;
       await providerCreateComment(pr.number, summaryBody);
-      console.log(`[reviewer] Bitbucket review posted with ${inlineComments.length} inline comments, ${bbNonInlineWithUnmappable.length} in summary`);
+      const providerLabel = isGitlab ? "GitLab" : "Bitbucket";
+      console.log(`[reviewer] ${providerLabel} review posted with ${inlineComments.length} inline comments, ${nonInlineWithUnmappable.length} in summary`);
     }
 
     // Step 6: Persist parsed findings as ReviewIssue records (ALL findings, not just capped/inline)

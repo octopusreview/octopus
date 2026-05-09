@@ -58,6 +58,18 @@ function isValidTone(v: unknown): v is AnnouncementTone {
   return typeof v === "string" && (VALID_TONES as string[]).includes(v);
 }
 
+// Allowlist hrefs to absolute http(s) and same-origin paths starting with "/".
+// Blocks javascript:, data:, vbscript:, and other URI schemes from a
+// compromised or misconfigured admin entry rendering an XSS / open redirect.
+function sanitizeHref(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const trimmed = v.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return undefined;
+}
+
 function normalize(raw: unknown): Announcement | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
@@ -69,7 +81,7 @@ function normalize(raw: unknown): Announcement | null {
     prefix: typeof o.prefix === "string" && o.prefix.trim() ? o.prefix.trim() : undefined,
     ctaLabel:
       typeof o.ctaLabel === "string" && o.ctaLabel.trim() ? o.ctaLabel.trim() : undefined,
-    href: typeof o.href === "string" && o.href.trim() ? o.href.trim() : undefined,
+    href: sanitizeHref(o.href),
     icon: isValidIcon(o.icon) ? o.icon : "megaphone",
     tone: isValidTone(o.tone) ? o.tone : "teal",
     enabled: o.enabled !== false,

@@ -6,6 +6,7 @@ import { analyzeRepository } from "@/lib/analyzer";
 import { getRepositoryTree } from "@/lib/github";
 import { eventBus } from "@/lib/events/bus";
 import { persistCommunityReviewToPR } from "@/lib/community-pr-persist";
+import { decryptString } from "@/lib/crypto";
 
 const LOG = (jobId: string, msg: string, ...rest: unknown[]) =>
   console.log(`[community-review] [${jobId}] ${msg}`, ...rest);
@@ -51,9 +52,15 @@ export async function processCommunityReview(jobId: string): Promise<void> {
     const repo = await prisma.repository.findUnique({ where: { id: job.repositoryId } });
     if (!repo) throw new Error(`Repository ${job.repositoryId} not found`);
 
-    const githubToken = job.githubToken;
-    if (!githubToken) {
+    if (!job.githubToken) {
       throw new Error("githubToken missing on job (cannot fetch repo); job rejected");
+    }
+    let githubToken: string;
+    try {
+      githubToken = decryptString(job.githubToken);
+    } catch (err) {
+      ERR(jobId, "githubToken decrypt failed:", err);
+      throw new Error("githubToken decrypt failed");
     }
 
     const fullName = job.repoFullName;

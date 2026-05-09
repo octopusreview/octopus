@@ -7,6 +7,7 @@ import { getRepositoryTree } from "@/lib/github";
 import { eventBus } from "@/lib/events/bus";
 import { enqueue } from "@/lib/queue";
 import { persistCommunityReviewToPR } from "@/lib/community-pr-persist";
+import { encryptString } from "@/lib/crypto";
 import { NextRequest } from "next/server";
 
 const GITHUB_API = "https://api.github.com";
@@ -430,7 +431,10 @@ async function enqueueCommunityReview(params: {
       headSha: headSha ?? null,
       baseBranch: baseBranch ?? null,
       diff,
-      githubToken,
+      // Token is short-lived (1h GitHub Actions token) but still encrypted
+      // at rest so it doesn't leak via DB exports / backups / read replicas.
+      // Decrypted in lib/community-review.ts when the worker runs.
+      githubToken: encryptString(githubToken),
       expiresAt,
     },
   });

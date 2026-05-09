@@ -15,6 +15,7 @@ import {
   IconQuestionMark,
   IconSearch,
   IconHeartHandshake,
+  IconBrandGithub,
 } from "@tabler/icons-react";
 import {
   CommandDialog,
@@ -39,6 +40,13 @@ const docsPages = [
     description: "Deploy on your infrastructure. Docker, prerequisites, environment variables.",
     icon: IconServer,
     keywords: ["deploy", "docker", "server", "install", "setup", "postgres", "qdrant"],
+  },
+  {
+    href: "/docs/github-action",
+    label: "GitHub Action",
+    description: "Add the Octopus Action to review pull requests on every push.",
+    icon: IconBrandGithub,
+    keywords: ["github action", "workflow", "yaml", "ci", "pr", "pull request", "octopus-api-key", "community", "free"],
   },
   {
     href: "/docs/integrations",

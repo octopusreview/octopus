@@ -44,6 +44,10 @@ export type LocalReviewParams = {
   fileTree?: string[];
   /** Optional .octopusignore content to apply before reviewing */
   octopusIgnoreContent?: string;
+  /** Operation tag for ai_usages (default "local-review"). Community github-action passes "community-review" so daily limits and reporting can target it. */
+  operation?: "local-review" | "community-review";
+  /** PR number for the SYSTEM_PROMPT.md {{PR_NUMBER}} template. Defaults to 0 (used by CLI / non-PR flows). */
+  prNumber?: number;
 };
 
 export type LocalReviewResult = {
@@ -324,7 +328,7 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
     .replace("{{CODEBASE_CONTEXT}}", codebaseContext)
     .replace("{{FILE_TREE}}", fileTreeStr)
     .replace("{{KNOWLEDGE_CONTEXT}}", knowledgeContext)
-    .replace("{{PR_NUMBER}}", "0")
+    .replace("{{PR_NUMBER}}", String(params.prNumber ?? 0))
     .replace("{{USER_INSTRUCTION}}", "")
     .replace("{{PROVIDER}}", "local")
     .replace("{{FALSE_POSITIVE_CONTEXT}}", falsePositiveContext)
@@ -352,7 +356,7 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
   await logAiUsage({
     provider: response.provider,
     model: reviewModel,
-    operation: "local-review",
+    operation: params.operation ?? "local-review",
     inputTokens: response.usage.inputTokens,
     outputTokens: response.usage.outputTokens,
     cacheReadTokens: response.usage.cacheReadTokens,

@@ -6,6 +6,7 @@ const pageNames: Record<string, string> = {
   "/docs/cli": "CLI",
   "/docs/cli/claude-code-integration": "Claude Code Integration",
   "/docs/octopusignore": ".octopusignore",
+  "/docs/github-action": "GitHub Action",
   "/docs/integrations": "Integrations",
   "/docs/self-hosting": "Self-Hosting",
   "/docs/pricing": "Pricing",

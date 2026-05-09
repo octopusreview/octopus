@@ -18,6 +18,7 @@ import {
   IconScale,
   IconCookie,
   IconHeartHandshake,
+  IconBrandGithub,
 } from "@tabler/icons-react";
 import { trackEvent } from "@/lib/analytics";
 import {
@@ -33,6 +34,7 @@ const sidebarItems = [
   { href: "/docs/getting-started", label: "Getting Started", icon: IconRocket },
   { href: "/docs/open-source", label: "Free for Open Source", icon: IconHeartHandshake },
   { href: "/docs/self-hosting", label: "Self-Hosting", icon: IconServer },
+  { href: "/docs/github-action", label: "GitHub Action", icon: IconBrandGithub },
   { href: "/docs/integrations", label: "Integrations", icon: IconPlugConnected },
   { href: "/docs/skills", label: "Skills", icon: IconWand },
   { href: "/docs/cli", label: "CLI", icon: IconTerminal2 },

@@ -220,7 +220,10 @@ export function AskOctopus() {
           <div
             aria-hidden="true"
             className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm sm:hidden"
-            onClick={() => setIsOpen(false)}
+            onClick={() => {
+              abortRef.current?.abort();
+              setIsOpen(false);
+            }}
           />
           <div className="fixed inset-x-0 bottom-0 z-[51] flex h-[85dvh] flex-col overflow-hidden rounded-t-2xl border border-white/10 bg-[#111] shadow-2xl shadow-black/60 sm:inset-auto sm:right-6 sm:bottom-6 sm:h-[560px] sm:w-[420px] sm:rounded-2xl">
           {/* Header */}
@@ -235,7 +238,10 @@ export function AskOctopus() {
               </div>
             </div>
             <button
-              onClick={() => setIsOpen(false)}
+              onClick={() => {
+                abortRef.current?.abort();
+                setIsOpen(false);
+              }}
               className="rounded-lg p-1.5 text-[#666] transition-colors hover:bg-white/[0.06] hover:text-white"
             >
               <IconX className="size-4" />

@@ -208,7 +208,10 @@ export async function POST(request: Request) {
     // Stream the response
     const aiStream = await client.messages.stream({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 1024,
+      // ~400 words ≈ 600 tokens; cap close to that as a hard ceiling so the
+      // model can't blow past the system-prompt length rule. The stop_reason
+      // path below appends a truncation note if we ever hit it.
+      max_tokens: 700,
       system: SYSTEM_PROMPT,
       messages,
     });

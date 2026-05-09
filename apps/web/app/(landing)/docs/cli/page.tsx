@@ -45,6 +45,32 @@ export default function CLIPage() {
         <Paragraph>You can also authenticate with an API token directly:</Paragraph>
         <CodeBlock>octopus login --token oct_your_token_here</CodeBlock>
         <Paragraph>
+          Need a token for CI/CD or a script? Use <Mono>setup-token</Mono>. It
+          runs the same browser approval flow but prints the token to stdout
+          (progress messages go to stderr) so it can be captured directly:
+        </Paragraph>
+        <CodeBlock>{`# Print token to stdout
+octopus setup-token
+
+# Capture into an environment variable
+export OCTOPUS_TOKEN=$(octopus setup-token)
+
+# Save into a local profile while also printing
+octopus setup-token --save --profile ci
+
+# Headless box (no browser): URL is written to stderr so you can open it elsewhere
+octopus setup-token --no-open`}</CodeBlock>
+        <Paragraph>
+          Prefer a manually-managed, named token? Create one at{" "}
+          <Link
+            href="/settings/api-tokens"
+            className="text-white underline decoration-white/30 underline-offset-2 transition-colors hover:decoration-white"
+          >
+            Settings → API Tokens
+          </Link>{" "}
+          and pass it with <Mono>octopus login --token oct_...</Mono>.
+        </Paragraph>
+        <Paragraph>
           Verify your session with <Mono>whoami</Mono>:
         </Paragraph>
         <CodeBlock>octopus whoami</CodeBlock>

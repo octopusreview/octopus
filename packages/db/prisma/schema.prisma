@@ -102,7 +102,7 @@ model Organization {
   googleApiKey         String?
   defaultModelId       String?
   defaultEmbedModelId  String?
-  monthlySpendLimitUsd    Float?   @default(150)
+  monthlySpendLimitUsd    Float?
   checkFailureThreshold   String   @default("critical") // "critical" | "high" | "medium" | "none"
   reviewsPaused           Boolean  @default(false)
   blockedAuthors          Json     @default("[]") // string[] of PR author usernames to skip review
@@ -267,8 +267,9 @@ model PullRequest {
   url                String
   author             String
   status             String    @default("pending") // pending | reviewing | completed | failed
-  triggerCommentId   BigInt
-  triggerCommentBody String
+  // Nullable: community PRs (github-action endpoint) aren't triggered by a comment.
+  triggerCommentId   BigInt?
+  triggerCommentBody String?
   headSha            String?
   reviewCommentId    BigInt?
   reviewBody         String?
@@ -714,6 +715,7 @@ model SystemConfig {
   defaultReviewConfig Json @default("{}")
   blockedAuthors      Json @default("[]") // string[] of globally blocked PR author usernames
   queueConfig         Json @default("{}") // { reviewTimeoutSeconds, reviewConcurrency }
+  announcements       Json @default("[]") // landing-page announcement bar entries (see lib/announcements types)
   updatedAt DateTime @updatedAt
 
   @@map("system_config")
@@ -1138,4 +1140,54 @@ model CouponRedemption {
   @@unique([couponId, redeemedById])
   @@index([organizationId])
   @@map("coupon_redemptions")
+}
+
+// ── Community Review Job ─────────────────────────────────────────────────────
+// Async job for the public github-action endpoint when a repo isn't indexed
+// yet. Endpoint queues a job, action polls /api/github-action/review/:id.
+// Lifecycle is bounded by expiresAt (default 25h after creation).
+
+model CommunityReviewJob {
+  id                   String   @id @default(uuid())
+  status               String   // "indexing" | "reviewing" | "completed" | "failed"
+
+  // Auth: poll endpoint requires (jobId, repoFullName) tuple to match.
+  repoFullName         String
+  repositoryId         String
+  organizationId       String
+
+  // Request payload (so the worker can replay the review without the action retransmitting)
+  prNumber             Int?
+  prTitle              String?
+  prAuthor             String?
+  headSha              String?
+  baseBranch           String?
+  diff                 String   @db.Text
+  fileTree             Json?
+
+  // GitHub token captured at request time. Short-lived (1h GitHub Actions token);
+  // worker uses it for indexing fetch. Cleared once worker completes.
+  githubToken          String?
+
+  // Output (populated when status = "completed")
+  findings             Json?
+  summary              String?  @db.Text
+  model                String?
+  indexed              Boolean  @default(false)
+  firstCommunityReview Boolean  @default(false)
+  usage                Json?
+
+  errorMessage         String?
+  attempts             Int      @default(0)
+
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  startedAt            DateTime?
+  completedAt          DateTime?
+  expiresAt            DateTime
+
+  @@index([repositoryId, status])
+  @@index([status, createdAt])
+  @@index([expiresAt])
+  @@map("community_review_jobs")
 }

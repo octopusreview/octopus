@@ -49,10 +49,11 @@ const ACTIVITIES: Activity[] = [
       "cross-file-verification",
       "local-review",
       "local-review-findings-followup",
+      "community-review",
       "generate-issue-content",
       "feedback-classification",
     ],
-    unitOperations: ["review", "local-review"],
+    unitOperations: ["review", "local-review", "community-review"],
     unit: "reviews",
   },
   {

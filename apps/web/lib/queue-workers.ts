@@ -5,6 +5,7 @@ import {
   handleLargeReviewResult,
   type LargeReviewResultJob,
 } from "./large-review-result";
+import { processCommunityReview, type CommunityReviewJobData } from "./community-review";
 import type { QueueConfig } from "./queue";
 
 export interface WelcomeEmailJob {
@@ -58,5 +59,21 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
     },
   );
 
-  console.log("[queue] Workers registered: welcome-email, process-review, post-large-review-result");
+  await boss.work<CommunityReviewJobData>(
+    "community-review",
+    { localConcurrency: config.reviewConcurrency },
+    async (jobs) => {
+      for (const job of jobs) {
+        console.log(`[queue] Processing community-review jobId=${job.data.jobId}`);
+        try {
+          await processCommunityReview(job.data.jobId);
+        } catch (err) {
+          console.error(`[queue] community-review failed for jobId=${job.data.jobId} (job ${job.id}):`, err);
+          throw err;
+        }
+      }
+    },
+  );
+
+  console.log("[queue] Workers registered: welcome-email, process-review, post-large-review-result, community-review");
 }

@@ -89,6 +89,16 @@ export async function startQueue(): Promise<PgBoss> {
     expireInSeconds: 300,
   }).catch(() => {});
 
+  // Community-tier (no API key) async review pipeline.
+  // Indexing can take minutes for first-touch repos, so the action enqueues
+  // and polls; the worker indexes + reviews and writes the result back to
+  // the CommunityReviewJob row. Retry once on transient failure.
+  await boss.createQueue("community-review", {
+    retryLimit: 2,
+    retryDelay: 30,
+    expireInSeconds: 1800, // 30 min hard cap per attempt
+  }).catch(() => {});
+
   // Only review-engine containers should register workers. Web containers
   // still need pg-boss started so they can enqueue jobs, but must not consume.
   // The flag must be set explicitly: a missing value is a misconfiguration,

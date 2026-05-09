@@ -1225,7 +1225,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
     });
 
     const userInstruction = extractUserInstruction(
-      pr.triggerCommentBody,
+      pr.triggerCommentBody ?? "",
     );
 
     // Fetch past feedback (disliked = false positive, liked = valuable) for this repo

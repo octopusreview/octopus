@@ -16,6 +16,8 @@ import { NewsletterForm } from "@/components/landing-newsletter";
 import { CliInstallSection } from "@/components/landing-cli-install";
 import { LandingStats } from "@/components/landing-stats";
 import { LandingOssWorkflowSnippet } from "@/components/landing-oss-workflow-snippet";
+import { LandingAnnouncementBar } from "@/components/landing-announcement-bar";
+import { loadActiveAnnouncements } from "@/lib/announcements";
 
 import { FaqList } from "@/components/FaqList";
 import {
@@ -100,7 +102,7 @@ const faqJsonLd = {
 };
 
 export default async function LandingPage() {
-  const [session, blogPosts, landingStats] = await Promise.all([
+  const [session, blogPosts, landingStats, announcements] = await Promise.all([
     auth.api.getSession({ headers: await headers() }),
     prisma.blogPost.findMany({
       where: { status: "published", deletedAt: null },
@@ -109,6 +111,7 @@ export default async function LandingPage() {
       select: { title: true, slug: true, excerpt: true, publishedAt: true, authorName: true },
     }),
     getLandingStats(),
+    loadActiveAnnouncements(),
   ]);
   return (
     <div className="dark relative min-h-screen bg-[#0c0c0c] text-[#a0a0a0] selection:bg-white/20">
@@ -133,23 +136,8 @@ export default async function LandingPage() {
         }}
       />
 
-      {/* Announcement bar — Free for OSS */}
-      <TrackedLink
-        href="/open-source"
-        event="cta_click"
-        eventParams={{ location: "announcement_bar", label: "free_for_oss" }}
-        className="group fixed inset-x-0 top-0 z-[55] flex items-center justify-center gap-2 border-b border-[#10D8BE]/20 bg-gradient-to-r from-[#10D8BE]/[0.08] via-[#10D8BE]/[0.14] to-[#10D8BE]/[0.08] px-4 py-2 text-xs text-[#d8fffa] backdrop-blur-md transition-colors hover:bg-[#10D8BE]/[0.18] sm:text-sm"
-      >
-        <IconHeartHandshake className="size-4 text-[#10D8BE]" />
-        <span className="font-medium">
-          <span className="hidden sm:inline">New: </span>
-          Reviews for open source projects
-        </span>
-        <span className="inline-flex items-center gap-1 font-semibold text-white transition-transform group-hover:translate-x-0.5">
-          Learn more
-          <IconArrowRight className="size-3.5" />
-        </span>
-      </TrackedLink>
+      {/* Announcement bar — managed in admin /announcements */}
+      <LandingAnnouncementBar announcements={announcements} />
 
       {/* Mobile nav — hamburger menu */}
       <LandingMobileNav isLoggedIn={!!session} />

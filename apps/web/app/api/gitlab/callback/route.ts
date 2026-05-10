@@ -139,7 +139,7 @@ export async function GET(request: NextRequest) {
 
   // Verify the namespace exists
   const apiBase = `${gitlabHost.replace(/\/+$/, "")}/api/v4`;
-  let namespaceName = namespacePath;
+  let namespaceName: string;
   const groupRes = await fetch(
     `${apiBase}/groups/${encodeURIComponent(namespacePath)}`,
     { headers: { Authorization: `Bearer ${accessToken}` } },

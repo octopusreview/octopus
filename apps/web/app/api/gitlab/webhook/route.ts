@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@octopus/db";
 import { getPullRequestDetails } from "@/lib/gitlab";
@@ -47,7 +48,9 @@ export async function POST(request: NextRequest) {
   }
 
   // GitLab uses a shared-secret token, not an HMAC signature.
-  if (tokenHeader !== integration.webhookSecret) {
+  const expected = Buffer.from(integration.webhookSecret, "utf8");
+  const actual = Buffer.from(tokenHeader ?? "", "utf8");
+  if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
     return NextResponse.json({ error: "Invalid token" }, { status: 401 });
   }
 

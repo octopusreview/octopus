@@ -2,6 +2,7 @@ import { headers, cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
+import { HARDCODED_REVIEW_MODEL, HARDCODED_EMBED_MODEL } from "@/lib/ai-client";
 import { RepositoriesContent } from "./repositories-content";
 
 const PAGE_SIZE = 50;
@@ -27,7 +28,9 @@ export default async function RepositoriesPage({
       deletedAt: null,
     },
     select: {
-      organization: { select: { id: true } },
+      organization: {
+        select: { id: true, defaultModelId: true, defaultEmbedModelId: true },
+      },
     },
   });
 
@@ -91,7 +94,7 @@ export default async function RepositoriesPage({
   } as const;
 
   // Step 2: All queries in parallel
-  const [repos, totalCount, allRepoNames, favoriteRepos, otherOrgMemberships, availableModels, bitbucketIntegration] = await Promise.all([
+  const [repos, totalCount, allRepoNames, favoriteRepos, otherOrgMemberships, availableModels, bitbucketIntegration, platformDefaults] = await Promise.all([
     // Paginated repos — light select, no heavy fields
     prisma.repository.findMany({
       where: baseWhere,
@@ -141,7 +144,26 @@ export default async function RepositoriesPage({
       where: { organizationId: orgId },
       select: { workspaceSlug: true },
     }),
+
+    // Platform-default models (fallback when org hasn't picked an LLM/embedding)
+    prisma.availableModel.findMany({
+      where: { isPlatformDefault: true, isActive: true },
+      select: { modelId: true, displayName: true, category: true },
+    }),
   ]);
+
+  const orgLlmModelId = member.organization.defaultModelId;
+  const orgEmbedModelId = member.organization.defaultEmbedModelId;
+  const orgDefaultLlmName =
+    (orgLlmModelId && availableModels.find((m) => m.modelId === orgLlmModelId)?.displayName) ??
+    platformDefaults.find((m) => m.category === "llm")?.displayName ??
+    availableModels.find((m) => m.modelId === HARDCODED_REVIEW_MODEL)?.displayName ??
+    null;
+  const orgDefaultEmbedName =
+    (orgEmbedModelId && availableModels.find((m) => m.modelId === orgEmbedModelId)?.displayName) ??
+    platformDefaults.find((m) => m.category === "embedding")?.displayName ??
+    availableModels.find((m) => m.modelId === HARDCODED_EMBED_MODEL)?.displayName ??
+    null;
 
   const favoriteRepoIds = favoriteRepos.map((f) => f.repositoryId);
   const paginatedRepoIds = new Set(repos.map((r) => r.id));
@@ -200,6 +222,8 @@ export default async function RepositoriesPage({
       githubAppSlug={process.env.NEXT_PUBLIC_GITHUB_APP_SLUG ?? null}
       favoriteRepoIds={favoriteRepoIds}
       availableModels={availableModels}
+      orgDefaultLlmName={orgDefaultLlmName}
+      orgDefaultEmbedName={orgDefaultEmbedName}
       otherOrgs={otherOrgs}
       owners={owners}
       currentSearch={search}

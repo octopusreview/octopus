@@ -988,6 +988,8 @@ function RepoDetail({
   detail,
   detailLoading,
   availableModels,
+  orgDefaultLlmName,
+  orgDefaultEmbedName,
   otherOrgs = [],
   onDetailRefresh,
 }: {
@@ -997,6 +999,8 @@ function RepoDetail({
   detail: RepoDetailData | null;
   detailLoading: boolean;
   availableModels: AvailableModel[];
+  orgDefaultLlmName: string | null;
+  orgDefaultEmbedName: string | null;
   otherOrgs?: OtherOrg[];
   onDetailRefresh: () => void;
 }) {
@@ -1201,7 +1205,9 @@ function RepoDetail({
                 onChange={(e) => setRepoReviewModelId(e.target.value)}
                 className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-xs shadow-sm transition-colors"
               >
-                <option value="">(Org Default)</option>
+                <option value="">
+                  {orgDefaultLlmName ? `(Org Default — ${orgDefaultLlmName})` : "(Org Default)"}
+                </option>
                 {availableModels
                   .filter((m) => m.category === "llm")
                   .map((m) => (
@@ -1218,7 +1224,9 @@ function RepoDetail({
                 onChange={(e) => setRepoEmbedModelId(e.target.value)}
                 className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-xs shadow-sm transition-colors"
               >
-                <option value="">(Org Default)</option>
+                <option value="">
+                  {orgDefaultEmbedName ? `(Org Default — ${orgDefaultEmbedName})` : "(Org Default)"}
+                </option>
                 {availableModels
                   .filter((m) => m.category === "embedding")
                   .map((m) => (
@@ -1757,6 +1765,8 @@ export function RepositoriesContent({
   githubAppSlug,
   favoriteRepoIds,
   availableModels = [],
+  orgDefaultLlmName = null,
+  orgDefaultEmbedName = null,
   otherOrgs = [],
   owners = [],
   currentSearch = "",
@@ -1773,6 +1783,8 @@ export function RepositoriesContent({
   githubAppSlug: string | null;
   favoriteRepoIds: string[];
   availableModels?: AvailableModel[];
+  orgDefaultLlmName?: string | null;
+  orgDefaultEmbedName?: string | null;
   otherOrgs?: OtherOrg[];
   owners?: string[];
   currentSearch?: string;
@@ -2142,6 +2154,8 @@ export function RepositoriesContent({
               detail={repoDetail}
               detailLoading={detailLoading}
               availableModels={availableModels}
+              orgDefaultLlmName={orgDefaultLlmName}
+              orgDefaultEmbedName={orgDefaultEmbedName}
               otherOrgs={otherOrgs}
               onDetailRefresh={() => setDetailRefreshKey((k) => k + 1)}
             />

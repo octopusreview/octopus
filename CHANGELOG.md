@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.16] - 2026-05-11
+
+### Added
+- GitLab integration: OAuth, webhook, and merge request review support (#360)
+- Encrypt all integration OAuth tokens at rest (#363)
+- Chat now uses the org-selected model and surfaces defaults in settings (#364)
+- Show the resolved AI model in repository AI Models dropdowns (#367)
+- Async community review pipeline and configurable announcement bar (#358)
+- Admin endpoint to retry stuck PR reviews (#356)
+- Copy button on assistant chat messages
+- Open-source landing page with nav, footer, and hero links
+- Announce free reviews for open source projects (#345)
+- GitHub Action documentation page (#357)
+- Bug bounty policy, hall of fame, and security.txt
+
+### Fixed
+- GitLab clone failing with "could not read Username" because git smart-http rejects Bearer (#366)
+- Ask Octopus chat: cap response length and abort stream on connection close (#355)
+- Skip credit check for community orgs to prevent cost errors (#343)
+- GitHub Action now rejects an invalid API token instead of silently falling back to community (#344)
+- Qdrant: retry transient network errors on upsert
+- Qdrant: return empty results when the query vector is empty (#342)
+- Escape semicolons in Mermaid sequence diagram messages
+- Reset repository analysis status when a run is cancelled
+
 ## [1.0.15] - 2026-05-01
 
 ### Added
@@ -279,6 +304,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Suppress dismissed findings in Additional findings summary (#25)
 - CI lint failures across all packages (#36)
 
+[1.0.16]: https://github.com/octopusreview/octopus/compare/v1.0.15...v1.0.16
 [1.0.15]: https://github.com/octopusreview/octopus/compare/v1.0.14...v1.0.15
 [1.0.14]: https://github.com/octopusreview/octopus/compare/v1.0.13...v1.0.14
 [1.0.13]: https://github.com/octopusreview/octopus/compare/v1.0.12...v1.0.13

@@ -2,6 +2,7 @@ import { headers, cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
+import { HARDCODED_REVIEW_MODEL, HARDCODED_EMBED_MODEL } from "@/lib/ai-client";
 import { ModelsSettings } from "./models-settings";
 
 const INITIAL_REPO_COUNT = 10;
@@ -72,20 +73,17 @@ export default async function ModelsPage() {
 
   const isOwner = member.role === "owner";
 
-  const HARDCODED_LLM_FALLBACK = "claude-sonnet-4-6";
-  const HARDCODED_EMBED_FALLBACK = "text-embedding-3-large";
-
   const platformDefaults = await prisma.availableModel.findMany({
     where: { isPlatformDefault: true, isActive: true },
     select: { modelId: true, displayName: true, category: true },
   });
   const platformDefaultLlm =
     platformDefaults.find((m) => m.category === "llm") ??
-    availableModels.find((m) => m.modelId === HARDCODED_LLM_FALLBACK) ??
+    availableModels.find((m) => m.modelId === HARDCODED_REVIEW_MODEL) ??
     null;
   const platformDefaultEmbed =
     platformDefaults.find((m) => m.category === "embedding") ??
-    availableModels.find((m) => m.modelId === HARDCODED_EMBED_FALLBACK) ??
+    availableModels.find((m) => m.modelId === HARDCODED_EMBED_MODEL) ??
     null;
 
   return (

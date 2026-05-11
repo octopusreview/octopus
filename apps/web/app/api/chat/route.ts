@@ -614,7 +614,15 @@ ${agentResult ? `<local_agent_context>\nREAL-TIME results from a local agent run
         let deltaBatch = "";
         let lastBroadcast = Date.now();
 
-        const chatModel = await getReviewModel(orgId);
+        let chatRepoId: string | undefined;
+        if (repoContext) {
+          const repo = await prisma.repository.findFirst({
+            where: { fullName: repoContext, organizationId: orgId },
+            select: { id: true },
+          });
+          chatRepoId = repo?.id;
+        }
+        const chatModel = await getReviewModel(orgId, chatRepoId);
 
         const anthropicStream = client.messages.stream({
           model: chatModel,

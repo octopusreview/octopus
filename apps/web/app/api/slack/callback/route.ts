@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@octopus/db";
+import { encryptString } from "@/lib/crypto";
 
 const SLACK_EVENT_TYPES = [
   "review-requested",
@@ -70,21 +71,22 @@ export async function GET(request: NextRequest) {
   const teamName = tokenData.team?.name ?? "";
   const accessToken = tokenData.access_token ?? "";
   const botUserId = tokenData.bot_user_id ?? null;
+  const accessTokenEnc = encryptString(accessToken);
 
-  // Upsert SlackIntegration
+  // Upsert SlackIntegration (token encrypted at rest)
   const integration = await prisma.slackIntegration.upsert({
     where: { organizationId: orgId },
     create: {
       teamId,
       teamName,
-      accessToken,
+      accessToken: accessTokenEnc,
       botUserId,
       organizationId: orgId,
     },
     update: {
       teamId,
       teamName,
-      accessToken,
+      accessToken: accessTokenEnc,
       botUserId,
     },
   });

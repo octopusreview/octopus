@@ -1,5 +1,6 @@
 import { prisma } from "@octopus/db";
 import { eventBus } from "../bus";
+import { decryptStringMaybeLegacy } from "@/lib/crypto";
 import type {
   RepoIndexedEvent,
   RepoAnalyzedEvent,
@@ -35,7 +36,7 @@ async function sendSlackMessage(
     const res = await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${integration.accessToken}`,
+        Authorization: `Bearer ${decryptStringMaybeLegacy(integration.accessToken)}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

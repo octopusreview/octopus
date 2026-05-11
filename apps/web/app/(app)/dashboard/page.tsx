@@ -2,6 +2,7 @@ import { headers, cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
+import { decryptStringMaybeLegacy } from "@/lib/crypto";
 import { Card } from "@/components/ui/card";
 import {
   IconDatabase,
@@ -457,7 +458,10 @@ export default async function DashboardPage({
     if (linkedIssueIds.length > 0) {
       try {
         const { getLinearIssueStatuses } = await import("@/lib/linear");
-        const statusMap = await getLinearIssueStatuses(linkedIssueIds, linearIntegration.accessToken);
+        const statusMap = await getLinearIssueStatuses(
+          linkedIssueIds,
+          decryptStringMaybeLegacy(linearIntegration.accessToken),
+        );
         for (const [id, status] of statusMap) {
           issueLinearStatuses[id] = status;
         }

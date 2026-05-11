@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { getLinearViewer } from "@/lib/linear";
 import { writeAuditLog } from "@/lib/audit";
+import { encryptString } from "@/lib/crypto";
 
 export async function GET(request: NextRequest) {
   const baseUrl = process.env.BETTER_AUTH_URL || request.url;
@@ -101,17 +102,18 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Upsert LinearIntegration
+  // Upsert LinearIntegration (token encrypted at rest)
+  const accessTokenEnc = encryptString(accessToken);
   const integration = await prisma.linearIntegration.upsert({
     where: { organizationId: orgId },
     create: {
       organizationId: orgId,
-      accessToken,
+      accessToken: accessTokenEnc,
       workspaceId,
       workspaceName,
     },
     update: {
-      accessToken,
+      accessToken: accessTokenEnc,
       workspaceId,
       workspaceName,
     },

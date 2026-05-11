@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { getLinearTeams, createLinearIssue, LinearAuthError } from "@/lib/linear";
 import { writeAuditLog } from "@/lib/audit";
+import { decryptStringMaybeLegacy } from "@/lib/crypto";
 
 // ── Helpers ──
 
@@ -83,7 +84,7 @@ export async function initLinearIssueCreation(issueId: string): Promise<InitResu
 
   // No mapping — fetch teams for selection
   try {
-    const teams = await getLinearTeams(integration.accessToken);
+    const teams = await getLinearTeams(decryptStringMaybeLegacy(integration.accessToken));
     return {
       step: "select_team",
       teams,
@@ -186,7 +187,7 @@ export async function createLinearIssueFromReview(
 
   try {
     const result = await createLinearIssue(
-      integration.accessToken,
+      decryptStringMaybeLegacy(integration.accessToken),
       mapping.linearTeamId,
       title,
       description,

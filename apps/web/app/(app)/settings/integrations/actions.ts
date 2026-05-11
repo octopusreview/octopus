@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
+import { decryptStringMaybeLegacy } from "@/lib/crypto";
 
 async function getAdminOrg() {
   const session = await auth.api.getSession({
@@ -46,7 +47,7 @@ export async function disconnectSlack(): Promise<{ error?: string }> {
     await fetch("https://slack.com/api/auth.revoke", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${integration.accessToken}`,
+        Authorization: `Bearer ${decryptStringMaybeLegacy(integration.accessToken)}`,
         "Content-Type": "application/x-www-form-urlencoded",
       },
     });

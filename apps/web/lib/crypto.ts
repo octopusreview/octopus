@@ -70,3 +70,15 @@ export function decryptString(token: string): string {
     "utf8",
   );
 }
+
+// Tries decryptString; on any failure (legacy plaintext row, truncated payload,
+// bad auth tag from a key rotation) returns the input as-is. Used during the
+// rolling encryption migration so reads still work against unmigrated rows;
+// callers should re-persist the value encrypted whenever they refresh/write it.
+export function decryptStringMaybeLegacy(value: string): string {
+  try {
+    return decryptString(value);
+  } catch {
+    return value;
+  }
+}

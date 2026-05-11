@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { headers } from "next/headers";
+import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { encryptString } from "@/lib/crypto";
 
@@ -39,6 +41,22 @@ export async function GET(request: NextRequest) {
   } catch {
     return NextResponse.redirect(
       new URL("/settings/integrations?error=invalid_state", baseUrl),
+    );
+  }
+
+  // Verify the authenticated user is an admin of the org referenced in state
+  // to prevent a crafted callback from binding attacker tokens to a victim org.
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) {
+    return NextResponse.redirect(new URL("/login", baseUrl));
+  }
+  const member = await prisma.organizationMember.findFirst({
+    where: { userId: session.user.id, organizationId: orgId, deletedAt: null },
+    select: { role: true },
+  });
+  if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    return NextResponse.redirect(
+      new URL("/settings/integrations?error=forbidden", baseUrl),
     );
   }
 

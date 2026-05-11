@@ -109,6 +109,31 @@ async function migrateLinear(): Promise<Migrated> {
   return { table: "linearIntegration", checked: rows.length, encrypted };
 }
 
+// Jira has written ciphertext from the start, so this is normally a no-op.
+// Included for completeness so the backfill covers every integration with
+// OAuth tokens (and to catch any anomalous plaintext rows from older data).
+async function migrateJira(): Promise<Migrated> {
+  const rows = await prisma.jiraIntegration.findMany({
+    select: { id: true, accessToken: true, refreshToken: true },
+  });
+  let encrypted = 0;
+  for (const row of rows) {
+    const accessNeeds = !isCiphertext(row.accessToken);
+    const refreshNeeds = !isCiphertext(row.refreshToken);
+    if (!accessNeeds && !refreshNeeds) continue;
+    encrypted++;
+    if (!APPLY) continue;
+    await prisma.jiraIntegration.update({
+      where: { id: row.id },
+      data: {
+        accessToken: accessNeeds ? encryptString(row.accessToken) : row.accessToken,
+        refreshToken: refreshNeeds ? encryptString(row.refreshToken) : row.refreshToken,
+      },
+    });
+  }
+  return { table: "jiraIntegration", checked: rows.length, encrypted };
+}
+
 async function main() {
   if (!process.env.BETTER_AUTH_SECRET) {
     console.error("BETTER_AUTH_SECRET is required to encrypt tokens.");
@@ -122,6 +147,7 @@ async function main() {
     await migrateGitlab(),
     await migrateSlack(),
     await migrateLinear(),
+    await migrateJira(),
   ];
 
   console.log("Table                      Checked   To encrypt");

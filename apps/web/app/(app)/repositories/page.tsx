@@ -94,7 +94,7 @@ export default async function RepositoriesPage({
   } as const;
 
   // Step 2: All queries in parallel
-  const [repos, totalCount, allRepoNames, favoriteRepos, otherOrgMemberships, availableModels, bitbucketIntegration] = await Promise.all([
+  const [repos, totalCount, allRepoNames, favoriteRepos, otherOrgMemberships, availableModels, bitbucketIntegration, platformDefaults] = await Promise.all([
     // Paginated repos — light select, no heavy fields
     prisma.repository.findMany({
       where: baseWhere,
@@ -144,12 +144,14 @@ export default async function RepositoriesPage({
       where: { organizationId: orgId },
       select: { workspaceSlug: true },
     }),
+
+    // Platform-default models (fallback when org hasn't picked an LLM/embedding)
+    prisma.availableModel.findMany({
+      where: { isPlatformDefault: true, isActive: true },
+      select: { modelId: true, displayName: true, category: true },
+    }),
   ]);
 
-  const platformDefaults = await prisma.availableModel.findMany({
-    where: { isPlatformDefault: true, isActive: true },
-    select: { modelId: true, displayName: true, category: true },
-  });
   const orgLlmModelId = member.organization.defaultModelId;
   const orgEmbedModelId = member.organization.defaultEmbedModelId;
   const orgDefaultLlmName =

@@ -72,6 +72,22 @@ export default async function ModelsPage() {
 
   const isOwner = member.role === "owner";
 
+  const HARDCODED_LLM_FALLBACK = "claude-sonnet-4-6";
+  const HARDCODED_EMBED_FALLBACK = "text-embedding-3-large";
+
+  const platformDefaults = await prisma.availableModel.findMany({
+    where: { isPlatformDefault: true, isActive: true },
+    select: { modelId: true, displayName: true, category: true },
+  });
+  const platformDefaultLlm =
+    platformDefaults.find((m) => m.category === "llm") ??
+    availableModels.find((m) => m.modelId === HARDCODED_LLM_FALLBACK) ??
+    null;
+  const platformDefaultEmbed =
+    platformDefaults.find((m) => m.category === "embedding") ??
+    availableModels.find((m) => m.modelId === HARDCODED_EMBED_FALLBACK) ??
+    null;
+
   return (
     <ModelsSettings
       key={orgId}
@@ -79,6 +95,8 @@ export default async function ModelsPage() {
       availableModels={availableModels}
       currentModelId={member.organization.defaultModelId}
       currentEmbedModelId={member.organization.defaultEmbedModelId}
+      platformDefaultLlmName={platformDefaultLlm?.displayName ?? null}
+      platformDefaultEmbedName={platformDefaultEmbed?.displayName ?? null}
       initialRepos={repos}
       totalRepoCount={totalCount}
     />

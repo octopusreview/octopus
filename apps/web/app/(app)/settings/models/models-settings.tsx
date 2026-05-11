@@ -25,8 +25,12 @@ type AvailableModel = {
   category: string;
 };
 
-function getModelDisplayName(modelId: string | null, models: AvailableModel[]): string {
-  if (!modelId) return "Org Default";
+function getModelDisplayName(
+  modelId: string | null,
+  models: AvailableModel[],
+  orgDefaultLabel: string = "Org Default",
+): string {
+  if (!modelId) return orgDefaultLabel;
   const model = models.find((m) => m.modelId === modelId);
   return model ? model.displayName : modelId;
 }
@@ -35,10 +39,14 @@ function RepoModelRow({
   repo,
   availableModels,
   isOwner,
+  orgDefaultLlmName,
+  orgDefaultEmbedName,
 }: {
   repo: RepoModelItem;
   availableModels: AvailableModel[];
   isOwner: boolean;
+  orgDefaultLlmName: string | null;
+  orgDefaultEmbedName: string | null;
 }) {
   const [editing, setEditing] = useState(false);
   const [reviewModelId, setReviewModelId] = useState(repo.reviewModelId ?? "");
@@ -103,7 +111,9 @@ function RepoModelRow({
               onChange={(e) => setReviewModelId(e.target.value)}
               className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-xs shadow-sm transition-colors"
             >
-              <option value="">(Org Default)</option>
+              <option value="">
+                {orgDefaultLlmName ? `(Org Default — ${orgDefaultLlmName})` : "(Org Default)"}
+              </option>
               {llmModels.map((m) => (
                 <option key={m.modelId} value={m.modelId}>
                   {m.displayName} ({m.provider})
@@ -118,7 +128,9 @@ function RepoModelRow({
               onChange={(e) => setEmbedModelId(e.target.value)}
               className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-xs shadow-sm transition-colors"
             >
-              <option value="">(Org Default)</option>
+              <option value="">
+                {orgDefaultEmbedName ? `(Org Default — ${orgDefaultEmbedName})` : "(Org Default)"}
+              </option>
               {embedModels.map((m) => (
                 <option key={m.modelId} value={m.modelId}>
                   {m.displayName} ({m.provider})
@@ -142,7 +154,11 @@ function RepoModelRow({
               variant={savedReviewModelId ? "default" : "secondary"}
               className="text-[10px] font-normal h-5"
             >
-              {getModelDisplayName(savedReviewModelId, availableModels)}
+              {getModelDisplayName(
+                savedReviewModelId,
+                availableModels,
+                orgDefaultLlmName ? `Org Default — ${orgDefaultLlmName}` : "Org Default",
+              )}
             </Badge>
           </div>
           <div className="flex items-center gap-1.5">
@@ -151,7 +167,11 @@ function RepoModelRow({
               variant={savedEmbedModelId ? "default" : "secondary"}
               className="text-[10px] font-normal h-5"
             >
-              {getModelDisplayName(savedEmbedModelId, availableModels)}
+              {getModelDisplayName(
+                savedEmbedModelId,
+                availableModels,
+                orgDefaultEmbedName ? `Org Default — ${orgDefaultEmbedName}` : "Org Default",
+              )}
             </Badge>
           </div>
         </div>
@@ -182,11 +202,15 @@ function RepositoryModelsSection({
   totalRepoCount,
   availableModels,
   isOwner,
+  orgDefaultLlmName,
+  orgDefaultEmbedName,
 }: {
   initialRepos: RepoModelItem[];
   totalRepoCount: number;
   availableModels: AvailableModel[];
   isOwner: boolean;
+  orgDefaultLlmName: string | null;
+  orgDefaultEmbedName: string | null;
 }) {
   const [repos, setRepos] = useState<RepoModelItem[]>(initialRepos);
   const [total, setTotal] = useState(totalRepoCount);
@@ -275,6 +299,8 @@ function RepositoryModelsSection({
                     repo={repo}
                     availableModels={availableModels}
                     isOwner={isOwner}
+                    orgDefaultLlmName={orgDefaultLlmName}
+                    orgDefaultEmbedName={orgDefaultEmbedName}
                   />
                 ))}
               </div>
@@ -306,6 +332,8 @@ export function ModelsSettings({
   availableModels,
   currentModelId,
   currentEmbedModelId,
+  platformDefaultLlmName,
+  platformDefaultEmbedName,
   initialRepos,
   totalRepoCount,
 }: {
@@ -313,6 +341,8 @@ export function ModelsSettings({
   availableModels: AvailableModel[];
   currentModelId: string | null;
   currentEmbedModelId: string | null;
+  platformDefaultLlmName: string | null;
+  platformDefaultEmbedName: string | null;
   initialRepos: RepoModelItem[];
   totalRepoCount: number;
 }) {
@@ -320,6 +350,15 @@ export function ModelsSettings({
   const [selectedEmbedModelId, setSelectedEmbedModelId] = useState(currentEmbedModelId ?? "");
   const [saving, startTransition] = useTransition();
   const [saveResult, setSaveResult] = useState<{ error?: string; success?: boolean }>({});
+
+  const orgLlmModel = currentModelId
+    ? availableModels.find((m) => m.modelId === currentModelId)
+    : null;
+  const orgEmbedModel = currentEmbedModelId
+    ? availableModels.find((m) => m.modelId === currentEmbedModelId)
+    : null;
+  const orgDefaultLlmName = orgLlmModel?.displayName ?? platformDefaultLlmName;
+  const orgDefaultEmbedName = orgEmbedModel?.displayName ?? platformDefaultEmbedName;
 
   const llmModels = availableModels.filter((m) => m.category === "llm");
   const embedModels = availableModels.filter((m) => m.category === "embedding");
@@ -355,7 +394,11 @@ export function ModelsSettings({
                 disabled={!isOwner}
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <option value="">(Platform Default)</option>
+                <option value="">
+                  {platformDefaultLlmName
+                    ? `(Platform Default — ${platformDefaultLlmName})`
+                    : "(Platform Default)"}
+                </option>
                 {llmModels.map((m) => (
                   <option key={m.modelId} value={m.modelId}>
                     {m.displayName} ({m.provider})
@@ -379,7 +422,11 @@ export function ModelsSettings({
                 disabled={!isOwner}
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <option value="">(Platform Default)</option>
+                <option value="">
+                  {platformDefaultEmbedName
+                    ? `(Platform Default — ${platformDefaultEmbedName})`
+                    : "(Platform Default)"}
+                </option>
                 {embedModels.map((m) => (
                   <option key={m.modelId} value={m.modelId}>
                     {m.displayName} ({m.provider})
@@ -422,6 +469,8 @@ export function ModelsSettings({
         totalRepoCount={totalRepoCount}
         availableModels={availableModels}
         isOwner={isOwner}
+        orgDefaultLlmName={orgDefaultLlmName}
+        orgDefaultEmbedName={orgDefaultEmbedName}
       />
     </div>
   );

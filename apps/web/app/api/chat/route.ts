@@ -19,6 +19,7 @@ import { pubby } from "@/lib/pubby";
 import { processNextInQueue } from "@/lib/chat-queue-processor";
 import { generateSparseVector } from "@/lib/sparse-vector";
 import { requestAgentSearch, findClaudeAgent, requestAgentAnswer } from "@/lib/agent-search";
+import { getReviewModel } from "@/lib/ai-client";
 
 let anthropicClient: Anthropic | null = null;
 
@@ -613,8 +614,10 @@ ${agentResult ? `<local_agent_context>\nREAL-TIME results from a local agent run
         let deltaBatch = "";
         let lastBroadcast = Date.now();
 
+        const chatModel = await getReviewModel(orgId);
+
         const anthropicStream = client.messages.stream({
-          model: "claude-sonnet-4-20250514",
+          model: chatModel,
           max_tokens: 4096,
           system: [
             {
@@ -676,7 +679,7 @@ ${agentResult ? `<local_agent_context>\nREAL-TIME results from a local agent run
 
         await logAiUsage({
           provider: "anthropic",
-          model: "claude-sonnet-4-20250514",
+          model: chatModel,
           operation: "chat",
           inputTokens,
           outputTokens,

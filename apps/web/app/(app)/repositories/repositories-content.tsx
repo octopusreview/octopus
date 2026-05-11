@@ -48,6 +48,7 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconBrandBitbucket,
+  IconBrandGitlab,
   IconFilter,
   IconSettings,
   IconPackage,
@@ -135,6 +136,14 @@ const providerConfig: Record<
   github: {
     icon: IconBrandGithub,
     repoUrl: (fullName) => `https://github.com/${fullName}`,
+  },
+  bitbucket: {
+    icon: IconBrandBitbucket,
+    repoUrl: (fullName) => `https://bitbucket.org/${fullName}`,
+  },
+  gitlab: {
+    icon: IconBrandGitlab,
+    repoUrl: (fullName) => `https://gitlab.com/${fullName}`,
   },
 };
 
@@ -715,7 +724,7 @@ function AnalysisSection({
             )}
           </div>
           <div className="flex items-center gap-2">
-            {repo.provider !== "bitbucket" && (
+            {repo.provider === "github" && (
               <Link href={`/package-analyzer?repo=${encodeURIComponent(`https://github.com/${repo.fullName}`)}&repoId=${repo.id}`}>
                 <Button size="sm" variant="outline" className="h-7 text-xs">
                   <IconPackage className="mr-1 size-3" />

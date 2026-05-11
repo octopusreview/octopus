@@ -1,6 +1,7 @@
 import { prisma } from "@octopus/db";
 import * as github from "@/lib/github";
 import * as bitbucket from "@/lib/bitbucket";
+import * as gitlab from "@/lib/gitlab";
 import type { ReviewComment } from "@/lib/github";
 
 export interface ProviderClient {
@@ -169,9 +170,82 @@ class BitbucketProviderClient implements ProviderClient {
   }
 }
 
+class GitlabProviderClient implements ProviderClient {
+  constructor(
+    private organizationId: string,
+    private projectPath: string,
+  ) {}
+
+  async getPullRequestDiff(prNumber: number) {
+    return gitlab.getPullRequestDiff(this.organizationId, this.projectPath, prNumber);
+  }
+
+  async createPullRequestComment(prNumber: number, body: string) {
+    return gitlab.createPullRequestComment(this.organizationId, this.projectPath, prNumber, body);
+  }
+
+  async updatePullRequestComment(commentId: number, body: string, prNumber?: number) {
+    if (!prNumber) {
+      throw new Error("GitLab requires prNumber to update a note");
+    }
+    return gitlab.updatePullRequestComment(
+      this.organizationId, this.projectPath, prNumber, commentId, body,
+    );
+  }
+
+  async createPullRequestReview(
+    prNumber: number,
+    body: string,
+    _event: "COMMENT" | "REQUEST_CHANGES" | "APPROVE",
+    comments: ReviewComment[],
+  ) {
+    for (const comment of comments) {
+      try {
+        await gitlab.createInlineComment(
+          this.organizationId,
+          this.projectPath,
+          prNumber,
+          comment.path,
+          comment.line,
+          comment.body,
+        );
+      } catch (err) {
+        console.error(`[gitlab] Failed to post inline comment on ${comment.path}:${comment.line}:`, err);
+      }
+    }
+
+    if (body) {
+      const commentId = await gitlab.createPullRequestComment(
+        this.organizationId,
+        this.projectPath,
+        prNumber,
+        body,
+      );
+      return commentId;
+    }
+    return 0;
+  }
+
+  async createCheckRun(): Promise<number | null> {
+    return null;
+  }
+
+  async updateCheckRun(): Promise<void> {
+    // No-op for GitLab
+  }
+
+  async getRepositoryTree(branch: string) {
+    return gitlab.getRepositoryTree(this.organizationId, this.projectPath, branch);
+  }
+
+  async getFileContent(branch: string, filePath: string) {
+    return gitlab.getFileContent(this.organizationId, this.projectPath, branch, filePath);
+  }
+}
+
 /**
  * Create a provider client for a given repository.
- * Resolves the correct provider (GitHub or Bitbucket) and returns a unified interface.
+ * Resolves the correct provider (GitHub, Bitbucket, GitLab) and returns a unified interface.
  */
 export async function getProviderClient(repoId: string): Promise<ProviderClient> {
   const repo = await prisma.repository.findUniqueOrThrow({
@@ -190,6 +264,10 @@ export async function getProviderClient(repoId: string): Promise<ProviderClient>
   if (repo.provider === "bitbucket") {
     const [workspace, repoSlug] = repo.fullName.split("/");
     return new BitbucketProviderClient(repo.organizationId, workspace, repoSlug);
+  }
+
+  if (repo.provider === "gitlab") {
+    return new GitlabProviderClient(repo.organizationId, repo.fullName);
   }
 
   // Default: GitHub

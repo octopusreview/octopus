@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { getInstallationToken, getFileContent as ghGetFileContent, getRepositoryDetails } from "@/lib/github";
 import * as bitbucketLib from "@/lib/bitbucket";
+import * as gitlabLib from "@/lib/gitlab";
 import { ensureCollection, upsertChunks, deleteRepoChunks, deleteRepoFileChunks } from "@/lib/qdrant";
 import { generateSparseVectors } from "@/lib/sparse-vector";
 import { parseOctopusIgnore, type Ignore } from "@/lib/octopus-ignore";
@@ -168,16 +169,25 @@ export async function indexRepository(
   let contributors: Contributor[] = [];
   let resolvedDefaultBranch: string | undefined;
 
-  if (provider === "bitbucket" && organizationId) {
-    // ── Bitbucket indexing flow (clone-based) ──
-    onLog("Authenticating with Bitbucket...");
-    const [workspace, repoSlug] = fullName.split("/");
-    const token = await bitbucketLib.getAccessToken(organizationId);
-    onLog("Bitbucket authentication successful", "success");
+  if ((provider === "bitbucket" || provider === "gitlab") && organizationId) {
+    // ── Bitbucket / GitLab indexing flow (clone-based) ──
+    const isGl = provider === "gitlab";
+    onLog(`Authenticating with ${isGl ? "GitLab" : "Bitbucket"}...`);
+    const token = isGl
+      ? await gitlabLib.getAccessToken(organizationId)
+      : await bitbucketLib.getAccessToken(organizationId);
+    onLog(`${isGl ? "GitLab" : "Bitbucket"} authentication successful`, "success");
 
     // 1. Shallow clone the repo
-    const cloneDir = join(tmpdir(), `octopus-bb-${repoId}-${Date.now()}`);
-    const cloneUrl = `https://bitbucket.org/${workspace}/${repoSlug}.git`;
+    const cloneDir = join(tmpdir(), `octopus-${isGl ? "gl" : "bb"}-${repoId}-${Date.now()}`);
+    let cloneUrl: string;
+    if (isGl) {
+      const gh = await gitlabLib.getCloneHost(organizationId);
+      cloneUrl = `${gh}/${fullName}.git`;
+    } else {
+      const [workspace, repoSlug] = fullName.split("/");
+      cloneUrl = `https://bitbucket.org/${workspace}/${repoSlug}.git`;
+    }
 
     try {
       onLog(`Cloning ${fullName}@${defaultBranch}...`);
@@ -636,6 +646,19 @@ export async function incrementalIndex(
     for (const filePath of addedOrModified) {
       try {
         const content = await bitbucketLib.getFileContent(organizationId, workspace, repoSlug, defaultBranch, filePath);
+        if (!content || content.includes("\0")) continue;
+        const chunks = chunkText(content, filePath);
+        for (const chunk of chunks) {
+          allChunks.push({ text: chunk.text, filePath, startLine: chunk.startLine, endLine: chunk.endLine });
+        }
+      } catch {
+        console.warn(`[indexer:incremental] Failed to fetch ${filePath}, skipping`);
+      }
+    }
+  } else if (provider === "gitlab" && organizationId) {
+    for (const filePath of addedOrModified) {
+      try {
+        const content = await gitlabLib.getFileContent(organizationId, fullName, defaultBranch, filePath);
         if (!content || content.includes("\0")) continue;
         const chunks = chunkText(content, filePath);
         for (const chunk of chunks) {

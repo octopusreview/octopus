@@ -181,6 +181,11 @@ export default async function DashboardPage({
     select: { workspaceName: true },
   });
   const bitbucketConnected = !!bitbucketIntegration;
+  const gitlabIntegration = await prisma.gitlabIntegration.findUnique({
+    where: { organizationId: org.id },
+    select: { namespaceName: true },
+  });
+  const gitlabConnected = !!gitlabIntegration;
   const bannerDismissed = cookieStore.get("providers_banner_dismissed")?.value === "1";
 
   const hasIndexedRepo = repos.some((r) => r.indexStatus === "indexed");
@@ -489,10 +494,11 @@ export default async function DashboardPage({
         Overview of your repositories and integrations.
       </p>
 
-      {(!githubConnected || !bitbucketConnected) && !bannerDismissed && (
+      {(!githubConnected || !bitbucketConnected || !gitlabConnected) && !bannerDismissed && (
         <ProvidersBanner
           githubConnected={githubConnected}
           bitbucketConnected={bitbucketConnected}
+          gitlabConnected={gitlabConnected}
           githubAppSlug={githubAppSlug}
         />
       )}

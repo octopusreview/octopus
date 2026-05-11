@@ -6,6 +6,7 @@ import { GitHubIntegrationCard } from "./github-integration-card";
 import { SlackIntegrationCard } from "./slack-integration-card";
 import { BitbucketIntegrationCard } from "./bitbucket-integration-card";
 import { BitbucketDebugBanner } from "./bitbucket-debug-banner";
+import { GitlabIntegrationCard } from "./gitlab-integration-card";
 import { LinearIntegrationCard } from "./linear-integration-card";
 import { JiraIntegrationCard } from "./jira-integration-card";
 
@@ -29,6 +30,7 @@ export default async function IntegrationsPage({
 }) {
   const params = await searchParams;
   const bbDebug = typeof params.bb_debug === "string" ? params.bb_debug : null;
+  const glDebug = typeof params.gl_debug === "string" ? params.gl_debug : null;
   const rawError = typeof params.error === "string" ? params.error : null;
   const githubError: GitHubErrorCode | null =
     rawError && (ALLOWED_GITHUB_ERRORS as readonly string[]).includes(rawError)
@@ -58,6 +60,7 @@ export default async function IntegrationsPage({
   const [
     slackIntegration,
     bitbucketIntegration,
+    gitlabIntegration,
     githubData,
     ,
     linearIntegration,
@@ -79,6 +82,14 @@ export default async function IntegrationsPage({
       select: {
         workspaceName: true,
         workspaceSlug: true,
+      },
+    }),
+    prisma.gitlabIntegration.findUnique({
+      where: { organizationId: orgId },
+      select: {
+        namespaceName: true,
+        namespacePath: true,
+        gitlabHost: true,
       },
     }),
     prisma.organization
@@ -114,12 +125,14 @@ export default async function IntegrationsPage({
   return (
     <div className="space-y-6">
       {bbDebug && <BitbucketDebugBanner debugJson={bbDebug} />}
+      {glDebug && <BitbucketDebugBanner debugJson={glDebug} title="GitLab Connect Debug" />}
       <GitHubIntegrationCard
         data={githubData}
         appSlug={appSlug}
         error={githubError}
       />
       <BitbucketIntegrationCard data={bitbucketIntegration} />
+      <GitlabIntegrationCard data={gitlabIntegration} />
       <SlackIntegrationCard data={slackIntegration} />
       <LinearIntegrationCard data={linearIntegration} />
       <JiraIntegrationCard data={jiraIntegration} />

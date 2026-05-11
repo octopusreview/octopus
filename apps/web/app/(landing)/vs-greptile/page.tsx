@@ -194,10 +194,6 @@ export default async function VsGreptilePage() {
             <ul className="mt-5 space-y-3 text-sm text-[#a0a0a0]">
               <li className="flex gap-3">
                 <IconCheck className="mt-0.5 size-4 shrink-0 text-[#cfcfcf]" />
-                You use GitLab and want mature support today.
-              </li>
-              <li className="flex gap-3">
-                <IconCheck className="mt-0.5 size-4 shrink-0 text-[#cfcfcf]" />
                 Building your own product on top of a hosted codebase Q&A API
                 is a core requirement.
               </li>

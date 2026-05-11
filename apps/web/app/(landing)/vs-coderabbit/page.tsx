@@ -38,11 +38,11 @@ const faqs = [
   },
   {
     q: "Does Octopus support GitLab?",
-    a: "Not yet. Octopus supports GitHub and Bitbucket today, with GitLab on the roadmap. If GitLab is a hard requirement right now, CodeRabbit is a strong choice since it already supports it.",
+    a: "Yes. Octopus supports GitHub, Bitbucket, and GitLab (gitlab.com and self-hosted) — connect a group or user namespace via OAuth and MRs get the same auto-review treatment as GitHub PRs.",
   },
   {
     q: "What are the main differences in approach?",
-    a: "Under the hood, Octopus uses RAG: it pre-indexes your codebase into vector embeddings and retrieves the most relevant chunks during review. CodeRabbit uses Dynamic Discovery, fetching context on demand while it reviews the diff. Both are valid strategies with different tradeoffs: RAG is consistent and fast at review time; Dynamic Discovery avoids index maintenance. Beyond the technical approach, Octopus is open source with self-hosting and usage-based pricing, while CodeRabbit is a managed SaaS with per-developer pricing and mature GitLab support.",
+    a: "Under the hood, Octopus uses RAG: it pre-indexes your codebase into vector embeddings and retrieves the most relevant chunks during review. CodeRabbit uses Dynamic Discovery, fetching context on demand while it reviews the diff. Both are valid strategies with different tradeoffs: RAG is consistent and fast at review time; Dynamic Discovery avoids index maintenance. Beyond the technical approach, Octopus is open source with self-hosting and usage-based pricing, while CodeRabbit is a managed SaaS with per-developer pricing.",
   },
   {
     q: "How does pricing work with Octopus?",
@@ -189,10 +189,6 @@ export default async function VsCodeRabbitPage() {
               When CodeRabbit is a great fit
             </h2>
             <ul className="mt-5 space-y-3 text-sm text-[#a0a0a0]">
-              <li className="flex gap-3">
-                <IconCheck className="mt-0.5 size-4 shrink-0 text-[#cfcfcf]" />
-                You use GitLab and want mature support today.
-              </li>
               <li className="flex gap-3">
                 <IconCheck className="mt-0.5 size-4 shrink-0 text-[#cfcfcf]" />
                 You prefer a fully managed SaaS so your team can stay focused

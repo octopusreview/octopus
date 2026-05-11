@@ -1,5 +1,5 @@
 import { prisma } from "@octopus/db";
-import { decryptString } from "@/lib/crypto";
+import { decryptString, encryptString, decryptStringMaybeLegacy } from "@/lib/crypto";
 
 // ── Token Management ──
 
@@ -80,19 +80,20 @@ export async function refreshAccessToken(
   }
 
   const expiresAt = new Date(Date.now() + expiresIn * 1000);
+  const newRefresh = (data.refresh_token as string) ?? refreshToken;
 
   await prisma.gitlabIntegration.update({
     where: { id: integrationId },
     data: {
-      accessToken: newAccessToken,
-      refreshToken: (data.refresh_token as string) ?? refreshToken,
+      accessToken: encryptString(newAccessToken),
+      refreshToken: encryptString(newRefresh),
       tokenExpiresAt: expiresAt,
     },
   });
 
   return {
     accessToken: newAccessToken,
-    refreshToken: (data.refresh_token as string) ?? refreshToken,
+    refreshToken: newRefresh,
     expiresAt,
   };
 }
@@ -106,13 +107,13 @@ export async function getAccessToken(organizationId: string): Promise<string> {
     console.log(`[gitlab] Token expiring soon for org ${organizationId}, refreshing...`);
     const refreshed = await refreshAccessToken(
       integration.id,
-      integration.refreshToken,
+      decryptStringMaybeLegacy(integration.refreshToken),
       integration.gitlabHost,
     );
     return refreshed.accessToken;
   }
 
-  return integration.accessToken;
+  return decryptStringMaybeLegacy(integration.accessToken);
 }
 
 async function getHost(organizationId: string): Promise<string> {

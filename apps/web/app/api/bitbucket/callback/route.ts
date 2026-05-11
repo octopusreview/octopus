@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { prisma } from "@octopus/db";
 import { auth } from "@/lib/auth";
 import { listWorkspaceRepos, createWebhook } from "@/lib/bitbucket";
+import { encryptString } from "@/lib/crypto";
 
 export async function GET(request: NextRequest) {
   const baseUrl = process.env.BETTER_AUTH_URL || request.url;
@@ -139,14 +140,16 @@ export async function GET(request: NextRequest) {
   const debugLog: string[] = [];
   debugLog.push(`workspace: ${workspaceSlug} (${workspaceName})`);
 
-  // Upsert BitbucketIntegration
+  // Upsert BitbucketIntegration (tokens encrypted at rest, see lib/crypto.ts)
+  const accessTokenEnc = encryptString(accessToken);
+  const refreshTokenEnc = encryptString(refreshToken);
   await prisma.bitbucketIntegration.upsert({
     where: { organizationId: orgId },
     create: {
       workspaceSlug,
       workspaceName,
-      accessToken,
-      refreshToken,
+      accessToken: accessTokenEnc,
+      refreshToken: refreshTokenEnc,
       tokenExpiresAt,
       scopes,
       webhookSecret,
@@ -155,8 +158,8 @@ export async function GET(request: NextRequest) {
     update: {
       workspaceSlug,
       workspaceName,
-      accessToken,
-      refreshToken,
+      accessToken: accessTokenEnc,
+      refreshToken: refreshTokenEnc,
       tokenExpiresAt,
       scopes,
       webhookSecret,

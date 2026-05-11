@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { headers } from "next/headers";
+import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
+import { encryptString } from "@/lib/crypto";
 
 const SLACK_EVENT_TYPES = [
   "review-requested",
@@ -41,6 +44,22 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Verify the authenticated user is an admin of the org referenced in state
+  // to prevent a crafted callback from binding attacker tokens to a victim org.
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) {
+    return NextResponse.redirect(new URL("/login", baseUrl));
+  }
+  const member = await prisma.organizationMember.findFirst({
+    where: { userId: session.user.id, organizationId: orgId, deletedAt: null },
+    select: { role: true },
+  });
+  if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    return NextResponse.redirect(
+      new URL("/settings/integrations?error=forbidden", baseUrl),
+    );
+  }
+
   const clientId = process.env.SLACK_CLIENT_ID!;
   const clientSecret = process.env.SLACK_CLIENT_SECRET!;
   const redirectUri = process.env.SLACK_REDIRECT_URI!;
@@ -70,21 +89,22 @@ export async function GET(request: NextRequest) {
   const teamName = tokenData.team?.name ?? "";
   const accessToken = tokenData.access_token ?? "";
   const botUserId = tokenData.bot_user_id ?? null;
+  const accessTokenEnc = encryptString(accessToken);
 
-  // Upsert SlackIntegration
+  // Upsert SlackIntegration (token encrypted at rest)
   const integration = await prisma.slackIntegration.upsert({
     where: { organizationId: orgId },
     create: {
       teamId,
       teamName,
-      accessToken,
+      accessToken: accessTokenEnc,
       botUserId,
       organizationId: orgId,
     },
     update: {
       teamId,
       teamName,
-      accessToken,
+      accessToken: accessTokenEnc,
       botUserId,
     },
   });

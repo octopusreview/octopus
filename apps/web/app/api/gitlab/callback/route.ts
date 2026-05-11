@@ -179,6 +179,8 @@ export async function GET(request: NextRequest) {
   // so refresh can use them later.
   const persistOauthClientId = clientSecret ? clientId : null;
   const persistOauthClientSecretEnc = clientSecret ? encryptString(clientSecret) : null;
+  const accessTokenEnc = encryptString(accessToken);
+  const refreshTokenEnc = encryptString(refreshToken);
 
   await prisma.gitlabIntegration.upsert({
     where: { organizationId: orgId },
@@ -188,8 +190,8 @@ export async function GET(request: NextRequest) {
       namespaceName,
       oauthClientId: persistOauthClientId,
       oauthClientSecretEnc: persistOauthClientSecretEnc,
-      accessToken,
-      refreshToken,
+      accessToken: accessTokenEnc,
+      refreshToken: refreshTokenEnc,
       tokenExpiresAt,
       scopes,
       webhookSecret,
@@ -201,8 +203,8 @@ export async function GET(request: NextRequest) {
       namespaceName,
       oauthClientId: persistOauthClientId,
       oauthClientSecretEnc: persistOauthClientSecretEnc,
-      accessToken,
-      refreshToken,
+      accessToken: accessTokenEnc,
+      refreshToken: refreshTokenEnc,
       tokenExpiresAt,
       scopes,
       webhookSecret,

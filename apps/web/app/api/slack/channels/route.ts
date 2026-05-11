@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { headers, cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
+import { decryptStringMaybeLegacy } from "@/lib/crypto";
 
 export async function GET() {
   const session = await auth.api.getSession({
@@ -26,6 +27,8 @@ export async function GET() {
     return NextResponse.json({ error: "Slack not connected" }, { status: 404 });
   }
 
+  const slackToken = decryptStringMaybeLegacy(integration.accessToken);
+
   const allChannels: { id: string; name: string }[] = [];
   let cursor: string | undefined;
 
@@ -40,7 +43,7 @@ export async function GET() {
     const response = await fetch(
       `https://slack.com/api/conversations.list?${params}`,
       {
-        headers: { Authorization: `Bearer ${integration.accessToken}` },
+        headers: { Authorization: `Bearer ${slackToken}` },
       },
     );
 

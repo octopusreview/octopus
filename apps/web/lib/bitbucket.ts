@@ -1,4 +1,5 @@
 import { prisma } from "@octopus/db";
+import { encryptString, decryptStringMaybeLegacy } from "@/lib/crypto";
 
 const BITBUCKET_API = "https://api.bitbucket.org/2.0";
 
@@ -51,19 +52,20 @@ export async function refreshAccessToken(
   }
 
   const expiresAt = new Date(Date.now() + expiresIn * 1000);
+  const newRefresh = (data.refresh_token as string) ?? refreshToken;
 
   await prisma.bitbucketIntegration.update({
     where: { id: integrationId },
     data: {
-      accessToken: newAccessToken,
-      refreshToken: (data.refresh_token as string) ?? refreshToken,
+      accessToken: encryptString(newAccessToken),
+      refreshToken: encryptString(newRefresh),
       tokenExpiresAt: expiresAt,
     },
   });
 
   return {
     accessToken: newAccessToken,
-    refreshToken: (data.refresh_token as string) ?? refreshToken,
+    refreshToken: newRefresh,
     expiresAt,
   };
 }
@@ -75,11 +77,14 @@ export async function getAccessToken(organizationId: string): Promise<string> {
   const bufferMs = 5 * 60 * 1000;
   if (integration.tokenExpiresAt.getTime() - Date.now() < bufferMs) {
     console.log(`[bitbucket] Token expiring soon for org ${organizationId}, refreshing...`);
-    const refreshed = await refreshAccessToken(integration.id, integration.refreshToken);
+    const refreshed = await refreshAccessToken(
+      integration.id,
+      decryptStringMaybeLegacy(integration.refreshToken),
+    );
     return refreshed.accessToken;
   }
 
-  return integration.accessToken;
+  return decryptStringMaybeLegacy(integration.accessToken);
 }
 
 // ── Repository Operations ──

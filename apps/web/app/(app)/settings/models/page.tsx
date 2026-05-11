@@ -2,6 +2,7 @@ import { headers, cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
+import { HARDCODED_REVIEW_MODEL, HARDCODED_EMBED_MODEL } from "@/lib/ai-client";
 import { ModelsSettings } from "./models-settings";
 
 const INITIAL_REPO_COUNT = 10;
@@ -72,6 +73,19 @@ export default async function ModelsPage() {
 
   const isOwner = member.role === "owner";
 
+  const platformDefaults = await prisma.availableModel.findMany({
+    where: { isPlatformDefault: true, isActive: true },
+    select: { modelId: true, displayName: true, category: true },
+  });
+  const platformDefaultLlm =
+    platformDefaults.find((m) => m.category === "llm") ??
+    availableModels.find((m) => m.modelId === HARDCODED_REVIEW_MODEL) ??
+    null;
+  const platformDefaultEmbed =
+    platformDefaults.find((m) => m.category === "embedding") ??
+    availableModels.find((m) => m.modelId === HARDCODED_EMBED_MODEL) ??
+    null;
+
   return (
     <ModelsSettings
       key={orgId}
@@ -79,6 +93,8 @@ export default async function ModelsPage() {
       availableModels={availableModels}
       currentModelId={member.organization.defaultModelId}
       currentEmbedModelId={member.organization.defaultEmbedModelId}
+      platformDefaultLlmName={platformDefaultLlm?.displayName ?? null}
+      platformDefaultEmbedName={platformDefaultEmbed?.displayName ?? null}
       initialRepos={repos}
       totalRepoCount={totalCount}
     />

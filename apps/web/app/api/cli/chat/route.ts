@@ -10,6 +10,7 @@ import { logAiUsage } from "@/lib/ai-usage";
 import { rerankDocuments } from "@/lib/reranker";
 import Anthropic from "@anthropic-ai/sdk";
 import { requestAgentSearch } from "@/lib/agent-search";
+import { getReviewModel } from "@/lib/ai-client";
 
 let anthropicClient: Anthropic | null = null;
 
@@ -172,8 +173,10 @@ ${agentResult ? `<local_agent_context>\nREAL-TIME results from a local agent ("$
         const client = getAnthropicClient();
         let fullResponse = "";
 
+        const chatModel = await getReviewModel(orgId, repoId);
+
         const anthropicStream = client.messages.stream({
-          model: "claude-sonnet-4-20250514",
+          model: chatModel,
           max_tokens: 4096,
           system: systemPrompt,
           messages: historyMessages,
@@ -192,7 +195,7 @@ ${agentResult ? `<local_agent_context>\nREAL-TIME results from a local agent ("$
         const finalMessage = await anthropicStream.finalMessage();
         await logAiUsage({
           provider: "anthropic",
-          model: "claude-sonnet-4-20250514",
+          model: chatModel,
           operation: "chat",
           inputTokens: finalMessage.usage.input_tokens,
           outputTokens: finalMessage.usage.output_tokens,

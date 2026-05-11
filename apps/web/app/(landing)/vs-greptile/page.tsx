@@ -70,7 +70,7 @@ const faqJsonLd = {
 const rows: ComparisonRow[] = [
   { label: "GitHub support", octopus: true, competitor: true },
   { label: "Bitbucket support", octopus: true, competitor: true },
-  { label: "GitLab support", octopus: "Planned", competitor: true },
+  { label: "GitLab support", octopus: true, competitor: true },
   { label: "Primary product focus", octopus: "Automated PR review + codebase chat", competitor: "Codebase intelligence + PR review" },
   { label: "Codebase context approach", octopus: "RAG (pre-indexed embeddings + vector search)", competitor: "RAG (pre-indexed embeddings + vector search)" },
   { label: "Language coverage", octopus: "Language-agnostic (LLM-based)", competitor: "Language-agnostic (LLM-based)" },

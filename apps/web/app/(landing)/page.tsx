@@ -230,7 +230,7 @@ export default async function LandingPage() {
                 <div className="mt-5 flex flex-wrap gap-2">
                   <ProviderChip name="GitHub" status="Live" />
                   <ProviderChip name="Bitbucket" status="Live" />
-                  <ProviderChip name="GitLab" status="Planned" muted />
+                  <ProviderChip name="GitLab" status="Live" />
                   <ProviderChip name="Gitea" status="Planned" muted />
                 </div>
               </StepCard>

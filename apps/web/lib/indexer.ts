@@ -188,6 +188,12 @@ export async function indexRepository(
       const [workspace, repoSlug] = fullName.split("/");
       cloneUrl = `https://bitbucket.org/${workspace}/${repoSlug}.git`;
     }
+    // GitLab's git smart-http server requires Basic auth (Bearer is rejected);
+    // Bitbucket accepts a Bearer header. Build the auth header per provider —
+    // never embed the token in the URL, since git surfaces the cmd in error logs.
+    const gitAuthHeader = isGl
+      ? `Basic ${Buffer.from(`oauth2:${token}`).toString("base64")}`
+      : `Bearer ${token}`;
 
     try {
       onLog(`Cloning ${fullName}@${defaultBranch}...`);
@@ -209,7 +215,7 @@ export async function indexRepository(
           ...process.env,
           GIT_CONFIG_COUNT: "1",
           GIT_CONFIG_KEY_0: "http.extraHeader",
-          GIT_CONFIG_VALUE_0: `Authorization: Bearer ${token}`,
+          GIT_CONFIG_VALUE_0: `Authorization: ${gitAuthHeader}`,
         },
       });
       onLog("Repository cloned successfully", "success");

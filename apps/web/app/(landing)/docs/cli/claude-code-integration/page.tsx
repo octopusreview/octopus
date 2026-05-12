@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { IconBrandGithub, IconTerminal2, IconWand, IconRobot, IconMessageCircle } from "@tabler/icons-react";
 import { CodeBlock } from "../../self-hosting/code-block";
 

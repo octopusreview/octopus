@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/link";
 import { IconAlertTriangle } from "@tabler/icons-react";
 import type { SpendLimitResult } from "@/lib/cost";
 

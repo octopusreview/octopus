@@ -19,7 +19,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import Link from "next/link";
+import Link from "@/components/link";
 import {
   IconMessageReport,
   IconAlertTriangle,

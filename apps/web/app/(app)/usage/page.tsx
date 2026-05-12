@@ -19,7 +19,7 @@ import {
 } from "@tabler/icons-react";
 import { getModelPricing, calcCost, formatUsd } from "@/lib/cost";
 import { getOrgBalance } from "@/lib/credits";
-import Link from "next/link";
+import Link from "@/components/link";
 
 // ── Activity categories ──────────────────────────────────────────────
 // Group internal pipeline operations into user-facing activities.

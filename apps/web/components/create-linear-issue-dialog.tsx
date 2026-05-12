@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { IconLoader2, IconPlus, IconCheck, IconPlugConnected } from "@tabler/icons-react";
-import Link from "next/link";
+import Link from "@/components/link";
 import {
   initLinearIssueCreation,
   saveLinearTeamMapping,

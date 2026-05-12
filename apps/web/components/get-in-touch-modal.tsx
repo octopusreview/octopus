@@ -12,7 +12,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { ObfuscatedEmail } from "@/components/obfuscated-email";
-import Link from "next/link";
+import Link from "@/components/link";
 import { DISCORD_INVITE_URL } from "@/lib/constants";
 
 function useIsMobile(breakpoint = 768) {

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";

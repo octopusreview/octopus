@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import Link from "@/components/link";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { LandingFooter } from "@/components/landing-footer";

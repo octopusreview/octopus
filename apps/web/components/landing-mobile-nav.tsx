@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/components/link";
 import { TrackedLink } from "@/components/tracked-link";
 import { IconMenu2, IconX, IconBrandGithub, IconBook, IconBug, IconCoin, IconNews, IconMessageCircle, IconHeartHandshake } from "@tabler/icons-react";
 

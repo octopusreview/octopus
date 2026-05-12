@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
+import Link from "@/components/link";
 import { auth } from "@/lib/auth";
 import { headers, cookies } from "next/headers";
 import { prisma } from "@octopus/db";

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/link";
 import { trackEvent } from "@/lib/analytics";
 
 export function TrackedLink({

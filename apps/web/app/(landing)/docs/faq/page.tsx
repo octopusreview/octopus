@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { IconQuestionMark } from "@tabler/icons-react";
 import { FaqAccordion } from "./faq-accordion";
 

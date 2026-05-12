@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Suspense, lazy } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/components/link";
 import { useSearchParams } from "next/navigation";
 import { signIn, magicLinkSignIn } from "@/lib/auth-client";
 import { normalizeEmail } from "@/lib/email-normalize";

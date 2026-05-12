@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { IconTerminal2 } from "@tabler/icons-react";
 import { CodeBlock } from "../self-hosting/code-block";
 

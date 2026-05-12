@@ -6,6 +6,8 @@ import { IconArrowRight } from "@tabler/icons-react";
 import { DocsBreadcrumb } from "./docs-breadcrumb";
 import { DocsMobileMenu } from "./docs-mobile-menu";
 import { DocsSidebar } from "./docs-sidebar";
+import { DocsToc } from "./docs-toc";
+import { DocsAskAi } from "./docs-ask-ai";
 import { LandingFooter } from "@/components/landing-footer";
 
 export default async function DocsLayout({
@@ -24,7 +26,7 @@ export default async function DocsLayout({
     <div className="dark min-h-screen bg-[#0c0c0c] text-[#a0a0a0]">
       {/* Top bar */}
       <header className="sticky top-0 z-40 border-b border-white/[0.06] bg-[#0c0c0c]/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center gap-4 px-6 py-3">
+        <div className="mx-auto flex w-full max-w-[1400px] items-center gap-4 px-6 py-3">
           <DocsMobileMenu />
           <TrackedLink
             href="/"
@@ -71,17 +73,24 @@ export default async function DocsLayout({
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-7xl px-6 py-8 lg:gap-12">
+      <div className="mx-auto flex w-full max-w-[1400px] px-6 py-8 lg:gap-10">
         {/* Desktop sidebar */}
-        <aside className="w-56 shrink-0 max-lg:hidden">
+        <aside className="w-60 shrink-0 max-lg:hidden">
           <DocsSidebar />
         </aside>
 
         {/* Content */}
         <main className="min-w-0 flex-1">{children}</main>
+
+        {/* Right-side TOC */}
+        <aside className="w-56 shrink-0 max-xl:hidden">
+          <DocsToc />
+        </aside>
       </div>
 
       <LandingFooter />
+
+      <DocsAskAi />
     </div>
   );
 }

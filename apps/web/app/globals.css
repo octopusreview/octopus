@@ -364,7 +364,6 @@ button {
 /* iOS-style auto-hide scrollbar — visible on hover */
 .scrollbar-auto-hide,
 html {
-  scroll-behavior: smooth;
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
   scrollbar-gutter: stable;
@@ -395,8 +394,3 @@ html:hover::-webkit-scrollbar-thumb {
   background: oklch(0.5 0 0 / 30%);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
-}

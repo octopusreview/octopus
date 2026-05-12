@@ -27,7 +27,7 @@ Octopus is an open-source, AI-powered code review tool.`,
       },
       {
         heading: "How It Works",
-        text: `Step 1: Connect GitHub — Install the Octopus GitHub App on your repositories. Select which repos to monitor. Bitbucket is also supported via OAuth.
+        text: `Step 1: Connect GitHub — Install the Octopus GitHub App on your repositories. Select which repos to monitor. GitLab and Bitbucket are also supported via OAuth.
 Step 2: AI Learns Your Code — Octopus indexes your codebase, creating vector embeddings of your code chunks. It understands your architecture, patterns, and conventions.
 Step 3: Reviews on Autopilot — Every pull request is automatically reviewed. Octopus posts findings as inline comments with severity levels: Critical, Major, Minor, Suggestion, and Tip.`,
       },
@@ -56,7 +56,7 @@ Self-Host Ready — Run Octopus on your own infrastructure with Docker. Your cod
       {
         heading: "FAQ",
         text: `Q: What is Octopus?
-A: Octopus is an AI-powered code review tool that connects to GitHub and Bitbucket, indexes your codebase for deep context, and automatically reviews every pull request — posting findings as inline comments with severity levels.
+A: Octopus is an AI-powered code review tool that connects to GitHub, GitLab, and Bitbucket, indexes your codebase for deep context, and automatically reviews every pull request (and GitLab merge request) — posting findings as inline comments with severity levels.
 
 Q: How does the automated review work?
 A: When a pull request is opened, Octopus fetches the diff, retrieves relevant context from your indexed codebase using vector search, and sends it to an LLM (Claude or OpenAI) for analysis. Findings are posted directly on the PR with severity ratings: Critical, Major, Minor, Suggestion, and Tip.
@@ -86,12 +86,13 @@ A: Yes! Every organization gets free credits to start. You can also bring your o
         text: `Octopus is an AI-powered code review tool that indexes your entire codebase, learns your patterns and architecture, and reviews every pull request with deep context awareness. It catches real bugs, security issues, and code quality problems before they reach production.
 Codebase-Aware: Indexes your code and understands your architecture, not just the diff.
 Automatic Reviews: Every PR gets reviewed instantly with severity-rated inline comments.
-Works With Your Tools: GitHub, Bitbucket, Slack, Linear. Fits into your existing workflow.`,
+Works With Your Tools: GitHub, GitLab, Bitbucket, Slack, Linear, Jira. Fits into your existing workflow.`,
       },
       {
         heading: "1. Connect Your Repository",
-        text: `Start by connecting your GitHub or Bitbucket account from the dashboard. Octopus will install as a GitHub App or set up Bitbucket OAuth to receive webhook events from your repositories.
+        text: `Start by connecting your GitHub, GitLab, or Bitbucket account from the dashboard. Octopus installs as a GitHub App or sets up GitLab/Bitbucket OAuth to receive webhook events from your repositories.
 GitHub: Install the GitHub App, select repositories, and you're ready to go.
+GitLab: Connect via OAuth and Octopus automatically manages webhooks for merge requests.
 Bitbucket: Connect via OAuth and Octopus automatically manages webhooks.
 Once connected, Octopus indexes your codebase. It chunks your code, creates embeddings, and builds a searchable representation of your entire project.`,
       },
@@ -236,10 +237,21 @@ Features: Automatic PR reviews via webhook, inline comments on PR diffs, check r
 Permissions required: Read access to code, PRs, and metadata. Write access for comments and check runs.`,
       },
       {
+        heading: "GitLab",
+        text: `Connect GitLab via OAuth from the Octopus dashboard. Supports GitLab.com and self-managed GitLab instances.
+Features: Automatic merge request reviews via webhook, inline comments on MR diffs, automatic webhook management.
+Authentication uses OAuth Bearer tokens; clone is handled via the GitLab API so private repositories work without SSH keys.`,
+      },
+      {
         heading: "Bitbucket",
         text: `Connect Bitbucket via OAuth from the Octopus dashboard.
 Features: PR reviews via webhook, inline comments, automatic webhook management.
 Octopus manages the webhook lifecycle — no manual setup needed.`,
+      },
+      {
+        heading: "Jira",
+        text: `Connect Jira to create issues directly from review findings.
+When Octopus surfaces a critical bug or security finding, you can open a Jira issue in one click. The issue is pre-filled with the finding details, severity, PR/MR link, and file location. Configure the target project and default issue type from the integration settings.`,
       },
       {
         heading: "Linear",
@@ -341,13 +353,16 @@ A: No. Neither Anthropic nor OpenAI use API inputs for training. Your code is ne
       {
         heading: "Integrations",
         text: `Q: Which Git platforms are supported?
-A: GitHub and Bitbucket. More platforms are planned.
+A: GitHub, GitLab, and Bitbucket. GitLab supports both GitLab.com and self-managed instances.
 
 Q: Does Octopus work with Slack?
 A: Yes. Use the /octopus command to ask questions about your codebase. You also receive notifications for review events.
 
 Q: Does Octopus integrate with Linear?
 A: Yes. Create Linear issues directly from review findings with one click.
+
+Q: Does Octopus integrate with Jira?
+A: Yes. Create Jira issues directly from review findings with one click. The issue includes finding details, severity, and a link back to the PR/MR.
 
 Q: Does Octopus support monorepos?
 A: Yes. Octopus indexes the entire repository including all packages in a monorepo.
@@ -424,7 +439,7 @@ Spend Limit: A monthly cost cap per organization. When reached, AI operations ar
 
 Vector Search: Semantic search using embeddings. Instead of keyword matching, vector search finds code that is semantically similar to the query, even with different wording.
 
-Webhook: An HTTP callback from GitHub or Bitbucket that notifies Octopus when events occur (PR opened, PR updated, push). This triggers automatic reviews.`,
+Webhook: An HTTP callback from GitHub, GitLab, or Bitbucket that notifies Octopus when events occur (PR/MR opened, PR/MR updated, push). This triggers automatic reviews.`,
       },
     ],
   },
@@ -485,7 +500,7 @@ Turborepo for monorepo management.`,
       },
       {
         heading: "Future Direction",
-        text: `More Git provider integrations (GitLab and others).
+        text: `More Git provider integrations beyond the current GitHub, GitLab, and Bitbucket support.
 Smarter review engine with better context retrieval.
 Expanded CLI capabilities.
 Plugin system for custom review rules and integrations.`,

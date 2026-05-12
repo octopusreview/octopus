@@ -1,6 +1,7 @@
 import {
   IconBrandGithub,
   IconBrandBitbucket,
+  IconBrandGitlab,
   IconBrandSlack,
   IconPlugConnected,
   IconWebhook,
@@ -9,12 +10,13 @@ import {
   IconCode,
   IconChecklist,
   IconBug,
+  IconServer,
 } from "@tabler/icons-react";
 
 export const metadata = {
   title: "Integrations — Octopus Docs",
   description:
-    "Connect Octopus to GitHub, Bitbucket, Linear, and Slack. Automate AI code review across your team's pull request workflow in a few minutes.",
+    "Connect Octopus to GitHub, GitLab (including self-hosted), Bitbucket, Linear, Jira, and Slack. Automate AI code review across your team's pull request workflow in a few minutes.",
   alternates: {
     canonical: "https://octopus-review.ai/docs/integrations",
   },
@@ -75,6 +77,49 @@ export default function IntegrationsPage() {
             { name: "GITHUB_APP_ID", description: "Your GitHub App ID" },
             { name: "GITHUB_APP_PRIVATE_KEY", description: "RSA private key (PEM or base64-encoded)" },
             { name: "GITHUB_APP_WEBHOOK_SECRET", description: "Webhook secret for event verification" },
+          ]}
+        />
+      </IntegrationSection>
+
+      {/* GitLab */}
+      <IntegrationSection
+        icon={<IconBrandGitlab className="size-5" />}
+        name="GitLab"
+        description="Connect your GitLab account for automatic merge request reviews. Works with both gitlab.com and self-hosted GitLab instances."
+        setup={[
+          "Connect GitLab from the settings page via OAuth",
+          "For self-hosted GitLab, register your own OAuth application and enter the instance URL and credentials",
+          "Select projects to monitor — project webhooks are created automatically",
+          "MRs are reviewed automatically on open and update",
+        ]}
+      >
+        <FeatureGrid>
+          <Feature
+            icon={<IconGitPullRequest className="size-4" />}
+            title="MR Reviews"
+            description="Automatic reviews on merge request creation and updates, with severity-rated findings."
+          />
+          <Feature
+            icon={<IconCode className="size-4" />}
+            title="Inline Comments"
+            description="Findings posted as line-by-line discussion notes directly on the MR diff."
+          />
+          <Feature
+            icon={<IconServer className="size-4" />}
+            title="Self-Hosted Support"
+            description="Bring your own GitLab instance. Per-org OAuth credentials override gitlab.com defaults."
+          />
+          <Feature
+            icon={<IconWebhook className="size-4" />}
+            title="Project Webhooks"
+            description="One webhook per project is registered at sync time — no Premium tier required."
+          />
+        </FeatureGrid>
+        <EnvBlock
+          vars={[
+            { name: "GITLAB_CLIENT_ID", description: "OAuth application ID for gitlab.com" },
+            { name: "GITLAB_CLIENT_SECRET", description: "OAuth application secret for gitlab.com" },
+            { name: "GITLAB_REDIRECT_URI", description: "OAuth callback URL, e.g. https://octopus-review.ai/api/gitlab/callback" },
           ]}
         />
       </IntegrationSection>
@@ -142,6 +187,42 @@ export default function IntegrationsPage() {
             description="Track issue status directly from the Octopus dashboard."
           />
         </FeatureGrid>
+      </IntegrationSection>
+
+      {/* Jira */}
+      <IntegrationSection
+        icon={
+          <svg className="size-5" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M11.53 2a4.46 4.46 0 0 0 4.46 4.46h1.78v1.72A4.46 4.46 0 0 0 22.23 12.64V2.84a.84.84 0 0 0-.84-.84zM6.77 6.77a4.46 4.46 0 0 0 4.46 4.46H13v1.72a4.46 4.46 0 0 0 4.46 4.46V7.61a.84.84 0 0 0-.84-.84zM2 11.53A4.46 4.46 0 0 0 6.46 16h1.78v1.72A4.46 4.46 0 0 0 12.7 22.18V12.37a.84.84 0 0 0-.84-.84z" />
+          </svg>
+        }
+        name="Jira"
+        description="Turn code review findings into Jira issues. Connect your Atlassian Cloud site to track bugs and improvements alongside your existing workflow."
+        setup={[
+          "Connect Jira via OAuth from the settings page",
+          "Select the Atlassian site and default project for issue creation",
+          "Create issues from any review finding with one click",
+        ]}
+      >
+        <FeatureGrid>
+          <Feature
+            icon={<IconBug className="size-4" />}
+            title="Issue Creation"
+            description="Turn review findings into Jira issues with title, description, issue type, and project assignment."
+          />
+          <Feature
+            icon={<IconChecklist className="size-4" />}
+            title="Status Tracking"
+            description="Track issue status directly from the Octopus dashboard without leaving the review."
+          />
+        </FeatureGrid>
+        <EnvBlock
+          vars={[
+            { name: "JIRA_CLIENT_ID", description: "Atlassian OAuth 2.0 (3LO) client ID" },
+            { name: "JIRA_CLIENT_SECRET", description: "Atlassian OAuth 2.0 (3LO) client secret" },
+            { name: "JIRA_REDIRECT_URI", description: "OAuth callback URL, e.g. https://octopus-review.ai/api/jira/callback" },
+          ]}
+        />
       </IntegrationSection>
 
       {/* Slack */}

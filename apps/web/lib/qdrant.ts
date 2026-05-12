@@ -18,16 +18,42 @@ function toQdrantId(id: string): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${v}${h.slice(14, 16)}-${r}${h.slice(18, 20)}-${h.slice(20, 32)}`;
 }
 
+// Strip lone UTF-16 surrogates (invalid Unicode). Qdrant's JSON parser rejects
+// them with "Format error in JSON body: lone leading surrogate in hex escape",
+// which has caused indexing to fail for repos containing files with broken
+// encodings (e.g. truncated multibyte sequences, mis-decoded binaries).
+const LONE_SURROGATE_RE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+function sanitizeString(s: string): string {
+  return s.replace(LONE_SURROGATE_RE, "�");
+}
+function sanitizePayloadValue(value: unknown): unknown {
+  if (typeof value === "string") return sanitizeString(value);
+  if (Array.isArray(value)) return value.map(sanitizePayloadValue);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = sanitizePayloadValue(v);
+    }
+    return out;
+  }
+  return value;
+}
+function sanitizePayload(payload: Record<string, unknown>): Record<string, unknown> {
+  return sanitizePayloadValue(payload) as Record<string, unknown>;
+}
+
 // Resolve a point's Qdrant id and, when the original id had to be transformed,
 // preserve it in payload.originalId so the caller's id is recoverable on read.
-// UUID inputs pass through with payload unchanged.
+// UUID inputs pass through with payload unchanged. Payload strings are
+// sanitized to strip lone UTF-16 surrogates that Qdrant's JSON parser rejects.
 function applyQdrantId(
   id: string,
   payload: Record<string, unknown>,
 ): { id: string; payload: Record<string, unknown> } {
   const qid = toQdrantId(id);
-  if (qid === id) return { id: qid, payload };
-  return { id: qid, payload: { ...payload, originalId: id } };
+  const safePayload = sanitizePayload(payload);
+  if (qid === id) return { id: qid, payload: safePayload };
+  return { id: qid, payload: { ...safePayload, originalId: id } };
 }
 
 function isSparseVectorError(error: unknown): boolean {

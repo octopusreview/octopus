@@ -201,23 +201,44 @@ export async function indexRepository(
       if (signal) {
         signal.addEventListener("abort", () => cloneController.abort(), { once: true });
       }
-      await execFileAsync("git", [
-        "clone",
-        "--depth", "1",
-        "--branch", defaultBranch,
-        "--single-branch",
-        cloneUrl,
-        cloneDir,
-      ], {
-        timeout: 120_000,
-        signal: cloneController.signal,
-        env: {
-          ...process.env,
-          GIT_CONFIG_COUNT: "1",
-          GIT_CONFIG_KEY_0: "http.extraHeader",
-          GIT_CONFIG_VALUE_0: `Authorization: ${gitAuthHeader}`,
-        },
-      });
+      try {
+        await execFileAsync("git", [
+          "clone",
+          "--depth", "1",
+          "--branch", defaultBranch,
+          "--single-branch",
+          cloneUrl,
+          cloneDir,
+        ], {
+          timeout: 120_000,
+          signal: cloneController.signal,
+          env: {
+            ...process.env,
+            GIT_CONFIG_COUNT: "1",
+            GIT_CONFIG_KEY_0: "http.extraHeader",
+            GIT_CONFIG_VALUE_0: `Authorization: ${gitAuthHeader}`,
+          },
+        });
+      } catch (err) {
+        const stderr = (err as { stderr?: string }).stderr ?? "";
+        const msg = err instanceof Error ? err.message : String(err);
+        const combined = `${stderr}\n${msg}`.toLowerCase();
+        const looksEmpty =
+          combined.includes("remote branch") && combined.includes("not found") ||
+          combined.includes("couldn't find remote ref") ||
+          combined.includes("you appear to have cloned an empty repository") ||
+          combined.includes("warning: you appear to have cloned an empty");
+        if (looksEmpty) {
+          onLog(
+            `Repository '${fullName}' appears to be empty: there are no files on branch '${defaultBranch}' to index. Push some code to the repository and try again.`,
+            "error",
+          );
+          throw new Error(
+            `Repository is empty: no files to index on branch '${defaultBranch}'. Push some code and retry indexing.`,
+          );
+        }
+        throw err;
+      }
       onLog("Repository cloned successfully", "success");
 
       // 2. Walk the cloned directory to get all file paths
@@ -351,6 +372,15 @@ export async function indexRepository(
     }
 
     if (!treeRes.ok) {
+      if (treeRes.status === 409) {
+        onLog(
+          `Repository '${fullName}' appears to be empty: there are no files to index. Push some code to the repository and try again.`,
+          "error",
+        );
+        throw new Error(
+          `Repository is empty: no files to index. Push some code and retry indexing.`,
+        );
+      }
       if (treeRes.status === 404) {
         onLog(`Branch '${activeBranch}' not found on ${fullName}`, "error");
         throw new Error(`Branch '${activeBranch}' not found on ${fullName}`);
@@ -360,7 +390,17 @@ export async function indexRepository(
     }
 
     const treeData = await treeRes.json();
-    const allItems = treeData.tree as TreeItem[];
+    const allItems = (treeData.tree as TreeItem[] | undefined) ?? [];
+
+    if (allItems.length === 0) {
+      onLog(
+        `Repository '${fullName}' appears to be empty: there are no files to index. Push some code to the repository and try again.`,
+        "error",
+      );
+      throw new Error(
+        `Repository is empty: no files to index. Push some code and retry indexing.`,
+      );
+    }
 
     // Check for .octopusignore
     let ig: Ignore | undefined;

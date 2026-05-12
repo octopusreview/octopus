@@ -21,20 +21,25 @@
 
 AI-powered PR review tool. Multi-armed code analysis — no bug escapes.
 
-Octopus analyzes pull requests via GitHub and Bitbucket webhooks, creates code embeddings with vector search, reviews changes using Claude or OpenAI, and posts findings as inline PR comments with severity levels.
+Octopus analyzes pull and merge requests via GitHub, GitLab, and Bitbucket webhooks, creates code embeddings with vector search, reviews changes using Claude or OpenAI, and posts findings as inline comments with severity levels.
 
 ## Features
 
-- **Automated PR Reviews** — AI-powered code review with severity indicators (🔴 Critical, 🟠 Major, 🟡 Minor, 🔵 Info, 💡 Suggestion)
+- **Automated PR & MR Reviews** — AI-powered code review with severity indicators (🔴 Critical, 🟠 Major, 🟡 Minor, 🔵 Info, 💡 Suggestion)
 - **Codebase Indexing** — Chunks and embeds your code into Qdrant for context-aware reviews
-- **Multi-Provider AI** — Supports both Claude (Anthropic) and OpenAI models per organization
-- **GitHub & Bitbucket** — Native webhook integrations for both platforms
-- **Knowledge Base** — Organization-level knowledge that informs reviews
+- **Multi-Provider AI** — Claude (Anthropic), OpenAI, Google, and Cohere models per organization, with Bring Your Own Keys (BYOK)
+- **GitHub, GitLab & Bitbucket** — Native webhook integrations across all three platforms, including self-managed GitLab
+- **Knowledge Center** — Org-level knowledge plus pinned documents that are always included in every review
+- **Repo Config Files** — Honor `.octopus.md`, `AGENTS.md`, or `CLAUDE.md` as repo-scoped review rules, extracted in a sandboxed pass
 - **Slack Integration** — Ask questions about your codebase directly from Slack
-- **Linear Integration** — Create issues from review findings
+- **Linear & Jira Integration** — Create issues from review findings with one click
+- **CLI** — `@octp/cli` for local review runs, plus a Claude Code skill for terminal workflows
+- **Review Output Language** — Org-level setting for the prose language of summaries and findings (code stays in source language)
+- **Repository Graph** — Structural and semantic edges across your codebase
 - **Real-time Updates** — Live dashboard updates via WebSocket (Pubby)
-- **Usage & Cost Tracking** — Per-org token usage tracking with spend limits
+- **Usage & Cost Tracking** — Per-org token usage tracking with monthly spend limits
 - **Team Management** — Multi-org support with role-based access
+- **Free for Open Source** — Public OSS repositories get free reviews via a separate community pipeline
 
 ## Tech Stack
 
@@ -131,11 +136,11 @@ See [docker-compose.yml](docker-compose.yml) for service configuration.
 
 ## How It Works
 
-1. **Webhook** — GitHub or Bitbucket sends a PR event to Octopus
+1. **Webhook** — GitHub, GitLab, or Bitbucket sends a PR/MR event to Octopus
 2. **Index** — Octopus clones the repo, chunks the code, and creates vector embeddings in Qdrant
-3. **Analyze** — The codebase is analyzed using AI with relevant code chunks and org knowledge
-4. **Review** — The PR diff is reviewed by the LLM, generating findings with severity levels
-5. **Comment** — Findings are posted as inline comments on the PR
+3. **Analyze** — The codebase is analyzed using AI with relevant code chunks, pinned docs, and org knowledge
+4. **Review** — The diff is reviewed by the LLM, generating findings with severity levels and category-based thresholds
+5. **Comment** — Findings are posted as inline comments on the PR/MR, with one-click Linear or Jira issue creation
 
 ## Contributing
 

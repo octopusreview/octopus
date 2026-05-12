@@ -32,7 +32,7 @@ export function DocsToc() {
     const seen = new Set<string>();
     const next: TocEntry[] = headings.map((h) => {
       const text = (h.textContent ?? "").trim();
-      let base = h.id || slugify(text);
+      const base = h.id || slugify(text);
       let id = base;
       let i = 2;
       while (seen.has(id)) {

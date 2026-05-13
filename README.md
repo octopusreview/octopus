@@ -50,7 +50,6 @@ Octopus analyzes pull and merge requests via GitHub, GitLab, and Bitbucket webho
 - **Vector Store:** [Qdrant](https://qdrant.tech)
 - **Auth:** [Better Auth](https://www.better-auth.com) (Google, GitHub OAuth, Magic Link)
 - **Monorepo:** [Turborepo](https://turbo.build)
-- **Billing:** [Stripe](https://stripe.com)
 
 ## Project Structure
 

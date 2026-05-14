@@ -11,8 +11,9 @@ let pricingCache: Map<string, ModelPricing> | null = null;
 let pricingCacheTime = 0;
 const PRICING_CACHE_TTL = 5 * 60 * 1000;
 
-// Fallback pricing for models not yet in DB
+// Fallback pricing for models not yet in DB. Pricing in $ per 1M tokens.
 const FALLBACK_PRICING: Record<string, ModelPricing> = {
+  // Native upstream model IDs (used for local dev + legacy data)
   "claude-opus-4-6-20250619": { input: 15, output: 75 },
   "claude-sonnet-4-6-20250619": { input: 3, output: 15 },
   "claude-sonnet-4-20250514": { input: 3, output: 15 },
@@ -22,6 +23,25 @@ const FALLBACK_PRICING: Record<string, ModelPricing> = {
   "gemini-2.5-flash": { input: 0.15, output: 0.6 },
   "text-embedding-3-large": { input: 0.13, output: 0 },
   "rerank-v3.5": { input: 2000.0, output: 0 },
+
+  // Databricks AI Gateway identifiers — translated from native by ai-router.ts
+  // (so usage tracking lands under the gateway name once requests are made).
+  // Prices reflect Databricks pass-through of upstream provider list prices;
+  // Databricks charges a per-DBU markup separately at the workspace level.
+  "databricks-claude-opus-4-7":  { input: 15, output: 75 },
+  "databricks-claude-opus-4-6":  { input: 15, output: 75 },
+  "databricks-claude-opus-4-5":  { input: 15, output: 75 },
+  "databricks-claude-opus-4-1":  { input: 15, output: 75 },
+  "databricks-claude-sonnet-4-6":{ input: 3,  output: 15 },
+  "databricks-claude-sonnet-4-5":{ input: 3,  output: 15 },
+  "databricks-claude-sonnet-4":  { input: 3,  output: 15 },
+  "databricks-claude-haiku-4-5": { input: 1,  output: 5  },
+  "databricks-gpt-5":            { input: 1.25, output: 10 },
+  "databricks-gpt-5-5":          { input: 1.25, output: 10 },
+  "databricks-gpt-5-4":          { input: 1.25, output: 10 },
+  "databricks-gpt-5-mini":       { input: 0.25, output: 2 },
+  "databricks-gpt-5-nano":       { input: 0.10, output: 0.4 },
+  "databricks-gte-large-en":     { input: 0.10, output: 0 },
 };
 
 export async function getModelPricing(): Promise<Map<string, ModelPricing>> {

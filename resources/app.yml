@@ -39,7 +39,18 @@ resources:
             name: ${resources.model_serving_endpoints.octopus_openai_embeddings.name}
             permission: CAN_QUERY
 
-        # Secret scope — read access for all upstream API keys
+        # Databricks AI Gateway workspace API key — authenticates ALL chat +
+        # embeddings calls to /ai-gateway/{anthropic,openai,google}. Generate
+        # via Databricks UI: Compute → External Agents → Generate API Key.
+        - name: databricks_gateway_token
+          secret:
+            scope: ${var.secret_scope}
+            key: databricks_gateway_token
+            permission: READ
+
+        # Legacy upstream-provider keys — only consumed when DATABRICKS_HOST
+        # is unset (Docker dev). Kept declared so the app.yaml env block can
+        # reference them even when they hold placeholder values.
         - name: octopus_secrets
           secret:
             scope: ${var.secret_scope}

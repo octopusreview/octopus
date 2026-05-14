@@ -85,18 +85,78 @@ async function resolveProvider(modelId: string): Promise<AiProvider> {
 
 // ── Client factories ────────────────────────────────────────────────────────
 //
-// In Databricks mode, every provider talks to the workspace-hosted AI Gateway
-// endpoint (Anthropic-native for Claude — preserves `cache_control`; OpenAI
-// chat-completions for OpenAI; Gemini via raw fetch to OpenAI-compatible
-// endpoint). The `apiKey` parameter (legacy BYOK) is ignored on Databricks —
-// per-org keys are not threaded through the gateway in this deployment.
+// In Databricks mode, every provider talks to the workspace's **AI Gateway**
+// (a Databricks-managed proxy that handles routing + governance). The Gateway
+// exposes provider-native APIs at:
+//   ${host}/ai-gateway/anthropic     (Anthropic Messages API — preserves cache_control)
+//   ${host}/ai-gateway/openai/v1     (OpenAI-compatible chat + embeddings)
+//   ${host}/ai-gateway/google        (Gemini, if a key was generated)
+//
+// Authentication is a single workspace-scoped Gateway API key (DAPI token)
+// generated from the Databricks UI (Compute → External Agents → Generate API Key).
+// One key works across all providers. The `apiKey` BYOK parameter is ignored.
+
+function getGatewayToken(): string {
+  const tok = process.env.DATABRICKS_GATEWAY_TOKEN;
+  if (!tok) {
+    throw new Error(
+      "DATABRICKS_GATEWAY_TOKEN is missing — generate one in Databricks UI " +
+        "(Compute → External Agents → Other Integrations → Generate API Key) " +
+        "and push it to the octopus-octopus-ai secret scope.",
+    );
+  }
+  return tok;
+}
+
+/**
+ * Databricks AI Gateway uses its own model identifiers (`databricks-claude-*`,
+ * `databricks-gpt-*`, etc.) rather than Anthropic / OpenAI native model IDs.
+ * Translate the model string the app uses internally (e.g.
+ * `claude-sonnet-4-6-20250619`) to the Gateway's identifier.
+ *
+ * Available on this workspace (probed 2026-05-14):
+ *   Anthropic: databricks-claude-{haiku-4-5, opus-4-1, opus-4-5, opus-4-6,
+ *              opus-4-7, sonnet-4, sonnet-4-5, sonnet-4-6}
+ *   OpenAI:    databricks-gpt-5, databricks-gpt-5-{4, 5, mini, nano}
+ *   Embedding: databricks-gte-large-en (1024 dim)
+ */
+function translateModelForGateway(model: string, provider: AiProvider): string {
+  // If already namespaced for the gateway, pass through.
+  if (model.startsWith("databricks-")) return model;
+
+  if (provider === "anthropic") {
+    // claude-sonnet-4-6-20250619 → databricks-claude-sonnet-4-6
+    // Strip a trailing date suffix (-YYYYMMDD) and prepend `databricks-`.
+    const stripped = model.replace(/-\d{8}$/, "");
+    // Map opus-4 (no minor) onto opus-4-1 (the gateway's earliest opus-4 build).
+    if (stripped === "claude-opus-4") return "databricks-claude-opus-4-1";
+    return `databricks-${stripped}`;
+  }
+
+  if (provider === "openai") {
+    // OpenAI: gateway only exposes the gpt-5 family + variants. Map common
+    // legacy names onto sensible defaults so older configs keep working.
+    if (/^(o3|o4|gpt-4o|gpt-4-1|codex)/i.test(model)) return "databricks-gpt-5-mini";
+    if (/^gpt-5/i.test(model)) return `databricks-${model.replace(/-\d{8}$/, "")}`;
+    return "databricks-gpt-5-mini";
+  }
+
+  if (provider === "google") {
+    // No Gemini route configured yet — caller must add one via the UI before
+    // this branch resolves. Pass through for now; callGoogle surfaces the
+    // gateway's "endpoint does not exist" error which is more actionable than
+    // a guessed translation.
+    return model;
+  }
+
+  return model;
+}
 
 async function getAnthropic(apiKey?: string | null): Promise<Anthropic> {
   if (dbxConfig.isDatabricksRuntime) {
-    const token = await getWorkspaceToken();
     return new Anthropic({
-      authToken: token,
-      baseURL: `${dbxConfig.host}/serving-endpoints/${dbxConfig.anthropicEndpoint}/`,
+      authToken: getGatewayToken(),
+      baseURL: `${dbxConfig.host}/ai-gateway/anthropic`,
     });
   }
   if (apiKey) return new Anthropic({ apiKey });
@@ -105,10 +165,9 @@ async function getAnthropic(apiKey?: string | null): Promise<Anthropic> {
 
 async function getOpenAI(apiKey?: string | null): Promise<OpenAI> {
   if (dbxConfig.isDatabricksRuntime) {
-    const token = await getWorkspaceToken();
     return new OpenAI({
-      apiKey: token,
-      baseURL: `${dbxConfig.host}/serving-endpoints/${dbxConfig.openaiEndpoint}/v1`,
+      apiKey: getGatewayToken(),
+      baseURL: `${dbxConfig.host}/ai-gateway/openai/v1`,
     });
   }
   if (apiKey) return new OpenAI({ apiKey });
@@ -155,9 +214,12 @@ async function callAnthropic(
   apiKey?: string | null,
 ): Promise<AiResponse> {
   const client = await getAnthropic(apiKey);
+  const wireModel = dbxConfig.isDatabricksRuntime
+    ? translateModelForGateway(params.model, "anthropic")
+    : params.model;
 
   const response = await client.messages.create({
-    model: params.model,
+    model: wireModel,
     max_tokens: params.maxTokens,
     system: params.system
       ? [
@@ -196,6 +258,9 @@ async function callOpenAI(
   apiKey?: string | null,
 ): Promise<AiResponse> {
   const client = await getOpenAI(apiKey);
+  const wireModel = dbxConfig.isDatabricksRuntime
+    ? translateModelForGateway(params.model, "openai")
+    : params.model;
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
   if (params.system) {
@@ -206,7 +271,7 @@ async function callOpenAI(
   }
 
   const response = await client.chat.completions.create({
-    model: params.model,
+    model: wireModel,
     max_completion_tokens: params.maxTokens,
     messages,
   });
@@ -235,23 +300,34 @@ async function callGoogle(
   apiKey?: string | null,
 ): Promise<AiResponse> {
   if (dbxConfig.isDatabricksRuntime) {
+    const token = getGatewayToken();
     const messages: Array<{ role: string; content: string }> = [];
     if (params.system) messages.push({ role: "system", content: params.system });
     for (const m of params.messages) messages.push({ role: m.role, content: m.content });
 
-    const body = {
-      model: params.model,
-      messages,
-      max_tokens: params.maxTokens,
-    };
-
-    const json = await dbxFetch<{
+    // AI Gateway exposes Gemini at /ai-gateway/google with OpenAI-compatible
+    // chat-completions format. Generate the key in the Databricks UI under
+    // Compute → External Agents → Gemini → Generate API Key.
+    const wireModel = translateModelForGateway(params.model, "google");
+    const r = await fetch(`${dbxConfig.host}/ai-gateway/google/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: wireModel,
+        messages,
+        max_tokens: params.maxTokens,
+      }),
+    });
+    if (!r.ok) {
+      throw new Error(`Gemini via AI Gateway ${r.status}: ${await r.text().catch(() => "")}`);
+    }
+    const json = (await r.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
       usage?: { prompt_tokens?: number; completion_tokens?: number };
-    }>(
-      `/serving-endpoints/${dbxConfig.geminiEndpoint}/invocations`,
-      { method: "POST", body: JSON.stringify(body) },
-    );
+    };
 
     const text = json.choices?.[0]?.message?.content ?? "";
     return {

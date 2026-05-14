@@ -4,19 +4,26 @@ import { logAiUsage } from "@/lib/ai-usage";
 import { getEmbedModel } from "@/lib/ai-client";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { config as dbxConfig } from "@/lib/databricks/config";
-import { getWorkspaceToken } from "@/lib/databricks/oauth";
 
-// Embeddings client targets the Databricks Model Serving endpoint exposed by
-// AI Gateway. The endpoint is bound to OpenAI text-embedding-3-large
-// upstream-side; we talk OpenAI-compatible REST to it. For local dev (no
-// DATABRICKS_HOST set), fall back to the direct OpenAI API.
+// Embeddings client targets the Databricks **AI Gateway** OpenAI-compatible
+// route at `${host}/ai-gateway/openai/v1`, authenticated with a workspace
+// Gateway API key (DATABRICKS_GATEWAY_TOKEN). The Gateway forwards to
+// OpenAI's text-embedding-3-large upstream. For local dev (no DATABRICKS_HOST
+// set), fall back to direct OpenAI calls with OPENAI_API_KEY.
 
 async function getClient(): Promise<OpenAI> {
   if (dbxConfig.isDatabricksRuntime) {
-    const token = await getWorkspaceToken();
+    const token = process.env.DATABRICKS_GATEWAY_TOKEN;
+    if (!token) {
+      throw new Error(
+        "DATABRICKS_GATEWAY_TOKEN is missing — generate one in Databricks UI " +
+          "(Compute → External Agents → Other Integrations → Generate API Key) " +
+          "and push it to the octopus-octopus-ai secret scope.",
+      );
+    }
     return new OpenAI({
       apiKey: token,
-      baseURL: `${dbxConfig.host}/serving-endpoints/${dbxConfig.embeddingsEndpoint}/v1`,
+      baseURL: `${dbxConfig.host}/ai-gateway/openai/v1`,
     });
   }
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
@@ -55,12 +62,16 @@ export async function createEmbeddings(
   }
 
   const client = await getClient();
-  // On Databricks, AI Gateway resolves the upstream model by endpoint name; the
-  // `model` field of the OpenAI body is ignored. We still pass the resolved
-  // name for usage logging / future BYO-org-key flows.
-  const embedModel = tracking?.organizationId
-    ? await getEmbedModel(tracking.organizationId, tracking.repositoryId)
-    : "text-embedding-3-large";
+  // On Databricks AI Gateway the embedding endpoint is `databricks-gte-large-en`
+  // (1024-dim). For local-dev (no DATABRICKS_HOST), fall back to OpenAI's
+  // text-embedding-3-large per the org's configured model. The VS indexes are
+  // sized to 1024 to match GTE-Large-EN — switching to a different upstream
+  // requires re-creating the indexes at the new dimension.
+  const embedModel = dbxConfig.isDatabricksRuntime
+    ? "databricks-gte-large-en"
+    : tracking?.organizationId
+      ? await getEmbedModel(tracking.organizationId, tracking.repositoryId)
+      : "text-embedding-3-large";
 
   // Filter out empty/whitespace-only strings — OpenAI embeddings API rejects them
   const validTexts: string[] = [];

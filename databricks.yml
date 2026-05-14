@@ -27,8 +27,8 @@ variables:
   vs_endpoint_name:
     default: "octopus-vs"
   vs_dimension:
-    description: "OpenAI text-embedding-3-large dimensions"
-    default: 3072
+    description: "Embedding dimensions — must match the upstream embed model. databricks-gte-large-en (AI Gateway) = 1024; OpenAI text-embedding-3-large (local dev) = 3072."
+    default: 1024
   lakebase_project:
     default: "octopus-app"
   secret_scope:

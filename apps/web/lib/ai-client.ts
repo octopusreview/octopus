@@ -1,7 +1,16 @@
 import { prisma } from "@octopus/db";
 
+// In Databricks runtime these models go through the AI Gateway. The
+// `ai-router.ts` translator converts `claude-sonnet-4-6` →
+// `databricks-claude-sonnet-4-6` before the request leaves the app. The
+// embed model is the only one that differs at the app level — Databricks
+// AI Gateway exposes a 1024-dim GTE-Large-EN rather than OpenAI's
+// 3072-dim text-embedding-3-large, so VS indexes are sized to 1024.
+const ON_DATABRICKS = Boolean(process.env.DATABRICKS_HOST);
 export const HARDCODED_REVIEW_MODEL = "claude-sonnet-4-6";
-export const HARDCODED_EMBED_MODEL = "text-embedding-3-large";
+export const HARDCODED_EMBED_MODEL = ON_DATABRICKS
+  ? "databricks-gte-large-en"
+  : "text-embedding-3-large";
 
 async function getPlatformDefault(category: "llm" | "embedding"): Promise<string | null> {
   try {

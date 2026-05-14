@@ -11,7 +11,9 @@ app uses:
   docs_chunks          (public docs / landing-page content)
   feedback_patterns    (repo-specific review patterns)
 
-All are 3072-dim cosine (matches OpenAI text-embedding-3-large output).
+All are 1024-dim cosine (matches Databricks AI Gateway's
+`databricks-gte-large-en` embedding output). For local dev with OpenAI's
+text-embedding-3-large, override `--dimension 3072`.
 Re-runs are safe — existing indexes are skipped.
 """
 
@@ -118,7 +120,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--endpoint", required=True, help="Vector Search endpoint name")
     p.add_argument("--catalog", default="octopus_ai_catalog")
     p.add_argument("--schema", default="vectors")
-    p.add_argument("--dimension", type=int, default=3072)
+    p.add_argument("--dimension", type=int, default=1024)
     return p.parse_args()
 
 
@@ -127,8 +129,11 @@ def wait_for_endpoint(w: WorkspaceClient, endpoint: str, timeout_s: int = 1200) 
     while elapsed < timeout_s:
         ep = w.vector_search_endpoints.get_endpoint(endpoint)
         state = (ep.endpoint_status.state if ep.endpoint_status else None) or "?"
-        print(f"  endpoint {endpoint} state={state} (waited {elapsed}s)")
-        if str(state).upper() in {"ONLINE", "ACTIVE"}:
+        # SDK returns an enum (e.g. EndpointStatusState.ONLINE); take the last
+        # path component for a simple string match.
+        state_name = str(state).rsplit(".", 1)[-1].upper()
+        print(f"  endpoint {endpoint} state={state_name} (waited {elapsed}s)")
+        if state_name in {"ONLINE", "ACTIVE"}:
             return
         time.sleep(15)
         elapsed += 15

@@ -87,10 +87,16 @@ env:
   - name: FEATURES_GITLAB
     value: "false"
 
-  # ── Secrets (each is its own app-resource → secret-scope/key binding) ────
-  # Most LLM keys are consumed by AI Gateway upstream-side, NOT the app itself,
-  # but exposing them lets the app fall back to direct provider calls if
-  # someone disables AUTH_MODE/Databricks runtime later.
+  # ── AI Gateway ───────────────────────────────────────────────────────────
+  # Single workspace-scoped Databricks Gateway API token (DAPI token) authenticates
+  # calls to /ai-gateway/anthropic, /ai-gateway/openai, /ai-gateway/google.
+  # Generated in Databricks UI: Compute → External Agents → Generate API Key.
+  - name: DATABRICKS_GATEWAY_TOKEN
+    valueFrom: databricks_gateway_token
+
+  # ── Legacy direct-provider keys (only consumed when DATABRICKS_HOST is unset,
+  # e.g. running this codebase against Docker Compose). On the Apps platform
+  # all chat/embeddings calls route through DATABRICKS_GATEWAY_TOKEN above.
   - name: ANTHROPIC_API_KEY
     valueFrom: octopus_secrets
   - name: OPENAI_API_KEY

@@ -16,7 +16,7 @@ command:
   # the shell instead. The Apps platform injects DATABRICKS_APP_URL at runtime.
   - "sh"
   - "-c"
-  - "set -e; if [ ! -d ./apps ]; then echo 'Extracting bundle...'; cat bundle.part.* | tar -xz; fi; export PORT=$DATABRICKS_APP_PORT HOSTNAME=0.0.0.0 BETTER_AUTH_URL=$DATABRICKS_APP_URL NEXT_PUBLIC_APP_URL=$DATABRICKS_APP_URL; exec node apps/web/server.js"
+  - "set -e; echo 'Extracting bundle...'; rm -rf apps node_modules; cat bundle.part.* | tar -xz; echo \"Extracted $(find apps node_modules -type f 2>/dev/null | wc -l) files\"; export PORT=$DATABRICKS_APP_PORT HOSTNAME=0.0.0.0 BETTER_AUTH_URL=$DATABRICKS_APP_URL NEXT_PUBLIC_APP_URL=$DATABRICKS_APP_URL; exec node apps/web/server.js"
 
 env:
   # ── Runtime ──────────────────────────────────────────────────────────────

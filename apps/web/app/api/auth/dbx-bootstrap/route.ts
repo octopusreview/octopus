@@ -1,10 +1,15 @@
 // Databricks Apps OAuth → Better-Auth session bootstrap.
 //
-// The Apps platform fronts every request with an OAuth proxy that injects
-// X-Forwarded-Email / X-Forwarded-User / X-Forwarded-Preferred-Username headers.
-// This route trusts those headers (the proxy is the only ingress path),
-// upserts the User row in Lakebase, mints a Better-Auth Session row + cookie,
-// and bounces the caller back to the originally-requested path.
+// The Databricks Apps proxy authenticates the user and forwards every request
+// with `x-forwarded-access-token` (the user's Databricks OAuth access token).
+// Some releases also include `x-forwarded-email` / `x-forwarded-user` /
+// `x-forwarded-preferred-username`. The canonical, always-present signal per
+// the docs is the access token; we resolve identity from it by calling the
+// workspace's SCIM `/Me` endpoint with that token as the bearer.
+//
+// This route trusts the proxy (it's the only ingress path), upserts the User
+// row in Lakebase, mints a Better-Auth Session row + cookie, and bounces the
+// caller back to the originally-requested path.
 
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "node:crypto";
@@ -25,44 +30,113 @@ const SESSION_COOKIE_NAME =
 
 function safeReturnTo(raw: string | null): string {
   if (!raw) return "/dashboard";
-  // Prevent open redirect — only allow same-origin paths.
   if (!raw.startsWith("/")) return "/dashboard";
   if (raw.startsWith("//")) return "/dashboard"; // protocol-relative
   return raw;
 }
 
 function cuid(): string {
-  // Best-effort short id matching the shape Better-Auth uses elsewhere.
   return `c${crypto.randomBytes(12).toString("hex")}`;
 }
 
-export async function GET(req: NextRequest): Promise<NextResponse> {
-  const rawEmail = req.headers.get("x-forwarded-email");
-  const preferred = req.headers.get("x-forwarded-preferred-username");
-  const dbxUserId = req.headers.get("x-forwarded-user");
-  const returnTo = safeReturnTo(req.nextUrl.searchParams.get("returnTo"));
+function normalizeHost(raw: string | undefined): string {
+  let h = (raw ?? "").trim().replace(/\/$/, "");
+  if (h && !/^https?:\/\//i.test(h)) h = `https://${h}`;
+  return h;
+}
 
-  if (!rawEmail) {
-    // No proxy headers — caller can't be authenticated by this route.
+/**
+ * Resolve the authenticated user's email + display name from the Databricks
+ * Apps proxy headers. Tries x-forwarded-email first (cheap); falls back to
+ * SCIM /Me using x-forwarded-access-token (per the official docs).
+ */
+async function resolveIdentity(req: NextRequest): Promise<{
+  email: string;
+  name: string;
+  dbxUserId: string | null;
+} | null> {
+  const headerEmail =
+    req.headers.get("x-forwarded-email") ||
+    req.headers.get("x-forwarded-preferred-username");
+  const headerUser = req.headers.get("x-forwarded-user");
+
+  if (headerEmail && headerEmail.includes("@")) {
+    return {
+      email: headerEmail.trim().toLowerCase(),
+      name:
+        req.headers.get("x-forwarded-preferred-username")?.trim() ||
+        headerEmail.trim(),
+      dbxUserId: headerUser,
+    };
+  }
+
+  const accessToken = req.headers.get("x-forwarded-access-token");
+  if (!accessToken) return null;
+
+  // Resolve via SCIM /Me using the user's forwarded access token.
+  const host = normalizeHost(process.env.DATABRICKS_HOST);
+  if (!host) {
+    console.warn("[dbx-bootstrap] DATABRICKS_HOST missing — cannot resolve SCIM /Me");
+    return null;
+  }
+  try {
+    const r = await fetch(`${host}/api/2.0/preview/scim/v2/Me`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!r.ok) {
+      console.warn(
+        `[dbx-bootstrap] SCIM /Me returned ${r.status} ${r.statusText} — falling back to header-only identity`,
+      );
+      if (headerUser && headerUser.includes("@")) {
+        return { email: headerUser.toLowerCase(), name: headerUser, dbxUserId: headerUser };
+      }
+      return null;
+    }
+    const j = (await r.json()) as {
+      id?: string;
+      userName?: string;
+      displayName?: string;
+      emails?: Array<{ value?: string; primary?: boolean }>;
+    };
+    const primaryEmail =
+      j.emails?.find((e) => e.primary)?.value || j.emails?.[0]?.value || j.userName;
+    if (!primaryEmail || !primaryEmail.includes("@")) {
+      console.warn("[dbx-bootstrap] SCIM /Me response has no usable email", j);
+      return null;
+    }
+    return {
+      email: primaryEmail.trim().toLowerCase(),
+      name: j.displayName || j.userName || primaryEmail,
+      dbxUserId: j.id ?? headerUser,
+    };
+  } catch (e) {
+    console.warn("[dbx-bootstrap] SCIM /Me failed:", (e as Error).message);
+    return null;
+  }
+}
+
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const returnTo = safeReturnTo(req.nextUrl.searchParams.get("returnTo"));
+  const identity = await resolveIdentity(req);
+
+  if (!identity) {
     return NextResponse.json(
-      { error: "X-Forwarded-Email header missing — this endpoint is only valid behind the Databricks Apps proxy." },
+      {
+        error:
+          "Databricks Apps proxy headers missing or unresolvable — this endpoint is only valid behind the Apps OAuth proxy.",
+      },
       { status: 401 },
     );
   }
 
-  const email = normalizeEmail(rawEmail.trim().toLowerCase());
-  const name = preferred?.trim() || email;
+  const email = normalizeEmail(identity.email);
+  const name = identity.name || email;
 
   // Upsert User. If new, write a signup audit log.
   let user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
     user = await prisma.user.create({
-      data: {
-        id: cuid(),
-        email,
-        name,
-        emailVerified: true,
-      },
+      data: { id: cuid(), email, name, emailVerified: true },
     });
     await writeAuditLog({
       action: "auth.signup",
@@ -71,7 +145,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       actorEmail: user.email,
       targetType: "user",
       targetId: user.id,
-      metadata: { source: "databricks-apps", dbxUserId: dbxUserId ?? null },
+      metadata: { source: "databricks-apps", dbxUserId: identity.dbxUserId },
     });
   }
 
@@ -115,5 +189,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     path: "/",
     expires: expiresAt,
   });
+  console.log(
+    `[dbx-bootstrap] minted session for ${email} (user=${user.id}, session=${sessionId}) → ${returnTo}`,
+  );
   return res;
 }

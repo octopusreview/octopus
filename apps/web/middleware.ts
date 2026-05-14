@@ -50,7 +50,31 @@ export function middleware(request: NextRequest) {
   //   /api/auth/*              (Better-Auth internals)
   //   /api/version             (health check)
   //   /api/github/webhook etc. (webhook callers don't pass the proxy)
-  const dbxEmail = request.headers.get("x-forwarded-email");
+  // Databricks Apps' canonical "user is authenticated" signal is the
+  // `x-forwarded-access-token` header (per the official docs at
+  // https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth).
+  // Some releases also inject x-forwarded-email / x-forwarded-user /
+  // x-forwarded-preferred-username; we accept any one as a positive signal
+  // and let the bootstrap route resolve the actual email via SCIM /Me.
+  const dbxAccessToken = request.headers.get("x-forwarded-access-token");
+  const dbxEmail =
+    request.headers.get("x-forwarded-email") ||
+    request.headers.get("x-forwarded-preferred-username") ||
+    request.headers.get("x-forwarded-user");
+  const dbxAuthenticated = Boolean(dbxAccessToken || dbxEmail);
+
+  // One-time debug log to surface the actual header set in App logs.
+  if (process.env.NODE_ENV === "production" && pathname === "/dashboard") {
+    const fwd: Record<string, string> = {};
+    request.headers.forEach((v, k) => {
+      if (k.startsWith("x-forwarded") || k === "x-real-ip") fwd[k] = v.slice(0, 80);
+    });
+    console.log(
+      `[middleware] /dashboard hit. session=${Boolean(request.cookies.get("better-auth.session_token")?.value || request.cookies.get("__Secure-better-auth.session_token")?.value)} ` +
+        `dbxAuth=${dbxAuthenticated} (token=${Boolean(dbxAccessToken)} email=${dbxEmail ?? "(none)"}) headers=${JSON.stringify(fwd)}`,
+    );
+  }
+
   const isBootstrap = pathname.startsWith("/api/auth/dbx-bootstrap");
   const isWebhookOrHealth =
     pathname.startsWith("/api/github/") ||
@@ -61,7 +85,7 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/api/agent") ||
     pathname.startsWith("/api/stripe");
 
-  if (dbxEmail && !sessionToken && !isBootstrap && !isWebhookOrHealth) {
+  if (dbxAuthenticated && !sessionToken && !isBootstrap && !isWebhookOrHealth) {
     const appUrl =
       process.env.BETTER_AUTH_URL ||
       process.env.NEXT_PUBLIC_APP_URL ||

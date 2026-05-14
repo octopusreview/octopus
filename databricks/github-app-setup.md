@@ -99,13 +99,48 @@ Then click **Create GitHub App**.
 
 ## 5. Capture App credentials
 
-On the App settings page that loads after creation, capture five values:
+A GitHub App has **two separate identities**, each with its own credential
+pair — plus a webhook signing secret. You need all five values.
 
-1. **App ID** — shown at the top of the page, e.g. `1234567`
-2. **Client ID** — under "About"
-3. **Client secret** — click **Generate a new client secret**, copy it
-4. **Private key** — scroll to **Private keys** → click **Generate a private key**. A `.pem` file downloads to your machine (e.g. `~/Downloads/octopus-ai-demo.2026-05-14.private-key.pem`)
-5. **Webhook secret** — the value you generated in step 1 (or generate it now via `openssl rand -hex 32` and paste it back into the Webhook secret field on the App settings page)
+| # | Credential | What it's for | Where to find it |
+|---|---|---|---|
+| 1 | **App ID** | App-as-itself JWTs (webhooks, posting checks, App-token-based git clone) | Top of settings page: `App ID: 1234567` |
+| 2 | **Private key** | Pairs with App ID — signs the JWTs | "Private keys" → **Generate a private key** → `.pem` downloads (e.g. `~/Downloads/octopus-ai-demo.2026-05-14.private-key.pem`) |
+| 3 | **Client ID** | App-on-behalf-of-user OAuth flow ("Sign in with GitHub" / "Connect" handshake) | "About" subsection: `Client ID: Iv23liABCDEF…` (starts with `Iv23li` or `Iv1.`) |
+| 4 | **Client secret** | Pairs with Client ID — exchanges auth code for user access token | "Client secrets" → **Generate a new client secret** → shown **once**, copy immediately |
+| 5 | **Webhook secret** | HMAC-signs the JSON payloads GitHub POSTs to `/api/github/webhook` so Octopus can verify they're authentic | "Webhook" → **Secret** field. Generate with `openssl rand -hex 32`; paste into both the GitHub form AND Databricks (step 6) |
+
+### Why both App credentials AND OAuth credentials?
+
+The App identity (App ID + Private key) lets Octopus act AS THE APP — receiving
+webhooks, posting check-runs, cloning via an installation token. The OAuth
+identity (Client ID + Client secret) lets Octopus identify the human user
+when they click **Connect GitHub** in the dashboard, so it knows which user
+just authorized the install.
+
+When you ticked **Request user authorization (OAuth) during installation**
+in step 1, GitHub started generating OAuth credentials too. They live under
+**About** (Client ID) and **Client secrets** (Client secret).
+
+### Quick visual map of the App settings page
+
+```
+https://github.com/settings/apps/octopus-ai-demo
+├── General
+│   ├── About
+│   │   ├── App ID:       1234567                  ← step 5.1
+│   │   └── Client ID:    Iv23liABCDEF…            ← step 5.3
+│   ├── Identifying and authorizing users
+│   │   └── Callback URL (set in step 1)
+│   ├── Webhook
+│   │   ├── Webhook URL   (set in step 1)
+│   │   └── Webhook secret …                       ← step 5.5
+│   └── Private keys
+│       └── Generate a private key (.pem download)  ← step 5.2
+├── Permissions & events (set in steps 2 + 3)
+└── Client secrets
+    └── Generate a new client secret               ← step 5.4
+```
 
 ---
 

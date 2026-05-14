@@ -7,11 +7,12 @@
 # endpoints + 11 secrets as named bindings; entries below resolve via valueFrom.
 
 command:
-  # Wrap in sh so we can substitute DATABRICKS_APP_PORT (Databricks Apps injects
-  # it at runtime). Next.js standalone reads PORT — point it at the platform port.
+  # Reassemble the split tarball (Databricks Apps caps individual files at 10MB
+  # and times out on workspace listings >~3500 files), extract once, then run
+  # the Next.js standalone server bound to $DATABRICKS_APP_PORT.
   - "sh"
   - "-c"
-  - "PORT=$DATABRICKS_APP_PORT HOSTNAME=0.0.0.0 node apps/web/server.js"
+  - "set -e; if [ ! -d ./apps ]; then echo 'Extracting bundle...'; cat bundle.part.* | tar -xz; fi; PORT=$DATABRICKS_APP_PORT HOSTNAME=0.0.0.0 exec node apps/web/server.js"
 
 env:
   # ── Runtime ──────────────────────────────────────────────────────────────

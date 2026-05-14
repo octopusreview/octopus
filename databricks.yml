@@ -38,13 +38,17 @@ workspace:
   host: https://fevm-octopus-ai.cloud.databricks.com
 
 sync:
-  # Force-include the assembled app source even though .gitignore excludes it.
-  # _stage/ is a build artifact populated by `bun run app:assemble`.
+  # Force-include the assembled app source — _stage/node_modules must travel
+  # with the Next.js standalone server so it can resolve `next` at runtime.
   include:
     - "databricks/app/_stage/**"
+    - "databricks/app/_stage/node_modules/**"
   exclude:
+    # Exclude node_modules everywhere EXCEPT the assembled app stage.
     - "node_modules/"
-    - "**/node_modules/**"
+    - "apps/**/node_modules/**"
+    - "packages/**/node_modules/**"
+    - "tools/**/node_modules/**"
     - "**/.next/cache/**"
     - "**/.turbo/**"
     - ".git/"

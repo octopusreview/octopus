@@ -84,3 +84,6 @@ pentest/
 databricks/app/_stage/
 .databricks/
 .databricks-cli/
+# Build artifacts
+databricks/app/bundle.tar.gz
+databricks/app/bundle.part.*

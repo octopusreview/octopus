@@ -10,9 +10,13 @@ command:
   # Reassemble the split tarball (Databricks Apps caps individual files at 10MB
   # and times out on workspace listings >~3500 files), extract once, then run
   # the Next.js standalone server bound to $DATABRICKS_APP_PORT.
+  #
+  # NOTE: Databricks Apps does NOT substitute `{{ENV_VAR}}` in env values, so we
+  # set BETTER_AUTH_URL / NEXT_PUBLIC_APP_URL from $DATABRICKS_APP_URL here in
+  # the shell instead. The Apps platform injects DATABRICKS_APP_URL at runtime.
   - "sh"
   - "-c"
-  - "set -e; if [ ! -d ./apps ]; then echo 'Extracting bundle...'; cat bundle.part.* | tar -xz; fi; PORT=$DATABRICKS_APP_PORT HOSTNAME=0.0.0.0 exec node apps/web/server.js"
+  - "set -e; if [ ! -d ./apps ]; then echo 'Extracting bundle...'; cat bundle.part.* | tar -xz; fi; export PORT=$DATABRICKS_APP_PORT HOSTNAME=0.0.0.0 BETTER_AUTH_URL=$DATABRICKS_APP_URL NEXT_PUBLIC_APP_URL=$DATABRICKS_APP_URL; exec node apps/web/server.js"
 
 env:
   # ── Runtime ──────────────────────────────────────────────────────────────
@@ -24,10 +28,9 @@ env:
   # ── Auth mode (proxy-header bootstrap, not Better-Auth providers) ────────
   - name: AUTH_MODE
     value: "databricks"
-  - name: BETTER_AUTH_URL
-    value: "{{DATABRICKS_APP_URL}}"
-  - name: NEXT_PUBLIC_APP_URL
-    value: "{{DATABRICKS_APP_URL}}"
+  # BETTER_AUTH_URL and NEXT_PUBLIC_APP_URL are set from $DATABRICKS_APP_URL
+  # in the `command:` shell wrapper above — Apps env values can't reference
+  # platform-injected vars directly.
 
   # ── Lakebase Postgres — auto-injected by `database` resource binding ─────
   # PGHOST / PGUSER / PGPASSWORD / PGPORT / PGDATABASE come from the platform.

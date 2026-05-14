@@ -175,6 +175,22 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     metadata: { source: "databricks-apps" },
   });
 
+  // Better-Auth signs the session cookie using Hono's signedCookie format:
+  //   cookie_value = `${token}.${base64(HMAC-SHA256(BETTER_AUTH_SECRET, token))}`
+  // Without the signature suffix, Better-Auth's getSession() can't verify the
+  // cookie and treats subsequent requests as unauthenticated. So sign here.
+  const secret = process.env.BETTER_AUTH_SECRET;
+  if (!secret) {
+    return NextResponse.json(
+      { error: "BETTER_AUTH_SECRET missing — cannot sign session cookie." },
+      { status: 500 },
+    );
+  }
+  const hmac = crypto.createHmac("sha256", secret).update(token).digest();
+  // Hono uses `btoa(String.fromCharCode(...))` which yields standard base64 (with `+/=`).
+  const signature = hmac.toString("base64");
+  const signedCookie = `${token}.${signature}`;
+
   // 302 → returnTo, with the session cookie set.
   const appUrl =
     process.env.BETTER_AUTH_URL ||
@@ -182,7 +198,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     req.nextUrl.origin;
   const target = new URL(returnTo, appUrl);
   const res = NextResponse.redirect(target);
-  res.cookies.set(SESSION_COOKIE_NAME, token, {
+  res.cookies.set(SESSION_COOKIE_NAME, signedCookie, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -190,7 +206,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     expires: expiresAt,
   });
   console.log(
-    `[dbx-bootstrap] minted session for ${email} (user=${user.id}, session=${sessionId}) → ${returnTo}`,
+    `[dbx-bootstrap] minted signed session for ${email} (user=${user.id}, session=${sessionId}) → ${returnTo}`,
   );
   return res;
 }

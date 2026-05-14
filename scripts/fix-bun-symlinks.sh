@@ -61,6 +61,20 @@ done
 # Drop .bun/ to save upload size — top-level packages are all we need
 rm -rf "$BUN_DIR"
 
+# Prisma's generated client is at node_modules/.prisma/client (hidden), placed
+# next to @prisma/client during `prisma generate`. Bun stores it inside
+# .bun/@prisma+client@<ver>/node_modules/.prisma/. Copy it up to top-level.
+if [[ -n "$WORKSPACE_BUN" ]]; then
+  for prisma_dir in "$WORKSPACE_BUN"/@prisma+client@*/node_modules/.prisma; do
+    [[ -d "$prisma_dir" ]] || continue
+    target="$NM/.prisma"
+    rm -rf "$target"
+    cp -R "$prisma_dir" "$target"
+    echo "copied prisma generated client from $prisma_dir"
+    break
+  done
+fi
+
 # Repair the broken symlinks that Next.js nft (file-tracing) created inside
 # the build output. They point at the deleted .bun/ cache; rewrite each as a
 # REAL COPY of the corresponding flattened top-level package. We can't use a

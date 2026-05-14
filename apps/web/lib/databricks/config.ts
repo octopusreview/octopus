@@ -25,9 +25,11 @@ function envOrDefault(name: string, fallback: string): string {
 }
 
 export const config = {
-  /** Workspace URL with no trailing slash, e.g. https://octopus-ai.cloud.databricks.com */
+  /** Workspace URL with `https://` prefix and no trailing slash. Apps inject without scheme. */
   get host(): string {
-    return envOrThrow("DATABRICKS_HOST").replace(/\/$/, "");
+    let h = envOrThrow("DATABRICKS_HOST").trim().replace(/\/$/, "");
+    if (!/^https?:\/\//i.test(h)) h = `https://${h}`;
+    return h;
   },
 
   /** App SP client id (injected by Databricks Apps runtime) */

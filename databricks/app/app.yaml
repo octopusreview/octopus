@@ -7,8 +7,11 @@
 # endpoints + 11 secrets as named bindings; entries below resolve via valueFrom.
 
 command:
-  - "node"
-  - "apps/web/server.js"
+  # Wrap in sh so we can substitute DATABRICKS_APP_PORT (Databricks Apps injects
+  # it at runtime). Next.js standalone reads PORT — point it at the platform port.
+  - "sh"
+  - "-c"
+  - "PORT=$DATABRICKS_APP_PORT HOSTNAME=0.0.0.0 node apps/web/server.js"
 
 env:
   # ── Runtime ──────────────────────────────────────────────────────────────
@@ -16,11 +19,6 @@ env:
     value: "production"
   - name: NODE_OPTIONS
     value: "--max-old-space-size=4096"
-  - name: HOSTNAME
-    value: "0.0.0.0"
-  # PORT — the Apps platform injects DATABRICKS_APP_PORT; pass it through.
-  - name: PORT
-    value: "{{DATABRICKS_APP_PORT}}"
 
   # ── Auth mode (proxy-header bootstrap, not Better-Auth providers) ────────
   - name: AUTH_MODE
@@ -39,8 +37,11 @@ env:
     valueFrom: claude
   - name: OPENAI_SERVING_ENDPOINT
     valueFrom: openai
+  # GEMINI_SERVING_ENDPOINT — set as a literal until the Gemini endpoint is
+  # added via the workspace UI (see resources/app.yml note). Set to a literal
+  # name; the app code falls back to local SDK when DATABRICKS_HOST is unset.
   - name: GEMINI_SERVING_ENDPOINT
-    valueFrom: gemini
+    value: "octopus-gemini"
   - name: OPENAI_EMBEDDINGS_SERVING_ENDPOINT
     valueFrom: openai_embeddings
 

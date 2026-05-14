@@ -10,22 +10,14 @@ resources:
       max_concurrent_runs: 1
       timeout_seconds: 1800
       tasks:
-        - task_key: create_lakebase
-          environment_key: bootstrap_env
-          spark_python_task:
-            python_file: ../databricks/bootstrap/create_lakebase.py
-            parameters:
-              - "--project=${var.lakebase_project}"
-              - "--branch=production"
-              - "--endpoint=ep-primary"
+        # Lakebase is now provisioned declaratively via resources/lakebase.yml
+        # (Autoscale SDK isn't available yet). Only VS indexes remain in this job.
         - task_key: create_indexes
-          depends_on:
-            - task_key: create_lakebase
           environment_key: bootstrap_env
           spark_python_task:
             python_file: ../databricks/bootstrap/create_indexes.py
             parameters:
-              - "--endpoint=${var.vs_endpoint_name}"
+              - "--endpoint=${resources.vector_search_endpoints.octopus_vs.name}"
               - "--catalog=${var.catalog}"
               - "--schema=${var.vs_schema}"
               - "--dimension=${var.vs_dimension}"

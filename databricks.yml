@@ -12,7 +12,7 @@ include:
 variables:
   workspace_host:
     description: "Databricks workspace host (FEVM octopus-ai)"
-    default: "https://octopus-ai.cloud.databricks.com"
+    default: "https://fevm-octopus-ai.cloud.databricks.com"
   catalog:
     description: "Unity Catalog catalog for VS indexes + AI Gateway inference tables"
     default: "octopus_ai_catalog"
@@ -35,9 +35,13 @@ variables:
     default: "octopus-octopus-ai"
 
 workspace:
-  host: ${var.workspace_host}
+  host: https://fevm-octopus-ai.cloud.databricks.com
 
 sync:
+  # Force-include the assembled app source even though .gitignore excludes it.
+  # _stage/ is a build artifact populated by `bun run app:assemble`.
+  include:
+    - "databricks/app/_stage/**"
   exclude:
     - "node_modules/"
     - "**/node_modules/**"
@@ -54,7 +58,7 @@ targets:
     default: true
     mode: development
     workspace:
-      host: ${var.workspace_host}
+      host: https://fevm-octopus-ai.cloud.databricks.com
       profile: octopus-ai
     run_as:
       user_name: ${workspace.current_user.userName}

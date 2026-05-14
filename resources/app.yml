@@ -12,28 +12,31 @@ resources:
       resources:
         # Lakebase Postgres — provides PGHOST / PGUSER / PGPASSWORD / PGDATABASE / PGPORT env vars
         - name: database
-          description: "Lakebase Postgres (Autoscale) for Prisma + pg-boss"
+          description: "Lakebase Postgres (Provisioned CU_1) for Prisma + pg-boss"
           database:
             database_name: databricks_postgres
-            instance_name: ${var.lakebase_project}
+            instance_name: ${resources.database_instances.octopus_app.name}
             permission: CAN_CONNECT_AND_CREATE
 
         # Model Serving — name (string) of each endpoint exposed as env var
         - name: claude
           serving_endpoint:
-            name: octopus-claude
+            name: ${resources.model_serving_endpoints.octopus_claude.name}
             permission: CAN_QUERY
         - name: openai
           serving_endpoint:
-            name: octopus-openai
+            name: ${resources.model_serving_endpoints.octopus_openai.name}
             permission: CAN_QUERY
-        - name: gemini
-          serving_endpoint:
-            name: octopus-gemini
-            permission: CAN_QUERY
+        # Gemini endpoint must be added via the workspace UI (provider=google-ai-studio
+        # isn't yet supported by the bundle CLI). Once created, re-add this block
+        # and re-run `databricks bundle deploy`.
+        # - name: gemini
+        #   serving_endpoint:
+        #     name: octopus-gemini
+        #     permission: CAN_QUERY
         - name: openai_embeddings
           serving_endpoint:
-            name: octopus-openai-embeddings
+            name: ${resources.model_serving_endpoints.octopus_openai_embeddings.name}
             permission: CAN_QUERY
 
         # Secret scope — read access for all upstream API keys

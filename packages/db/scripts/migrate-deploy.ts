@@ -36,10 +36,11 @@ const credJson = sh("databricks", [
   "generate-database-credential",
   "--profile",
   profile,
-  "--instance-names",
-  project,
-  "--request-id",
-  `octopus-migrate-${Date.now()}`,
+  "--json",
+  JSON.stringify({
+    instance_names: [project],
+    request_id: `octopus-migrate-${Date.now()}`,
+  }),
   "--output",
   "json",
 ]);
@@ -67,9 +68,17 @@ const databaseUrl = `postgresql://${encodeURIComponent(userName)}:${encodeURICom
 
 console.log(`Connecting as ${userName}@${host}/databricks_postgres ...`);
 
-const migrate = spawnSync("bunx", ["--filter", "@octopus/db", "prisma", "migrate", "deploy"], {
-  stdio: "inherit",
-  env: { ...process.env, DATABASE_URL: databaseUrl },
-});
+// Repo has only the most-recent migration file (history was squashed). Use
+// `db push` which materializes the whole schema directly — no migration
+// history required and idempotent on re-runs.
+const migrate = spawnSync(
+  "bunx",
+  ["prisma", "db", "push", "--accept-data-loss"],
+  {
+    cwd: `${import.meta.dir}/..`,
+    stdio: "inherit",
+    env: { ...process.env, DATABASE_URL: databaseUrl },
+  },
+);
 
 process.exit(migrate.status ?? 1);

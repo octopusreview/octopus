@@ -48,24 +48,15 @@ resources:
           schema_name: ${var.gateway_schema}
           table_name_prefix: openai_chat
 
-    octopus_gemini:
-      name: octopus-gemini
-      config:
-        served_entities:
-          - name: gemini-2-5-pro
-            external_model:
-              name: gemini-2.5-pro
-              provider: google-ai-studio
-              task: llm/v1/chat
-              google_ai_studio_config:
-                google_ai_studio_api_key: "{{secrets/octopus-octopus-ai/google_api_key}}"
-      ai_gateway:
-        usage_tracking_config: { enabled: true }
-        inference_table_config:
-          enabled: true
-          catalog_name: ${var.catalog}
-          schema_name: ${var.gateway_schema}
-          table_name_prefix: gemini
+    # NOTE: Gemini endpoint must be created via the workspace UI for now —
+    # databricks CLI v0.299 doesn't recognize provider=google-ai-studio (only
+    # google-cloud-vertex-ai and palm are first-class). After bundle deploy,
+    # create `octopus-gemini` in the UI:
+    #   Provider: Google AI Studio (or "External Models" → Gemini)
+    #   Task: chat
+    #   Model: gemini-2.5-pro
+    #   API key: from octopus-octopus-ai secret scope, key=google_api_key
+    # Then GEMINI_SERVING_ENDPOINT in app.yaml is already set to "octopus-gemini".
 
     octopus_openai_embeddings:
       name: octopus-openai-embeddings

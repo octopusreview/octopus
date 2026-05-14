@@ -1,6 +1,9 @@
 import { prisma } from "@octopus/db";
 import { ORG_TYPE } from "@/lib/org-types";
 
+// Demo mode: when billing is disabled, spend limits are not enforced.
+const billingEnabled = process.env.FEATURES_BILLING === "true";
+
 type ModelPricing = { input: number; output: number };
 
 // In-memory cache for model pricing (5 min TTL)
@@ -108,6 +111,9 @@ export type SpendLimitResult =
   | { blocked: true; reason: "spend_limit"; limitUsd: number };
 
 export async function getOrgSpendLimitStatus(orgId: string): Promise<SpendLimitResult> {
+  // Billing disabled in this deployment — never block on credits/spend.
+  if (!billingEnabled) return { blocked: false };
+
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
     select: {

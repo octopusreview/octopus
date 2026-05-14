@@ -46,13 +46,23 @@ export function middleware(request: NextRequest) {
     request.cookies.get("__Secure-better-auth.session_token")?.value;
 
   if (!sessionToken) {
-    // Use configured app URL to prevent redirect poisoning via X-Forwarded-Host
     const appUrl =
       process.env.BETTER_AUTH_URL ||
       process.env.NEXT_PUBLIC_APP_URL ||
       `http://${request.headers.get("host") || "localhost:3000"}`;
-    const loginUrl = new URL("/login", appUrl);
     const fullPath = pathname + request.nextUrl.search;
+
+    // Databricks Apps OAuth path — the proxy has already authenticated the
+    // user and injected X-Forwarded-Email. Mint a Better-Auth session via the
+    // dbx-bootstrap route and bounce the user back to where they were going.
+    const dbxEmail = request.headers.get("x-forwarded-email");
+    if (dbxEmail) {
+      const bootstrap = new URL("/api/auth/dbx-bootstrap", appUrl);
+      bootstrap.searchParams.set("returnTo", fullPath);
+      return NextResponse.redirect(bootstrap);
+    }
+
+    const loginUrl = new URL("/login", appUrl);
     if (fullPath !== "/dashboard") {
       loginUrl.searchParams.set("callbackUrl", fullPath);
     }

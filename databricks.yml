@@ -1,0 +1,60 @@
+# Octopus → Databricks Asset Bundle
+# Deploys to FEVM workspace `octopus-ai` (AWS us-east-1).
+# Resources: VS endpoint + indexes, AI Gateway endpoints (Claude/OpenAI/Gemini/Embeddings),
+# Lakebase Autoscale (provisioned via bootstrap job), Databricks App, secret scope.
+
+bundle:
+  name: octopus
+
+include:
+  - resources/*.yml
+
+variables:
+  workspace_host:
+    description: "Databricks workspace host (FEVM octopus-ai)"
+    default: "https://octopus-ai.cloud.databricks.com"
+  catalog:
+    description: "Unity Catalog catalog for VS indexes + AI Gateway inference tables"
+    default: "octopus_ai_catalog"
+  vs_schema:
+    description: "Schema under catalog for Vector Search indexes"
+    default: "vectors"
+  gateway_schema:
+    description: "Schema under catalog for AI Gateway inference tables"
+    default: "gateway"
+  app_name:
+    default: "octopus"
+  vs_endpoint_name:
+    default: "octopus-vs"
+  vs_dimension:
+    description: "OpenAI text-embedding-3-large dimensions"
+    default: 3072
+  lakebase_project:
+    default: "octopus-app"
+  secret_scope:
+    default: "octopus-octopus-ai"
+
+workspace:
+  host: ${var.workspace_host}
+
+sync:
+  exclude:
+    - "node_modules/"
+    - "**/node_modules/**"
+    - "**/.next/cache/**"
+    - "**/.turbo/**"
+    - ".git/"
+    - "**/coverage/**"
+    - "**/dist/**"
+    - "databricks/app/server/"
+    - "*.log"
+
+targets:
+  octopus-ai:
+    default: true
+    mode: development
+    workspace:
+      host: ${var.workspace_host}
+      profile: octopus-ai
+    run_as:
+      user_name: ${workspace.current_user.userName}

@@ -10,6 +10,86 @@ import { enqueueAfter } from "./queue";
 import { reasonToMessage, validateEmailForSignup } from "./email-validator";
 import { normalizeEmail } from "./email-normalize";
 
+// AUTH_MODE controls which providers are mounted:
+//   "databricks" → no providers; session minted by the dbx-bootstrap route from
+//                  X-Forwarded-Email / X-Forwarded-Preferred-Username headers
+//   anything else (default "local") → magic-link + Google + GitHub social OAuth
+//                  for Docker Compose / local dev
+const authMode = process.env.AUTH_MODE ?? "local";
+const isDatabricks = authMode === "databricks";
+
+const plugins = isDatabricks
+  ? []
+  : [
+      magicLink({
+        sendMagicLink: async ({ email, url }) => {
+          const normalizedEmail = normalizeEmail(email);
+          const rawLookupEmail = email.trim().toLowerCase();
+          let existing = await prisma.user.findUnique({
+            where: { email: normalizedEmail },
+            select: { id: true },
+          });
+          if (!existing && rawLookupEmail !== normalizedEmail) {
+            existing = await prisma.user.findUnique({
+              where: { email: rawLookupEmail },
+              select: { id: true },
+            });
+          }
+          if (!existing) {
+            const validation = await validateEmailForSignup(normalizedEmail);
+            if (!validation.ok) {
+              await writeAuditLog({
+                action: "auth.signup_blocked",
+                category: "auth",
+                actorEmail: normalizedEmail,
+                targetType: "user",
+                metadata: {
+                  reason: validation.reason,
+                  source: "magic_link",
+                  original: email,
+                },
+              });
+              throw new APIError("BAD_REQUEST", {
+                message: reasonToMessage(validation.reason),
+              });
+            }
+          }
+
+          const result = await renderEmailTemplate("magic-link", {
+            magicLinkUrl: url,
+          });
+
+          await sendEmail({
+            to: email,
+            subject: result?.subject ?? "Sign in to Octopus",
+            html:
+              result?.html ??
+              `<p>Click <a href="${url}">here</a> to sign in to Octopus.</p>`,
+          });
+          await writeAuditLog({
+            action: "email.magic_link_sent",
+            category: "email",
+            actorEmail: normalizedEmail,
+            targetType: "user",
+            metadata: { recipient: email },
+          });
+        },
+      }),
+    ];
+
+const socialProviders = isDatabricks
+  ? {}
+  : {
+      google: {
+        clientId: process.env.GOOGLE_CLIENT_ID!,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      },
+      github: {
+        clientId: process.env.GITHUB_CLIENT_ID!,
+        clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+      },
+    };
+
 export const auth = betterAuth({
   trustedOrigins: [process.env.BETTER_AUTH_URL!],
   database: prismaAdapter(prisma, {
@@ -99,74 +179,10 @@ export const auth = betterAuth({
       },
     },
   },
-  plugins: [
-    magicLink({
-      sendMagicLink: async ({ email, url }) => {
-        const normalizedEmail = normalizeEmail(email);
-        const rawLookupEmail = email.trim().toLowerCase();
-        let existing = await prisma.user.findUnique({
-          where: { email: normalizedEmail },
-          select: { id: true },
-        });
-        // Fallback for legacy accounts registered before normalization landed,
-        // whose stored email is still in the dotted/aliased form.
-        if (!existing && rawLookupEmail !== normalizedEmail) {
-          existing = await prisma.user.findUnique({
-            where: { email: rawLookupEmail },
-            select: { id: true },
-          });
-        }
-        if (!existing) {
-          const validation = await validateEmailForSignup(normalizedEmail);
-          if (!validation.ok) {
-            await writeAuditLog({
-              action: "auth.signup_blocked",
-              category: "auth",
-              actorEmail: normalizedEmail,
-              targetType: "user",
-              metadata: {
-                reason: validation.reason,
-                source: "magic_link",
-                original: email,
-              },
-            });
-            throw new APIError("BAD_REQUEST", {
-              message: reasonToMessage(validation.reason),
-            });
-          }
-        }
-
-        const result = await renderEmailTemplate("magic-link", {
-          magicLinkUrl: url,
-        });
-
-        await sendEmail({
-          to: email,
-          subject: result?.subject ?? "Sign in to Octopus",
-          html:
-            result?.html ??
-            `<p>Click <a href="${url}">here</a> to sign in to Octopus.</p>`,
-        });
-        await writeAuditLog({
-          action: "email.magic_link_sent",
-          category: "email",
-          actorEmail: normalizedEmail,
-          targetType: "user",
-          metadata: { recipient: email },
-        });
-      },
-    }),
-  ],
-  socialProviders: {
-    google: {
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    },
-    github: {
-      clientId: process.env.GITHUB_CLIENT_ID!,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
-    },
-  },
+  plugins,
+  socialProviders,
 });
+
+export { isDatabricks as IS_DATABRICKS_AUTH };
 
 

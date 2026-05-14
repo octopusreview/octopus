@@ -1,8 +1,17 @@
+// STUB: Stripe billing disabled for Databricks demo deployment.
+// Gated on FEATURES_BILLING=true. Re-enable by setting the flag and the STRIPE_SECRET_KEY secret.
 import Stripe from "stripe";
 import { prisma } from "@octopus/db";
 
+const billingEnabled = process.env.FEATURES_BILLING === "true";
+
 let _stripe: Stripe | null = null;
 export function getStripe(): Stripe {
+  if (!billingEnabled) {
+    throw new Error(
+      "Stripe is disabled in this deployment (FEATURES_BILLING=false). Set FEATURES_BILLING=true and STRIPE_SECRET_KEY to enable.",
+    );
+  }
   if (!_stripe) {
     _stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
   }
@@ -10,6 +19,9 @@ export function getStripe(): Stripe {
 }
 
 export async function getOrCreateStripeCustomer(orgId: string): Promise<string> {
+  if (!billingEnabled) {
+    throw new Error("Stripe is disabled in this deployment (FEATURES_BILLING=false)");
+  }
   const org = await prisma.organization.findUniqueOrThrow({
     where: { id: orgId },
     select: { stripeCustomerId: true, name: true, billingEmail: true, slug: true },
@@ -36,6 +48,9 @@ export async function createCheckoutSession(
   amountUsd: number,
   returnUrl: string,
 ): Promise<string> {
+  if (!billingEnabled) {
+    throw new Error("Stripe is disabled in this deployment (FEATURES_BILLING=false)");
+  }
   const customerId = await getOrCreateStripeCustomer(orgId);
   const amountCents = Math.round(amountUsd * 100);
 
@@ -66,6 +81,9 @@ export async function createPortalSession(
   orgId: string,
   returnUrl: string,
 ): Promise<string> {
+  if (!billingEnabled) {
+    throw new Error("Stripe is disabled in this deployment (FEATURES_BILLING=false)");
+  }
   const customerId = await getOrCreateStripeCustomer(orgId);
 
   const session = await getStripe().billingPortal.sessions.create({
@@ -86,6 +104,7 @@ export type PaymentMethodInfo = {
 export async function getCustomerPaymentMethods(
   stripeCustomerId: string,
 ): Promise<PaymentMethodInfo[]> {
+  if (!billingEnabled) return [];
   try {
     const methods = await getStripe().paymentMethods.list({
       customer: stripeCustomerId,
@@ -107,9 +126,16 @@ export function constructWebhookEvent(
   body: string | Buffer,
   signature: string,
 ): Stripe.Event {
+  if (!billingEnabled) {
+    throw new Error("Stripe is disabled in this deployment (FEATURES_BILLING=false)");
+  }
   return getStripe().webhooks.constructEvent(
     body,
     signature,
     process.env.STRIPE_WEBHOOK_SECRET!,
   );
+}
+
+export function isBillingEnabled(): boolean {
+  return billingEnabled;
 }

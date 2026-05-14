@@ -1,0 +1,37 @@
+# Bootstrap job — provisions resources NOT yet declarable in the DAB schema:
+#   1. Lakebase Autoscale project + branch + endpoint (scale-to-zero)
+#   2. 7 Vector Search Direct Access indexes (code/knowledge/review/chat/flowchart/docs/feedback)
+# Idempotent: re-running the job is safe; existing resources are skipped.
+
+resources:
+  jobs:
+    bootstrap_job:
+      name: "[${bundle.target}] Octopus bootstrap (Lakebase + VS indexes)"
+      max_concurrent_runs: 1
+      timeout_seconds: 1800
+      tasks:
+        - task_key: create_lakebase
+          environment_key: bootstrap_env
+          spark_python_task:
+            python_file: ../databricks/bootstrap/create_lakebase.py
+            parameters:
+              - "--project=${var.lakebase_project}"
+              - "--branch=production"
+              - "--endpoint=ep-primary"
+        - task_key: create_indexes
+          depends_on:
+            - task_key: create_lakebase
+          environment_key: bootstrap_env
+          spark_python_task:
+            python_file: ../databricks/bootstrap/create_indexes.py
+            parameters:
+              - "--endpoint=${var.vs_endpoint_name}"
+              - "--catalog=${var.catalog}"
+              - "--schema=${var.vs_schema}"
+              - "--dimension=${var.vs_dimension}"
+      environments:
+        - environment_key: bootstrap_env
+          spec:
+            client: "1"
+            dependencies:
+              - databricks-sdk>=0.81.0

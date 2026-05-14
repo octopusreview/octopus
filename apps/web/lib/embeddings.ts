@@ -3,14 +3,23 @@ import OpenAI from "openai";
 import { logAiUsage } from "@/lib/ai-usage";
 import { getEmbedModel } from "@/lib/ai-client";
 import { isOrgOverSpendLimit } from "@/lib/cost";
+import { config as dbxConfig } from "@/lib/databricks/config";
+import { getWorkspaceToken } from "@/lib/databricks/oauth";
 
-let openai: OpenAI | null = null;
+// Embeddings client targets the Databricks Model Serving endpoint exposed by
+// AI Gateway. The endpoint is bound to OpenAI text-embedding-3-large
+// upstream-side; we talk OpenAI-compatible REST to it. For local dev (no
+// DATABRICKS_HOST set), fall back to the direct OpenAI API.
 
-function getClient(): OpenAI {
-  if (!openai) {
-    openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+async function getClient(): Promise<OpenAI> {
+  if (dbxConfig.isDatabricksRuntime) {
+    const token = await getWorkspaceToken();
+    return new OpenAI({
+      apiKey: token,
+      baseURL: `${dbxConfig.host}/serving-endpoints/${dbxConfig.embeddingsEndpoint}/v1`,
+    });
   }
-  return openai;
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 }
 
 // text-embedding-3-large max: 8191 tokens per input
@@ -45,7 +54,10 @@ export async function createEmbeddings(
     return texts.map(() => []);
   }
 
-  const client = getClient();
+  const client = await getClient();
+  // On Databricks, AI Gateway resolves the upstream model by endpoint name; the
+  // `model` field of the OpenAI body is ignored. We still pass the resolved
+  // name for usage logging / future BYO-org-key flows.
   const embedModel = tracking?.organizationId
     ? await getEmbedModel(tracking.organizationId, tracking.repositoryId)
     : "text-embedding-3-large";

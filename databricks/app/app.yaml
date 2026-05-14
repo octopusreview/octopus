@@ -1,0 +1,114 @@
+# Octopus Databricks App — runtime spec.
+# Uploaded as part of databricks/app/_stage by `bun run app:assemble`.
+#
+# The Apps platform copies the staged tree verbatim, then runs `command:`. The
+# command launches the Next.js standalone server, which reads PORT from env.
+# Resources block in resources/app.yml exposes Lakebase + 4 Model Serving
+# endpoints + 11 secrets as named bindings; entries below resolve via valueFrom.
+
+command:
+  - "node"
+  - "apps/web/server.js"
+
+env:
+  # ── Runtime ──────────────────────────────────────────────────────────────
+  - name: NODE_ENV
+    value: "production"
+  - name: NODE_OPTIONS
+    value: "--max-old-space-size=4096"
+  - name: HOSTNAME
+    value: "0.0.0.0"
+  # PORT — the Apps platform injects DATABRICKS_APP_PORT; pass it through.
+  - name: PORT
+    value: "{{DATABRICKS_APP_PORT}}"
+
+  # ── Auth mode (proxy-header bootstrap, not Better-Auth providers) ────────
+  - name: AUTH_MODE
+    value: "databricks"
+  - name: BETTER_AUTH_URL
+    value: "{{DATABRICKS_APP_URL}}"
+  - name: NEXT_PUBLIC_APP_URL
+    value: "{{DATABRICKS_APP_URL}}"
+
+  # ── Lakebase Postgres — auto-injected by `database` resource binding ─────
+  # PGHOST / PGUSER / PGPASSWORD / PGPORT / PGDATABASE come from the platform.
+  # @octopus/db packages/db/src/index.ts detects PGHOST and uses the pg.Pool path.
+
+  # ── Model Serving endpoint names (resolved from resource bindings) ───────
+  - name: ANTHROPIC_SERVING_ENDPOINT
+    valueFrom: claude
+  - name: OPENAI_SERVING_ENDPOINT
+    valueFrom: openai
+  - name: GEMINI_SERVING_ENDPOINT
+    valueFrom: gemini
+  - name: OPENAI_EMBEDDINGS_SERVING_ENDPOINT
+    valueFrom: openai_embeddings
+
+  # ── Vector Search ────────────────────────────────────────────────────────
+  - name: VECTOR_SEARCH_ENDPOINT
+    value: "octopus-vs"
+  - name: VECTOR_SEARCH_CATALOG
+    value: "octopus_ai_catalog"
+  - name: VECTOR_SEARCH_SCHEMA
+    value: "vectors"
+
+  # ── Lakebase project (for the migration runner & token mint fallback) ────
+  - name: LAKEBASE_PROJECT
+    value: "octopus-app"
+
+  # ── Queue / workers ──────────────────────────────────────────────────────
+  - name: ENABLE_REVIEW_WORKERS
+    value: "true"
+  - name: ENABLE_INTERNAL_CLI
+    value: "false"
+
+  # ── Feature flags (everything stubbed by default; flip individually) ─────
+  - name: FEATURES_BILLING
+    value: "false"
+  - name: FEATURES_EMAIL
+    value: "false"
+  - name: FEATURES_PUBBY
+    value: "false"
+  - name: FEATURES_R2
+    value: "false"
+  - name: FEATURES_LINEAR
+    value: "false"
+  - name: FEATURES_JIRA
+    value: "false"
+  - name: FEATURES_SLACK
+    value: "false"
+  - name: FEATURES_BITBUCKET
+    value: "false"
+  - name: FEATURES_GITLAB
+    value: "false"
+
+  # ── Secrets (each is its own app-resource → secret-scope/key binding) ────
+  # Most LLM keys are consumed by AI Gateway upstream-side, NOT the app itself,
+  # but exposing them lets the app fall back to direct provider calls if
+  # someone disables AUTH_MODE/Databricks runtime later.
+  - name: ANTHROPIC_API_KEY
+    valueFrom: octopus_secrets
+  - name: OPENAI_API_KEY
+    valueFrom: openai_api_key_secret
+  - name: GOOGLE_API_KEY
+    valueFrom: google_api_key_secret
+  - name: COHERE_API_KEY
+    valueFrom: cohere_api_key_secret
+  - name: BETTER_AUTH_SECRET
+    valueFrom: better_auth_secret
+  - name: GITHUB_APP_ID
+    valueFrom: github_app_id_secret
+  - name: GITHUB_APP_PRIVATE_KEY
+    valueFrom: github_app_private_key_secret
+  - name: GITHUB_WEBHOOK_SECRET
+    valueFrom: github_webhook_secret
+  - name: GITHUB_CLIENT_ID
+    valueFrom: github_client_id_secret
+  - name: GITHUB_CLIENT_SECRET
+    valueFrom: github_client_secret
+  - name: GITHUB_STATE_SECRET
+    valueFrom: github_state_secret
+
+  # Public GitHub App slug — not sensitive
+  - name: NEXT_PUBLIC_GITHUB_APP_SLUG
+    value: "octopus-ai-demo"

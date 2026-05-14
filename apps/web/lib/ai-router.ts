@@ -1,8 +1,10 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "@octopus/db";
+import { config as dbxConfig } from "@/lib/databricks/config";
+import { getWorkspaceToken } from "@/lib/databricks/oauth";
+import { dbxFetch } from "@/lib/databricks/rest";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -62,7 +64,6 @@ async function refreshProviderCache(): Promise<void> {
 }
 
 async function resolveProvider(modelId: string): Promise<AiProvider> {
-  // Check DB cache — dedup concurrent refreshes
   if (!providerCache || Date.now() - providerCacheTime > PROVIDER_CACHE_TTL) {
     if (!cacheRefreshPromise) {
       cacheRefreshPromise = refreshProviderCache().finally(() => {
@@ -75,7 +76,6 @@ async function resolveProvider(modelId: string): Promise<AiProvider> {
   const cached = providerCache?.get(modelId);
   if (cached) return cached;
 
-  // Fallback: infer from model name prefix
   for (const [prefix, provider] of Object.entries(PROVIDER_FALLBACK)) {
     if (modelId.startsWith(prefix)) return provider;
   }
@@ -83,37 +83,40 @@ async function resolveProvider(modelId: string): Promise<AiProvider> {
   return "anthropic"; // default
 }
 
-// ── Client factories (singletons for platform keys) ──────────────────────────
+// ── Client factories ────────────────────────────────────────────────────────
+//
+// In Databricks mode, every provider talks to the workspace-hosted AI Gateway
+// endpoint (Anthropic-native for Claude — preserves `cache_control`; OpenAI
+// chat-completions for OpenAI; Gemini via raw fetch to OpenAI-compatible
+// endpoint). The `apiKey` parameter (legacy BYOK) is ignored on Databricks —
+// per-org keys are not threaded through the gateway in this deployment.
 
-let platformAnthropic: Anthropic | null = null;
-let platformOpenAI: OpenAI | null = null;
-let platformGoogle: GoogleGenerativeAI | null = null;
-
-function getAnthropic(apiKey?: string | null): Anthropic {
+async function getAnthropic(apiKey?: string | null): Promise<Anthropic> {
+  if (dbxConfig.isDatabricksRuntime) {
+    const token = await getWorkspaceToken();
+    return new Anthropic({
+      authToken: token,
+      baseURL: `${dbxConfig.host}/serving-endpoints/${dbxConfig.anthropicEndpoint}/`,
+    });
+  }
   if (apiKey) return new Anthropic({ apiKey });
-  if (!platformAnthropic) {
-    platformAnthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
-  }
-  return platformAnthropic;
+  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 }
 
-function getOpenAI(apiKey?: string | null): OpenAI {
+async function getOpenAI(apiKey?: string | null): Promise<OpenAI> {
+  if (dbxConfig.isDatabricksRuntime) {
+    const token = await getWorkspaceToken();
+    return new OpenAI({
+      apiKey: token,
+      baseURL: `${dbxConfig.host}/serving-endpoints/${dbxConfig.openaiEndpoint}/v1`,
+    });
+  }
   if (apiKey) return new OpenAI({ apiKey });
-  if (!platformOpenAI) {
-    platformOpenAI = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
-  }
-  return platformOpenAI;
-}
-
-function getGoogle(apiKey?: string | null): GoogleGenerativeAI {
-  if (apiKey) return new GoogleGenerativeAI(apiKey);
-  if (!platformGoogle) {
-    platformGoogle = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
-  }
-  return platformGoogle;
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 }
 
 // ── Org key resolver ─────────────────────────────────────────────────────────
+// Kept for the local-dev path; ignored in Databricks deployment.
 
 type OrgKeys = {
   anthropicApiKey: string | null;
@@ -122,6 +125,10 @@ type OrgKeys = {
 };
 
 async function getOrgKeys(orgId: string): Promise<OrgKeys> {
+  // Skip the DB roundtrip when the platform is going to ignore the result anyway.
+  if (dbxConfig.isDatabricksRuntime) {
+    return { anthropicApiKey: null, openaiApiKey: null, googleApiKey: null };
+  }
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
     select: { anthropicApiKey: true, openaiApiKey: true, googleApiKey: true },
@@ -147,7 +154,7 @@ async function callAnthropic(
   params: AiCreateParams,
   apiKey?: string | null,
 ): Promise<AiResponse> {
-  const client = getAnthropic(apiKey);
+  const client = await getAnthropic(apiKey);
 
   const response = await client.messages.create({
     model: params.model,
@@ -188,7 +195,7 @@ async function callOpenAI(
   params: AiCreateParams,
   apiKey?: string | null,
 ): Promise<AiResponse> {
-  const client = getOpenAI(apiKey);
+  const client = await getOpenAI(apiKey);
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
   if (params.system) {
@@ -219,11 +226,50 @@ async function callOpenAI(
   };
 }
 
+// Gemini — through Databricks AI Gateway in production. The Google SDK doesn't
+// accept a custom baseURL, so we call AI Gateway's OpenAI-compatible interface
+// directly via fetch. In local dev (no DATABRICKS_HOST), fall back to the
+// @google/generative-ai SDK against the public Gemini API.
 async function callGoogle(
   params: AiCreateParams,
   apiKey?: string | null,
 ): Promise<AiResponse> {
-  const genAI = getGoogle(apiKey);
+  if (dbxConfig.isDatabricksRuntime) {
+    const messages: Array<{ role: string; content: string }> = [];
+    if (params.system) messages.push({ role: "system", content: params.system });
+    for (const m of params.messages) messages.push({ role: m.role, content: m.content });
+
+    const body = {
+      model: params.model,
+      messages,
+      max_tokens: params.maxTokens,
+    };
+
+    const json = await dbxFetch<{
+      choices?: Array<{ message?: { content?: string } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    }>(
+      `/serving-endpoints/${dbxConfig.geminiEndpoint}/invocations`,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+
+    const text = json.choices?.[0]?.message?.content ?? "";
+    return {
+      text,
+      provider: "google",
+      model: params.model,
+      usage: {
+        inputTokens: json.usage?.prompt_tokens ?? 0,
+        outputTokens: json.usage?.completion_tokens ?? 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
+    };
+  }
+
+  // Local dev path — lazy-import the SDK so the production build doesn't pull it in.
+  const { GoogleGenerativeAI } = await import("@google/generative-ai");
+  const genAI = new GoogleGenerativeAI(apiKey ?? process.env.GOOGLE_API_KEY!);
   const model = genAI.getGenerativeModel({ model: params.model });
 
   const contents = params.messages.map((m) => ({
@@ -233,7 +279,9 @@ async function callGoogle(
 
   const result = await model.generateContent({
     contents,
-    systemInstruction: params.system ? { role: "user", parts: [{ text: params.system }] } : undefined,
+    systemInstruction: params.system
+      ? { role: "user", parts: [{ text: params.system }] }
+      : undefined,
     generationConfig: { maxOutputTokens: params.maxTokens },
   });
 
@@ -258,7 +306,8 @@ async function callGoogle(
 
 /**
  * Create a message using the correct provider for the given model.
- * Automatically resolves provider from model ID and uses org-specific API keys.
+ * On Databricks, all three providers route through AI Gateway endpoints.
+ * Org-specific BYOK keys are only honoured in local dev.
  */
 export async function createAiMessage(
   params: AiCreateParams,

@@ -79,3 +79,8 @@ pentest/
 .mcp.json
 
 .vscode/**
+
+# Databricks
+databricks/app/_stage/
+.databricks/
+.databricks-cli/

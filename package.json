@@ -20,7 +20,14 @@
     "simulate:review": "bun run --cwd apps/web scripts/review-simulator.ts",
     "deploy:wdc": "./deploy.sh all --host wdc",
     "deploy:aws": "./deploy.sh all --host aws --skip-build",
-    "deploy:all": "./deploy.sh all --host wdc && ./deploy.sh all --host aws --skip-build"
+    "deploy:all": "./deploy.sh all --host wdc && ./deploy.sh all --host aws --skip-build",
+    "db:deploy:databricks": "bun packages/db/scripts/migrate-deploy.ts",
+    "bundle:validate": "databricks bundle validate -t octopus-ai --profile octopus-ai",
+    "bundle:deploy": "databricks bundle deploy -t octopus-ai --profile octopus-ai",
+    "bundle:run": "databricks bundle run octopus -t octopus-ai --profile octopus-ai",
+    "bundle:bootstrap": "databricks bundle run bootstrap_job -t octopus-ai --profile octopus-ai",
+    "app:assemble": "rm -rf databricks/app/_stage && mkdir -p databricks/app/_stage && cp -R apps/web/.next/standalone/. databricks/app/_stage/ && mkdir -p databricks/app/_stage/apps/web/.next/static && cp -R apps/web/.next/static/. databricks/app/_stage/apps/web/.next/static/ && mkdir -p databricks/app/_stage/apps/web/public && (cp -R apps/web/public/. databricks/app/_stage/apps/web/public/ 2>/dev/null || true) && mkdir -p databricks/app/_stage/apps/web/prompts && (cp -R apps/web/prompts/. databricks/app/_stage/apps/web/prompts/ 2>/dev/null || true) && cp databricks/app/app.yaml databricks/app/_stage/app.yaml && cp databricks/app/.databricksignore databricks/app/_stage/.databricksignore",
+    "deploy:databricks": "bun run build && bun run app:assemble && bun run bundle:deploy && bun run bundle:run"
   },
   "trustedDependencies": [
     "@prisma/engines",

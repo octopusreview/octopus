@@ -7,9 +7,21 @@ config({ path: path.resolve(__dirname, "../../.env") });
 const nextConfig: NextConfig = {
   output: "standalone",
   transpilePackages: ["@octopus/db", "@octopus/package-analyzer"],
+  // Include non-JS files the standalone server reads at runtime (system
+  // prompts, diagram rules, etc.). Without this Next.js drops them from the
+  // standalone tree and reviewer.ts crashes on first PR.
+  outputFileTracingIncludes: {
+    "/api/**/*": ["./prompts/**/*"],
+    "/**/*": ["./prompts/**/*"],
+  },
   experimental: {
     serverActions: {
-      allowedOrigins: ["octopus-review.ai", "*.octopus-review.ai"],
+      allowedOrigins: [
+        "octopus-review.ai",
+        "*.octopus-review.ai",
+        "*.databricksapps.com",
+        "*.cloud.databricks.com",
+      ],
     },
   },
   images: {

@@ -1,0 +1,94 @@
+# Octopus Databricks App. Source uploaded from databricks/app/_stage by
+# `bun run app:assemble` before `databricks bundle deploy`.
+# Resource bindings expose the database, serving endpoints, VS endpoint, and
+# secret scope to the app at runtime; resolved env values land in process.env.
+
+resources:
+  apps:
+    octopus:
+      name: ${var.app_name}
+      description: "Octopus — AI-powered PR review (Next.js standalone)"
+      source_code_path: ../databricks/app/_stage
+      resources:
+        # Lakebase Postgres — provides PGHOST / PGUSER / PGPASSWORD / PGDATABASE / PGPORT env vars
+        - name: database
+          description: "Lakebase Postgres (Autoscale) for Prisma + pg-boss"
+          database:
+            database_name: databricks_postgres
+            instance_name: ${var.lakebase_project}
+            permission: CAN_CONNECT_AND_CREATE
+
+        # Model Serving — name (string) of each endpoint exposed as env var
+        - name: claude
+          serving_endpoint:
+            name: octopus-claude
+            permission: CAN_QUERY
+        - name: openai
+          serving_endpoint:
+            name: octopus-openai
+            permission: CAN_QUERY
+        - name: gemini
+          serving_endpoint:
+            name: octopus-gemini
+            permission: CAN_QUERY
+        - name: openai_embeddings
+          serving_endpoint:
+            name: octopus-openai-embeddings
+            permission: CAN_QUERY
+
+        # Secret scope — read access for all upstream API keys
+        - name: octopus_secrets
+          secret:
+            scope: ${var.secret_scope}
+            key: anthropic_api_key
+            permission: READ
+        - name: openai_api_key_secret
+          secret:
+            scope: ${var.secret_scope}
+            key: openai_api_key
+            permission: READ
+        - name: google_api_key_secret
+          secret:
+            scope: ${var.secret_scope}
+            key: google_api_key
+            permission: READ
+        - name: cohere_api_key_secret
+          secret:
+            scope: ${var.secret_scope}
+            key: cohere_api_key
+            permission: READ
+        - name: better_auth_secret
+          secret:
+            scope: ${var.secret_scope}
+            key: better_auth_secret
+            permission: READ
+        - name: github_app_id_secret
+          secret:
+            scope: ${var.secret_scope}
+            key: github_app_id
+            permission: READ
+        - name: github_app_private_key_secret
+          secret:
+            scope: ${var.secret_scope}
+            key: github_app_private_key
+            permission: READ
+        - name: github_webhook_secret
+          secret:
+            scope: ${var.secret_scope}
+            key: github_webhook_secret
+            permission: READ
+        - name: github_client_id_secret
+          secret:
+            scope: ${var.secret_scope}
+            key: github_client_id
+            permission: READ
+        - name: github_client_secret
+          secret:
+            scope: ${var.secret_scope}
+            key: github_client_secret
+            permission: READ
+        - name: github_state_secret
+          secret:
+            scope: ${var.secret_scope}
+            key: github_state_secret
+            permission: READ

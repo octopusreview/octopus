@@ -1,6 +1,6 @@
 import { PgBoss } from "pg-boss";
 import type { SendOptions } from "pg-boss";
-import { prisma } from "@octopus/db";
+import { prisma, pool } from "@octopus/db";
 
 export interface QueueConfig {
   reviewTimeoutSeconds: number;
@@ -32,12 +32,17 @@ const globalForQueue = globalThis as unknown as { pgBoss?: PgBoss };
 function getBoss(): PgBoss {
   if (globalForQueue.pgBoss) return globalForQueue.pgBoss;
 
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    throw new Error("DATABASE_URL is required for pg-boss");
-  }
-
-  const instance = new PgBoss(databaseUrl);
+  // Use the shared @octopus/db pg.Pool so pg-boss inherits the same
+  // async-password connection (Lakebase OAuth token refresh) in production.
+  // For Docker dev, the pool was constructed from DATABASE_URL.
+  const instance = new PgBoss({
+    db: {
+      executeSql: async (text: string, values: unknown[]) => {
+        const r = await pool.query(text, values as never[]);
+        return { rowCount: r.rowCount ?? 0, rows: r.rows };
+      },
+    },
+  });
   globalForQueue.pgBoss = instance;
   return instance;
 }

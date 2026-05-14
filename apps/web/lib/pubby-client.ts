@@ -1,16 +1,35 @@
 "use client";
 
-import { Pubby } from "@getpubby/sdk";
+// STUB: Pubby client-side disabled for Databricks deployment.
+// UI components that subscribed to live channels should fall back to polling.
 
-let pubbyInstance: Pubby | null = null;
+type Channel = {
+  bind: (event: string, cb: (data: unknown) => void) => void;
+  unbind: (event: string, cb?: (data: unknown) => void) => void;
+  unbind_all: () => void;
+  unbindAll: () => void;
+};
 
-export function getPubbyClient(): Pubby {
-  if (!pubbyInstance) {
-    pubbyInstance = new Pubby(process.env.NEXT_PUBLIC_PUBBY_KEY!, {
-      wsHost: "wss://ws.pubby.dev",
-      authEndpoint: "/api/pubby/auth",
-    });
-    pubbyInstance.connect();
+type StubPubby = {
+  subscribe: (channelName: string) => Channel;
+  unsubscribe: (channelName: string) => void;
+  disconnect: () => void;
+};
+
+let instance: StubPubby | null = null;
+
+export function getPubbyClient(): StubPubby {
+  if (!instance) {
+    instance = {
+      subscribe: (_name) => ({
+        bind: () => undefined,
+        unbind: () => undefined,
+        unbind_all: () => undefined,
+        unbindAll: () => undefined,
+      }),
+      unsubscribe: () => undefined,
+      disconnect: () => undefined,
+    };
   }
-  return pubbyInstance;
+  return instance;
 }

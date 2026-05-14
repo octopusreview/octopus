@@ -1,0 +1,11 @@
+# Files NOT to upload as Databricks App source.
+**/*.map
+**/.DS_Store
+**/.git
+**/coverage/
+**/.turbo/
+**/node_modules/.cache/
+**/.next/cache/
+**/__tests__/
+**/*.test.ts
+**/*.test.tsx

@@ -16,3 +16,7 @@ bun.lock
 
 # Re-include a specific file even if its folder is ignored
 !docs/API.md
+
+# Databricks build artifacts
+databricks/app/_stage/
+.databricks/

@@ -34,11 +34,14 @@ async function getClient(): Promise<OpenAI> {
 const MAX_EMBEDDING_CHARS = 24_000;
 
 // OpenAI enforces a 300,000 token total-request cap for embeddings.
-// Keep headroom: target ~200k. Dense content (lock files, .dts, hex blobs, CJK)
-// can tokenize at ~2 chars/token, so ASCII gets chars/2 and non-ASCII counts as
-// 1 token per char (CJK in cl100k/o200k often hits 1+ tokens per char).
+// Databricks AI Gateway's `databricks-gte-large-en` enforces a stricter
+// 150-input cap. Cap at 128 so we keep headroom and the same code works
+// against either backend.
+// Dense content (lock files, .dts, hex blobs, CJK) can tokenize at
+// ~2 chars/token, so ASCII gets chars/2 and non-ASCII counts as 1 token
+// per char (CJK in cl100k/o200k often hits 1+ tokens per char).
 const MAX_BATCH_TOKENS = 200_000;
-const MAX_BATCH_ITEMS = 512;
+const MAX_BATCH_ITEMS = process.env.DATABRICKS_HOST ? 128 : 512;
 
 function estimateTokens(text: string): number {
   let ascii = 0;

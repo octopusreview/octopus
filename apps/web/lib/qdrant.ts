@@ -85,29 +85,34 @@ async function withVsRetry<T>(fn: () => Promise<T>, label: string, maxAttempts =
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SQL-style filter string builders for Storage-Optimized endpoints
+// Dict-style filter builders.
+//
+// Databricks Vector Search STANDARD endpoints accept a `filters` object
+// (key → value or list of values). Keys can be a column name (equality) or
+// `<column> <OP>` where OP ∈ {NOT, LT, GT, LE, GE, LIKE}. Multiple keys are
+// implicit AND. There is no native OR; for OR we issue parallel queries and
+// merge in JS (see searchFeedbackPatterns).
+// STORAGE_OPTIMIZED endpoints use `filter_string` instead, but we use STANDARD
+// because STORAGE_OPTIMIZED doesn't support DIRECT_ACCESS indexes.
 // ─────────────────────────────────────────────────────────────────────────────
-function quoteSqlString(s: string): string {
-  return `'${s.replace(/'/g, "''")}'`;
+type Filters = Record<string, unknown>;
+
+/** `{ col: value }` — equality. */
+function eqFilter(col: string, value: string): Filters {
+  return { [col]: value };
 }
 
-/** Build `col = 'value'` clause. */
-function eqClause(col: string, value: string): string {
-  return `${col} = ${quoteSqlString(value)}`;
+/** `{ col: [a, b, c] }` — IN list. Empty list yields a never-match filter. */
+function inFilter(col: string, values: string[]): Filters {
+  if (values.length === 0) return { [`${col} NOT`]: null, [col]: "__never__" };
+  return { [col]: values };
 }
 
-/** Build `col IN ('a', 'b', 'c')` clause. Empty list returns "false". */
-function inClause(col: string, values: string[]): string {
-  if (values.length === 0) return "false";
-  return `${col} IN (${values.map(quoteSqlString).join(", ")})`;
-}
-
-function andClauses(parts: string[]): string {
-  return parts.filter(Boolean).join(" AND ");
-}
-
-function orClauses(parts: string[]): string {
-  return `(${parts.filter(Boolean).join(" OR ")})`;
+/** Shallow-merge multiple filter objects → implicit AND. */
+function andFilters(...parts: (Filters | undefined)[]): Filters {
+  const out: Filters = {};
+  for (const p of parts) if (p) Object.assign(out, p);
+  return out;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -151,13 +156,26 @@ function rowsToScored(resp: QueryResponse): ScoredRow[] {
 async function vsQuery(
   indexName: string,
   queryVector: number[],
-  options: { filterString?: string; limit: number; columns?: string[] },
+  options: {
+    filters?: Filters;
+    limit: number;
+    columns?: string[];
+    /** When set, runs HYBRID search (ANN + keyword bm25) and re-ranks. */
+    queryText?: string;
+  },
 ): Promise<ScoredRow[]> {
   const body: Record<string, unknown> = {
     query_vector: queryVector,
     num_results: options.limit,
   };
-  if (options.filterString) body.filter_string = options.filterString;
+  if (options.queryText) {
+    body.query_text = options.queryText;
+    body.query_type = "HYBRID";
+  }
+  if (options.filters && Object.keys(options.filters).length > 0) {
+    // VS REST accepts `filters_json` (string-encoded) — most universally supported.
+    body.filters_json = JSON.stringify(options.filters);
+  }
   if (options.columns) body.columns = options.columns;
 
   const resp = await withVsRetry(
@@ -218,7 +236,7 @@ async function vsDeleteByPk(indexName: string, pks: string[]): Promise<void> {
  */
 async function vsScan(
   indexName: string,
-  options: { filterString?: string; limit?: number; columns?: string[] },
+  options: { filters?: Filters; limit?: number; columns?: string[] },
 ): Promise<Array<Record<string, unknown>>> {
   const results: Array<Record<string, unknown>> = [];
   let pageToken: string | undefined;
@@ -229,7 +247,9 @@ async function vsScan(
     const body: Record<string, unknown> = {
       num_results: Math.min(pageSize, maxRows - results.length),
     };
-    if (options.filterString) body.filter_string = options.filterString;
+    if (options.filters && Object.keys(options.filters).length > 0) {
+      body.filters_json = JSON.stringify(options.filters);
+    }
     if (options.columns) body.columns = options.columns;
     if (pageToken) body.page_token = pageToken;
 
@@ -267,8 +287,8 @@ async function vsScan(
 }
 
 /** Delete-by-filter helper: scan to collect PKs, then delete by PK. */
-async function vsDeleteByFilter(indexName: string, filterString: string): Promise<void> {
-  const rows = await vsScan(indexName, { filterString, columns: ["id"] });
+async function vsDeleteByFilter(indexName: string, filters: Filters): Promise<void> {
+  const rows = await vsScan(indexName, { filters, columns: ["id"] });
   const pks = rows.map((r) => String(r.id)).filter(Boolean);
   if (pks.length > 0) await vsDeleteByPk(indexName, pks);
 }
@@ -313,18 +333,17 @@ export function getQdrantClient(): LegacyClient {
           with_vector?: boolean;
         },
       ): Promise<{ points: QdrantScrollPoint[]; next_page_offset: string | number | null }> => {
-        // Translate Qdrant-style `filter.must` into a VS SQL filter string.
-        const mustClauses: string[] = [];
+        // Translate Qdrant-style `filter.must` into the VS filters dict.
+        const filters: Filters = {};
         for (const m of opts.filter?.must ?? []) {
           if (m.match.any && Array.isArray(m.match.any)) {
-            mustClauses.push(inClause(m.key, (m.match.any as string[]).map(String)));
+            filters[m.key] = (m.match.any as unknown[]).map(String);
           } else if (m.match.value !== undefined) {
-            mustClauses.push(eqClause(m.key, String(m.match.value)));
+            filters[m.key] = String(m.match.value);
           }
         }
-        const filterString = mustClauses.length > 0 ? andClauses(mustClauses) : undefined;
         const rows = await vsScan(vsIndexName(collection), {
-          filterString,
+          filters: Object.keys(filters).length > 0 ? filters : undefined,
           limit: opts.limit ?? 100,
           // `with_vector` honored implicitly — we always return all columns from VS
         });
@@ -372,13 +391,15 @@ export async function upsertChunks(
 }
 
 export async function deleteRepoChunks(repoId: string) {
-  await vsDeleteByFilter(vsIndexName(COLLECTION_NAME), eqClause("repoId", repoId));
+  await vsDeleteByFilter(vsIndexName(COLLECTION_NAME), eqFilter("repoId", repoId));
 }
 
 export async function deleteRepoFileChunks(repoId: string, filePaths: string[]) {
   if (filePaths.length === 0) return;
-  const filter = andClauses([eqClause("repoId", repoId), inClause("filePath", filePaths)]);
-  await vsDeleteByFilter(vsIndexName(COLLECTION_NAME), filter);
+  await vsDeleteByFilter(
+    vsIndexName(COLLECTION_NAME),
+    andFilters(eqFilter("repoId", repoId), inFilter("filePath", filePaths)),
+  );
 }
 
 export async function getRepoChunks(
@@ -386,7 +407,7 @@ export async function getRepoChunks(
   limit = 50,
 ): Promise<string[]> {
   const rows = await vsScan(vsIndexName(COLLECTION_NAME), {
-    filterString: eqClause("repoId", repoId),
+    filters: eqFilter("repoId", repoId),
     limit,
     columns: ["text"],
   });
@@ -402,7 +423,7 @@ export async function searchSimilarChunks(
   if (queryVector.length === 0) return [];
   if (queryText) warnHybridDisabledOnce();
   const rows = await vsQuery(vsIndexName(COLLECTION_NAME), queryVector, {
-    filterString: eqClause("repoId", repoId),
+    filters: eqFilter("repoId", repoId),
     limit,
     columns: ["filePath", "text", "startLine", "endLine"],
   });
@@ -425,7 +446,7 @@ export async function searchCodeChunksAcrossRepos(
   if (queryVector.length === 0) return [];
   if (queryText) warnHybridDisabledOnce();
   const rows = await vsQuery(vsIndexName(COLLECTION_NAME), queryVector, {
-    filterString: inClause("repoId", repoIds),
+    filters: inFilter("repoId", repoIds),
     limit,
     columns: ["filePath", "text", "startLine", "endLine", "repoId"],
   });
@@ -468,7 +489,7 @@ export async function upsertKnowledgeChunks(
 }
 
 export async function deleteKnowledgeDocumentChunks(documentId: string) {
-  await vsDeleteByFilter(vsIndexName(KNOWLEDGE_COLLECTION_NAME), eqClause("documentId", documentId));
+  await vsDeleteByFilter(vsIndexName(KNOWLEDGE_COLLECTION_NAME), eqFilter("documentId", documentId));
 }
 
 export async function searchKnowledgeChunks(
@@ -480,7 +501,7 @@ export async function searchKnowledgeChunks(
   if (queryVector.length === 0) return [];
   if (queryText) warnHybridDisabledOnce();
   const rows = await vsQuery(vsIndexName(KNOWLEDGE_COLLECTION_NAME), queryVector, {
-    filterString: eqClause("orgId", orgId),
+    filters: eqFilter("orgId", orgId),
     limit,
     columns: ["title", "text"],
   });
@@ -496,7 +517,7 @@ export async function getKnowledgeChunksByOrg(
   limit = 20,
 ): Promise<string[]> {
   const rows = await vsScan(vsIndexName(KNOWLEDGE_COLLECTION_NAME), {
-    filterString: eqClause("orgId", orgId),
+    filters: eqFilter("orgId", orgId),
     limit,
     columns: ["text"],
   });
@@ -532,7 +553,7 @@ export async function upsertReviewChunks(
 }
 
 export async function deleteReviewChunksByPR(pullRequestId: string) {
-  await vsDeleteByFilter(vsIndexName(REVIEW_COLLECTION_NAME), eqClause("pullRequestId", pullRequestId));
+  await vsDeleteByFilter(vsIndexName(REVIEW_COLLECTION_NAME), eqFilter("pullRequestId", pullRequestId));
 }
 
 export async function searchReviewChunks(
@@ -544,7 +565,7 @@ export async function searchReviewChunks(
   if (queryVector.length === 0) return [];
   if (queryText) warnHybridDisabledOnce();
   const rows = await vsQuery(vsIndexName(REVIEW_COLLECTION_NAME), queryVector, {
-    filterString: eqClause("orgId", orgId),
+    filters: eqFilter("orgId", orgId),
     limit,
     columns: ["text", "prTitle", "prNumber", "repoFullName", "author", "reviewDate"],
   });
@@ -595,7 +616,7 @@ export async function searchChatChunks(
     // client-side when excludeConversationId is set.
     const overfetch = excludeConversationId ? limit * 2 : limit;
     const rows = await vsQuery(vsIndexName(CHAT_COLLECTION_NAME), queryVector, {
-      filterString: eqClause("orgId", orgId),
+      filters: eqFilter("orgId", orgId),
       limit: overfetch,
       columns: ["question", "answer", "conversationId", "conversationTitle"],
     });
@@ -618,7 +639,7 @@ export async function searchChatChunks(
 export async function deleteChatChunksByConversation(conversationId: string) {
   await vsDeleteByFilter(
     vsIndexName(CHAT_COLLECTION_NAME),
-    eqClause("conversationId", conversationId),
+    eqFilter("conversationId", conversationId),
   );
 }
 
@@ -647,7 +668,7 @@ export async function upsertDiagramChunk(point: {
 export async function deleteDiagramChunksByPR(pullRequestId: string) {
   await vsDeleteByFilter(
     vsIndexName(DIAGRAM_COLLECTION_NAME),
-    eqClause("pullRequestId", pullRequestId),
+    eqFilter("pullRequestId", pullRequestId),
   );
 }
 
@@ -661,7 +682,7 @@ export async function searchDiagramChunks(
   if (queryText) warnHybridDisabledOnce();
   try {
     const rows = await vsQuery(vsIndexName(DIAGRAM_COLLECTION_NAME), queryVector, {
-      filterString: eqClause("orgId", orgId),
+      filters: eqFilter("orgId", orgId),
       limit,
       columns: ["mermaidCode", "diagramType", "prTitle", "prNumber", "repoFullName", "author", "reviewDate"],
     });
@@ -713,15 +734,34 @@ export async function searchFeedbackPatterns(
   if (queryVector.length === 0) return [];
   if (queryText) warnHybridDisabledOnce();
   try {
-    const filterString = orgId
-      ? orClauses([eqClause("repoId", repoId), eqClause("orgId", orgId)])
-      : eqClause("repoId", repoId);
-    const rows = await vsQuery(vsIndexName(FEEDBACK_COLLECTION_NAME), queryVector, {
-      filterString,
-      limit,
-      columns: ["title", "description", "feedback", "repoId"],
-    });
-    return rows.map((r) => ({
+    // VS dict-filter has no native OR. When both repoId and orgId are given,
+    // run two parallel queries and merge top-k by score.
+    const queries: Promise<ScoredRow[]>[] = [
+      vsQuery(vsIndexName(FEEDBACK_COLLECTION_NAME), queryVector, {
+        filters: eqFilter("repoId", repoId),
+        limit,
+        columns: ["title", "description", "feedback", "repoId"],
+      }),
+    ];
+    if (orgId) {
+      queries.push(
+        vsQuery(vsIndexName(FEEDBACK_COLLECTION_NAME), queryVector, {
+          filters: eqFilter("orgId", orgId),
+          limit,
+          columns: ["title", "description", "feedback", "repoId"],
+        }),
+      );
+    }
+    const allRows = (await Promise.all(queries)).flat();
+    // De-dupe by feedback+title and keep highest score; sort desc; take top `limit`.
+    const seen = new Map<string, ScoredRow>();
+    for (const r of allRows) {
+      const key = `${r.payload.title ?? ""}::${r.payload.feedback ?? ""}`;
+      const prev = seen.get(key);
+      if (!prev || prev.score < r.score) seen.set(key, r);
+    }
+    const merged = [...seen.values()].sort((a, b) => b.score - a.score).slice(0, limit);
+    return merged.map((r) => ({
       title: (r.payload.title as string) ?? "",
       description: (r.payload.description as string) ?? "",
       feedback: (r.payload.feedback as string) ?? "",
@@ -778,7 +818,7 @@ export async function deleteAllDocsChunks() {
     "octopusignore",
   ];
   try {
-    await vsDeleteByFilter(vsIndexName(DOCS_COLLECTION_NAME), inClause("page", knownPages));
+    await vsDeleteByFilter(vsIndexName(DOCS_COLLECTION_NAME), inFilter("page", knownPages));
   } catch {
     // Index may be empty.
   }

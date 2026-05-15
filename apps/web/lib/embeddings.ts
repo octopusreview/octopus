@@ -101,8 +101,31 @@ export async function createEmbeddings(
   // the whole repo index over one bad batch.
   async function embedBatch(batch: string[]): Promise<void> {
     try {
-      const res = await client.embeddings.create({ model: embedModel, input: batch });
-      for (const item of res.data) validVectors.push(item.embedding);
+      // Force `encoding_format: "float"` — the OpenAI SDK requests base64 by
+      // default and decodes it as little-endian Float32Array. Databricks AI
+      // Gateway returns base64 in a format that the SDK was decoding as a
+      // larger float width (giving 256-dim instead of the actual 1024-dim
+      // GTE-Large-EN output). Asking for "float" returns a plain JSON array
+      // and avoids the decode mismatch entirely.
+      const res = await client.embeddings.create({
+        model: embedModel,
+        input: batch,
+        encoding_format: "float",
+      });
+      for (const item of res.data) {
+        const v = item.embedding;
+        if (Array.isArray(v)) {
+          validVectors.push(v);
+        } else if (typeof v === "string") {
+          // Some servers ignore encoding_format and still return base64;
+          // decode it ourselves as little-endian Float32.
+          const buf = Buffer.from(v, "base64");
+          const floats = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
+          validVectors.push(Array.from(floats));
+        } else {
+          throw new Error(`unexpected embedding shape: ${typeof v}`);
+        }
+      }
       totalPromptTokens += res.usage.prompt_tokens;
     } catch (err) {
       const isTokenLimit =

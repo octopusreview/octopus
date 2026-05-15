@@ -108,6 +108,19 @@ function getGatewayToken(): string {
   return tok;
 }
 
+// Per-request client instantiation is expensive — each `new Anthropic({...})`
+// builds a fresh HTTP agent + retry config. Reviews and chat both call into
+// `createAiMessage` many times per request; without caching, we'd create
+// dozens of SDK clients per review. Cache by mode (gateway vs direct) and
+// by the BYOK apiKey string when present (local-dev only).
+const anthropicClientCache = new Map<string, Anthropic>();
+const openAIClientCache = new Map<string, OpenAI>();
+
+function getCacheKey(apiKey?: string | null): string {
+  if (dbxConfig.isDatabricksRuntime) return "__gateway__";
+  return apiKey ? `byok:${apiKey.slice(0, 8)}` : "__env__";
+}
+
 /**
  * Databricks AI Gateway uses its own model identifiers (`databricks-claude-*`,
  * `databricks-gpt-*`, etc.) rather than Anthropic / OpenAI native model IDs.
@@ -120,14 +133,34 @@ function getGatewayToken(): string {
  *   OpenAI:    databricks-gpt-5, databricks-gpt-5-{4, 5, mini, nano}
  *   Embedding: databricks-gte-large-en (1024 dim)
  */
+/**
+ * Strip a trailing Anthropic-style release-date suffix (`-YYYYMMDD`) only when
+ * the year looks like a real Anthropic release year (2024+) AND the rest of
+ * the name still looks like a known Claude family. Anthropic uses 8-digit
+ * date suffixes consistently — but future model IDs might add a different
+ * versioning scheme (e.g. `-v2`, `-instruct`, `-thinking`). Being strict
+ * about what counts as a date suffix means we don't accidentally clobber
+ * a future suffix that just happens to be 8 digits.
+ */
+function stripAnthropicDateSuffix(model: string): string {
+  // Match -YYYYMMDD where YYYY is 2024 or later and MM/DD look plausible.
+  const m = model.match(/^(claude-[a-z0-9-]+?)-(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$/);
+  return m ? m[1] : model;
+}
+
+function stripOpenAIDateSuffix(model: string): string {
+  // GPT-5 historically lacks date suffixes, but be defensive anyway.
+  const m = model.match(/^(gpt-[a-z0-9-]+?)-(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$/);
+  return m ? m[1] : model;
+}
+
 function translateModelForGateway(model: string, provider: AiProvider): string {
   // If already namespaced for the gateway, pass through.
   if (model.startsWith("databricks-")) return model;
 
   if (provider === "anthropic") {
     // claude-sonnet-4-6-20250619 → databricks-claude-sonnet-4-6
-    // Strip a trailing date suffix (-YYYYMMDD) and prepend `databricks-`.
-    const stripped = model.replace(/-\d{8}$/, "");
+    const stripped = stripAnthropicDateSuffix(model);
     // Map opus-4 (no minor) onto opus-4-1 (the gateway's earliest opus-4 build).
     if (stripped === "claude-opus-4") return "databricks-claude-opus-4-1";
     return `databricks-${stripped}`;
@@ -137,7 +170,7 @@ function translateModelForGateway(model: string, provider: AiProvider): string {
     // OpenAI: gateway only exposes the gpt-5 family + variants. Map common
     // legacy names onto sensible defaults so older configs keep working.
     if (/^(o3|o4|gpt-4o|gpt-4-1|codex)/i.test(model)) return "databricks-gpt-5-mini";
-    if (/^gpt-5/i.test(model)) return `databricks-${model.replace(/-\d{8}$/, "")}`;
+    if (/^gpt-5/i.test(model)) return `databricks-${stripOpenAIDateSuffix(model)}`;
     return "databricks-gpt-5-mini";
   }
 
@@ -154,18 +187,29 @@ function translateModelForGateway(model: string, provider: AiProvider): string {
 
 /**
  * Build an Anthropic SDK client pointed at AI Gateway (or direct API in
- * local-dev). Exposed for direct streaming use cases (e.g. chat-queue-processor)
- * where callers handle the Messages API themselves.
+ * local-dev). Cached per-mode so we don't rebuild the HTTP agent on every
+ * call (createAiMessage fires many times per review). Exposed for direct
+ * streaming use cases (e.g. chat-queue-processor) where callers handle the
+ * Messages API themselves.
  */
 export function getAnthropicClient(apiKey?: string | null): Anthropic {
+  const key = getCacheKey(apiKey);
+  const cached = anthropicClientCache.get(key);
+  if (cached) return cached;
+
+  let client: Anthropic;
   if (dbxConfig.isDatabricksRuntime) {
-    return new Anthropic({
+    client = new Anthropic({
       authToken: getGatewayToken(),
       baseURL: `${dbxConfig.host}/ai-gateway/anthropic`,
     });
+  } else if (apiKey) {
+    client = new Anthropic({ apiKey });
+  } else {
+    client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
   }
-  if (apiKey) return new Anthropic({ apiKey });
-  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+  anthropicClientCache.set(key, client);
+  return client;
 }
 
 // Async wrapper for back-compat; older code awaits this.
@@ -173,16 +217,25 @@ async function getAnthropic(apiKey?: string | null): Promise<Anthropic> {
   return getAnthropicClient(apiKey);
 }
 
-/** Build an OpenAI SDK client pointed at AI Gateway (or direct API in local-dev). */
+/** Build an OpenAI SDK client pointed at AI Gateway (or direct API in local-dev). Cached per-mode. */
 export function getOpenAIClient(apiKey?: string | null): OpenAI {
+  const key = getCacheKey(apiKey);
+  const cached = openAIClientCache.get(key);
+  if (cached) return cached;
+
+  let client: OpenAI;
   if (dbxConfig.isDatabricksRuntime) {
-    return new OpenAI({
+    client = new OpenAI({
       apiKey: getGatewayToken(),
       baseURL: `${dbxConfig.host}/ai-gateway/openai/v1`,
     });
+  } else if (apiKey) {
+    client = new OpenAI({ apiKey });
+  } else {
+    client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
   }
-  if (apiKey) return new OpenAI({ apiKey });
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+  openAIClientCache.set(key, client);
+  return client;
 }
 
 // Async wrapper for back-compat.

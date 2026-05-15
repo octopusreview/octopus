@@ -1,6 +1,4 @@
 import { headers } from "next/headers";
-import type Anthropic from "@anthropic-ai/sdk";
-import type OpenAI from "openai";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { createEmbeddings } from "@/lib/embeddings";
@@ -21,9 +19,6 @@ import { generateSparseVector } from "@/lib/sparse-vector";
 import { requestAgentSearch, findClaudeAgent, requestAgentAnswer } from "@/lib/agent-search";
 import { getReviewModel } from "@/lib/ai-client";
 import { getAnthropicClient, getOpenAIClient, modelForGateway } from "@/lib/ai-router";
-
-// Suppress "unused type import" by referencing the types in a no-op cast helper.
-type _AnthropicTypes = Anthropic; type _OpenAITypes = OpenAI;
 
 async function translateToEnglish(text: string): Promise<string> {
   // Skip translation for ASCII-only and Latin-extended text (accented chars like é, ñ, ü).

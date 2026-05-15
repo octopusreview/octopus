@@ -12,6 +12,32 @@ export const HARDCODED_EMBED_MODEL = ON_DATABRICKS
   ? "databricks-gte-large-en"
   : "text-embedding-3-large";
 
+// Embedding vector dimensions for the supported models. EXPECTED_EMBED_DIM is
+// the dimension that the active embed model produces and MUST match the
+// dimension the Vector Search indexes were created with. If `DATABRICKS_HOST`
+// is unset after the indexes have already been bootstrapped at 1024-dim, the
+// embedding model would silently switch to 3072-dim and every upsert would
+// fail with a hard dimension-mismatch error from VS (we surface those via
+// the `vsUpsert` SUCCESS-row check in apps/web/lib/qdrant.ts). Exporting the
+// constant here lets callers double-check vector shape locally before sending
+// — failing loud and fast at the embedder rather than at the VS boundary.
+export const EMBED_MODEL_DIMS: Record<string, number> = {
+  "databricks-gte-large-en": 1024,
+  "text-embedding-3-large": 3072,
+};
+export const EXPECTED_EMBED_DIM: number =
+  EMBED_MODEL_DIMS[HARDCODED_EMBED_MODEL] ?? 1024;
+
+/**
+ * Return the expected embedding dimension for a given model id. Returns
+ * `null` if we don't know the model's dimension (org has overridden to a
+ * custom embed model). Callers can use `null` to skip the local sanity check
+ * and rely on VS to reject mismatched rows.
+ */
+export function getExpectedEmbedDim(modelId: string): number | null {
+  return EMBED_MODEL_DIMS[modelId] ?? null;
+}
+
 async function getPlatformDefault(category: "llm" | "embedding"): Promise<string | null> {
   try {
     const model = await prisma.availableModel.findFirst({

@@ -1,7 +1,7 @@
 import "server-only";
 import OpenAI from "openai";
 import { logAiUsage } from "@/lib/ai-usage";
-import { getEmbedModel } from "@/lib/ai-client";
+import { getEmbedModel, getExpectedEmbedDim } from "@/lib/ai-client";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { config as dbxConfig } from "@/lib/databricks/config";
 
@@ -115,19 +115,37 @@ export async function createEmbeddings(
         input: batch,
         encoding_format: "float",
       });
+      // Dimension sanity check: every vector returned by `embedModel` must
+      // match the dimension the Vector Search indexes were created with.
+      // Catching a mismatch here (before upsert) gives a clear error like
+      // "embed model X returned 256-dim, expected 1024-dim — re-create
+      // indexes at the new dim or revert the model" instead of the cryptic
+      // "vector dimension mismatch" from VS's upsert endpoint.
+      const expectedDim = getExpectedEmbedDim(embedModel);
       for (const item of res.data) {
         const v = item.embedding;
+        let vec: number[];
         if (Array.isArray(v)) {
-          validVectors.push(v);
+          vec = v;
         } else if (typeof v === "string") {
           // Some servers ignore encoding_format and still return base64;
           // decode it ourselves as little-endian Float32.
           const buf = Buffer.from(v, "base64");
           const floats = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
-          validVectors.push(Array.from(floats));
+          vec = Array.from(floats);
         } else {
           throw new Error(`unexpected embedding shape: ${typeof v}`);
         }
+        if (expectedDim !== null && vec.length !== expectedDim) {
+          throw new Error(
+            `[embeddings] dimension mismatch: model "${embedModel}" returned ${vec.length}-dim ` +
+              `but indexes are sized for ${expectedDim}-dim. ` +
+              `Re-create the Vector Search indexes at ${vec.length} dims (see ` +
+              `databricks/bootstrap/create_indexes.py --dimension ${vec.length}) ` +
+              `or revert the embed model.`,
+          );
+        }
+        validVectors.push(vec);
       }
       totalPromptTokens += res.usage.prompt_tokens;
     } catch (err) {

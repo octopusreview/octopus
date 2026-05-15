@@ -14,7 +14,22 @@ export async function summarizeRepository(
     return { summary: "Skipped: monthly AI usage limit reached.", purpose: "Unknown" };
   }
 
-  const chunks = await getRepoChunks(repoId, 40);
+  // Databricks Vector Search Direct Access indexes are eventually consistent —
+  // upserts can take several seconds before scan/query sees the new rows.
+  // The summarizer is called immediately after indexing completes, so we retry
+  // with backoff before giving up.
+  let chunks: string[] = [];
+  const backoffMs = [0, 2_000, 5_000, 10_000, 20_000];
+  for (let attempt = 0; attempt < backoffMs.length; attempt++) {
+    if (backoffMs[attempt] > 0) {
+      await new Promise((resolve) => setTimeout(resolve, backoffMs[attempt]));
+    }
+    chunks = await getRepoChunks(repoId, 40);
+    if (chunks.length > 0) break;
+    console.warn(
+      `[summarizer] No chunks visible in VS for repo ${repoId} on attempt ${attempt + 1} — retrying (consistency lag)`,
+    );
+  }
 
   if (chunks.length === 0) {
     return {

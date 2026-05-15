@@ -39,7 +39,23 @@ export async function analyzeRepository(
 
   log("Fetching code chunks from vector database...");
   if (signal?.aborted) throw new Error("Analysis cancelled");
-  const chunks = await getRepoChunks(repoId, 80);
+
+  // Databricks Vector Search Direct Access indexes are eventually consistent —
+  // upserts can take several seconds before scan sees the new rows. Retry with
+  // backoff so analyses kicked off right after indexing don't false-fail.
+  let chunks: string[] = [];
+  const backoffMs = [0, 2_000, 5_000, 10_000, 20_000];
+  for (let attempt = 0; attempt < backoffMs.length; attempt++) {
+    if (signal?.aborted) throw new Error("Analysis cancelled");
+    if (backoffMs[attempt] > 0) {
+      await new Promise((resolve) => setTimeout(resolve, backoffMs[attempt]));
+    }
+    chunks = await getRepoChunks(repoId, 80);
+    if (chunks.length > 0) break;
+    if (attempt < backoffMs.length - 1) {
+      log(`No chunks visible yet — retrying (attempt ${attempt + 2}/${backoffMs.length})...`, "warning");
+    }
+  }
 
   if (chunks.length === 0) {
     log("No indexable content found", "warning");

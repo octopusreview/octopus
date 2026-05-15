@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
 import { buildIndexWarning } from "@/lib/review-helpers";
 import { prisma } from "@octopus/db";
 import { pubby } from "@/lib/pubby";
@@ -16,15 +16,7 @@ import { logAiUsage } from "@/lib/ai-usage";
 import { getReviewModel } from "@/lib/ai-client";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { generateSparseVector } from "@/lib/sparse-vector";
-
-let anthropicClient: Anthropic | null = null;
-
-function getAnthropicClient(): Anthropic {
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
-  }
-  return anthropicClient;
-}
+import { getAnthropicClient, modelForGateway } from "@/lib/ai-router";
 
 const STALE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -264,6 +256,7 @@ ${chatHistoryContext || "No relevant previous conversations found."}
     } catch {}
 
     const chatModel = await getReviewModel(orgId);
+    const wireModel = modelForGateway(chatModel, "anthropic");
 
     const client = getAnthropicClient();
     let fullResponse = "";
@@ -271,7 +264,7 @@ ${chatHistoryContext || "No relevant previous conversations found."}
     let lastBroadcast = Date.now();
 
     const anthropicStream = client.messages.stream({
-      model: chatModel,
+      model: wireModel,
       max_tokens: 4096,
       system: [
         { type: "text" as const, text: systemInstructions, cache_control: { type: "ephemeral" as const } },

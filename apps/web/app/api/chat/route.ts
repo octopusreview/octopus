@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
-import Anthropic from "@anthropic-ai/sdk";
-import OpenAI from "openai";
+import type Anthropic from "@anthropic-ai/sdk";
+import type OpenAI from "openai";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { createEmbeddings } from "@/lib/embeddings";
@@ -20,24 +20,10 @@ import { processNextInQueue } from "@/lib/chat-queue-processor";
 import { generateSparseVector } from "@/lib/sparse-vector";
 import { requestAgentSearch, findClaudeAgent, requestAgentAnswer } from "@/lib/agent-search";
 import { getReviewModel } from "@/lib/ai-client";
+import { getAnthropicClient, getOpenAIClient, modelForGateway } from "@/lib/ai-router";
 
-let anthropicClient: Anthropic | null = null;
-
-function getAnthropicClient(): Anthropic {
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
-  }
-  return anthropicClient;
-}
-
-let openaiClient: OpenAI | null = null;
-
-function getOpenAIClient(): OpenAI {
-  if (!openaiClient) {
-    openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
-  }
-  return openaiClient;
-}
+// Suppress "unused type import" by referencing the types in a no-op cast helper.
+type _AnthropicTypes = Anthropic; type _OpenAITypes = OpenAI;
 
 async function translateToEnglish(text: string): Promise<string> {
   // Skip translation for ASCII-only and Latin-extended text (accented chars like é, ñ, ü).
@@ -47,7 +33,9 @@ async function translateToEnglish(text: string): Promise<string> {
 
   try {
     const res = await getOpenAIClient().chat.completions.create({
-      model: "gpt-4o-mini",
+      // databricks-gpt-5-mini routes through AI Gateway when on Databricks;
+      // otherwise the SDK uses the local OpenAI baseURL + key.
+      model: process.env.DATABRICKS_HOST ? "databricks-gpt-5-mini" : "gpt-4o-mini",
       max_tokens: 1024,
       messages: [
         {
@@ -623,9 +611,10 @@ ${agentResult ? `<local_agent_context>\nREAL-TIME results from a local agent run
           chatRepoId = repo?.id;
         }
         const chatModel = await getReviewModel(orgId, chatRepoId);
+        const wireChatModel = modelForGateway(chatModel, "anthropic");
 
         const anthropicStream = client.messages.stream({
-          model: chatModel,
+          model: wireChatModel,
           max_tokens: 4096,
           system: [
             {
@@ -782,7 +771,7 @@ ${agentResult ? `<local_agent_context>\nREAL-TIME results from a local agent run
         if (isFirstMessage && fullResponse) {
           try {
             const titleResponse = await client.messages.create({
-              model: "claude-haiku-4-5-20251001",
+              model: modelForGateway("claude-haiku-4-5-20251001", "anthropic"),
               max_tokens: 50,
               messages: [
                 {
@@ -797,7 +786,7 @@ ${agentResult ? `<local_agent_context>\nREAL-TIME results from a local agent run
                 : "New Chat";
             await logAiUsage({
               provider: "anthropic",
-              model: "claude-haiku-4-5-20251001",
+              model: modelForGateway("claude-haiku-4-5-20251001", "anthropic"),
               operation: "chat-title",
               inputTokens: titleResponse.usage.input_tokens,
               outputTokens: titleResponse.usage.output_tokens,
@@ -1025,7 +1014,7 @@ async function streamAgentAnswer(opts: {
           try {
             const client = getAnthropicClient();
             const titleResponse = await client.messages.create({
-              model: "claude-haiku-4-5-20251001",
+              model: modelForGateway("claude-haiku-4-5-20251001", "anthropic"),
               max_tokens: 50,
               messages: [
                 {
@@ -1040,7 +1029,7 @@ async function streamAgentAnswer(opts: {
                 : "New Chat";
             await logAiUsage({
               provider: "anthropic",
-              model: "claude-haiku-4-5-20251001",
+              model: modelForGateway("claude-haiku-4-5-20251001", "anthropic"),
               operation: "chat-title",
               inputTokens: titleResponse.usage.input_tokens,
               outputTokens: titleResponse.usage.output_tokens,

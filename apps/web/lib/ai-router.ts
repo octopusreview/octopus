@@ -152,7 +152,12 @@ function translateModelForGateway(model: string, provider: AiProvider): string {
   return model;
 }
 
-async function getAnthropic(apiKey?: string | null): Promise<Anthropic> {
+/**
+ * Build an Anthropic SDK client pointed at AI Gateway (or direct API in
+ * local-dev). Exposed for direct streaming use cases (e.g. chat-queue-processor)
+ * where callers handle the Messages API themselves.
+ */
+export function getAnthropicClient(apiKey?: string | null): Anthropic {
   if (dbxConfig.isDatabricksRuntime) {
     return new Anthropic({
       authToken: getGatewayToken(),
@@ -163,7 +168,13 @@ async function getAnthropic(apiKey?: string | null): Promise<Anthropic> {
   return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 }
 
-async function getOpenAI(apiKey?: string | null): Promise<OpenAI> {
+// Async wrapper for back-compat; older code awaits this.
+async function getAnthropic(apiKey?: string | null): Promise<Anthropic> {
+  return getAnthropicClient(apiKey);
+}
+
+/** Build an OpenAI SDK client pointed at AI Gateway (or direct API in local-dev). */
+export function getOpenAIClient(apiKey?: string | null): OpenAI {
   if (dbxConfig.isDatabricksRuntime) {
     return new OpenAI({
       apiKey: getGatewayToken(),
@@ -172,6 +183,16 @@ async function getOpenAI(apiKey?: string | null): Promise<OpenAI> {
   }
   if (apiKey) return new OpenAI({ apiKey });
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+}
+
+// Async wrapper for back-compat.
+async function getOpenAI(apiKey?: string | null): Promise<OpenAI> {
+  return getOpenAIClient(apiKey);
+}
+
+/** Translate a model ID for the gateway (exported so direct-SDK callers can use it). */
+export function modelForGateway(model: string, provider: AiProvider = "anthropic"): string {
+  return dbxConfig.isDatabricksRuntime ? translateModelForGateway(model, provider) : model;
 }
 
 // ── Org key resolver ─────────────────────────────────────────────────────────

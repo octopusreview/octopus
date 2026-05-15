@@ -293,15 +293,8 @@ async function vsDeleteByFilter(indexName: string, filters: Filters): Promise<vo
   if (pks.length > 0) await vsDeleteByPk(indexName, pks);
 }
 
-// One-shot hybrid-search-disabled notice
-let hybridWarned = false;
-function warnHybridDisabledOnce() {
-  if (hybridWarned) return;
-  hybridWarned = true;
-  console.warn(
-    "[vs] Hybrid (dense + sparse) search is not supported on Direct Access indexes — falling back to dense-only. `queryText` arguments are accepted but ignored.",
-  );
-}
+// (Previously: warnHybridDisabledOnce — removed now that HYBRID search is
+// enabled via vsQuery's queryText option.)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Compat: getQdrantClient() — kept as a permissive stub so legacy callers
@@ -421,9 +414,9 @@ export async function searchSimilarChunks(
   queryText?: string,
 ): Promise<{ filePath: string; text: string; startLine: number; endLine: number; score: number }[]> {
   if (queryVector.length === 0) return [];
-  if (queryText) warnHybridDisabledOnce();
   const rows = await vsQuery(vsIndexName(COLLECTION_NAME), queryVector, {
     filters: eqFilter("repoId", repoId),
+    queryText,
     limit,
     columns: ["filePath", "text", "startLine", "endLine"],
   });
@@ -444,9 +437,9 @@ export async function searchCodeChunksAcrossRepos(
 ): Promise<{ filePath: string; text: string; startLine: number; endLine: number; repoId: string; score: number }[]> {
   if (repoIds.length === 0) return [];
   if (queryVector.length === 0) return [];
-  if (queryText) warnHybridDisabledOnce();
   const rows = await vsQuery(vsIndexName(COLLECTION_NAME), queryVector, {
     filters: inFilter("repoId", repoIds),
+    queryText,
     limit,
     columns: ["filePath", "text", "startLine", "endLine", "repoId"],
   });
@@ -499,9 +492,9 @@ export async function searchKnowledgeChunks(
   queryText?: string,
 ): Promise<{ title: string; text: string; score: number }[]> {
   if (queryVector.length === 0) return [];
-  if (queryText) warnHybridDisabledOnce();
   const rows = await vsQuery(vsIndexName(KNOWLEDGE_COLLECTION_NAME), queryVector, {
     filters: eqFilter("orgId", orgId),
+    queryText,
     limit,
     columns: ["title", "text"],
   });
@@ -563,9 +556,9 @@ export async function searchReviewChunks(
   queryText?: string,
 ): Promise<{ text: string; prTitle: string; prNumber: number; repoFullName: string; author: string; reviewDate: string; score: number }[]> {
   if (queryVector.length === 0) return [];
-  if (queryText) warnHybridDisabledOnce();
   const rows = await vsQuery(vsIndexName(REVIEW_COLLECTION_NAME), queryVector, {
     filters: eqFilter("orgId", orgId),
+    queryText,
     limit,
     columns: ["text", "prTitle", "prNumber", "repoFullName", "author", "reviewDate"],
   });
@@ -610,13 +603,13 @@ export async function searchChatChunks(
   queryText?: string,
 ): Promise<{ question: string; answer: string; conversationId: string; conversationTitle: string; score: number }[]> {
   if (queryVector.length === 0) return [];
-  if (queryText) warnHybridDisabledOnce();
   try {
     // VS dict-filter doesn't have a clean NOT operator; we over-fetch and filter
     // client-side when excludeConversationId is set.
     const overfetch = excludeConversationId ? limit * 2 : limit;
     const rows = await vsQuery(vsIndexName(CHAT_COLLECTION_NAME), queryVector, {
       filters: eqFilter("orgId", orgId),
+      queryText,
       limit: overfetch,
       columns: ["question", "answer", "conversationId", "conversationTitle"],
     });
@@ -679,10 +672,10 @@ export async function searchDiagramChunks(
   queryText?: string,
 ): Promise<{ mermaidCode: string; diagramType: string; prTitle: string; prNumber: number; repoFullName: string; author: string; reviewDate: string; score: number }[]> {
   if (queryVector.length === 0) return [];
-  if (queryText) warnHybridDisabledOnce();
   try {
     const rows = await vsQuery(vsIndexName(DIAGRAM_COLLECTION_NAME), queryVector, {
       filters: eqFilter("orgId", orgId),
+      queryText,
       limit,
       columns: ["mermaidCode", "diagramType", "prTitle", "prNumber", "repoFullName", "author", "reviewDate"],
     });
@@ -732,13 +725,13 @@ export async function searchFeedbackPatterns(
   queryText?: string,
 ): Promise<{ title: string; description: string; feedback: string; repoId: string; score: number }[]> {
   if (queryVector.length === 0) return [];
-  if (queryText) warnHybridDisabledOnce();
   try {
     // VS dict-filter has no native OR. When both repoId and orgId are given,
     // run two parallel queries and merge top-k by score.
     const queries: Promise<ScoredRow[]>[] = [
       vsQuery(vsIndexName(FEEDBACK_COLLECTION_NAME), queryVector, {
         filters: eqFilter("repoId", repoId),
+        queryText,
         limit,
         columns: ["title", "description", "feedback", "repoId"],
       }),
@@ -747,6 +740,7 @@ export async function searchFeedbackPatterns(
       queries.push(
         vsQuery(vsIndexName(FEEDBACK_COLLECTION_NAME), queryVector, {
           filters: eqFilter("orgId", orgId),
+          queryText,
           limit,
           columns: ["title", "description", "feedback", "repoId"],
         }),
@@ -830,8 +824,8 @@ export async function searchDocsChunks(
   queryText?: string,
 ): Promise<{ title: string; text: string; page: string; section: string; score: number }[]> {
   if (queryVector.length === 0) return [];
-  if (queryText) warnHybridDisabledOnce();
   const rows = await vsQuery(vsIndexName(DOCS_COLLECTION_NAME), queryVector, {
+    queryText,
     limit,
     columns: ["title", "text", "page", "section"],
   });

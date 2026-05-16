@@ -3,6 +3,7 @@
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { useTheme } from "next-themes";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -131,6 +132,7 @@ export function RepoGraphView({
   repoId: string;
   indexStatus: string;
 }) {
+  const { resolvedTheme } = useTheme();
   const [data, setData] = useState<GraphPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -323,7 +325,7 @@ export function RepoGraphView({
                   const label = node.name;
                   const fontSize = 10 / globalScale;
                   ctx.font = `${fontSize}px sans-serif`;
-                  ctx.fillStyle = "rgba(255,255,255,0.85)";
+                  ctx.fillStyle = resolvedTheme === "dark" ? "rgba(255,255,255,0.85)" : "rgba(30,30,30,0.85)";
                   ctx.textAlign = "center";
                   ctx.textBaseline = "top";
                   ctx.fillText(label, node.x ?? 0, (node.y ?? 0) + r + 1);

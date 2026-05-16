@@ -1,0 +1,73 @@
+# AI Gateway external-model endpoints for Octopus.
+# Three chat endpoints (Claude / OpenAI / Gemini) + one embeddings endpoint.
+# Upstream API keys live in the octopus-octopus-ai secret scope; the app talks
+# only to the Databricks endpoint URLs, not the upstream providers.
+
+resources:
+  model_serving_endpoints:
+    octopus_claude:
+      name: octopus-claude
+      config:
+        served_entities:
+          - name: claude-sonnet-4-6
+            external_model:
+              name: claude-sonnet-4-6-20250619
+              provider: anthropic
+              task: llm/v1/chat
+              anthropic_config:
+                anthropic_api_key: "{{secrets/octopus-octopus-ai/anthropic_api_key}}"
+      ai_gateway:
+        usage_tracking_config:
+          enabled: true
+        inference_table_config:
+          enabled: true
+          catalog_name: ${var.catalog}
+          schema_name: ${var.gateway_schema}
+          table_name_prefix: claude
+        rate_limits:
+          - calls: 1000
+            renewal_period: minute
+            key: endpoint
+
+    octopus_openai:
+      name: octopus-openai
+      config:
+        served_entities:
+          - name: gpt-4o
+            external_model:
+              name: gpt-4o
+              provider: openai
+              task: llm/v1/chat
+              openai_config:
+                openai_api_key: "{{secrets/octopus-octopus-ai/openai_api_key}}"
+      ai_gateway:
+        usage_tracking_config: { enabled: true }
+        inference_table_config:
+          enabled: true
+          catalog_name: ${var.catalog}
+          schema_name: ${var.gateway_schema}
+          table_name_prefix: openai_chat
+
+    # NOTE: Gemini endpoint must be created via the workspace UI for now —
+    # databricks CLI v0.299 doesn't recognize provider=google-ai-studio (only
+    # google-cloud-vertex-ai and palm are first-class). After bundle deploy,
+    # create `octopus-gemini` in the UI:
+    #   Provider: Google AI Studio (or "External Models" → Gemini)
+    #   Task: chat
+    #   Model: gemini-2.5-pro
+    #   API key: from octopus-octopus-ai secret scope, key=google_api_key
+    # Then GEMINI_SERVING_ENDPOINT in app.yaml is already set to "octopus-gemini".
+
+    octopus_openai_embeddings:
+      name: octopus-openai-embeddings
+      config:
+        served_entities:
+          - name: text-embedding-3-large
+            external_model:
+              name: text-embedding-3-large
+              provider: openai
+              task: llm/v1/embeddings
+              openai_config:
+                openai_api_key: "{{secrets/octopus-octopus-ai/openai_api_key}}"
+      ai_gateway:
+        usage_tracking_config: { enabled: true }

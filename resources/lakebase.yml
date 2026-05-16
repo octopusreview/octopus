@@ -1,0 +1,17 @@
+# Lakebase Provisioned Postgres for Octopus.
+#
+# Note: the original plan specified Lakebase Autoscale with scale-to-zero,
+# but the databricks-sdk-py available in serverless compute doesn't yet
+# expose the `databases.projects` API (only `database_instances`).
+# Provisioned CU_1 is the smallest tier; upgrade to CU_2 if you need more.
+#
+# `enable_pg_native_login: true` lets us run `prisma migrate deploy` from a
+# laptop using `databricks database generate-database-credential`.
+
+resources:
+  database_instances:
+    octopus_app:
+      name: octopus-app
+      capacity: CU_1
+      enable_pg_native_login: true
+      stopped: false

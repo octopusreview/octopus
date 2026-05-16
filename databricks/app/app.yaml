@@ -1,0 +1,125 @@
+# Octopus Databricks App — runtime spec.
+# Uploaded as part of databricks/app/_stage by `bun run app:assemble`.
+#
+# The Apps platform copies the staged tree verbatim, then runs `command:`. The
+# command launches the Next.js standalone server, which reads PORT from env.
+# Resources block in resources/app.yml exposes Lakebase + 4 Model Serving
+# endpoints + 11 secrets as named bindings; entries below resolve via valueFrom.
+
+command:
+  # Reassemble the split tarball (Databricks Apps caps individual files at 10MB
+  # and times out on workspace listings >~3500 files), extract once, then run
+  # the Next.js standalone server bound to $DATABRICKS_APP_PORT.
+  #
+  # NOTE: Databricks Apps does NOT substitute `{{ENV_VAR}}` in env values, so we
+  # set BETTER_AUTH_URL / NEXT_PUBLIC_APP_URL from $DATABRICKS_APP_URL here in
+  # the shell instead. The Apps platform injects DATABRICKS_APP_URL at runtime.
+  - "sh"
+  - "-c"
+  - "set -e; echo 'Extracting bundle...'; rm -rf apps node_modules; cat bundle.part.* | tar -xz; echo \"Extracted $(find apps node_modules -type f 2>/dev/null | wc -l) files\"; export PORT=$DATABRICKS_APP_PORT HOSTNAME=0.0.0.0 BETTER_AUTH_URL=$DATABRICKS_APP_URL NEXT_PUBLIC_APP_URL=$DATABRICKS_APP_URL; exec node apps/web/server.js"
+
+env:
+  # ── Runtime ──────────────────────────────────────────────────────────────
+  - name: NODE_ENV
+    value: "production"
+  - name: NODE_OPTIONS
+    value: "--max-old-space-size=4096"
+
+  # ── Auth mode (proxy-header bootstrap, not Better-Auth providers) ────────
+  - name: AUTH_MODE
+    value: "databricks"
+  # BETTER_AUTH_URL and NEXT_PUBLIC_APP_URL are set from $DATABRICKS_APP_URL
+  # in the `command:` shell wrapper above — Apps env values can't reference
+  # platform-injected vars directly.
+
+  # ── Lakebase Postgres — auto-injected by `database` resource binding ─────
+  # PGHOST / PGUSER / PGPASSWORD / PGPORT / PGDATABASE come from the platform.
+  # @octopus/db packages/db/src/index.ts detects PGHOST and uses the pg.Pool path.
+
+  # ── Model Serving endpoint names (resolved from resource bindings) ───────
+  - name: ANTHROPIC_SERVING_ENDPOINT
+    valueFrom: claude
+  - name: OPENAI_SERVING_ENDPOINT
+    valueFrom: openai
+  # GEMINI_SERVING_ENDPOINT — set as a literal until the Gemini endpoint is
+  # added via the workspace UI (see resources/app.yml note). Set to a literal
+  # name; the app code falls back to local SDK when DATABRICKS_HOST is unset.
+  - name: GEMINI_SERVING_ENDPOINT
+    value: "octopus-gemini"
+  - name: OPENAI_EMBEDDINGS_SERVING_ENDPOINT
+    valueFrom: openai_embeddings
+
+  # ── Vector Search ────────────────────────────────────────────────────────
+  - name: VECTOR_SEARCH_ENDPOINT
+    value: "octopus-vs"
+  - name: VECTOR_SEARCH_CATALOG
+    value: "octopus_ai_catalog"
+  - name: VECTOR_SEARCH_SCHEMA
+    value: "vectors"
+
+  # ── Lakebase project (for the migration runner & token mint fallback) ────
+  - name: LAKEBASE_PROJECT
+    value: "octopus-app"
+
+  # ── Queue / workers ──────────────────────────────────────────────────────
+  - name: ENABLE_REVIEW_WORKERS
+    value: "true"
+  - name: ENABLE_INTERNAL_CLI
+    value: "false"
+
+  # ── Feature flags (everything stubbed by default; flip individually) ─────
+  - name: FEATURES_BILLING
+    value: "false"
+  - name: FEATURES_EMAIL
+    value: "false"
+  - name: FEATURES_PUBBY
+    value: "false"
+  - name: FEATURES_R2
+    value: "false"
+  - name: FEATURES_LINEAR
+    value: "false"
+  - name: FEATURES_JIRA
+    value: "false"
+  - name: FEATURES_SLACK
+    value: "false"
+  - name: FEATURES_BITBUCKET
+    value: "false"
+  - name: FEATURES_GITLAB
+    value: "false"
+
+  # ── AI Gateway ───────────────────────────────────────────────────────────
+  # Single workspace-scoped Databricks Gateway API token (DAPI token) authenticates
+  # calls to /ai-gateway/anthropic, /ai-gateway/openai, /ai-gateway/google.
+  # Generated in Databricks UI: Compute → External Agents → Generate API Key.
+  - name: DATABRICKS_GATEWAY_TOKEN
+    valueFrom: databricks_gateway_token
+
+  # ── Legacy direct-provider keys (only consumed when DATABRICKS_HOST is unset,
+  # e.g. running this codebase against Docker Compose). On the Apps platform
+  # all chat/embeddings calls route through DATABRICKS_GATEWAY_TOKEN above.
+  - name: ANTHROPIC_API_KEY
+    valueFrom: octopus_secrets
+  - name: OPENAI_API_KEY
+    valueFrom: openai_api_key_secret
+  - name: GOOGLE_API_KEY
+    valueFrom: google_api_key_secret
+  - name: COHERE_API_KEY
+    valueFrom: cohere_api_key_secret
+  - name: BETTER_AUTH_SECRET
+    valueFrom: better_auth_secret
+  - name: GITHUB_APP_ID
+    valueFrom: github_app_id_secret
+  - name: GITHUB_APP_PRIVATE_KEY
+    valueFrom: github_app_private_key_secret
+  - name: GITHUB_WEBHOOK_SECRET
+    valueFrom: github_webhook_secret
+  - name: GITHUB_CLIENT_ID
+    valueFrom: github_client_id_secret
+  - name: GITHUB_CLIENT_SECRET
+    valueFrom: github_client_secret
+  - name: GITHUB_STATE_SECRET
+    valueFrom: github_state_secret
+
+  # Public GitHub App slug — not sensitive
+  - name: NEXT_PUBLIC_GITHUB_APP_SLUG
+    value: "octopus-ai-demo"

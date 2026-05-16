@@ -34,6 +34,74 @@ const publicExact = ["/"];
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  const sessionToken =
+    request.cookies.get("better-auth.session_token")?.value ||
+    request.cookies.get("__Secure-better-auth.session_token")?.value;
+
+  // ── Databricks Apps OAuth bootstrap ────────────────────────────────────────
+  // When the Databricks Apps OAuth proxy fronts us, EVERY request arrives with
+  // X-Forwarded-Email already authenticated. If the user doesn't yet have a
+  // Better-Auth session cookie, mint one via /api/auth/dbx-bootstrap regardless
+  // of whether the path is "public" — public pages like /login don't make
+  // sense when the user is already authenticated upstream.
+  //
+  // We DON'T redirect from these paths to avoid loops:
+  //   /api/auth/dbx-bootstrap  (the bootstrap route itself)
+  //   /api/auth/*              (Better-Auth internals)
+  //   /api/version             (health check)
+  //   /api/github/webhook etc. (webhook callers don't pass the proxy)
+  // Databricks Apps' canonical "user is authenticated" signal is the
+  // `x-forwarded-access-token` header (per the official docs at
+  // https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth).
+  // Some releases also inject x-forwarded-email / x-forwarded-user /
+  // x-forwarded-preferred-username; we accept any one as a positive signal
+  // and let the bootstrap route resolve the actual email via SCIM /Me.
+  const dbxAccessToken = request.headers.get("x-forwarded-access-token");
+  const dbxEmail =
+    request.headers.get("x-forwarded-email") ||
+    request.headers.get("x-forwarded-preferred-username") ||
+    request.headers.get("x-forwarded-user");
+  const dbxAuthenticated = Boolean(dbxAccessToken || dbxEmail);
+
+  // One-time debug log to surface the actual header set in App logs.
+  if (process.env.NODE_ENV === "production" && pathname === "/dashboard") {
+    const fwd: Record<string, string> = {};
+    request.headers.forEach((v, k) => {
+      if (k.startsWith("x-forwarded") || k === "x-real-ip") fwd[k] = v.slice(0, 80);
+    });
+    console.log(
+      `[middleware] /dashboard hit. session=${Boolean(request.cookies.get("better-auth.session_token")?.value || request.cookies.get("__Secure-better-auth.session_token")?.value)} ` +
+        `dbxAuth=${dbxAuthenticated} (token=${Boolean(dbxAccessToken)} email=${dbxEmail ?? "(none)"}) headers=${JSON.stringify(fwd)}`,
+    );
+  }
+
+  const isBootstrap = pathname.startsWith("/api/auth/dbx-bootstrap");
+  const isWebhookOrHealth =
+    pathname.startsWith("/api/github/") ||
+    pathname.startsWith("/api/bitbucket/webhook") ||
+    pathname.startsWith("/api/pubby") ||
+    pathname === "/api/version" ||
+    pathname.startsWith("/api/cli") ||
+    pathname.startsWith("/api/agent") ||
+    pathname.startsWith("/api/stripe");
+
+  if (dbxAuthenticated && !sessionToken && !isBootstrap && !isWebhookOrHealth) {
+    const appUrl =
+      process.env.BETTER_AUTH_URL ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      `http://${request.headers.get("host") || "localhost:3000"}`;
+    // After bootstrap, send the user to whatever they were trying to load —
+    // except /login which is meaningless under Databricks SSO; bounce to /dashboard instead.
+    const returnTo =
+      pathname === "/login" || pathname === "/"
+        ? "/dashboard"
+        : pathname + request.nextUrl.search;
+    const bootstrap = new URL("/api/auth/dbx-bootstrap", appUrl);
+    bootstrap.searchParams.set("returnTo", returnTo);
+    return NextResponse.redirect(bootstrap);
+  }
+
+  // ── Public-path early exit ─────────────────────────────────────────────────
   if (
     publicExact.includes(pathname) ||
     publicPrefixes.some((path) => pathname.startsWith(path))
@@ -41,18 +109,14 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const sessionToken =
-    request.cookies.get("better-auth.session_token")?.value ||
-    request.cookies.get("__Secure-better-auth.session_token")?.value;
-
+  // ── Authenticated-path gate (Better-Auth session required) ─────────────────
   if (!sessionToken) {
-    // Use configured app URL to prevent redirect poisoning via X-Forwarded-Host
     const appUrl =
       process.env.BETTER_AUTH_URL ||
       process.env.NEXT_PUBLIC_APP_URL ||
       `http://${request.headers.get("host") || "localhost:3000"}`;
-    const loginUrl = new URL("/login", appUrl);
     const fullPath = pathname + request.nextUrl.search;
+    const loginUrl = new URL("/login", appUrl);
     if (fullPath !== "/dashboard") {
       loginUrl.searchParams.set("callbackUrl", fullPath);
     }

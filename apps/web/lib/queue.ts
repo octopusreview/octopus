@@ -1,6 +1,6 @@
 import { PgBoss } from "pg-boss";
 import type { SendOptions } from "pg-boss";
-import { prisma } from "@octopus/db";
+import { prisma, pool } from "@octopus/db";
 
 export interface QueueConfig {
   reviewTimeoutSeconds: number;
@@ -32,12 +32,26 @@ const globalForQueue = globalThis as unknown as { pgBoss?: PgBoss };
 function getBoss(): PgBoss {
   if (globalForQueue.pgBoss) return globalForQueue.pgBoss;
 
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    throw new Error("DATABASE_URL is required for pg-boss");
-  }
-
-  const instance = new PgBoss(databaseUrl);
+  // Use the shared @octopus/db pg.Pool so pg-boss inherits the same
+  // async-password connection (Lakebase OAuth token refresh) in production.
+  // For Docker dev, the pool was constructed from DATABASE_URL.
+  //
+  // IMPORTANT: pg-boss's supervise loop runs multi-statement SQL (BEGIN; ...;
+  // COMMIT;) for its `locked()` queries. node-postgres returns an *array* of
+  // QueryResult objects for multi-statement queries, and pg-boss's internal
+  // `unwrapSQLResult` flat-maps that array. If we reshape the result into a
+  // single `{ rows }` object, the multi-statement case becomes `{ rows:
+  // undefined }` and pg-boss crashes downstream with
+  //   TypeError: Cannot read properties of undefined (reading 'filter')
+  // at boss.js:158 (`rowsCacheStats.filter`). Return the raw result so pg-boss
+  // can detect both shapes — same pattern as pg-boss's default Db.executeSql.
+  const instance = new PgBoss({
+    db: {
+      executeSql: async (text: string, values: unknown[]) => {
+        return (await pool.query(text, values as never[])) as never;
+      },
+    },
+  });
   globalForQueue.pgBoss = instance;
   return instance;
 }

@@ -79,3 +79,12 @@ pentest/
 .mcp.json
 
 .vscode/**
+
+# Databricks
+databricks/app/_stage/
+.databricks/
+.databricks-cli/
+# Build artifacts
+databricks/app/bundle.tar.gz
+databricks/app/bundle.part.*
+databricks/app/_stage_chunks/

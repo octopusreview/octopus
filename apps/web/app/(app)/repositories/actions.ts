@@ -179,12 +179,41 @@ export async function analyzeRepository(
       const { analyzeRepository: runAnalysis } = await import("@/lib/analyzer");
       const analysis = await runAnalysis(repo.id, repo.fullName, repo.organizationId, emitLog, abortController.signal);
 
+      // If the indexer-time summary failed (e.g. stale "No indexable content found"
+      // from a VS consistency-lag false negative), refresh it now that vectors are
+      // confirmed visible.
+      const currentSummary = await prisma.repository.findUnique({
+        where: { id: repoId },
+        select: { summary: true, purpose: true },
+      });
+      const stale =
+        !currentSummary?.summary ||
+        currentSummary.summary === "No indexable content found in this repository." ||
+        currentSummary.purpose === "Unknown" ||
+        currentSummary.purpose === null;
+
+      let refreshedSummary: { summary: string; purpose: string } | null = null;
+      if (stale) {
+        try {
+          emitLog("Refreshing repository summary...");
+          const { summarizeRepository } = await import("@/lib/summarizer");
+          refreshedSummary = await summarizeRepository(repo.id, repo.fullName, repo.organizationId);
+          emitLog("Summary refreshed", "success");
+        } catch (summarizeError) {
+          console.error("Failed to refresh summary during re-analyze:", summarizeError);
+          emitLog("Summary refresh failed (analysis still succeeded)", "warning");
+        }
+      }
+
       await prisma.repository.update({
         where: { id: repoId },
         data: {
           analysis,
           analysisStatus: "analyzed",
           analyzedAt: new Date(),
+          ...(refreshedSummary
+            ? { summary: refreshedSummary.summary, purpose: refreshedSummary.purpose }
+            : {}),
         },
       });
 

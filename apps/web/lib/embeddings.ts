@@ -1,16 +1,32 @@
 import "server-only";
 import OpenAI from "openai";
 import { logAiUsage } from "@/lib/ai-usage";
-import { getEmbedModel } from "@/lib/ai-client";
+import { getEmbedModel, getExpectedEmbedDim } from "@/lib/ai-client";
 import { isOrgOverSpendLimit } from "@/lib/cost";
+import { config as dbxConfig } from "@/lib/databricks/config";
 
-let openai: OpenAI | null = null;
+// Embeddings client targets the Databricks **AI Gateway** OpenAI-compatible
+// route at `${host}/ai-gateway/openai/v1`, authenticated with a workspace
+// Gateway API key (DATABRICKS_GATEWAY_TOKEN). The Gateway forwards to
+// OpenAI's text-embedding-3-large upstream. For local dev (no DATABRICKS_HOST
+// set), fall back to direct OpenAI calls with OPENAI_API_KEY.
 
-function getClient(): OpenAI {
-  if (!openai) {
-    openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+async function getClient(): Promise<OpenAI> {
+  if (dbxConfig.isDatabricksRuntime) {
+    const token = process.env.DATABRICKS_GATEWAY_TOKEN;
+    if (!token) {
+      throw new Error(
+        "DATABRICKS_GATEWAY_TOKEN is missing — generate one in Databricks UI " +
+          "(Compute → External Agents → Other Integrations → Generate API Key) " +
+          "and push it to the octopus-octopus-ai secret scope.",
+      );
+    }
+    return new OpenAI({
+      apiKey: token,
+      baseURL: `${dbxConfig.host}/ai-gateway/openai/v1`,
+    });
   }
-  return openai;
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 }
 
 // text-embedding-3-large max: 8191 tokens per input
@@ -18,11 +34,14 @@ function getClient(): OpenAI {
 const MAX_EMBEDDING_CHARS = 24_000;
 
 // OpenAI enforces a 300,000 token total-request cap for embeddings.
-// Keep headroom: target ~200k. Dense content (lock files, .dts, hex blobs, CJK)
-// can tokenize at ~2 chars/token, so ASCII gets chars/2 and non-ASCII counts as
-// 1 token per char (CJK in cl100k/o200k often hits 1+ tokens per char).
+// Databricks AI Gateway's `databricks-gte-large-en` enforces a stricter
+// 150-input cap. Cap at 128 so we keep headroom and the same code works
+// against either backend.
+// Dense content (lock files, .dts, hex blobs, CJK) can tokenize at
+// ~2 chars/token, so ASCII gets chars/2 and non-ASCII counts as 1 token
+// per char (CJK in cl100k/o200k often hits 1+ tokens per char).
 const MAX_BATCH_TOKENS = 200_000;
-const MAX_BATCH_ITEMS = 512;
+const MAX_BATCH_ITEMS = process.env.DATABRICKS_HOST ? 128 : 512;
 
 function estimateTokens(text: string): number {
   let ascii = 0;
@@ -45,10 +64,17 @@ export async function createEmbeddings(
     return texts.map(() => []);
   }
 
-  const client = getClient();
-  const embedModel = tracking?.organizationId
-    ? await getEmbedModel(tracking.organizationId, tracking.repositoryId)
-    : "text-embedding-3-large";
+  const client = await getClient();
+  // On Databricks AI Gateway the embedding endpoint is `databricks-gte-large-en`
+  // (1024-dim). For local-dev (no DATABRICKS_HOST), fall back to OpenAI's
+  // text-embedding-3-large per the org's configured model. The VS indexes are
+  // sized to 1024 to match GTE-Large-EN — switching to a different upstream
+  // requires re-creating the indexes at the new dimension.
+  const embedModel = dbxConfig.isDatabricksRuntime
+    ? "databricks-gte-large-en"
+    : tracking?.organizationId
+      ? await getEmbedModel(tracking.organizationId, tracking.repositoryId)
+      : "text-embedding-3-large";
 
   // Filter out empty/whitespace-only strings — OpenAI embeddings API rejects them
   const validTexts: string[] = [];
@@ -78,8 +104,49 @@ export async function createEmbeddings(
   // the whole repo index over one bad batch.
   async function embedBatch(batch: string[]): Promise<void> {
     try {
-      const res = await client.embeddings.create({ model: embedModel, input: batch });
-      for (const item of res.data) validVectors.push(item.embedding);
+      // Force `encoding_format: "float"` — the OpenAI SDK requests base64 by
+      // default and decodes it as little-endian Float32Array. Databricks AI
+      // Gateway returns base64 in a format that the SDK was decoding as a
+      // larger float width (giving 256-dim instead of the actual 1024-dim
+      // GTE-Large-EN output). Asking for "float" returns a plain JSON array
+      // and avoids the decode mismatch entirely.
+      const res = await client.embeddings.create({
+        model: embedModel,
+        input: batch,
+        encoding_format: "float",
+      });
+      // Dimension sanity check: every vector returned by `embedModel` must
+      // match the dimension the Vector Search indexes were created with.
+      // Catching a mismatch here (before upsert) gives a clear error like
+      // "embed model X returned 256-dim, expected 1024-dim — re-create
+      // indexes at the new dim or revert the model" instead of the cryptic
+      // "vector dimension mismatch" from VS's upsert endpoint.
+      const expectedDim = getExpectedEmbedDim(embedModel);
+      for (const item of res.data) {
+        const v = item.embedding;
+        let vec: number[];
+        if (Array.isArray(v)) {
+          vec = v;
+        } else if (typeof v === "string") {
+          // Some servers ignore encoding_format and still return base64;
+          // decode it ourselves as little-endian Float32.
+          const buf = Buffer.from(v, "base64");
+          const floats = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
+          vec = Array.from(floats);
+        } else {
+          throw new Error(`unexpected embedding shape: ${typeof v}`);
+        }
+        if (expectedDim !== null && vec.length !== expectedDim) {
+          throw new Error(
+            `[embeddings] dimension mismatch: model "${embedModel}" returned ${vec.length}-dim ` +
+              `but indexes are sized for ${expectedDim}-dim. ` +
+              `Re-create the Vector Search indexes at ${vec.length} dims (see ` +
+              `databricks/bootstrap/create_indexes.py --dimension ${vec.length}) ` +
+              `or revert the embed model.`,
+          );
+        }
+        validVectors.push(vec);
+      }
       totalPromptTokens += res.usage.prompt_tokens;
     } catch (err) {
       const isTokenLimit =

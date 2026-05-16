@@ -1,0 +1,12 @@
+# Vector Search endpoint for Octopus.
+# Indexes (7 Direct Access, 3072-dim, cosine) are created by databricks/bootstrap/create_indexes.py
+# because Direct Access index schemas are verbose YAML and the DAB resource type is still maturing.
+#
+# Type MUST be STANDARD — STORAGE_OPTIMIZED only supports Delta Sync indexes,
+# not Direct Access. We need Direct Access because Octopus upserts vectors
+# imperatively from app code.
+resources:
+  vector_search_endpoints:
+    octopus_vs:
+      name: ${var.vs_endpoint_name}
+      endpoint_type: STANDARD

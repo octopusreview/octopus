@@ -23,6 +23,13 @@ export async function register() {
         );
       }, 60 * 60 * 1000);
       cleanupTimer.unref?.();
+
+      // Polling fallback for PR review triggering — see lib/pr-poller.ts for
+      // the why. Databricks Apps' OAuth proxy blocks GitHub webhooks, so we
+      // poll instead. Only the review-engine replica runs this, just like the
+      // pg-boss workers.
+      const { startPrPoller } = await import("./lib/pr-poller");
+      startPrPoller();
     }
 
     // Graceful shutdown: wait for active jobs (e.g. in-progress reviews) to finish

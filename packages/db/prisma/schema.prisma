@@ -3,7 +3,10 @@ datasource db {
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // Apps runtime is Ubuntu 22.04 / OpenSSL 3.0 — include the debian engine for prod;
+  // "native" stays for local macOS dev.
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 model User {

@@ -16,6 +16,14 @@ import crypto from "node:crypto";
 import { prisma } from "@octopus/db";
 import { normalizeEmail } from "@/lib/email-normalize";
 import { writeAuditLog } from "@/lib/audit";
+import {
+  safeReturnTo,
+  maskEmail,
+  cuid,
+  normalizeHost,
+  signSessionCookie,
+  parseScimIdentity,
+} from "./helpers";
 
 // Force Node runtime — Edge can't use Prisma.
 export const runtime = "nodejs";
@@ -27,58 +35,6 @@ const SESSION_COOKIE_NAME =
   process.env.NODE_ENV === "production"
     ? "__Secure-better-auth.session_token"
     : "better-auth.session_token";
-
-/**
- * Strict same-origin path guard. Rejects anything that could escape the app
- * origin via path encoding tricks. The path-only check on its own (the prior
- * implementation) was bypassable via:
- *   - `/\evil.com` (Windows-style path)
- *   - `/%2Fevil.com` (URL-encoded leading slash)
- *   - `/%5Cevil.com` (URL-encoded backslash)
- *   - `/whatever?next=https://evil.com` (callers downstream that re-redirect)
- *   - protocol-relative `//evil.com`
- *   - absolute URLs
- *
- * We require: starts with exactly one `/`, second char is NOT `/` or `\` after
- * percent-decoding, and the decoded path doesn't reintroduce a scheme or host.
- */
-function safeReturnTo(raw: string | null): string {
-  const DEFAULT = "/dashboard";
-  if (!raw) return DEFAULT;
-  // Strip CR/LF — defense against header injection if this ever lands in a Location header
-  if (/[\r\n]/.test(raw)) return DEFAULT;
-  if (!raw.startsWith("/")) return DEFAULT;
-  if (raw.length > 1 && (raw[1] === "/" || raw[1] === "\\")) return DEFAULT;
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(raw);
-  } catch {
-    return DEFAULT;
-  }
-  if (decoded.length > 1 && (decoded[1] === "/" || decoded[1] === "\\")) return DEFAULT;
-  // Reject anything that looks like a scheme (http://, javascript:, data:, etc.)
-  if (/^[a-z]+:/i.test(decoded.trim()) && !decoded.startsWith("/")) return DEFAULT;
-  // Cap length — overly long returnTo is almost always an attack
-  if (raw.length > 2048) return DEFAULT;
-  return raw;
-}
-
-/** Mask an email for logging: `dermot.smyth@databricks.com` → `d***@databricks.com`. */
-function maskEmail(email: string): string {
-  const at = email.indexOf("@");
-  if (at <= 0) return "***";
-  return `${email[0]}***${email.slice(at)}`;
-}
-
-function cuid(): string {
-  return `c${crypto.randomBytes(12).toString("hex")}`;
-}
-
-function normalizeHost(raw: string | undefined): string {
-  let h = (raw ?? "").trim().replace(/\/$/, "");
-  if (h && !/^https?:\/\//i.test(h)) h = `https://${h}`;
-  return h;
-}
 
 /**
  * Resolve the authenticated user's identity by **verifying the forwarded
@@ -122,23 +78,14 @@ async function resolveIdentity(req: NextRequest): Promise<{
       console.warn(`[dbx-bootstrap] SCIM /Me returned ${r.status} — rejecting bootstrap`);
       return null;
     }
-    const j = (await r.json()) as {
-      id?: string;
-      userName?: string;
-      displayName?: string;
-      emails?: Array<{ value?: string; primary?: boolean }>;
-    };
-    const primaryEmail =
-      j.emails?.find((e) => e.primary)?.value || j.emails?.[0]?.value || j.userName;
-    if (!primaryEmail || !primaryEmail.includes("@")) {
+    const identity = parseScimIdentity(
+      await r.json(),
+      req.headers.get("x-forwarded-user"),
+    );
+    if (!identity) {
       console.warn("[dbx-bootstrap] SCIM /Me response has no usable email");
-      return null;
     }
-    return {
-      email: primaryEmail.trim().toLowerCase(),
-      name: j.displayName || j.userName || primaryEmail,
-      dbxUserId: j.id ?? req.headers.get("x-forwarded-user"),
-    };
+    return identity;
   } catch (e) {
     console.warn("[dbx-bootstrap] SCIM /Me request failed:", (e as Error).message);
     return null;
@@ -303,16 +250,4 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     `[dbx-bootstrap] minted session for ${maskEmail(email)} (user=${user.id}, session=${sessionId}) → ${returnTo}`,
   );
   return res;
-}
-
-/**
- * Sign the session token in Hono's signedCookie format (Better-Auth v1.x):
- *   `${token}.${base64(HMAC-SHA256(secret, token))}`
- * Extracted from inline so the signing surface is easy to swap if
- * Better-Auth's format changes.
- */
-function signSessionCookie(token: string, secret: string, _version: string): string {
-  const hmac = crypto.createHmac("sha256", secret).update(token).digest();
-  // Hono uses `btoa(String.fromCharCode(...))` → standard base64 (with `+/=`).
-  return `${token}.${hmac.toString("base64")}`;
 }

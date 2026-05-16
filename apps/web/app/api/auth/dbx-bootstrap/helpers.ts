@@ -20,6 +20,7 @@ import crypto from "node:crypto";
 export function safeReturnTo(raw: string | null): string {
   const DEFAULT = "/dashboard";
   if (!raw) return DEFAULT;
+  if (raw.length > 2048) return DEFAULT;
   if (/[\r\n]/.test(raw)) return DEFAULT;
   if (!raw.startsWith("/")) return DEFAULT;
   if (raw.length > 1 && (raw[1] === "/" || raw[1] === "\\")) return DEFAULT;
@@ -29,9 +30,9 @@ export function safeReturnTo(raw: string | null): string {
   } catch {
     return DEFAULT;
   }
+  if (decoded.length > 2048) return DEFAULT;
   if (decoded.length > 1 && (decoded[1] === "/" || decoded[1] === "\\")) return DEFAULT;
   if (/^[a-z]+:/i.test(decoded.trim()) && !decoded.startsWith("/")) return DEFAULT;
-  if (raw.length > 2048) return DEFAULT;
   return raw;
 }
 

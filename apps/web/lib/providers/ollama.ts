@@ -2,6 +2,7 @@ import "server-only";
 import OpenAI from "openai";
 import { prisma } from "@octopus/db";
 import type { Provider, AiCreateParams, AiResponse } from "./index";
+import { validateProviderUrl } from "./url-validation";
 
 /**
  * Ollama exposes an OpenAI-compatible Chat Completions endpoint at
@@ -26,15 +27,21 @@ async function resolveBaseUrl(orgId?: string | null): Promise<string> {
       where: { id: orgId },
       select: { ollamaBaseUrl: true },
     });
-    if (org?.ollamaBaseUrl) return stripTrailingSlash(org.ollamaBaseUrl);
+    if (org?.ollamaBaseUrl) {
+      // Per-org URL is operator-supplied — validate before making it the
+      // target of a server-side fetch (SSRF mitigation). See
+      // apps/web/lib/providers/url-validation.ts.
+      return validateProviderUrl(org.ollamaBaseUrl);
+    }
   }
   const env = process.env.OLLAMA_BASE_URL;
-  if (env) return stripTrailingSlash(env);
+  if (env) {
+    // Env override is set by the deployment operator (not arbitrary user
+    // input) — still parse to normalise, but allow private hosts since
+    // env-based config is the standard "Ollama on the same machine" path.
+    return validateProviderUrl(env, { hosted: false });
+  }
   return DEFAULT_BASE_URL;
-}
-
-function stripTrailingSlash(s: string): string {
-  return s.replace(/\/+$/, "");
 }
 
 /**

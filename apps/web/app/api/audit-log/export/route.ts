@@ -1,7 +1,7 @@
 import { headers, cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
-import { writeAuditLog } from "@/lib/audit";
+import { writeAuditLog, validateAuditCategory } from "@/lib/audit";
 
 const MAX_EXPORT_ROWS = 10_000;
 
@@ -33,7 +33,10 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const format = searchParams.get("format") === "json" ? "json" : "csv";
-  const category = searchParams.get("category") ?? undefined;
+  // Allow-list validate the category — see lib/audit.ts for the canonical set.
+  // Without this guard the caller can pass arbitrary strings, polluting the
+  // audited export metadata and enabling enumeration of made-up categories.
+  const category = validateAuditCategory(searchParams.get("category"));
   const from = parseDate(searchParams.get("from"));
   const to = parseDate(searchParams.get("to"));
 

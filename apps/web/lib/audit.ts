@@ -1,6 +1,33 @@
 import { prisma, type Prisma } from "@octopus/db";
 
 /**
+ * Canonical list of audit-log categories. Any API endpoint accepting a
+ * `category` query string MUST validate against this set before passing to
+ * the Prisma `where` — otherwise the caller can enumerate / pollute audit
+ * metadata with attacker-controlled values.
+ */
+export const AUDIT_CATEGORIES = [
+  "auth",
+  "email",
+  "review",
+  "repo",
+  "knowledge",
+  "billing",
+  "admin",
+  "system",
+] as const;
+
+const AUDIT_CATEGORY_SET = new Set<string>(AUDIT_CATEGORIES);
+
+/**
+ * Returns the category string if it's a known audit category, otherwise undefined.
+ * Use in route handlers that accept a `category` query param.
+ */
+export function validateAuditCategory(value: string | null | undefined): string | undefined {
+  return value && AUDIT_CATEGORY_SET.has(value) ? value : undefined;
+}
+
+/**
  * Default retention window for AuditLog rows on hosted Octopus.
  * Overridable via AUDIT_LOG_RETENTION_DAYS env var. Self-hosters who need
  * a different retention (e.g. SOC2 requires 365+, HIPAA needs 6 years)

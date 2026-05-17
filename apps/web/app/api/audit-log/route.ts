@@ -1,6 +1,7 @@
 import { headers, cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
+import { validateAuditCategory } from "@/lib/audit";
 
 const PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
@@ -41,7 +42,8 @@ export async function GET(request: Request) {
     Math.max(1, parseInt(searchParams.get("limit") ?? String(PAGE_SIZE), 10)),
   );
   const cursor = searchParams.get("cursor") ?? undefined;
-  const category = searchParams.get("category") ?? undefined;
+  // Allow-list validate — same reasoning as the export route.
+  const category = validateAuditCategory(searchParams.get("category"));
   const actorEmail = searchParams.get("actorEmail")?.toLowerCase();
   const action = searchParams.get("action") ?? undefined;
   const from = parseDate(searchParams.get("from"));

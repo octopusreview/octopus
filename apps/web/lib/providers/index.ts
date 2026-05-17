@@ -2,8 +2,9 @@ import "server-only";
 import { anthropicProvider } from "./anthropic";
 import { openaiProvider } from "./openai";
 import { googleProvider } from "./google";
+import { ollamaProvider } from "./ollama";
 
-export type AiProvider = "anthropic" | "openai" | "google";
+export type AiProvider = "anthropic" | "openai" | "google" | "ollama";
 
 export type AiMessage = {
   role: "user" | "assistant";
@@ -54,6 +55,7 @@ const PROVIDERS: Record<AiProvider, Provider> = {
   anthropic: anthropicProvider,
   openai: openaiProvider,
   google: googleProvider,
+  ollama: ollamaProvider,
 };
 
 export function getProvider(name: AiProvider): Provider {

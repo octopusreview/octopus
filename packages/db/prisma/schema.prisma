@@ -100,6 +100,10 @@ model Organization {
   anthropicApiKey      String?
   cohereApiKey         String?
   googleApiKey         String?
+  // Custom Ollama base URL — overrides OLLAMA_BASE_URL env when set. Used
+  // for self-hosted Octopus instances pointing at a non-default Ollama host
+  // (a different container, a different machine on the LAN, etc.).
+  ollamaBaseUrl        String?
   defaultModelId       String?
   defaultEmbedModelId  String?
   monthlySpendLimitUsd    Float?

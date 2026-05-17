@@ -15,6 +15,7 @@ const PROVIDER_FALLBACK: Record<string, AiProvider> = {
   o4: "openai",
   codex: "openai",
   gemini: "google",
+  "ollama:": "ollama", // namespaced models like "ollama:qwen2.5-coder:32b"
 };
 
 let providerCache: Map<string, AiProvider> | null = null;
@@ -80,6 +81,9 @@ function getOrgKeyForProvider(keys: OrgKeys, provider: AiProvider): string | nul
     case "anthropic": return keys.anthropicApiKey;
     case "openai": return keys.openaiApiKey;
     case "google": return keys.googleApiKey;
+    // Ollama runs locally — no API key. The base URL override is read by
+    // the provider itself from prisma; we just pass null here.
+    case "ollama": return null;
   }
 }
 

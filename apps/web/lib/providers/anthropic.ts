@@ -14,8 +14,14 @@ function getClient(apiKey?: string | null): Anthropic {
 
 export const anthropicProvider: Provider = {
   name: "anthropic",
+  supportsJsonSchema: true,
   async create(params: AiCreateParams, apiKey?: string | null): Promise<AiResponse> {
     const client = getClient(apiKey);
+
+    // When a responseSchema is provided, use Anthropic tool-use for enforced
+    // structured output: define a single tool whose input_schema matches the
+    // requested shape, force it via tool_choice, then return the tool input.
+    const useTool = params.responseSchema !== undefined;
 
     const response = await client.messages.create({
       model: params.model,
@@ -35,9 +41,33 @@ export const anthropicProvider: Provider = {
         role: m.role,
         content: m.content,
       })),
+      ...(useTool
+        ? {
+            tools: [
+              {
+                name: params.responseSchema!.name,
+                description: `Return the response as a ${params.responseSchema!.name} object.`,
+                input_schema: params.responseSchema!.schema as Anthropic.Tool.InputSchema,
+              },
+            ],
+            tool_choice: {
+              type: "tool" as const,
+              name: params.responseSchema!.name,
+            },
+          }
+        : {}),
     });
 
-    const text = response.content[0].type === "text" ? response.content[0].text : "";
+    let text = "";
+    if (useTool) {
+      const toolUse = response.content.find((c) => c.type === "tool_use");
+      if (toolUse && toolUse.type === "tool_use") {
+        text = JSON.stringify(toolUse.input);
+      }
+    } else {
+      const textBlock = response.content[0];
+      text = textBlock?.type === "text" ? textBlock.text : "";
+    }
 
     return {
       text,

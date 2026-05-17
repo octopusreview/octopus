@@ -14,6 +14,7 @@ function getClient(apiKey?: string | null): GoogleGenerativeAI {
 
 export const googleProvider: Provider = {
   name: "google",
+  supportsJsonSchema: true,
   async create(params: AiCreateParams, apiKey?: string | null): Promise<AiResponse> {
     const genAI = getClient(apiKey);
     const model = genAI.getGenerativeModel({ model: params.model });
@@ -28,7 +29,17 @@ export const googleProvider: Provider = {
       systemInstruction: params.system
         ? { role: "user", parts: [{ text: params.system }] }
         : undefined,
-      generationConfig: { maxOutputTokens: params.maxTokens },
+      generationConfig: {
+        maxOutputTokens: params.maxTokens,
+        ...(params.responseSchema
+          ? {
+              responseMimeType: "application/json",
+              // Google's SDK types use its own SchemaType union; cast since we
+              // accept any JSON-Schema-shaped object at the public boundary.
+              responseSchema: params.responseSchema.schema as never,
+            }
+          : {}),
+      },
     });
 
     const response = result.response;

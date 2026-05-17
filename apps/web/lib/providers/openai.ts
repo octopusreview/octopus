@@ -14,6 +14,7 @@ function getClient(apiKey?: string | null): OpenAI {
 
 export const openaiProvider: Provider = {
   name: "openai",
+  supportsJsonSchema: true,
   async create(params: AiCreateParams, apiKey?: string | null): Promise<AiResponse> {
     const client = getClient(apiKey);
 
@@ -29,6 +30,18 @@ export const openaiProvider: Provider = {
       model: params.model,
       max_completion_tokens: params.maxTokens,
       messages,
+      ...(params.responseSchema
+        ? {
+            response_format: {
+              type: "json_schema" as const,
+              json_schema: {
+                name: params.responseSchema.name,
+                schema: params.responseSchema.schema,
+                strict: true,
+              },
+            },
+          }
+        : {}),
     });
 
     const text = response.choices[0]?.message?.content ?? "";

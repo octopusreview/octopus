@@ -10,12 +10,25 @@ export type AiMessage = {
   content: string;
 };
 
+/**
+ * JSON Schema describing the expected response shape. When supplied, providers
+ * that support structured-output APIs will use them natively; others append the
+ * schema to the system prompt as a fallback. Generate via `providerJsonSchema`
+ * in `lib/schemas/json-schema.ts` to ensure provider-unsupported keywords are
+ * stripped.
+ */
+export type ResponseJsonSchema = {
+  name: string;
+  schema: Record<string, unknown>;
+};
+
 export type AiCreateParams = {
   model: string;
   maxTokens: number;
   system?: string;
   messages: AiMessage[];
   cacheSystem?: boolean;
+  responseSchema?: ResponseJsonSchema;
 };
 
 export type AiResponse = {
@@ -32,6 +45,8 @@ export type AiResponse = {
 
 export type Provider = {
   name: AiProvider;
+  /** Whether this provider's API can enforce a JSON schema natively. */
+  supportsJsonSchema: boolean;
   create(params: AiCreateParams, apiKey?: string | null): Promise<AiResponse>;
 };
 

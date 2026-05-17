@@ -102,7 +102,7 @@ export async function createAiMessage(
   const orgKey = getOrgKeyForProvider(keys, provider);
 
   try {
-    return await getProvider(provider).create(params, orgKey);
+    return await getProvider(provider).create(params, orgKey, orgId);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[ai-router] ${provider} API error for model ${params.model}:`, message);

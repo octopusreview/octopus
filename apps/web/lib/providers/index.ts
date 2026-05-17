@@ -48,7 +48,14 @@ export type Provider = {
   name: AiProvider;
   /** Whether this provider's API can enforce a JSON schema natively. */
   supportsJsonSchema: boolean;
-  create(params: AiCreateParams, apiKey?: string | null): Promise<AiResponse>;
+  /**
+   * `apiKey` is the org's BYOK for providers that take one. `orgId` is the
+   * calling organisation — needed by providers that look up additional
+   * per-org config from prisma directly (ollama with org-level baseUrl
+   * override). Most providers can ignore both extras and just use `params`;
+   * TypeScript permits implementations to omit trailing parameters.
+   */
+  create(params: AiCreateParams, apiKey?: string | null, orgId?: string): Promise<AiResponse>;
 };
 
 const PROVIDERS: Record<AiProvider, Provider> = {

@@ -4,8 +4,21 @@ import { openaiProvider } from "./openai";
 import { googleProvider } from "./google";
 import { ollamaProvider } from "./ollama";
 import { localProvider } from "./local";
+import { grokProvider } from "./grok";
+import { openrouterProvider } from "./openrouter";
+import { mockProvider } from "./mock";
+import { mockFailProvider } from "./mock-fail";
 
-export type AiProvider = "anthropic" | "openai" | "google" | "ollama" | "local";
+export type AiProvider =
+  | "anthropic"
+  | "openai"
+  | "google"
+  | "ollama"
+  | "local"
+  | "grok"
+  | "openrouter"
+  | "mock"
+  | "mock-fail";
 
 export type AiMessage = {
   role: "user" | "assistant";
@@ -62,14 +75,38 @@ export type Provider = {
   ): Promise<AiResponse>;
 };
 
-const PROVIDERS: Record<AiProvider, Provider> = {
+/**
+ * Test doubles must NEVER be reachable in production — a canned all-clean
+ * response from `mock` would silently approve a PR with real vulnerabilities.
+ * Gate registration on env: only register in non-prod, or when an operator
+ * has explicitly opted in via ENABLE_MOCK_PROVIDERS=true (used for staging
+ * smoke tests). `resolveProvider()` already rejects unknown providers so
+ * unregistered names cannot be selected.
+ */
+const mockProvidersAllowed =
+  process.env.NODE_ENV !== "production" ||
+  process.env.ENABLE_MOCK_PROVIDERS === "true";
+
+const PROVIDERS: Partial<Record<AiProvider, Provider>> = {
   anthropic: anthropicProvider,
   openai: openaiProvider,
   google: googleProvider,
   ollama: ollamaProvider,
   local: localProvider,
+  grok: grokProvider,
+  openrouter: openrouterProvider,
+  ...(mockProvidersAllowed
+    ? { mock: mockProvider, "mock-fail": mockFailProvider }
+    : {}),
 };
 
 export function getProvider(name: AiProvider): Provider {
-  return PROVIDERS[name];
+  const provider = PROVIDERS[name];
+  if (!provider) {
+    throw new Error(
+      `Provider "${name}" is not registered in this environment. ` +
+        `Mock providers require NODE_ENV!=="production" or ENABLE_MOCK_PROVIDERS="true".`,
+    );
+  }
+  return provider;
 }

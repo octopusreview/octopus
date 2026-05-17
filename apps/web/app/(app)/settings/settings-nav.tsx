@@ -15,6 +15,7 @@ import {
   IconTerminal2,
   IconBell,
   IconDevices,
+  IconHistory,
 } from "@tabler/icons-react";
 
 const sections = [
@@ -25,6 +26,9 @@ const sections = [
       { href: "/settings/team", label: "Team", icon: IconUsers },
       { href: "/settings/billing", label: "Billing", icon: IconCreditCard },
       { href: "/settings/notifications", label: "Notifications", icon: IconBell },
+      // Admin-only — the page itself enforces role; this nav entry is always
+      // visible but the click flow redirects non-admins to /settings.
+      { href: "/settings/audit-log", label: "Audit Log", icon: IconHistory },
     ],
   },
   {

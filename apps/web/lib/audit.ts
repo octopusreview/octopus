@@ -1,5 +1,40 @@
 import { prisma, type Prisma } from "@octopus/db";
 
+/**
+ * Default retention window for AuditLog rows on hosted Octopus.
+ * Overridable via AUDIT_LOG_RETENTION_DAYS env var. Self-hosters who need
+ * a different retention (e.g. SOC2 requires 365+, HIPAA needs 6 years)
+ * can set this in their environment.
+ */
+export const AUDIT_LOG_DEFAULT_RETENTION_DAYS = 365;
+
+/**
+ * Delete AuditLog rows older than the configured retention window.
+ * Idempotent and safe to run repeatedly — only rows past the cutoff are
+ * removed. Returns the number of deleted rows so the calling pg-boss job
+ * can log the result.
+ *
+ * The retention enforcement runs on a daily schedule (see queue-workers.ts
+ * and the boss.schedule call in instrumentation.ts). Self-hosters can
+ * disable it by leaving the schedule unset.
+ */
+export async function enforceAuditLogRetention(retentionDays?: number): Promise<number> {
+  const envOverride = process.env.AUDIT_LOG_RETENTION_DAYS;
+  const days = retentionDays ?? (envOverride ? parseInt(envOverride, 10) : AUDIT_LOG_DEFAULT_RETENTION_DAYS);
+  if (!Number.isFinite(days) || days <= 0) {
+    console.warn(`[audit] enforceAuditLogRetention: invalid days=${days}, skipping`);
+    return 0;
+  }
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const { count } = await prisma.auditLog.deleteMany({
+    where: { createdAt: { lt: cutoff } },
+  });
+  if (count > 0) {
+    console.log(`[audit] enforceAuditLogRetention: deleted ${count} rows older than ${days} days`);
+  }
+  return count;
+}
+
 export type AuditCategory =
   | "auth"
   | "email"

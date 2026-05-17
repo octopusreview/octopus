@@ -3,9 +3,10 @@ import { calcCost, getModelPricing } from "./cost";
 import { deductCredits } from "./credits";
 
 type LogAiUsageParams = {
-  // ollama runs locally — zero cost, but logged for visibility and operation
-  // counts. Add new providers here as they land.
-  provider: "anthropic" | "openai" | "google" | "cohere" | "ollama";
+  // ollama runs locally — zero cost. The local-agent bridge dispatches LLM
+  // calls to a developer laptop — also zero platform cost. Add new providers
+  // here as they land.
+  provider: "anthropic" | "openai" | "google" | "cohere" | "ollama" | "local";
   model: string;
   operation: string;
   inputTokens: number;
@@ -33,9 +34,11 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
       (params.provider === "openai" && !!org.openaiApiKey) ||
       (params.provider === "google" && !!org.googleApiKey) ||
       (params.provider === "cohere" && !!org.cohereApiKey) ||
-      // Ollama runs on the user's own infrastructure — always "own key" from
-      // a billing perspective, never costs the platform.
-      params.provider === "ollama";
+      // Ollama runs on the user's own infrastructure — always "own key" from a
+      // billing perspective. Local-agent bridge dispatches to user
+      // infrastructure — same reasoning.
+      params.provider === "ollama" ||
+      params.provider === "local";
 
     await prisma.aiUsage.create({
       data: {

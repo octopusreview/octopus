@@ -149,6 +149,7 @@ model Organization {
   apiTokens          OrgApiToken[]
   localAgents        LocalAgent[]
   agentSearchTasks   AgentSearchTask[]
+  agentLlmTasks      AgentLlmTask[]
   packageAnalyses       PackageAnalysis[]
   safePackageRequests   SafePackageRequest[]
   packageDeepDives      PackageDeepDive[]
@@ -919,10 +920,51 @@ model LocalAgent {
   apiToken       OrgApiToken @relation(fields: [apiTokenId], references: [id], onDelete: Cascade)
 
   agentSearchTasks AgentSearchTask[]
+  agentLlmTasks    AgentLlmTask[]
 
   @@unique([organizationId, name])
   @@index([organizationId, status])
   @@map("local_agents")
+}
+
+/**
+ * Llm-completion task dispatched to a registered LocalAgent. The bridge
+ * lets a cloud Octopus deployment route LLM calls to a developer's laptop
+ * — useful for Ollama (no exposed endpoint), Claude Code subscription
+ * (the CLI is logged into the user's account), etc.
+ *
+ * Flow:
+ *   1. ai-router callLocalAgent() creates a row with status="pending"
+ *   2. The agent polls /api/agent/llm-tasks, claims the oldest pending row
+ *   3. Agent runs the request locally (Ollama, claude CLI, whatever),
+ *      POSTs back to /api/agent/llm-tasks/<id>/complete
+ *   4. callLocalAgent() polls until status="completed"|"failed"|"timeout",
+ *      returns the result
+ */
+model AgentLlmTask {
+  id             String    @id @default(cuid())
+  status         String    @default("pending") // "pending" | "claimed" | "completed" | "failed" | "timeout"
+  modelId        String
+  system         String?   @db.Text
+  messages       Json      // { role, content }[]
+  maxTokens      Int
+  resultText     String?   @db.Text
+  resultUsage    Json?     // { inputTokens, outputTokens, ... }
+  errorMessage   String?
+  timeoutMs      Int       @default(300000) // 5 minutes
+  claimedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  agentId        String?
+  agent          LocalAgent? @relation(fields: [agentId], references: [id], onDelete: SetNull)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([agentId, status])
+  @@map("agent_llm_tasks")
 }
 
 model AgentSearchTask {

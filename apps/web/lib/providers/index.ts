@@ -3,8 +3,9 @@ import { anthropicProvider } from "./anthropic";
 import { openaiProvider } from "./openai";
 import { googleProvider } from "./google";
 import { ollamaProvider } from "./ollama";
+import { localProvider } from "./local";
 
-export type AiProvider = "anthropic" | "openai" | "google" | "ollama";
+export type AiProvider = "anthropic" | "openai" | "google" | "ollama" | "local";
 
 export type AiMessage = {
   role: "user" | "assistant";
@@ -52,10 +53,13 @@ export type Provider = {
    * `apiKey` is the org's BYOK for providers that take one. `orgId` is the
    * calling organisation — needed by providers that look up additional
    * per-org config from prisma directly (ollama with org-level baseUrl
-   * override). Most providers can ignore both extras and just use `params`;
-   * TypeScript permits implementations to omit trailing parameters.
+   * override, local agent dispatch). Pure-HTTP providers can ignore both.
    */
-  create(params: AiCreateParams, apiKey?: string | null, orgId?: string): Promise<AiResponse>;
+  create(
+    params: AiCreateParams,
+    apiKey?: string | null,
+    orgId?: string | null,
+  ): Promise<AiResponse>;
 };
 
 const PROVIDERS: Record<AiProvider, Provider> = {
@@ -63,6 +67,7 @@ const PROVIDERS: Record<AiProvider, Provider> = {
   openai: openaiProvider,
   google: googleProvider,
   ollama: ollamaProvider,
+  local: localProvider,
 };
 
 export function getProvider(name: AiProvider): Provider {

@@ -726,6 +726,11 @@ async function main() {
     { modelId: "o3-mini", displayName: "OpenAI o3 Mini", provider: "openai", category: "llm", inputPrice: 1.1, outputPrice: 4.4, sortOrder: 10 },
     { modelId: "o4-mini", displayName: "OpenAI o4 Mini", provider: "openai", category: "llm", inputPrice: 1.1, outputPrice: 4.4, sortOrder: 11 },
     { modelId: "codex-mini-latest", displayName: "Codex Mini", provider: "openai", category: "llm", inputPrice: 1.5, outputPrice: 6, sortOrder: 12 },
+    // Ollama (local — runs on the user's machine, zero cost)
+    { modelId: "ollama:qwen2.5-coder:32b", displayName: "Qwen 2.5 Coder 32B (Ollama)", provider: "ollama", category: "llm", inputPrice: 0, outputPrice: 0, sortOrder: 20 },
+    { modelId: "ollama:llama3.3", displayName: "Llama 3.3 (Ollama)", provider: "ollama", category: "llm", inputPrice: 0, outputPrice: 0, sortOrder: 21 },
+    { modelId: "ollama:deepseek-coder-v2", displayName: "DeepSeek Coder v2 (Ollama)", provider: "ollama", category: "llm", inputPrice: 0, outputPrice: 0, sortOrder: 22 },
+    { modelId: "ollama:nousresearch/hermes-3-llama-3.1-8b", displayName: "Nous Hermes 3 8B (Ollama)", provider: "ollama", category: "llm", inputPrice: 0, outputPrice: 0, sortOrder: 23 },
     // Embeddings
     { modelId: "text-embedding-3-large", displayName: "Embedding 3 Large", provider: "openai", category: "embedding", inputPrice: 0.13, outputPrice: 0, sortOrder: 0 },
     { modelId: "text-embedding-3-small", displayName: "Embedding 3 Small", provider: "openai", category: "embedding", inputPrice: 0.02, outputPrice: 0, sortOrder: 1 },

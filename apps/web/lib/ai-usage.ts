@@ -3,7 +3,9 @@ import { calcCost, getModelPricing } from "./cost";
 import { deductCredits } from "./credits";
 
 type LogAiUsageParams = {
-  provider: "anthropic" | "openai" | "google" | "cohere";
+  // ollama runs locally — zero cost, but logged for visibility and operation
+  // counts. Add new providers here as they land.
+  provider: "anthropic" | "openai" | "google" | "cohere" | "ollama";
   model: string;
   operation: string;
   inputTokens: number;
@@ -30,7 +32,10 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
       (params.provider === "anthropic" && !!org.anthropicApiKey) ||
       (params.provider === "openai" && !!org.openaiApiKey) ||
       (params.provider === "google" && !!org.googleApiKey) ||
-      (params.provider === "cohere" && !!org.cohereApiKey);
+      (params.provider === "cohere" && !!org.cohereApiKey) ||
+      // Ollama runs on the user's own infrastructure — always "own key" from
+      // a billing perspective, never costs the platform.
+      params.provider === "ollama";
 
     await prisma.aiUsage.create({
       data: {

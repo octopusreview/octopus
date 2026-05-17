@@ -24,11 +24,14 @@ const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 export const localProvider: Provider = {
   name: "local" as never,
   supportsJsonSchema: false, // depends on the agent's underlying provider; advertise conservatively
-  async create(params: AiCreateParams, _apiKey?: string | null): Promise<AiResponse> {
-    const orgId = await getCurrentOrgId();
+  async create(
+    params: AiCreateParams,
+    _apiKey?: string | null,
+    orgId?: string | null,
+  ): Promise<AiResponse> {
     if (!orgId) {
       throw new Error(
-        "local provider needs an organisation context. ai-router does not yet thread orgId into provider.create(); the local provider can't dispatch without it.",
+        "local provider needs an organisation context. Caller must pass orgId to provider.create().",
       );
     }
 
@@ -105,12 +108,3 @@ async function pollUntilTerminal(taskId: string, timeoutMs: number) {
   };
 }
 
-/**
- * Placeholder — ai-router does not yet thread orgId into provider.create().
- * Until it does, this provider cannot operate. The throw in create() above
- * is the user-facing message. Threading orgId through is a small follow-up
- * in ai-router.ts (one extra arg per provider call).
- */
-async function getCurrentOrgId(): Promise<string | null> {
-  return null;
-}

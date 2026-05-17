@@ -53,7 +53,7 @@ export type Provider = {
    * `apiKey` is the org's BYOK for providers that take one. `orgId` is the
    * calling organisation — needed by providers that look up additional
    * per-org config from prisma directly (ollama with org-level baseUrl
-   * override, local agent dispatch).
+   * override, local agent dispatch). Pure-HTTP providers can ignore both.
    */
   create(
     params: AiCreateParams,

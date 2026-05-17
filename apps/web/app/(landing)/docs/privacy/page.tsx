@@ -31,6 +31,13 @@ export default function PrivacyPage() {
           use our cloud-hosted service. If you self-host Octopus, your own
           privacy policies apply.
         </P>
+        <P>
+          Companion documents: <a href="/docs/security-overview" className="text-cyan-400 underline">Security Overview</a>{" "}
+          (data flow + encryption + access controls), <a href="/docs/sub-processors" className="text-cyan-400 underline">Sub-processors</a>{" "}
+          (third-party vendors), <a href="/docs/dpa" className="text-cyan-400 underline">DPA</a>{" "}
+          (Data Processing Addendum), <a href="/docs/data-retention" className="text-cyan-400 underline">Data Retention</a>{" "}
+          (what we store, for how long).
+        </P>
       </Section>
 
       <Section title="2. Information We Collect">

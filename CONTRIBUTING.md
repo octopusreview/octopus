@@ -25,8 +25,24 @@ Thank you for your interest in contributing to Octopus! We welcome contributions
 
 - Keep PRs focused on a single change
 - Write a clear description of what your PR does and why
-- Reference any related issues
+- Reference any related issues (`Closes #123` for bug fixes; `Part of #123` for sub-tasks of an epic)
 - Make sure linting and type checks pass
+
+### Commit messages
+
+We use [Conventional Commits](https://www.conventionalcommits.org/). Examples from recent history: `fix(docs): ...`, `chore(deps): ...`, `docs(readme): ...`, `feat(reviewer): ...`. The scope is optional but appreciated.
+
+## Picking up roadmap work
+
+The [Roadmap](ROADMAP.md) is the source of truth for what's prioritised. Browse [open `roadmap`-labeled issues](https://github.com/octopusreview/octopus/issues?q=is%3Aopen+label%3Aroadmap) or filter by workstream (e.g. [`workstream:5-providers`](https://github.com/octopusreview/octopus/issues?q=is%3Aopen+label%3Aworkstream%3A5-providers)). Issues labeled [`good first issue`](https://github.com/octopusreview/octopus/issues?q=is%3Aopen+label%3A%22good+first+issue%22) are the best entry points.
+
+To claim work:
+
+1. Comment on the issue saying you're picking it up — gives maintainers a chance to flag context or duplicate efforts
+2. Open a PR within ~2 weeks. If you need longer, leave a status comment so the issue doesn't get reassigned
+3. Reference the issue in your PR (`Closes #N` or `Part of #N`)
+
+For substantial proposals not yet on the roadmap, use the [Roadmap Proposal template](.github/ISSUE_TEMPLATE/roadmap_proposal.yml). See [GOVERNANCE.md](GOVERNANCE.md) for how proposals progress.
 
 ## Testing Your Changes
 

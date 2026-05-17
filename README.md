@@ -141,9 +141,13 @@ See [docker-compose.yml](docker-compose.yml) for service configuration.
 4. **Review** — The diff is reviewed by the LLM, generating findings with severity levels and category-based thresholds
 5. **Comment** — Findings are posted as inline comments on the PR/MR, with one-click Linear or Jira issue creation
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for what's shipped, in progress, up next, and proposed. Open a [roadmap proposal](.github/ISSUE_TEMPLATE/roadmap_proposal.yml) to suggest something new, or browse [open issues](https://github.com/octopusreview/octopus/issues?q=is%3Aopen+label%3Aroadmap) to pick up work. Governance and the path to becoming a maintainer are documented in [GOVERNANCE.md](GOVERNANCE.md) and [MAINTAINERS.md](MAINTAINERS.md).
+
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. For questions and help, see [SUPPORT.md](SUPPORT.md).
 
 ## Security
 

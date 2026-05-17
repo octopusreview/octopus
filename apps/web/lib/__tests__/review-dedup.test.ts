@@ -132,6 +132,35 @@ ${FINDINGS_END_MARKER}`;
     const findings = parseFindingsFromJson(body);
     expect(findings![0].confidence).toBe(70);
   });
+
+  it("parses anti-hallucination fields when present", () => {
+    const body = `${FINDINGS_START_MARKER}
+[{
+  "severity": "🔴",
+  "title": "Bug",
+  "filePath": "src/x.ts",
+  "startLine": 5,
+  "description": "d",
+  "whyTestsDoNotAlreadyCoverThis": "no tests for negative input",
+  "suggestedRegressionTest": "expect(parse(-1)).toThrow();",
+  "minimumFixScope": "add guard at line 5"
+}]
+${FINDINGS_END_MARKER}`;
+    const findings = parseFindingsFromJson(body);
+    expect(findings![0].whyTestsDoNotAlreadyCoverThis).toBe("no tests for negative input");
+    expect(findings![0].suggestedRegressionTest).toBe("expect(parse(-1)).toThrow();");
+    expect(findings![0].minimumFixScope).toBe("add guard at line 5");
+  });
+
+  it("leaves anti-hallucination fields undefined for legacy bodies", () => {
+    const body = `${FINDINGS_START_MARKER}
+[{"severity":"🔴","title":"Old","filePath":"a.ts","startLine":1,"description":"d"}]
+${FINDINGS_END_MARKER}`;
+    const findings = parseFindingsFromJson(body);
+    expect(findings![0].whyTestsDoNotAlreadyCoverThis).toBeUndefined();
+    expect(findings![0].suggestedRegressionTest).toBeUndefined();
+    expect(findings![0].minimumFixScope).toBeUndefined();
+  });
 });
 
 // ─── parseFindingsFromMarkdown ──────────────────────────────────────────────

@@ -12,6 +12,18 @@ export const findingSchema = z.object({
   description: z.string().describe("What the issue is and why it matters"),
   suggestion: z.string().describe("Plain code string for the suggested fix. Empty string if no concrete fix"),
   confidence: z.number().min(0).max(100).describe("Reviewer confidence 0-100"),
+  // Anti-hallucination fields — force the reviewer to articulate test coverage,
+  // a concrete regression, and the minimum fix before emitting a finding. If
+  // the model cannot fill these honestly the finding is usually speculative.
+  whyTestsDoNotAlreadyCoverThis: z.string().describe(
+    "Specific tests inspected and why they fail to exercise this case. Required.",
+  ),
+  suggestedRegressionTest: z.string().describe(
+    "Concrete test (code or pseudocode) that fails today and passes after the suggestion. Empty string only for style nits.",
+  ),
+  minimumFixScope: z.string().describe(
+    "Smallest change that resolves this finding. Required.",
+  ),
 });
 
 export type Finding = z.infer<typeof findingSchema>;

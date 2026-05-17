@@ -17,6 +17,12 @@ export type InlineFinding = {
   description: string;
   suggestion: string;
   confidence: number;
+  // Anti-hallucination fields added in the WS6.4 prompt update. Optional in
+  // the parser to stay backward-compatible with stored reviews that predate
+  // the change; required in the Zod findingSchema for new emissions.
+  whyTestsDoNotAlreadyCoverThis?: string;
+  suggestedRegressionTest?: string;
+  minimumFixScope?: string;
 };
 
 export type PriorFinding = {
@@ -87,6 +93,16 @@ export function parseFindingsFromJson(reviewBody: string): InlineFinding[] | nul
           : item.confidence === "HIGH"
             ? 90
             : 70,
+      whyTestsDoNotAlreadyCoverThis:
+        typeof item.whyTestsDoNotAlreadyCoverThis === "string"
+          ? item.whyTestsDoNotAlreadyCoverThis
+          : undefined,
+      suggestedRegressionTest:
+        typeof item.suggestedRegressionTest === "string"
+          ? item.suggestedRegressionTest
+          : undefined,
+      minimumFixScope:
+        typeof item.minimumFixScope === "string" ? item.minimumFixScope : undefined,
     });
   }
 

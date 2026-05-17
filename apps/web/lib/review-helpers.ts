@@ -366,6 +366,25 @@ export function buildInlineComments(
       body += `\n\n${suggestionBlock}`;
     }
 
+    // Surface the suggested regression test inline so the developer can copy
+    // it into the test file alongside applying the fix.
+    if (f.suggestedRegressionTest) {
+      body += `\n\n**Suggested regression test:**\n\`\`\`\n${f.suggestedRegressionTest}\n\`\`\``;
+    }
+
+    // Anti-hallucination context — collapsed by default so the inline comment
+    // stays scannable, but available for reviewers who want the reasoning.
+    if (f.whyTestsDoNotAlreadyCoverThis || f.minimumFixScope) {
+      const lines: string[] = [];
+      if (f.whyTestsDoNotAlreadyCoverThis) {
+        lines.push(`**Why existing tests miss this:** ${f.whyTestsDoNotAlreadyCoverThis}`);
+      }
+      if (f.minimumFixScope) {
+        lines.push(`**Minimum fix scope:** ${f.minimumFixScope}`);
+      }
+      body += `\n\n<details><summary>Reviewer reasoning</summary>\n\n${lines.join("\n\n")}\n\n</details>`;
+    }
+
     // AI Fix Prompt — collapsible section with copy-pasteable prompt
     const severityLabel = f.severity === "🔴" ? "Critical" : f.severity === "🟠" ? "High" : f.severity === "🟡" ? "Medium" : f.severity === "🔵" ? "Low" : "Nit";
     const categoryNote = f.category ? ` (${f.category})` : "";
@@ -374,6 +393,9 @@ export function buildInlineComments(
     aiPrompt += `Problem: ${f.description}`;
     if (f.suggestion) {
       aiPrompt += `\n\nSuggested fix:\n${f.suggestion}`;
+    }
+    if (f.minimumFixScope) {
+      aiPrompt += `\n\nKeep the change small: ${f.minimumFixScope}`;
     }
     body += `\n\n<details><summary>🤖 AI Fix Prompt</summary>\n\n\`\`\`\n${aiPrompt}\n\`\`\`\n\n</details>`;
 

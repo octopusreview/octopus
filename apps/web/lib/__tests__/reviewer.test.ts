@@ -435,6 +435,42 @@ describe("buildInlineComments", () => {
     const comments = buildInlineComments(findings, diffLines);
     expect(comments[0].body).toContain("AI Fix Prompt");
   });
+
+  it("renders the suggested regression test when present", () => {
+    const findings = [
+      makeFinding({
+        suggestedRegressionTest: "expect(parse(-1)).toThrow();",
+      }),
+    ];
+    const diffLines = new Map([["src/index.ts", new Set([10, 11, 12])]]);
+    const comments = buildInlineComments(findings, diffLines);
+    expect(comments[0].body).toContain("Suggested regression test");
+    expect(comments[0].body).toContain("expect(parse(-1)).toThrow();");
+  });
+
+  it("collapses reviewer reasoning when anti-hallucination fields present", () => {
+    const findings = [
+      makeFinding({
+        whyTestsDoNotAlreadyCoverThis: "no tests exercise negative input",
+        minimumFixScope: "add a guard at line 10",
+      }),
+    ];
+    const diffLines = new Map([["src/index.ts", new Set([10, 11, 12])]]);
+    const comments = buildInlineComments(findings, diffLines);
+    expect(comments[0].body).toContain("Reviewer reasoning");
+    expect(comments[0].body).toContain("Why existing tests miss this");
+    expect(comments[0].body).toContain("no tests exercise negative input");
+    expect(comments[0].body).toContain("Minimum fix scope");
+    expect(comments[0].body).toContain("add a guard at line 10");
+  });
+
+  it("omits the reasoning block when anti-hallucination fields absent (legacy)", () => {
+    const findings = [makeFinding()]; // no anti-hallucination fields
+    const diffLines = new Map([["src/index.ts", new Set([10, 11, 12])]]);
+    const comments = buildInlineComments(findings, diffLines);
+    expect(comments[0].body).not.toContain("Reviewer reasoning");
+    expect(comments[0].body).not.toContain("Suggested regression test");
+  });
 });
 
 // ─── mergeReviewConfigs ─────────────────────────────────────────────────────

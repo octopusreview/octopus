@@ -14,6 +14,11 @@ describe("findingSchema", () => {
     description: "User input is concatenated into SQL string.",
     suggestion: "db.query('SELECT * FROM users WHERE id = $1', [id])",
     confidence: 95,
+    whyTestsDoNotAlreadyCoverThis:
+      "Tests in queries.test.ts only exercise integer IDs from a fixed enum.",
+    suggestedRegressionTest:
+      'it("rejects SQL metacharacters in id", async () => { await expect(getUser("1 OR 1=1")).rejects.toThrow(); });',
+    minimumFixScope: "Replace the single concatenation at line 42.",
   };
 
   it("accepts a well-formed finding", () => {
@@ -45,6 +50,30 @@ describe("findingSchema", () => {
   it("requires all fields — missing description fails", () => {
     const { description: _description, ...missing } = validFinding;
     expect(() => findingSchema.parse(missing)).toThrow();
+  });
+
+  it("requires anti-hallucination fields — missing whyTestsDoNotAlreadyCoverThis fails", () => {
+    const { whyTestsDoNotAlreadyCoverThis: _w, ...missing } = validFinding;
+    expect(() => findingSchema.parse(missing)).toThrow();
+  });
+
+  it("requires anti-hallucination fields — missing suggestedRegressionTest fails", () => {
+    const { suggestedRegressionTest: _s, ...missing } = validFinding;
+    expect(() => findingSchema.parse(missing)).toThrow();
+  });
+
+  it("requires anti-hallucination fields — missing minimumFixScope fails", () => {
+    const { minimumFixScope: _m, ...missing } = validFinding;
+    expect(() => findingSchema.parse(missing)).toThrow();
+  });
+
+  it("accepts an empty string for suggestedRegressionTest (style nits)", () => {
+    const parsed = findingSchema.parse({
+      ...validFinding,
+      severity: "💡" as const,
+      suggestedRegressionTest: "",
+    });
+    expect(parsed.suggestedRegressionTest).toBe("");
   });
 });
 

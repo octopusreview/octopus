@@ -48,13 +48,25 @@ export async function GET(request: Request) {
 
   const ids = pending.map((p) => p.id);
   const now = new Date();
-  await prisma.agentLlmTask.updateMany({
+  // updateMany's WHERE clause atomically prevents double-claim of the same
+  // row, but we cannot trust the SELECT we ran above — another agent may
+  // have raced us between the SELECT and the updateMany. The .count here
+  // is how many rows WE claimed; if it's zero, the other agent got every
+  // pending task in our batch.
+  const claimed = await prisma.agentLlmTask.updateMany({
     where: { id: { in: ids }, status: "pending" },
     data: { status: "claimed", agentId, claimedAt: now },
   });
+  if (claimed.count === 0) {
+    return NextResponse.json({ tasks: [] });
+  }
 
+  // Re-fetch only the tasks WE actually claimed — filter by our agentId
+  // and status="claimed" so we never hand a task another agent owns back
+  // to this caller. (Without this filter, the /complete endpoint's
+  // status-only check would let a non-owning agent overwrite results.)
   const tasks = await prisma.agentLlmTask.findMany({
-    where: { id: { in: ids } },
+    where: { id: { in: ids }, agentId, status: "claimed" },
     select: {
       id: true,
       modelId: true,

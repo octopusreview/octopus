@@ -1,0 +1,60 @@
+name: Release octp-onboard binaries
+
+# Cross-compiles the apps/cli-onboard package to five native binaries and
+# attaches them to a GitHub Release. Triggered by pushing a tag whose name
+# starts with `cli-onboard-v` (e.g. `cli-onboard-v0.1.0`).
+#
+# The install scripts (install.sh / install.ps1) look up the latest such
+# tag and download the matching asset for the user's platform.
+
+on:
+  push:
+    tags:
+      - "cli-onboard-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build + publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.4
+
+      - name: Install dependencies (root workspace)
+        run: bun install --frozen-lockfile
+
+      - name: Cross-compile all targets
+        working-directory: apps/cli-onboard
+        run: bun run build:compile
+
+      - name: List built binaries
+        run: ls -la apps/cli-onboard/dist
+
+      - name: Generate SHA256 checksums
+        working-directory: apps/cli-onboard/dist
+        run: |
+          shasum -a 256 octp-onboard-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # Auto-generate release notes from PRs/commits since the previous tag.
+          generate_release_notes: true
+          # The trigger tag controls which assets to publish.
+          fail_on_unmatched_files: true
+          files: |
+            apps/cli-onboard/dist/octp-onboard-linux-x64
+            apps/cli-onboard/dist/octp-onboard-linux-arm64
+            apps/cli-onboard/dist/octp-onboard-darwin-x64
+            apps/cli-onboard/dist/octp-onboard-darwin-arm64
+            apps/cli-onboard/dist/octp-onboard-windows-x64.exe
+            apps/cli-onboard/dist/SHA256SUMS.txt

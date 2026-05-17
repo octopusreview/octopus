@@ -1,6 +1,44 @@
 # @octopus/cli-onboard
 
-First-run interactive setup wizard for the Octopus CLI. Built with [ink](https://github.com/vadimdemedes/ink) (React for terminals).
+First-run interactive setup wizard for the Octopus CLI. Built with [ink](https://github.com/vadimdemedes/ink) (React for terminals) and shipped as a **native binary** — no Node, no npm install, no system dependencies.
+
+## Install
+
+### macOS / Linux
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/octopusreview/octopus/master/apps/cli-onboard/install/install.sh | sh
+```
+
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/octopusreview/octopus/master/apps/cli-onboard/install/install.ps1 | iex
+```
+
+Both installers:
+
+1. Detect your OS + CPU architecture
+2. Fetch the latest `cli-onboard-v*` release from GitHub
+3. Download the matching binary
+4. Install it to `~/.octopus/bin/` (override with `OCTOPUS_INSTALL_DIR`)
+5. Print a one-liner to add the install directory to your `PATH` (or update it directly on Windows)
+
+Environment variables both installers respect:
+
+| Variable | Purpose |
+|---|---|
+| `OCTOPUS_INSTALL_DIR` | Override install directory |
+| `OCTOPUS_INSTALL_REPO` | Override the GitHub repo (e.g. for forks) |
+| `OCTOPUS_INSTALL_TAG` | Pin a specific tag instead of fetching latest |
+
+## Run
+
+```
+octp-onboard
+```
+
+The first run launches the wizard. Subsequent runs detect the saved state and exit immediately unless you pass `--reset`.
 
 ## What it does
 
@@ -34,14 +72,33 @@ A corrupt or unreadable `config.json` is treated as missing — the wizard re-ru
 
 - `OCTOPUS_NO_ONBOARD=1` — permanent skip (env var)
 - `--skip-onboard` — one-shot skip (CLI flag)
-- `--reset-onboard` — re-runs the wizard, pre-seeding existing config
+- `--reset` — re-runs the wizard, pre-seeding existing config
 
-## How `@octp/cli` embeds this
+## Build from source
 
-`@octp/cli` imports `ensureOnboardCompleted()` from `@octopus/cli-onboard` on every launch. If `config.json#onboardedAt` is missing, the wizard runs; otherwise it's a fast no-op (~1ms).
+```bash
+cd apps/cli-onboard
+bun install
+bun run dev                     # run from source in your terminal
+bun run build:compile           # cross-compile all 5 native targets to dist/
+bun run build:compile:darwin-arm64  # single target
+bun test                        # run unit tests
+```
 
-This package is built standalone so it can also be invoked directly: `bunx @octopus/cli-onboard` or, after install, `octp-onboard`.
+Cross-compile targets:
+
+| Asset | Platform |
+|---|---|
+| `octp-onboard-linux-x64` | Linux Intel/AMD |
+| `octp-onboard-linux-arm64` | Linux ARM (Raspberry Pi, AWS Graviton) |
+| `octp-onboard-darwin-x64` | macOS Intel |
+| `octp-onboard-darwin-arm64` | macOS Apple Silicon |
+| `octp-onboard-windows-x64.exe` | Windows Intel/AMD |
+
+## Releases
+
+Tagging `cli-onboard-v<semver>` on the upstream repo triggers `.github/workflows/cli-onboard-release.yml`, which cross-compiles all five binaries, generates SHA256 checksums, and publishes a GitHub Release with auto-generated notes. The install scripts always fetch the latest tagged release.
 
 ## Status
 
-Phase 1 (this commit): package skeleton, Welcome → Done flow, config persistence, opt-outs. Real steps land in follow-up PRs tracked under [Workstream 7](../../README.md#roadmap).
+Phase 1 (this commit): package skeleton + native installer infrastructure + Welcome → Done flow + config persistence + opt-outs. Real steps land in follow-up PRs tracked under [Workstream 7](../../README.md#roadmap) (epic [#61](https://github.com/cemoso/octopus/issues/61)).

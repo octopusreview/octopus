@@ -172,6 +172,12 @@ export function OllamaSetupStep({ ollamaBaseUrl, onNext }: OllamaSetupStepProps)
       <Box flexDirection="column">
         <Text bold>Ollama is running but you don&apos;t have any models yet.</Text>
         <Text dimColor>Pick one to download. Sizes are approximate.</Text>
+        {error ? (
+          <>
+            <Text> </Text>
+            <Text color="red">{error}</Text>
+          </>
+        ) : null}
         <Text> </Text>
         <SelectInput
           items={[
@@ -271,7 +277,10 @@ export function OllamaSetupStep({ ollamaBaseUrl, onNext }: OllamaSetupStepProps)
       onNext({ model: `ollama:${modelName}` });
     } catch (e) {
       setError(`Pull failed: ${e instanceof Error ? e.message : String(e)}`);
-      // Stay on "pulling" so the error sticks visible. User Escs to skip.
+      // Drop back to the picker so the user can either pick a different
+      // model or Esc to skip — the previous "stay on pulling" trapped
+      // them because the Esc handler short-circuits while phase==="pulling".
+      setPhase(isLocal ? "local-empty" : "remote-empty");
     }
   }
 }

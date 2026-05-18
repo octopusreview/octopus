@@ -197,14 +197,17 @@ export async function pullOllamaModel(
       const line = buffer.slice(0, nl).trim();
       buffer = buffer.slice(nl + 1);
       if (!line) continue;
+      let update: PullProgress;
       try {
-        const update = JSON.parse(line) as PullProgress;
-        onProgress(update);
-        if (update.error) throw new Error(update.error);
-      } catch (e) {
-        if (e instanceof Error && e.message.startsWith("pull failed")) throw e;
-        // Tolerate the occasional malformed line (rare); move on.
+        update = JSON.parse(line) as PullProgress;
+      } catch {
+        // Tolerate the occasional malformed line (rare); move on. We must
+        // not swallow `update.error` here — that's a real failure from the
+        // daemon and gets thrown unconditionally below the parse.
+        continue;
       }
+      onProgress(update);
+      if (update.error) throw new Error(update.error);
     }
   }
 }

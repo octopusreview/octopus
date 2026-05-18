@@ -47,9 +47,6 @@ export async function clearByokKey(provider: string): Promise<void> {
   const current = await loadByok();
   if (!(provider in current.keys)) return;
   const { [provider]: _removed, ...rest } = current.keys;
-  // Match setByokKey's invariant — the home dir might not exist yet if the
-  // user deleted it between sessions. ensureOctopusHome is idempotent.
-  await ensureOctopusHome();
   await writeFile(
     getByokPath(),
     JSON.stringify({ keys: rest, updatedAt: new Date().toISOString() }, null, 2),

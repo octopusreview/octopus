@@ -12,19 +12,10 @@ export type ApiResult<T> = ApiOk<T> | ApiErr;
 
 const USER_AGENT = "octp-cli/0.1";
 
-export async function postJson<T>(
-  url: string,
-  body: unknown,
-  bearerToken?: string,
-): Promise<ApiResult<T>> {
-  const headers: Record<string, string> = {
-    "content-type": "application/json",
-    "user-agent": USER_AGENT,
-  };
-  if (bearerToken) headers.authorization = `Bearer ${bearerToken}`;
+export async function postJson<T>(url: string, body: unknown): Promise<ApiResult<T>> {
   return await jsonRequest<T>(url, {
     method: "POST",
-    headers,
+    headers: { "content-type": "application/json", "user-agent": USER_AGENT },
     body: JSON.stringify(body),
   });
 }

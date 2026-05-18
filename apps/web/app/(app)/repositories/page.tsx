@@ -43,8 +43,14 @@ export default async function RepositoriesPage({
   // Build where clause for repository query
   const baseWhere: Record<string, unknown> = {
     organizationId: orgId,
-    isActive: true,
   };
+
+  if (filter === "removed") {
+    baseWhere.dismissedAt = { not: null };
+    baseWhere.isActive = false;
+  } else {
+    baseWhere.isActive = true;
+  }
 
   if (search) {
     baseWhere.OR = [
@@ -75,6 +81,7 @@ export default async function RepositoriesPage({
     defaultBranch: true,
     isActive: true,
     autoReview: true,
+    dismissedAt: true,
     indexStatus: true,
     indexedAt: true,
     indexedFiles: true,
@@ -198,6 +205,7 @@ export default async function RepositoriesPage({
     defaultBranch: r.defaultBranch,
     isActive: r.isActive,
     autoReview: r.autoReview,
+    dismissedAt: r.dismissedAt?.toISOString() ?? null,
     indexStatus: r.indexStatus,
     indexedAt: r.indexedAt?.toISOString() ?? null,
     indexedFiles: r.indexedFiles,

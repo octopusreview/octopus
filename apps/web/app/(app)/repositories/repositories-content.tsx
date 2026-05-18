@@ -65,7 +65,7 @@ import {
 } from "@/components/ui/dialog";
 import { MermaidDiagram } from "@/components/mermaid-diagram";
 import { extractAllMermaidBlocks, DIAGRAM_TYPE_LABELS, type DiagramType, type MermaidBlock } from "@/lib/mermaid-utils";
-import { analyzeRepository, cancelAnalysis, toggleAutoReview, toggleFavoriteRepository, deletePullRequestReview, cancelPullRequestReview, updateRepoModels, transferRepository, getRepoDetail, updateReviewConfig, type RepoDetailData } from "./actions";
+import { analyzeRepository, cancelAnalysis, toggleAutoReview, toggleFavoriteRepository, deletePullRequestReview, cancelPullRequestReview, updateRepoModels, transferRepository, removeRepository, restoreRepository, getRepoDetail, updateReviewConfig, type RepoDetailData } from "./actions";
 import { indexRepository, cancelIndexing, syncRepos } from "../actions";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -113,6 +113,7 @@ type Repo = {
   defaultBranch: string;
   isActive: boolean;
   autoReview: boolean;
+  dismissedAt: string | null;
   indexStatus: string;
   indexedAt: string | null;
   indexedFiles: number;
@@ -1020,6 +1021,11 @@ function RepoDetail({
   const [transferTargetOrgId, setTransferTargetOrgId] = useState("");
   const [transferPending, startTransferTransition] = useTransition();
   const [transferError, setTransferError] = useState("");
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const [removeConfirmText, setRemoveConfirmText] = useState("");
+  const [removePending, startRemoveTransition] = useTransition();
+  const [removeError, setRemoveError] = useState("");
+  const [restorePending, startRestoreTransition] = useTransition();
   const [reviewConfigOpen, setReviewConfigOpen] = useState(false);
   const [reviewConfigPending, startReviewConfigTransition] = useTransition();
   const [reviewConfigSaved, setReviewConfigSaved] = useState(false);
@@ -1610,6 +1616,136 @@ function RepoDetail({
           </Dialog>
         </>
       )}
+
+      {/* Remove or Restore Repository */}
+      {repo.dismissedAt ? (
+        <div className="rounded-md border border-emerald-500/40 bg-emerald-500/5 px-4 py-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-sm font-medium">Repository Removed</div>
+              <div className="text-xs text-muted-foreground">
+                Removed on {new Date(repo.dismissedAt).toLocaleString()}. Restore to make it active again. Indexed code and pull request history are preserved.
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-fit shrink-0 border-emerald-500/50 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-400"
+              disabled={restorePending}
+              onClick={() => {
+                startRestoreTransition(async () => {
+                  const result = await restoreRepository(repo.id);
+                  if (result.error) {
+                    toast.error(result.error);
+                    return;
+                  }
+                  toast.success(`${repo.fullName} restored`);
+                  router.push(`/repositories?repo=${repo.id}`);
+                  router.refresh();
+                });
+              }}
+            >
+              <IconRouteSquare2 className="mr-1 size-3" />
+              {restorePending ? "Restoring..." : "Restore"}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-sm font-medium">Remove Repository</div>
+              <div className="text-xs text-muted-foreground">
+                Detach this repository from the organization. A future sync will not bring it back.
+              </div>
+            </div>
+            <Button
+              variant="destructive"
+              size="sm"
+              className="w-fit shrink-0"
+              onClick={() => setRemoveOpen(true)}
+            >
+              <IconTrash className="mr-1 size-3" />
+              Remove
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <Dialog
+        open={removeOpen}
+        onOpenChange={(v) => {
+          setRemoveOpen(v);
+          if (!v) {
+            setRemoveConfirmText("");
+            setRemoveError("");
+          }
+        }}
+      >
+        <DialogContent showCloseButton={false} className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Remove Repository</DialogTitle>
+            <DialogDescription>
+              Remove <span className="font-semibold">{repo.fullName}</span> from this organization.
+              Pull request history and the indexed code are preserved so you can restore it later. Auto-review is turned off.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/30 px-3 py-2.5">
+              <IconAlertTriangle className="size-4 text-destructive shrink-0 mt-0.5" />
+              <div className="text-sm text-destructive space-y-1">
+                <p>This repository will be hidden and a future provider sync will not restore it.</p>
+                <p className="text-xs opacity-90">
+                  The same repository can still be connected from a different organization you belong to.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="remove-confirm" className="text-xs">
+                Type <span className="font-mono font-semibold">{repo.name}</span> to confirm
+              </Label>
+              <input
+                id="remove-confirm"
+                value={removeConfirmText}
+                onChange={(e) => setRemoveConfirmText(e.target.value)}
+                placeholder={repo.name}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors"
+                autoComplete="off"
+              />
+            </div>
+
+            {removeError && <p className="text-sm text-destructive">{removeError}</p>}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setRemoveOpen(false)} disabled={removePending}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={removeConfirmText !== repo.name || removePending}
+              onClick={() => {
+                setRemoveError("");
+                startRemoveTransition(async () => {
+                  const result = await removeRepository(repo.id);
+                  if (result.error) {
+                    setRemoveError(result.error);
+                    return;
+                  }
+                  setRemoveOpen(false);
+                  toast.success(`${repo.fullName} removed from organization`);
+                  router.push("/repositories");
+                  router.refresh();
+                });
+              }}
+            >
+              {removePending ? "Removing..." : "Remove Repository"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -2015,6 +2151,7 @@ export function RepositoriesContent({
                 <SelectItem value="stale">Stale</SelectItem>
                 <SelectItem value="not-indexed">Not indexed</SelectItem>
                 <SelectItem value="failed">Failed</SelectItem>
+                <SelectItem value="removed">Removed</SelectItem>
               </SelectContent>
             </Select>
           </div>

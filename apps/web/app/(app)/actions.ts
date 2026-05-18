@@ -470,12 +470,22 @@ export async function syncRepos(): Promise<{ synced: number; removed: number; er
   const allGhRepoIds: string[] = [];
 
   if (installationIds.size > 0) {
+    const dismissedGh = new Set(
+      (
+        await prisma.repository.findMany({
+          where: { organizationId: orgId, provider: "github", dismissedAt: { not: null } },
+          select: { externalId: true },
+        })
+      ).map((r) => r.externalId),
+    );
+
     for (const instId of installationIds) {
       try {
         const ghRepos = await listInstallationRepos(instId);
         for (const repo of ghRepos) {
           const externalId = String(repo.id);
           allGhRepoIds.push(externalId);
+          if (dismissedGh.has(externalId)) continue;
           await prisma.repository.upsert({
             where: {
               provider_externalId_organizationId: { provider: "github", externalId, organizationId: orgId },
@@ -528,8 +538,18 @@ export async function syncRepos(): Promise<{ synced: number; removed: number; er
       const bbRepos = await listWorkspaceRepos(orgId, bbIntegration.workspaceSlug);
       const allBbRepoIds: string[] = [];
 
+      const dismissedBb = new Set(
+        (
+          await prisma.repository.findMany({
+            where: { organizationId: orgId, provider: "bitbucket", dismissedAt: { not: null } },
+            select: { externalId: true },
+          })
+        ).map((r) => r.externalId),
+      );
+
       for (const repo of bbRepos) {
         allBbRepoIds.push(repo.uuid);
+        if (dismissedBb.has(repo.uuid)) continue;
         await prisma.repository.upsert({
           where: {
             provider_externalId_organizationId: { provider: "bitbucket", externalId: repo.uuid, organizationId: orgId },

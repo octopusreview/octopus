@@ -57,6 +57,15 @@ export async function POST(request: NextRequest) {
 
     // Sync repos from GitHub
     try {
+      const dismissedGh = new Set(
+        (
+          await prisma.repository.findMany({
+            where: { organizationId: org.id, provider: "github", dismissedAt: { not: null } },
+            select: { externalId: true },
+          })
+        ).map((r) => r.externalId),
+      );
+
       if (event === "installation_repositories") {
         // Incremental sync: only add/remove repos that changed.
         // The webhook payload omits `default_branch` for added repos, so we
@@ -79,6 +88,7 @@ export async function POST(request: NextRequest) {
         );
 
         for (const { repo, defaultBranch } of detailed) {
+          if (dismissedGh.has(String(repo.id))) continue;
           const branch = defaultBranch ?? "main";
           await prisma.repository.upsert({
             where: {
@@ -124,6 +134,7 @@ export async function POST(request: NextRequest) {
         const ghRepos = await listInstallationRepos(installationId);
 
         for (const repo of ghRepos) {
+          if (dismissedGh.has(String(repo.id))) continue;
           await prisma.repository.upsert({
             where: {
               provider_externalId_organizationId: {

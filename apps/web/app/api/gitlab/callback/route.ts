@@ -221,7 +221,16 @@ export async function GET(request: NextRequest) {
   try {
     const projects = await listNamespaceProjects(orgId, namespacePath);
     projectCount = projects.length;
+    const dismissedGl = new Set(
+      (
+        await prisma.repository.findMany({
+          where: { organizationId: orgId, provider: "gitlab", dismissedAt: { not: null } },
+          select: { externalId: true },
+        })
+      ).map((r) => r.externalId),
+    );
     for (const project of projects) {
+      if (dismissedGl.has(String(project.id))) continue;
       await prisma.repository.upsert({
         where: {
           provider_externalId_organizationId: {

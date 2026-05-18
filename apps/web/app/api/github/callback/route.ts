@@ -88,7 +88,20 @@ export async function GET(request: NextRequest) {
     console.log(
       `[github/callback] listInstallationRepos returned ${ghRepos.length} repos for installation=${installationIdNum}`,
     );
+    const dismissedGh = new Set(
+      (
+        await prisma.repository.findMany({
+          where: {
+            organizationId: membership.organizationId,
+            provider: "github",
+            dismissedAt: { not: null },
+          },
+          select: { externalId: true },
+        })
+      ).map((r) => r.externalId),
+    );
     for (const repo of ghRepos) {
+      if (dismissedGh.has(String(repo.id))) continue;
       await prisma.repository.upsert({
         where: {
           provider_externalId_organizationId: {

@@ -224,6 +224,7 @@ model Repository {
   reviewConfig   Json     @default("{}")
   useRepoConfig    Boolean  @default(false) // read repo-level config files from this repo
   repoConfigFiles  Json     @default("[\".octopus.md\", \"AGENTS.md\", \"CLAUDE.md\"]") // ordered candidate filenames at repo root
+  dismissedAt    DateTime? // set when a member removes the repo from the org; sync must not resurrect it
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

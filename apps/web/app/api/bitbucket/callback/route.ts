@@ -192,7 +192,16 @@ export async function GET(request: NextRequest) {
   // Sync repos from workspace
   try {
     const bbRepos = await listWorkspaceRepos(orgId, workspaceSlug);
+    const dismissedBb = new Set(
+      (
+        await prisma.repository.findMany({
+          where: { organizationId: orgId, provider: "bitbucket", dismissedAt: { not: null } },
+          select: { externalId: true },
+        })
+      ).map((r) => r.externalId),
+    );
     for (const repo of bbRepos) {
+      if (dismissedBb.has(repo.uuid)) continue;
       await prisma.repository.upsert({
         where: {
           provider_externalId_organizationId: {

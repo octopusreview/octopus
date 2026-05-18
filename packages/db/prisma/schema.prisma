@@ -107,6 +107,19 @@ model Organization {
   // BYOK keys for the new providers added alongside the registry refactor.
   grokApiKey           String?
   openrouterApiKey     String?
+  // ACPX gateway — base URL + bearer token. SSRF-validated via
+  // url-validation.ts at use time. Both required to enable the provider;
+  // when null the provider raises a clear "not configured" error.
+  acpBaseUrl           String?
+  acpApiKey            String?
+  // OpenCode gateway — same shape as ACPX, separate config.
+  opencodeBaseUrl      String?
+  opencodeApiKey       String?
+  // Claude Code: either "subscription" (shell out to local `claude` CLI,
+  // CLI carries its own auth) or "api-key" (use the SDK with claudeCodeApiKey,
+  // falling back to anthropicApiKey). Null disables the provider.
+  claudeCodeAuthMode   String?  // "subscription" | "api-key"
+  claudeCodeApiKey     String?
   defaultModelId       String?
   defaultEmbedModelId  String?
   monthlySpendLimitUsd    Float?

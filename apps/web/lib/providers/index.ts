@@ -6,6 +6,9 @@ import { ollamaProvider } from "./ollama";
 import { localProvider } from "./local";
 import { grokProvider } from "./grok";
 import { openrouterProvider } from "./openrouter";
+import { acpProvider } from "./acp";
+import { opencodeProvider } from "./opencode";
+import { claudeCodeProvider } from "./claude-code";
 import { mockProvider } from "./mock";
 import { mockFailProvider } from "./mock-fail";
 
@@ -17,6 +20,9 @@ export type AiProvider =
   | "local"
   | "grok"
   | "openrouter"
+  | "acp"
+  | "opencode"
+  | "claude-code"
   | "mock"
   | "mock-fail";
 
@@ -95,6 +101,9 @@ const PROVIDERS: Partial<Record<AiProvider, Provider>> = {
   local: localProvider,
   grok: grokProvider,
   openrouter: openrouterProvider,
+  acp: acpProvider,
+  opencode: opencodeProvider,
+  "claude-code": claudeCodeProvider,
   ...(mockProvidersAllowed
     ? { mock: mockProvider, "mock-fail": mockFailProvider }
     : {}),

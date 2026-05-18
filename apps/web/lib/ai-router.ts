@@ -19,6 +19,9 @@ const PROVIDER_FALLBACK: Record<string, AiProvider> = {
   "local:": "local",
   "grok-": "grok",
   "openrouter/": "openrouter", // OpenRouter uses vendor/model IDs (e.g. openai/gpt-4o)
+  "acp:": "acp",
+  "opencode:": "opencode",
+  "claude-code:": "claude-code",
   // ORDER MATTERS: longer prefix must come before its shorter sibling so the
   // `for…in startsWith` loop matches "mock-fail-…" against "mock-fail-"
   // before it falls through to "mock-". Object key insertion order is
@@ -109,6 +112,14 @@ function getOrgKeyForProvider(keys: OrgKeys, provider: AiProvider): string | nul
     // org-level state from prisma directly inside provider.create(),
     // so no API key is needed here.
     case "local": return null;
+    // ACPX / OpenCode gateways read base URL + API key from prisma directly
+    // inside provider.create() (so a future per-org-rotation flow doesn't
+    // have to refresh getOrgKeys's selection). Claude Code reads its config
+    // (mode + key) the same way.
+    case "acp":
+    case "opencode":
+    case "claude-code":
+      return null;
     // Test doubles take no key.
     case "mock":
     case "mock-fail":

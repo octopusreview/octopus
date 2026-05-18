@@ -3,8 +3,9 @@ import { calcCost, getModelPricing } from "./cost";
 import { deductCredits } from "./credits";
 
 type LogAiUsageParams = {
-  // ollama / local run on user infra → zero platform cost. grok / openrouter
-  // are BYOK like openai. mock / mock-fail are test doubles.
+  // ollama / local run on user infra → zero platform cost. grok / openrouter /
+  // acp / opencode / claude-code are BYOK like openai. mock / mock-fail are
+  // test doubles.
   provider:
     | "anthropic"
     | "openai"
@@ -14,6 +15,9 @@ type LogAiUsageParams = {
     | "local"
     | "grok"
     | "openrouter"
+    | "acp"
+    | "opencode"
+    | "claude-code"
     | "mock"
     | "mock-fail";
   model: string;
@@ -37,6 +41,10 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
         googleApiKey: true,
         grokApiKey: true,
         openrouterApiKey: true,
+        acpApiKey: true,
+        opencodeApiKey: true,
+        claudeCodeApiKey: true,
+        claudeCodeAuthMode: true,
       },
     });
 
@@ -52,6 +60,13 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
       (params.provider === "cohere" && !!org.cohereApiKey) ||
       (params.provider === "grok" && !!org.grokApiKey) ||
       (params.provider === "openrouter" && !!org.openrouterApiKey) ||
+      (params.provider === "acp" && !!org.acpApiKey) ||
+      (params.provider === "opencode" && !!org.opencodeApiKey) ||
+      // Claude Code: api-key mode bills against the org key; subscription
+      // mode shells out to the local `claude` CLI which carries the user's
+      // own auth — Octopus never sees the credential so always own-key.
+      (params.provider === "claude-code" &&
+        (!!org.claudeCodeApiKey || org.claudeCodeAuthMode === "subscription")) ||
       // ollama / local run on user infra (never bills platform);
       // mock / mock-fail are test doubles (also zero-cost).
       params.provider === "ollama" ||

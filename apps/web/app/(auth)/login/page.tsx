@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Suspense, lazy } from "react";
+import { Suspense } from "react";
 import Image from "next/image";
 import Link from "@/components/link";
 import { useSearchParams } from "next/navigation";
@@ -17,7 +17,16 @@ import {
   FieldSeparator,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { IconMail, IconBrandGithub } from "@tabler/icons-react";
+import {
+  IconMail,
+  IconBrandGithub,
+  IconSparkles,
+  IconRobot,
+  IconTerminal2,
+  IconShieldCheck,
+  IconArrowUp,
+  IconHistory,
+} from "@tabler/icons-react";
 
 function GoogleIcon({ className }: { className?: string }) {
   return (
@@ -30,9 +39,39 @@ function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
-const LoginOctopus = lazy(() =>
-  import("@/components/login-octopus").then((m) => ({ default: m.LoginOctopus }))
-);
+type Highlight = {
+  icon: React.ReactNode;
+  title: string;
+  body: string;
+};
+
+const RECENT_HIGHLIGHTS: Highlight[] = [
+  {
+    icon: <IconRobot className="size-4 text-cyan-400" />,
+    title: "Local-agent bridge",
+    body: "Run reviews through a model on your laptop. Cloud Octopus dispatches tasks; your code never leaves the machine.",
+  },
+  {
+    icon: <IconSparkles className="size-4 text-cyan-400" />,
+    title: "Five new review providers",
+    body: "Ollama, Grok, OpenRouter, ACPX, OpenCode, Claude Code (subscription mode). Pick by cost, latency, or compliance — switch per repo.",
+  },
+  {
+    icon: <IconTerminal2 className="size-4 text-cyan-400" />,
+    title: "Native CLI — octp",
+    body: "Onboarding wizard, doctor, agent serve, all as one single binary. Install via curl/irm; no Node required.",
+  },
+  {
+    icon: <IconShieldCheck className="size-4 text-cyan-400" />,
+    title: "Audit log + retention",
+    body: "Every admin action recorded with actor, IP, UA. CSV export for compliance. Daily pg-boss cleanup of old rows.",
+  },
+  {
+    icon: <IconArrowUp className="size-4 text-cyan-400" />,
+    title: "Self-hosted updates page",
+    body: "Compare your version against the latest GitHub release and copy-paste the upgrade snippet. Refreshes daily.",
+  },
+];
 
 function LoginContent() {
   const searchParams = useSearchParams();
@@ -248,34 +287,51 @@ function LoginContent() {
         </div>
       </div>
 
-      {/* Right side — octopus (hidden on mobile) */}
-      <div className="relative hidden lg:flex lg:w-1/2 items-center justify-center overflow-hidden border-l border-white/[0.06]">
-        {/* Subtle radial glow behind octopus */}
+      {/* Right side — "what's new" (hidden on mobile) */}
+      <div className="relative hidden lg:flex lg:w-1/2 items-center overflow-hidden border-l border-white/[0.06]">
+        {/* Soft brand-tinted gradient backdrop */}
         <div className="absolute inset-0 bg-gradient-to-br from-[#0f1a18] via-[#0c0c0c] to-[#0c0c0c]" />
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 size-[500px] rounded-full bg-[#10d8be]/[0.04] blur-[100px]" />
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 size-[700px] rounded-full bg-[#10d8be]/[0.04] blur-[120px]" />
 
-        <div className="absolute inset-0">
-          <Suspense
-            fallback={
-              <div className="flex h-full items-center justify-center">
-                <Image
-                  src="/logo.svg"
-                  alt="Octopus"
-                  width={80}
-                  height={84}
-                  className="animate-pulse opacity-20"
-                />
-              </div>
-            }
-          >
-            <LoginOctopus />
-          </Suspense>
-        </div>
+        <div className="relative z-10 w-full max-w-md px-12">
+          <div className="mb-6 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300/70">
+            <IconHistory className="size-4" />
+            Recently shipped
+          </div>
+          <h2 className="mb-2 text-2xl font-bold tracking-tight text-white">
+            What&apos;s new in Octopus
+          </h2>
+          <p className="mb-8 text-sm text-[#888]">
+            The platform got a lot more flexible in the last few weeks — pick
+            the bits you care about.
+          </p>
 
-        {/* Tagline overlay */}
-        <div className="relative z-10 mt-[60%] text-center px-12 pointer-events-none">
-          <p className="text-sm text-[#555]">
-            AI-powered code reviews that never sleep
+          <ul className="space-y-5">
+            {RECENT_HIGHLIGHTS.map((h) => (
+              <li key={h.title} className="flex gap-3">
+                <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03]">
+                  {h.icon}
+                </span>
+                <div>
+                  <h3 className="text-sm font-medium text-white">{h.title}</h3>
+                  <p className="mt-0.5 text-xs leading-relaxed text-[#777]">
+                    {h.body}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          <p className="mt-8 text-xs text-[#555]">
+            Full history in the{" "}
+            <Link href="/docs/changelog" className="text-cyan-400 underline">
+              changelog
+            </Link>
+            {" "}· details for self-hosters in{" "}
+            <Link href="/docs/self-hosting" className="text-cyan-400 underline">
+              self-hosting docs
+            </Link>
+            .
           </p>
         </div>
       </div>

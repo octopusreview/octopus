@@ -153,6 +153,11 @@ async function onCreditLow(event: CreditLowEvent): Promise<void> {
   // each send an email; Serializable isolation guarantees at most one
   // transaction succeeds, the other either sees the inserted row or
   // aborts and gets caught below.
+  //
+  // The cooldown row is committed unconditionally — if sendEmail later
+  // fails (SMTP down, all recipients invalid), we deliberately hold the
+  // 24h window rather than retry. Re-sending on every failed delivery
+  // would amplify into a spam loop against an already-flaky mail path.
   let claimed = false;
   try {
     claimed = await prisma.$transaction(
@@ -182,8 +187,11 @@ async function onCreditLow(event: CreditLowEvent): Promise<void> {
       { isolationLevel: "Serializable" },
     );
   } catch (err) {
-    // Serialization failure means another transaction won the race.
-    console.log("[email-observer] credit-low cooldown claim lost:", err);
+    // Serialization failure means another transaction won the race —
+    // the winner already claimed the cooldown and will send (or already
+    // sent) the email. Logged as an error so it shows up in alerting if
+    // the rate is unexpectedly high, which would point at a hot loop.
+    console.error("[email-observer] credit-low cooldown claim lost:", err);
     return;
   }
 

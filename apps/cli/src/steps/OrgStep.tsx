@@ -99,8 +99,12 @@ export function OrgStep({ onNext, onSwitchOrg }: OrgStepProps) {
     );
   }
 
-  // ready
-  const org = me?.organization ?? creds!;
+  // ready — normalise the two sources (live `/api/cli/me` response and the
+  // saved credentials) into the same shape so we don't have to discriminate
+  // the union at every property access.
+  const org = me?.organization
+    ? { name: me.organization.name, slug: me.organization.slug }
+    : { name: creds!.orgName, slug: creds!.orgSlug };
   const user = me?.user;
   return (
     <Box flexDirection="column">

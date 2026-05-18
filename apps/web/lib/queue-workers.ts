@@ -6,6 +6,7 @@ import {
   type LargeReviewResultJob,
 } from "./large-review-result";
 import { processCommunityReview, type CommunityReviewJobData } from "./community-review";
+import { enforceAuditLogRetention } from "./audit";
 import { fetchLatestRelease, writeReleaseCache } from "./releases";
 import type { QueueConfig } from "./queue";
 
@@ -76,11 +77,27 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
     },
   );
 
-  // Daily release-cache refresh. The /api/releases/latest route reads
+  // Daily audit-log retention job. Runs on a per-instance cron via boss.schedule()
+  // in instrumentation.ts; the worker registered here is what actually executes
+  // a triggered run. Idempotent — multiple instances racing on the same row are
+  // harmless thanks to deleteMany's WHERE clause.
+  await boss.work("enforce-audit-retention", async (jobs) => {
+    for (const job of jobs) {
+      try {
+        const deleted = await enforceAuditLogRetention();
+        console.log(`[queue] enforce-audit-retention ${job.id}: deleted ${deleted} rows`);
+      } catch (err) {
+        console.error(`[queue] enforce-audit-retention failed (job ${job.id}):`, err);
+        throw err;
+      }
+    }
+  });
+
+  // Daily release-cache refresh. /api/releases/latest reads
   // SystemConfig.latestRelease; this worker keeps it warm so the self-hosted
   // Updates page is a sub-millisecond local lookup instead of a rate-limited
-  // GitHub API call on every render. Both fetch + write live in
-  // `lib/releases.ts` — single source of truth, no duplicate upsert path.
+  // GitHub API call on every render. Fetch + write live in lib/releases.ts —
+  // single source of truth, no duplicate upsert path.
   await boss.work("refresh-release-cache", async (jobs) => {
     for (const job of jobs) {
       try {
@@ -98,5 +115,5 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
     }
   });
 
-  console.log("[queue] Workers registered: welcome-email, process-review, post-large-review-result, community-review, refresh-release-cache");
+  console.log("[queue] Workers registered: welcome-email, process-review, post-large-review-result, community-review, enforce-audit-retention, refresh-release-cache");
 }

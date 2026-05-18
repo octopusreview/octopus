@@ -100,6 +100,13 @@ model Organization {
   anthropicApiKey      String?
   cohereApiKey         String?
   googleApiKey         String?
+  // Custom Ollama base URL — overrides OLLAMA_BASE_URL env when set. Used
+  // for self-hosted Octopus instances pointing at a non-default Ollama host
+  // (a different container, a different machine on the LAN, etc.).
+  ollamaBaseUrl        String?
+  // BYOK keys for the new providers added alongside the registry refactor.
+  grokApiKey           String?
+  openrouterApiKey     String?
   defaultModelId       String?
   defaultEmbedModelId  String?
   monthlySpendLimitUsd    Float?
@@ -145,6 +152,7 @@ model Organization {
   apiTokens          OrgApiToken[]
   localAgents        LocalAgent[]
   agentSearchTasks   AgentSearchTask[]
+  agentLlmTasks      AgentLlmTask[]
   packageAnalyses       PackageAnalysis[]
   safePackageRequests   SafePackageRequest[]
   packageDeepDives      PackageDeepDive[]
@@ -303,6 +311,13 @@ model ReviewIssue {
   feedbackBy     String?
   createdAt      DateTime  @default(now())
 
+  // Content-derived signature for cross-review merging. When a PR is re-reviewed,
+  // findings whose signatures match a prior finding inherit its user-triage state
+  // (acknowledgedAt, feedback*, *IssueId, *CommentId, createdAt) so the dev does
+  // not have to re-triage the same issue on every push. Nullable for legacy rows
+  // that predate the introduction of signatures.
+  signature String?
+
   linearIssueId  String?
   linearIssueUrl String?
   jiraIssueKey   String?
@@ -315,6 +330,7 @@ model ReviewIssue {
   pullRequest   PullRequest @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
 
   @@index([pullRequestId])
+  @@index([pullRequestId, signature])
   @@map("review_issues")
 }
 
@@ -743,12 +759,11 @@ model SystemConfig {
   blockedAuthors      Json @default("[]") // string[] of globally blocked PR author usernames
   queueConfig         Json @default("{}") // { reviewTimeoutSeconds, reviewConcurrency }
   announcements       Json @default("[]") // landing-page announcement bar entries (see lib/announcements types)
-  // Cached latest-release info for the self-hosted update page. Refreshed
-  // daily by the pg-boss job in queue-workers.ts. Shape:
+  // Cached latest-release info for the self-hosted Updates page. Refreshed
+  // daily by the refresh-release-cache pg-boss worker. Shape:
   //   { tagName, htmlUrl, publishedAt, body, fetchedAt }
-  // Null when no fetch has succeeded yet (or fetch failed and we have no
-  // prior value). The update page surfaces a "couldn't check for updates"
-  // hint in that case.
+  // Null when no fetch has succeeded yet — the page surfaces a
+  // "couldn't check for updates" panel in that case.
   latestRelease       Json?
   updatedAt DateTime @updatedAt
 
@@ -914,10 +929,51 @@ model LocalAgent {
   apiToken       OrgApiToken @relation(fields: [apiTokenId], references: [id], onDelete: Cascade)
 
   agentSearchTasks AgentSearchTask[]
+  agentLlmTasks    AgentLlmTask[]
 
   @@unique([organizationId, name])
   @@index([organizationId, status])
   @@map("local_agents")
+}
+
+/**
+ * Llm-completion task dispatched to a registered LocalAgent. The bridge
+ * lets a cloud Octopus deployment route LLM calls to a developer's laptop
+ * — useful for Ollama (no exposed endpoint), Claude Code subscription
+ * (the CLI is logged into the user's account), etc.
+ *
+ * Flow:
+ *   1. ai-router callLocalAgent() creates a row with status="pending"
+ *   2. The agent polls /api/agent/llm-tasks, claims the oldest pending row
+ *   3. Agent runs the request locally (Ollama, claude CLI, whatever),
+ *      POSTs back to /api/agent/llm-tasks/<id>/complete
+ *   4. callLocalAgent() polls until status="completed"|"failed"|"timeout",
+ *      returns the result
+ */
+model AgentLlmTask {
+  id             String    @id @default(cuid())
+  status         String    @default("pending") // "pending" | "claimed" | "completed" | "failed" | "timeout"
+  modelId        String
+  system         String?   @db.Text
+  messages       Json      // { role, content }[]
+  maxTokens      Int
+  resultText     String?   @db.Text
+  resultUsage    Json?     // { inputTokens, outputTokens, ... }
+  errorMessage   String?
+  timeoutMs      Int       @default(300000) // 5 minutes
+  claimedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  agentId        String?
+  agent          LocalAgent? @relation(fields: [agentId], references: [id], onDelete: SetNull)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([agentId, status])
+  @@map("agent_llm_tasks")
 }
 
 model AgentSearchTask {

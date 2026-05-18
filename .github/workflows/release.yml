@@ -64,6 +64,7 @@ jobs:
             ${{ steps.tags.outputs.image_name }}:latest
           build-args: |
             NEXT_PUBLIC_BUILD_ID=${{ github.sha }}
+            NEXT_PUBLIC_APP_VERSION=${{ steps.tags.outputs.semver }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

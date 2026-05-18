@@ -1,6 +1,8 @@
 import "server-only";
 import { prisma } from "@octopus/db";
 
+export { compareSemver } from "./semver";
+
 /**
  * Single source of truth for the self-hosted release-check feature.
  *
@@ -99,62 +101,3 @@ export async function getCachedOrFreshRelease(): Promise<CachedRelease | null> {
   return cached;
 }
 
-/**
- * Strict semver comparator: returns -1 if a<b, 0 if equal, 1 if a>b.
- * Throws on invalid input — callers must catch and decide how to surface
- * (`isUpToDate` ends up `false` so the user sees "could not check" rather
- * than a silent wrong answer). Pre-release identifiers are honoured per
- * semver.org §11: 1.0.0-rc < 1.0.0.
- */
-export function compareSemver(a: string, b: string): number {
-  const ap = parseSemver(a);
-  const bp = parseSemver(b);
-  for (let i = 0; i < 3; i += 1) {
-    if (ap.main[i] !== bp.main[i]) return ap.main[i] < bp.main[i] ? -1 : 1;
-  }
-  // Per semver: a version WITHOUT prerelease ranks higher than one WITH.
-  if (!ap.pre && bp.pre) return 1;
-  if (ap.pre && !bp.pre) return -1;
-  if (!ap.pre && !bp.pre) return 0;
-  return comparePrerelease(ap.pre!, bp.pre!);
-}
-
-function parseSemver(input: string): { main: [number, number, number]; pre: string | null } {
-  const trimmed = input.trim().replace(/^v/, "");
-  const [main, ...rest] = trimmed.split(/[-+]/);
-  const pre = rest.length > 0 && !input.includes("+") ? rest.join("-") : null;
-  const parts = main.split(".");
-  if (parts.length === 0 || parts.length > 3) {
-    throw new Error(`Not a semver string: ${input}`);
-  }
-  const nums: [number, number, number] = [0, 0, 0];
-  for (let i = 0; i < 3; i += 1) {
-    const part = parts[i] ?? "0";
-    if (!/^\d+$/.test(part)) throw new Error(`Not a semver string: ${input}`);
-    nums[i] = parseInt(part, 10);
-  }
-  return { main: nums, pre };
-}
-
-function comparePrerelease(a: string, b: string): number {
-  const ai = a.split(".");
-  const bi = b.split(".");
-  for (let i = 0; i < Math.max(ai.length, bi.length); i += 1) {
-    const ax = ai[i];
-    const bx = bi[i];
-    if (ax === undefined) return -1;
-    if (bx === undefined) return 1;
-    const aNum = /^\d+$/.test(ax);
-    const bNum = /^\d+$/.test(bx);
-    if (aNum && bNum) {
-      const an = parseInt(ax, 10);
-      const bn = parseInt(bx, 10);
-      if (an !== bn) return an < bn ? -1 : 1;
-    } else if (aNum !== bNum) {
-      return aNum ? -1 : 1; // numeric < alphanumeric
-    } else if (ax !== bx) {
-      return ax < bx ? -1 : 1;
-    }
-  }
-  return 0;
-}

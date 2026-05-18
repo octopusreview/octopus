@@ -39,12 +39,16 @@ export default async function UpdatesSettingsPage() {
   if (!member) redirect("/dashboard");
   if (member.role !== "owner" && member.role !== "admin") redirect("/settings");
 
-  const currentVersion = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
+  // Treat `0.0.0` (the fallback) and missing/empty as "unknown" so we can
+  // render a clear hint rather than a misleading "you're behind" panel that
+  // would show whenever the build forgot to thread NEXT_PUBLIC_APP_VERSION.
+  const rawVersion = process.env.NEXT_PUBLIC_APP_VERSION?.trim();
+  const currentVersion = rawVersion && rawVersion !== "0.0.0" ? rawVersion : null;
   const cached = await getCachedOrFreshRelease();
 
   const latestVersion = cached?.tagName.replace(/^v/, "") ?? null;
   let isUpToDate = false;
-  if (latestVersion) {
+  if (currentVersion && latestVersion) {
     try {
       isUpToDate = compareSemver(currentVersion, latestVersion) >= 0;
     } catch {
@@ -74,7 +78,15 @@ export default async function UpdatesSettingsPage() {
         </p>
       </div>
 
-      {!data || !data.latestVersion ? (
+      {!currentVersion ? (
+        <Panel tone="warn">
+          <p className="text-sm">Version unknown.</p>
+          <p className="mt-1 text-xs text-[#888]">
+            Set <code>NEXT_PUBLIC_APP_VERSION</code> as a build arg when building the
+            Docker image so this page can compare against the latest release.
+          </p>
+        </Panel>
+      ) : !data || !data.latestVersion ? (
         <Panel tone="warn">
           <p className="text-sm">Could not check for updates.</p>
           <p className="mt-1 text-xs text-[#888]">

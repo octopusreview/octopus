@@ -17,7 +17,16 @@ export type OctopusConfig = {
   model?: string;
   /** Hosted API base URL when self-hosting. Absent when using the SaaS. */
   selfHostedBaseUrl?: string;
+  /**
+   * Custom Ollama base URL. Only set when the user picked Ollama in the wizard
+   * AND overrode the default. `octp agent serve` reads this — env var
+   * OLLAMA_BASE_URL still wins, then this, then the built-in default
+   * `http://localhost:11434`.
+   */
+  ollamaBaseUrl?: string;
 };
+
+export const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434";
 
 const EMPTY: OctopusConfig = { version: CONFIG_VERSION };
 

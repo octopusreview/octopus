@@ -1,4 +1,5 @@
 import { loadCredentials, type Credentials } from "../lib/credentials.js";
+import { loadConfig, DEFAULT_OLLAMA_BASE_URL } from "../lib/config.js";
 import { getJson, postJson } from "../lib/api.js";
 
 /**
@@ -18,11 +19,14 @@ import { getJson, postJson } from "../lib/api.js";
  *   4. Poll /api/agent/llm-tasks every 2s. For each claimed task:
  *        run via local Ollama → POST /api/agent/llm-tasks/<id>/complete.
  *   5. On SIGINT: POST /api/agent/disconnect, exit 0.
+ *
+ * Ollama URL precedence: OLLAMA_BASE_URL env (wins) → ollamaBaseUrl in
+ * ~/.octopus/config.json (set by the wizard) → built-in default
+ * http://localhost:11434.
  */
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const POLL_INTERVAL_MS = 2000;
-const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
 // Bound Ollama calls — without this a stuck model load or hung GPU hangs the
 // agent indefinitely, which then misses heartbeats. Override via
 // OCTP_OLLAMA_TIMEOUT_MS for large models that legitimately need more time.
@@ -70,18 +74,23 @@ export async function agentServeCommand(argv: string[]): Promise<number> {
   const agentName = flagValue(argv, "--name") ?? defaultAgentName();
   const verbose = argv.includes("--verbose") || argv.includes("-v");
 
+  // Resolve Ollama URL: env wins, then wizard-saved config, then default.
+  const config = await loadConfig();
+  const ollamaBaseUrl =
+    process.env.OLLAMA_BASE_URL ?? config.ollamaBaseUrl ?? DEFAULT_OLLAMA_BASE_URL;
+
   console.log(`octp agent serve — connecting to ${creds.baseUrl} as ${creds.orgName} / ${agentName}`);
 
   // Quick Ollama health-check so the user finds out about a stopped daemon
   // before tasks start landing.
-  const ollamaUp = await checkOllama();
+  const ollamaUp = await checkOllama(ollamaBaseUrl);
   if (!ollamaUp) {
     console.error(
-      `Could not reach Ollama at ${OLLAMA_BASE_URL}. Start it with \`ollama serve\` and try again.`,
+      `Could not reach Ollama at ${ollamaBaseUrl}. Start it with \`ollama serve\` and try again.`,
     );
     return 2;
   }
-  console.log(`✓ Ollama reachable at ${OLLAMA_BASE_URL}`);
+  console.log(`✓ Ollama reachable at ${ollamaBaseUrl}`);
 
   const reg = await registerAgent(creds, agentName);
   if (!reg.ok) {
@@ -145,7 +154,7 @@ export async function agentServeCommand(argv: string[]): Promise<number> {
           for (const task of chunk) console.log(`  task ${task.id} model=${task.modelId}`);
         }
         const promises = chunk.map((task) => {
-          const p = runOneTask(creds, agentId, task, verbose).finally(() => {
+          const p = runOneTask(creds, agentId, task, ollamaBaseUrl, verbose).finally(() => {
             inFlight.delete(p);
           });
           inFlight.add(p);
@@ -176,9 +185,9 @@ export async function agentServeCommand(argv: string[]): Promise<number> {
   return exitCode;
 }
 
-async function checkOllama(): Promise<boolean> {
+async function checkOllama(ollamaBaseUrl: string): Promise<boolean> {
   try {
-    const r = await fetch(`${OLLAMA_BASE_URL}/api/tags`);
+    const r = await fetch(`${ollamaBaseUrl}/api/tags`);
     return r.ok;
   } catch {
     return false;
@@ -228,6 +237,7 @@ async function runOneTask(
   creds: Credentials,
   agentId: string,
   task: LlmTask,
+  ollamaBaseUrl: string,
   verbose: boolean,
 ): Promise<void> {
   const completeUrl = `${creds.baseUrl}/api/agent/llm-tasks/${task.id}/complete`;
@@ -247,7 +257,7 @@ async function runOneTask(
     const timer = setTimeout(() => controller.abort(), OLLAMA_TIMEOUT_MS);
     let response: Response;
     try {
-      response = await fetch(`${OLLAMA_BASE_URL}/v1/chat/completions`, {
+      response = await fetch(`${ollamaBaseUrl}/v1/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: "Bearer ollama" },
         body: JSON.stringify({ model, max_tokens: task.maxTokens, messages, stream: false }),

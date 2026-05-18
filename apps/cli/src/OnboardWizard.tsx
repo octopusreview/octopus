@@ -105,7 +105,13 @@ export function OnboardWizard({ reset = false }: OnboardWizardProps = {}) {
         <ModelStep provider={answers.provider ?? ""} onNext={(p) => next(p)} />
       )}
       {activeKey === "byok" && (
-        <ByokStep provider={answers.provider ?? ""} onNext={() => next()} />
+        <ByokStep
+          provider={answers.provider ?? ""}
+          ollamaBaseUrl={answers.ollamaBaseUrl}
+          onNext={(patch) =>
+            next(patch.ollamaBaseUrl ? { ollamaBaseUrl: patch.ollamaBaseUrl } : {})
+          }
+        />
       )}
       {activeKey === "validate" && (
         <ValidateStep

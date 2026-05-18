@@ -94,7 +94,7 @@ export const PROVIDERS: ProviderInfo[] = [
     displayName: "Ollama (local)",
     type: "local",
     blurb: "Run Llama, Qwen, Mistral, Hermes locally. No API key.",
-    status: "coming-soon",
+    status: "ready",
   },
 ];
 

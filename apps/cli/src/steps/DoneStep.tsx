@@ -15,6 +15,7 @@ type Summary = {
   provider?: string;
   model?: string;
   byokSaved?: boolean;
+  ollamaBaseUrl?: string;
 };
 
 /**
@@ -45,6 +46,7 @@ export function DoneStep({ answers }: DoneStepProps) {
           provider: answers.provider,
           model: answers.model,
           byokSaved: answers.provider ? Boolean(byok.keys[answers.provider]) : false,
+          ollamaBaseUrl: answers.ollamaBaseUrl,
         });
 
         setPhase("done");
@@ -86,6 +88,9 @@ export function DoneStep({ answers }: DoneStepProps) {
       <Text>  Provider: {summary.provider ?? <Text dimColor>not chosen</Text>}</Text>
       <Text>  Model:    {summary.model ?? <Text dimColor>not chosen</Text>}</Text>
       <Text>  BYOK key: {summary.byokSaved ? <Text color="green">saved</Text> : <Text dimColor>none</Text>}</Text>
+      {summary.provider === "ollama" ? (
+        <Text>  Ollama URL: <Text color="cyan">{summary.ollamaBaseUrl ?? "http://localhost:11434 (default)"}</Text></Text>
+      ) : null}
       <Text> </Text>
       <Text bold>Next steps</Text>
       <Text>  • Open a pull request — Octopus will review it automatically.</Text>

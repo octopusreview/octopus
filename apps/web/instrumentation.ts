@@ -4,11 +4,21 @@ export async function register() {
     const { reconcileStaleRepoStates } = await import("./lib/boot-reconciler");
     await reconcileStaleRepoStates();
 
-    // Seed admin/admin if the user table is empty. Idempotent — no-op once
-    // any user exists. The seeded account is forced to change password on
-    // first sign-in so the default cred can never reach normal UI.
-    const { bootstrapDefaultAdmin } = await import("./lib/bootstrap-admin");
-    await bootstrapDefaultAdmin();
+    // Seed a default admin if (a) we're outside production OR (b) the
+    // operator explicitly opts in with OCTOPUS_BOOTSTRAP_ADMIN=true. The
+    // unconditional seed had a race-condition attack window: a fresh
+    // production install with public DNS could be claimed by anyone who
+    // knows the default credential before the operator's first sign-in.
+    // mustChangePassword=true gates the UI but only AFTER the session
+    // exists, so the attacker would have an authenticated session they
+    // can use to re-set the password themselves.
+    if (
+      process.env.NODE_ENV !== "production" ||
+      process.env.OCTOPUS_BOOTSTRAP_ADMIN === "true"
+    ) {
+      const { bootstrapDefaultAdmin } = await import("./lib/bootstrap-admin");
+      await bootstrapDefaultAdmin();
+    }
 
     const { startQueue } = await import("./lib/queue");
     const boss = await startQueue();

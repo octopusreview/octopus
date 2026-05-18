@@ -725,7 +725,11 @@ async function main() {
     { modelId: "o3", displayName: "OpenAI o3", provider: "openai", category: "llm", inputPrice: 10, outputPrice: 40, sortOrder: 9 },
     { modelId: "o3-mini", displayName: "OpenAI o3 Mini", provider: "openai", category: "llm", inputPrice: 1.1, outputPrice: 4.4, sortOrder: 10 },
     { modelId: "o4-mini", displayName: "OpenAI o4 Mini", provider: "openai", category: "llm", inputPrice: 1.1, outputPrice: 4.4, sortOrder: 11 },
-    { modelId: "codex-mini-latest", displayName: "Codex Mini", provider: "openai", category: "llm", inputPrice: 1.5, outputPrice: 6, sortOrder: 12 },
+    // Single source of LLM platform default — coding-focused, cheaper than
+    // sonnet ($1.50/$6 vs $3/$15 per 1M tokens). The deleteMany above
+    // guarantees no other row carries isPlatformDefault=true after seeding;
+    // the assertion below the loop double-checks at runtime.
+    { modelId: "codex-mini-latest", displayName: "Codex Mini", provider: "openai", category: "llm", inputPrice: 1.5, outputPrice: 6, sortOrder: 12, isPlatformDefault: true },
     // Ollama (local — runs on the user's machine, zero cost)
     { modelId: "ollama:qwen2.5-coder:32b", displayName: "Qwen 2.5 Coder 32B (Ollama)", provider: "ollama", category: "llm", inputPrice: 0, outputPrice: 0, sortOrder: 20 },
     { modelId: "ollama:llama3.3", displayName: "Llama 3.3 (Ollama)", provider: "ollama", category: "llm", inputPrice: 0, outputPrice: 0, sortOrder: 21 },
@@ -738,7 +742,19 @@ async function main() {
   for (const m of models) {
     await prisma.availableModel.create({ data: { id: cuid(), ...m } });
   }
-  console.log(`✅ ${models.length} available models seeded`);
+  // Determinism guard: getPlatformDefault("llm") relies on exactly one row
+  // carrying isPlatformDefault=true. Multiple rows would make the lookup
+  // non-deterministic (whichever the DB query plan returns first wins).
+  // Catching this in the seed beats discovering it in production.
+  const platformDefaults = await prisma.availableModel.count({
+    where: { category: "llm", isPlatformDefault: true },
+  });
+  if (platformDefaults !== 1) {
+    throw new Error(
+      `Seed integrity: expected exactly one LLM platform default, found ${platformDefaults}.`,
+    );
+  }
+  console.log(`✅ ${models.length} available models seeded (1 platform default)`);
 
   console.log("\n🎉 Seed completed successfully!");
 }

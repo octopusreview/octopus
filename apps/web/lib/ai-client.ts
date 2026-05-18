@@ -1,6 +1,12 @@
 import { prisma } from "@octopus/db";
 
-export const HARDCODED_REVIEW_MODEL = "claude-sonnet-4-6";
+// Last-resort fallback when no platform default is set in AvailableModel and
+// neither the repo nor the org has overridden the review model. Codex Mini
+// is OpenAI's coding-focused model — well-suited to PR review and cheaper
+// per-token than the previous claude-sonnet fallback. The DB-driven
+// `isPlatformDefault` flag is the actual source of truth; this constant
+// only fires when the DB is empty or unreachable.
+export const HARDCODED_REVIEW_MODEL = "codex-mini-latest";
 export const HARDCODED_EMBED_MODEL = "text-embedding-3-large";
 
 async function getPlatformDefault(category: "llm" | "embedding"): Promise<string | null> {

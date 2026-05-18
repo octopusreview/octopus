@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 const publicPrefixes = [
   "/login",
+  "/forgot-password",
+  "/reset-password",
   "/blocked",
   "/brand",
   "/blog",

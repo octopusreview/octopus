@@ -5,7 +5,8 @@ import { Suspense } from "react";
 import Image from "next/image";
 import Link from "@/components/link";
 import { useSearchParams } from "next/navigation";
-import { signIn, magicLinkSignIn } from "@/lib/auth-client";
+import { signIn, signUp, magicLinkSignIn } from "@/lib/auth-client";
+import { useRouter } from "next/navigation";
 import { normalizeEmail } from "@/lib/email-normalize";
 import { trackEvent } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,10 @@ import {
   IconShieldCheck,
   IconArrowUp,
   IconHistory,
+  IconLock,
 } from "@tabler/icons-react";
+
+type AuthMode = "magic-link" | "password" | "signup";
 
 function GoogleIcon({ className }: { className?: string }) {
   return (
@@ -75,6 +79,7 @@ const RECENT_HIGHLIGHTS: Highlight[] = [
 
 function LoginContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
 
   React.useEffect(() => {
@@ -85,6 +90,10 @@ function LoginContent() {
   const [loading, setLoading] = React.useState(false);
   const [sent, setSent] = React.useState(false);
   const [email, setEmail] = React.useState("");
+  // `magic-link` (default) shows the email field. `password` adds a password
+  // field. `signup` adds name + password (Better Auth's email/password
+  // sign-up). Toggleable via the link beneath the submit button.
+  const [authMode, setAuthMode] = React.useState<AuthMode>("magic-link");
   // Which social providers the server has env-configured. Fetched on mount
   // so we can disable + annotate buttons before the user clicks (avoids the
   // opaque "Social provider X is missing clientId or clientSecret" error
@@ -131,11 +140,45 @@ function LoginContent() {
     const formData = new FormData(e.currentTarget);
     const rawEmail = formData.get("email") as string;
     const emailValue = normalizeEmail(rawEmail);
+    const password = (formData.get("password") as string) || "";
+    const name = (formData.get("name") as string) || "";
 
-    trackEvent("login_method_click", { method: "magic_link" });
+    trackEvent("login_method_click", { method: authMode });
 
+    if (authMode === "password") {
+      const { error } = await signIn.email({
+        email: emailValue,
+        password,
+        callbackURL: callbackUrl,
+      });
+      if (error) {
+        setError(error.message ?? "Invalid email or password");
+        setLoading(false);
+        return;
+      }
+      router.push(callbackUrl);
+      return;
+    }
+
+    if (authMode === "signup") {
+      const { error } = await signUp.email({
+        email: emailValue,
+        password,
+        name: name || emailValue.split("@")[0],
+        callbackURL: callbackUrl,
+      });
+      if (error) {
+        setError(error.message ?? "Could not create account");
+        setLoading(false);
+        return;
+      }
+      // autoSignIn=true in auth.ts means we have a session; navigate.
+      router.push(callbackUrl);
+      return;
+    }
+
+    // magic-link
     const { error } = await magicLinkSignIn({ email: emailValue, callbackURL: callbackUrl });
-
     if (error) {
       trackEvent("login_magic_link_error", { error: error.message ?? "unknown" });
       setError(error.message ?? "Failed to send magic link");
@@ -221,9 +264,22 @@ function LoginContent() {
         <FieldSeparator className="text-[#555]">or continue with email</FieldSeparator>
       </div>
 
-      {/* Magic link form */}
+      {/* Email/password/magic-link form — fields depend on authMode */}
       <form id="login-form" onSubmit={handleSubmit}>
         <FieldGroup>
+          {authMode === "signup" ? (
+            <Field>
+              <FieldLabel htmlFor="name" className="text-[#888]">Name</FieldLabel>
+              <Input
+                id="name"
+                name="name"
+                type="text"
+                placeholder="Your name"
+                required
+                className="border-white/[0.1] bg-white/[0.04] text-white placeholder:text-[#555] focus:border-white/[0.2]"
+              />
+            </Field>
+          ) : null}
           <Field>
             <FieldLabel htmlFor="email" className="text-[#888]">Email</FieldLabel>
             <div className="relative">
@@ -238,6 +294,28 @@ function LoginContent() {
               />
             </div>
           </Field>
+          {authMode === "password" || authMode === "signup" ? (
+            <Field>
+              <FieldLabel htmlFor="password" className="text-[#888]">
+                Password
+                {authMode === "signup" ? (
+                  <span className="ml-2 text-xs text-[#555]">(10+ characters)</span>
+                ) : null}
+              </FieldLabel>
+              <div className="relative">
+                <IconLock className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-[#555]" />
+                <Input
+                  id="password"
+                  name="password"
+                  type="password"
+                  placeholder="••••••••••"
+                  required
+                  minLength={authMode === "signup" ? 10 : 1}
+                  className="border-white/[0.1] bg-white/[0.04] pl-8 text-white placeholder:text-[#555] focus:border-white/[0.2]"
+                />
+              </div>
+            </Field>
+          ) : null}
           {error && <FieldError>{error}</FieldError>}
         </FieldGroup>
       </form>
@@ -248,9 +326,63 @@ function LoginContent() {
         className="mt-4 w-full border border-white/[0.1] bg-white/[0.04] text-[#999] hover:bg-white/[0.08] hover:text-white h-11 text-sm font-medium"
         disabled={loading}
       >
-        <IconMail data-icon="inline-start" />
-        {loading ? "Sending..." : "Send magic link"}
+        {authMode === "magic-link" ? <IconMail data-icon="inline-start" /> : <IconLock data-icon="inline-start" />}
+        {loading
+          ? authMode === "magic-link"
+            ? "Sending..."
+            : authMode === "signup"
+              ? "Creating account..."
+              : "Signing in..."
+          : authMode === "magic-link"
+            ? "Send magic link"
+            : authMode === "signup"
+              ? "Create account"
+              : "Sign in"}
       </Button>
+
+      {/* Mode toggle row */}
+      <div className="mt-4 flex flex-col gap-1 text-center text-xs text-[#666]">
+        {authMode === "magic-link" ? (
+          <button
+            type="button"
+            onClick={() => { setError(null); setAuthMode("password"); }}
+            className="text-[#999] hover:text-white"
+          >
+            Use email + password instead
+          </button>
+        ) : null}
+        {authMode === "password" ? (
+          <>
+            <button
+              type="button"
+              onClick={() => { setError(null); setAuthMode("magic-link"); }}
+              className="text-[#999] hover:text-white"
+            >
+              Use magic link instead
+            </button>
+            <Link href="/forgot-password" className="text-cyan-400 hover:underline">
+              Forgot your password?
+            </Link>
+          </>
+        ) : null}
+        {authMode === "signup" ? (
+          <button
+            type="button"
+            onClick={() => { setError(null); setAuthMode("password"); }}
+            className="text-[#999] hover:text-white"
+          >
+            Already have an account? Sign in
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => { setError(null); setAuthMode("signup"); }}
+            className="text-[#999] hover:text-white"
+          >
+            New here? Create an account
+          </button>
+        )}
+      </div>
     </div>
   );
 

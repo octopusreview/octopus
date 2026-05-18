@@ -46,6 +46,43 @@ function LoginContent() {
   const [loading, setLoading] = React.useState(false);
   const [sent, setSent] = React.useState(false);
   const [email, setEmail] = React.useState("");
+  // Which social providers the server has env-configured. Fetched on mount
+  // so we can disable + annotate buttons before the user clicks (avoids the
+  // opaque "Social provider X is missing clientId or clientSecret" error
+  // that Better Auth throws otherwise).
+  const [socialEnabled, setSocialEnabled] = React.useState<{
+    google: boolean;
+    github: boolean;
+  } | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/social-providers")
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled) setSocialEnabled(data);
+      })
+      .catch(() => {
+        // Endpoint isn't there or network failed — assume enabled and let
+        // the click handler surface any error rather than permanently
+        // disabling the buttons on a transient blip.
+        if (!cancelled) setSocialEnabled({ google: true, github: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function handleSocialClick(provider: "google" | "github") {
+    if (socialEnabled && !socialEnabled[provider]) {
+      setError(
+        `${provider === "google" ? "Google" : "GitHub"} login isn't configured on this deployment.`,
+      );
+      return;
+    }
+    trackEvent("login_method_click", { method: provider });
+    signIn.social({ provider, callbackURL: callbackUrl });
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -106,26 +143,39 @@ function LoginContent() {
       <div className="mt-8 flex flex-col gap-3">
         <Button
           type="button"
-          className="w-full bg-white/[0.06] hover:bg-white/[0.12] text-white border border-white/[0.1] h-11 text-sm font-medium"
-          onClick={() => {
-            trackEvent("login_method_click", { method: "google" });
-            signIn.social({ provider: "google", callbackURL: callbackUrl });
-          }}
+          className="w-full bg-white/[0.06] hover:bg-white/[0.12] text-white border border-white/[0.1] h-11 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={socialEnabled?.google === false}
+          title={socialEnabled?.google === false ? "Not configured — see /docs/oauth-setup" : undefined}
+          onClick={() => handleSocialClick("google")}
         >
           <GoogleIcon className="size-5 shrink-0" />
           Sign in with Google
+          {socialEnabled?.google === false ? (
+            <span className="text-xs text-[#888]">(not configured)</span>
+          ) : null}
         </Button>
         <Button
           type="button"
-          className="w-full bg-white/[0.06] hover:bg-white/[0.12] text-white border border-white/[0.1] h-11 text-sm font-medium"
-          onClick={() => {
-            trackEvent("login_method_click", { method: "github" });
-            signIn.social({ provider: "github", callbackURL: callbackUrl });
-          }}
+          className="w-full bg-white/[0.06] hover:bg-white/[0.12] text-white border border-white/[0.1] h-11 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={socialEnabled?.github === false}
+          title={socialEnabled?.github === false ? "Not configured — see /docs/oauth-setup" : undefined}
+          onClick={() => handleSocialClick("github")}
         >
           <IconBrandGithub data-icon="inline-start" className="size-5" />
           Sign in with GitHub
+          {socialEnabled?.github === false ? (
+            <span className="text-xs text-[#888]">(not configured)</span>
+          ) : null}
         </Button>
+        {socialEnabled && (!socialEnabled.google || !socialEnabled.github) ? (
+          <p className="text-xs text-[#888]">
+            Self-hosted? See{" "}
+            <Link href="/docs/oauth-setup" className="text-cyan-400 underline">
+              Google &amp; GitHub login setup
+            </Link>{" "}
+            to enable {!socialEnabled.google && !socialEnabled.github ? "either" : !socialEnabled.google ? "Google" : "GitHub"}.
+          </p>
+        ) : null}
       </div>
 
       <div className="my-6">

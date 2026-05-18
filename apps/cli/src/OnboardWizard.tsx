@@ -7,6 +7,7 @@ import { OrgStep } from "./steps/OrgStep.js";
 import { ProviderStep } from "./steps/ProviderStep.js";
 import { ModelStep } from "./steps/ModelStep.js";
 import { ByokStep } from "./steps/ByokStep.js";
+import { OllamaSetupStep } from "./steps/OllamaSetupStep.js";
 import { ValidateStep } from "./steps/ValidateStep.js";
 import { RepoStep } from "./steps/RepoStep.js";
 import { DoneStep } from "./steps/DoneStep.js";
@@ -35,6 +36,7 @@ export type StepKey =
   | "provider"
   | "model"
   | "byok"
+  | "ollama-setup"
   | "validate"
   | "repo"
   | "done";
@@ -46,6 +48,7 @@ const STEPS: { key: StepKey; label: string }[] = [
   { key: "provider", label: "Provider" },
   { key: "model", label: "Model" },
   { key: "byok", label: "BYOK" },
+  { key: "ollama-setup", label: "Ollama" },
   { key: "validate", label: "Validate" },
   { key: "repo", label: "Repo" },
   { key: "done", label: "Done" },
@@ -62,15 +65,15 @@ export function OnboardWizard({ reset = false }: OnboardWizardProps = {}) {
   const [seeded, setSeeded] = useState(!reset); // skip the seed effect when not in --reset mode
 
   // Conditional sequence. Steps that don't apply for the current answers
-  // are filtered out — currently:
-  //   - "model" is skipped when provider is "ollama". Ollama is BYO-model:
-  //     the user picks from whatever they've `ollama pull`ed locally at
-  //     repo-config time, so a wizard picker would either be empty or
-  //     wrong. The Models settings page handles the real picker against
-  //     the agent's reported tag list.
+  // are filtered out:
+  //   - "model" is skipped when provider is "ollama" — Ollama has its own
+  //     tailored step ("ollama-setup") that talks to the local daemon to
+  //     pick from already-installed models or offer to pull one.
+  //   - "ollama-setup" is skipped when provider is anything else.
   const sequence = useMemo<StepKey[]>(() => {
     return STEPS.map((s) => s.key).filter((k) => {
       if (k === "model" && answers.provider === "ollama") return false;
+      if (k === "ollama-setup" && answers.provider !== "ollama") return false;
       return true;
     });
   }, [answers.provider]);
@@ -121,6 +124,12 @@ export function OnboardWizard({ reset = false }: OnboardWizardProps = {}) {
           onNext={(patch) =>
             next(patch.ollamaBaseUrl ? { ollamaBaseUrl: patch.ollamaBaseUrl } : {})
           }
+        />
+      )}
+      {activeKey === "ollama-setup" && (
+        <OllamaSetupStep
+          ollamaBaseUrl={answers.ollamaBaseUrl}
+          onNext={(p) => next(p)}
         />
       )}
       {activeKey === "validate" && (

@@ -86,8 +86,8 @@ export function DoneStep({ answers }: DoneStepProps) {
       <Text>  Server:   {summary.baseUrl ? <Text color="cyan">{summary.baseUrl}</Text> : <Text dimColor>not signed in</Text>}</Text>
       <Text>  Org:      {summary.orgName ?? <Text dimColor>—</Text>}</Text>
       <Text>  Provider: {summary.provider ?? <Text dimColor>not chosen</Text>}</Text>
-      {summary.provider === "ollama" ? (
-        <Text>  Model:    <Text dimColor>chosen per-repo from whatever you&apos;ve `ollama pull`ed</Text></Text>
+      {summary.provider === "ollama" && !summary.model ? (
+        <Text>  Model:    <Text dimColor>configure per-repo (no default picked)</Text></Text>
       ) : (
         <Text>  Model:    {summary.model ?? <Text dimColor>not chosen</Text>}</Text>
       )}

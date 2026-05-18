@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { pubby } from "@/lib/pubby";
 import { createAnalysisAbortController, abortAnalysis, clearAnalysisAbortController } from "@/lib/analysis-abort";
+import { abortIndexing } from "@/lib/indexing-abort";
 import { eventBus } from "@/lib/events/bus";
 
 export type RepoDetailData = {
@@ -657,6 +658,7 @@ export async function removeRepository(
       id: true,
       fullName: true,
       organizationId: true,
+      indexStatus: true,
       organization: {
         select: {
           members: {
@@ -677,6 +679,7 @@ export async function removeRepository(
   }
 
   abortAnalysis(repoId);
+  abortIndexing(repoId);
 
   await prisma.repository.update({
     where: { id: repoId },
@@ -684,6 +687,7 @@ export async function removeRepository(
       isActive: false,
       autoReview: false,
       dismissedAt: new Date(),
+      indexStatus: repo.indexStatus === "indexing" ? "cancelled" : repo.indexStatus,
     },
   });
 

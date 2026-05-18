@@ -514,13 +514,15 @@ export async function syncRepos(): Promise<{ synced: number; removed: number; er
       }
     }
 
-    // Deactivate GitHub repos no longer in any installation
+    // Deactivate GitHub repos no longer in any installation.
+    // Skip dismissed repos so we don't churn rows the user has already removed.
     const ghRemoved = await prisma.repository.updateMany({
       where: {
         organizationId: orgId,
         provider: "github",
         externalId: { notIn: allGhRepoIds },
         isActive: true,
+        dismissedAt: null,
       },
       data: { isActive: false },
     });
@@ -572,13 +574,15 @@ export async function syncRepos(): Promise<{ synced: number; removed: number; er
         synced++;
       }
 
-      // Deactivate Bitbucket repos no longer in workspace
+      // Deactivate Bitbucket repos no longer in workspace.
+      // Skip dismissed repos so we don't churn rows the user has already removed.
       const bbRemoved = await prisma.repository.updateMany({
         where: {
           organizationId: orgId,
           provider: "bitbucket",
           externalId: { notIn: allBbRepoIds },
           isActive: true,
+          dismissedAt: null,
         },
         data: { isActive: false },
       });

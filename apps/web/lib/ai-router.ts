@@ -17,6 +17,14 @@ const PROVIDER_FALLBACK: Record<string, AiProvider> = {
   gemini: "google",
   "ollama:": "ollama", // namespaced models like "ollama:qwen2.5-coder:32b"
   "local:": "local",
+  "grok-": "grok",
+  "openrouter/": "openrouter", // OpenRouter uses vendor/model IDs (e.g. openai/gpt-4o)
+  // ORDER MATTERS: longer prefix must come before its shorter sibling so the
+  // `for…in startsWith` loop matches "mock-fail-…" against "mock-fail-"
+  // before it falls through to "mock-". Object key insertion order is
+  // iteration order in V8 — do not reorder these two without re-checking.
+  "mock-fail-": "mock-fail",
+  "mock-": "mock",
 };
 
 let providerCache: Map<string, AiProvider> | null = null;
@@ -63,17 +71,27 @@ type OrgKeys = {
   anthropicApiKey: string | null;
   openaiApiKey: string | null;
   googleApiKey: string | null;
+  grokApiKey: string | null;
+  openrouterApiKey: string | null;
 };
 
 async function getOrgKeys(orgId: string): Promise<OrgKeys> {
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
-    select: { anthropicApiKey: true, openaiApiKey: true, googleApiKey: true },
+    select: {
+      anthropicApiKey: true,
+      openaiApiKey: true,
+      googleApiKey: true,
+      grokApiKey: true,
+      openrouterApiKey: true,
+    },
   });
   return {
     anthropicApiKey: org?.anthropicApiKey ?? null,
     openaiApiKey: org?.openaiApiKey ?? null,
     googleApiKey: org?.googleApiKey ?? null,
+    grokApiKey: org?.grokApiKey ?? null,
+    openrouterApiKey: org?.openrouterApiKey ?? null,
   };
 }
 
@@ -82,6 +100,8 @@ function getOrgKeyForProvider(keys: OrgKeys, provider: AiProvider): string | nul
     case "anthropic": return keys.anthropicApiKey;
     case "openai": return keys.openaiApiKey;
     case "google": return keys.googleApiKey;
+    case "grok": return keys.grokApiKey;
+    case "openrouter": return keys.openrouterApiKey;
     // Ollama runs locally — no API key. The base URL override is read by
     // the provider itself from prisma; we just pass null here.
     case "ollama": return null;
@@ -89,6 +109,10 @@ function getOrgKeyForProvider(keys: OrgKeys, provider: AiProvider): string | nul
     // org-level state from prisma directly inside provider.create(),
     // so no API key is needed here.
     case "local": return null;
+    // Test doubles take no key.
+    case "mock":
+    case "mock-fail":
+      return null;
   }
 }
 

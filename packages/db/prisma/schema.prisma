@@ -104,6 +104,9 @@ model Organization {
   // for self-hosted Octopus instances pointing at a non-default Ollama host
   // (a different container, a different machine on the LAN, etc.).
   ollamaBaseUrl        String?
+  // BYOK keys for the new providers added alongside the registry refactor.
+  grokApiKey           String?
+  openrouterApiKey     String?
   defaultModelId       String?
   defaultEmbedModelId  String?
   monthlySpendLimitUsd    Float?

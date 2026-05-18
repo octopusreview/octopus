@@ -3,10 +3,19 @@ import { calcCost, getModelPricing } from "./cost";
 import { deductCredits } from "./credits";
 
 type LogAiUsageParams = {
-  // ollama runs locally — zero cost. The local-agent bridge dispatches LLM
-  // calls to a developer laptop — also zero platform cost. Add new providers
-  // here as they land.
-  provider: "anthropic" | "openai" | "google" | "cohere" | "ollama" | "local";
+  // ollama / local run on user infra → zero platform cost. grok / openrouter
+  // are BYOK like openai. mock / mock-fail are test doubles.
+  provider:
+    | "anthropic"
+    | "openai"
+    | "google"
+    | "cohere"
+    | "ollama"
+    | "local"
+    | "grok"
+    | "openrouter"
+    | "mock"
+    | "mock-fail";
   model: string;
   operation: string;
   inputTokens: number;
@@ -21,7 +30,14 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
     // Determine key ownership before recording usage
     const org = await prisma.organization.findUnique({
       where: { id: params.organizationId },
-      select: { anthropicApiKey: true, openaiApiKey: true, cohereApiKey: true, googleApiKey: true },
+      select: {
+        anthropicApiKey: true,
+        openaiApiKey: true,
+        cohereApiKey: true,
+        googleApiKey: true,
+        grokApiKey: true,
+        openrouterApiKey: true,
+      },
     });
 
     if (!org) {
@@ -34,11 +50,14 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
       (params.provider === "openai" && !!org.openaiApiKey) ||
       (params.provider === "google" && !!org.googleApiKey) ||
       (params.provider === "cohere" && !!org.cohereApiKey) ||
-      // Ollama runs on the user's own infrastructure — always "own key" from a
-      // billing perspective. Local-agent bridge dispatches to user
-      // infrastructure — same reasoning.
+      (params.provider === "grok" && !!org.grokApiKey) ||
+      (params.provider === "openrouter" && !!org.openrouterApiKey) ||
+      // ollama / local run on user infra (never bills platform);
+      // mock / mock-fail are test doubles (also zero-cost).
       params.provider === "ollama" ||
-      params.provider === "local";
+      params.provider === "local" ||
+      params.provider === "mock" ||
+      params.provider === "mock-fail";
 
     await prisma.aiUsage.create({
       data: {

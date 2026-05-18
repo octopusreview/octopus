@@ -15,6 +15,35 @@ export const auth = betterAuth({
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
+  emailAndPassword: {
+    enabled: true,
+    // Auto-sign-in after the user submits the sign-up form. Better Auth
+    // creates the session in the same response, matching the magic-link UX.
+    autoSignIn: true,
+    // Minimum password length. Better Auth's default is 8; we go to 10 so
+    // we're not the weakest link in a self-hosted deployment.
+    minPasswordLength: 10,
+    sendResetPassword: async ({ user, url }) => {
+      const result = await renderEmailTemplate("magic-link", {
+        magicLinkUrl: url,
+      });
+      await sendEmail({
+        to: user.email,
+        subject: result?.subject ?? "Reset your Octopus password",
+        html:
+          result?.html ??
+          `<p>Click <a href="${url}">here</a> to reset your Octopus password. The link expires in 1 hour.</p>`,
+      });
+      await writeAuditLog({
+        action: "email.password_reset_sent",
+        category: "email",
+        actorEmail: user.email,
+        targetType: "user",
+        targetId: user.id,
+        metadata: { recipient: user.email },
+      });
+    },
+  },
   databaseHooks: {
     session: {
       create: {

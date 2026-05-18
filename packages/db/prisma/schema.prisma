@@ -21,6 +21,13 @@ model User {
   bannedAt     DateTime?
   bannedReason String?
 
+  // Set true for seeded admin accounts (admin/admin on first boot) so the
+  // user is forced to change the password before any other UI renders.
+  // Cleared automatically when the user submits a new password via the
+  // /change-password page. Defense in depth — the default seed password is
+  // useless without first-login redirect.
+  mustChangePassword Boolean @default(false)
+
   welcomeEmailSentAt    DateTime?
   marketingEmailsEnabled Boolean @default(true)
 

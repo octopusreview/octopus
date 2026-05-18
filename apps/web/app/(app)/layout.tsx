@@ -49,6 +49,7 @@ export default async function AppLayout({
       name: true,
       email: true,
       bannedAt: true,
+      mustChangePassword: true,
       onboardingCompleted: true,
       organizationMembers: {
         where: { deletedAt: null, organization: { deletedAt: null } },
@@ -70,6 +71,11 @@ export default async function AppLayout({
   });
 
   if (user.bannedAt) redirect("/blocked");
+
+  // Forced password change — seeded admin/admin accounts (and any user an
+  // operator has flagged to reset) cannot reach any app UI until they
+  // pick a new password. Lives outside (app) so its layout doesn't run.
+  if (user.mustChangePassword) redirect("/change-password");
 
   const hasOrg = user.organizationMembers.length > 0;
 

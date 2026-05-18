@@ -2,6 +2,12 @@ import Link from "@/components/link";
 import { IconBrandGithub, IconTerminal2, IconWand, IconRobot, IconMessageCircle } from "@tabler/icons-react";
 import { CodeBlock } from "../../self-hosting/code-block";
 
+// install.sh / install.ps1 are served at the same origin as this docs page.
+// Self-hosters override via NEXT_PUBLIC_APP_URL so the rendered command
+// targets their deployment instead of octopus-review.ai.
+const INSTALL_BASE_URL =
+  process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "") || "https://octopus-review.ai";
+
 export const metadata = {
   title: "Claude Code Integration — Octopus Docs",
   description:
@@ -74,10 +80,10 @@ export default function ClaudeCodeIntegrationPage() {
           1. Install the CLI
         </h3>
         <CodeBlock>{`# macOS / Linux (x64 & ARM)
-curl -fsSL https://octopus-review.ai/install.sh | sh
+curl -fsSL ${INSTALL_BASE_URL}/install.sh | sh
 
 # Windows (PowerShell)
-irm https://octopus-review.ai/install.ps1 | iex
+irm ${INSTALL_BASE_URL}/install.ps1 | iex
 
 # Windows ARM
 npm install -g @octp/cli`}</CodeBlock>

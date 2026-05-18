@@ -32,6 +32,7 @@ const sections: SidebarSection[] = [
       { href: "/docs/github-action", label: "GitHub Action" },
       { href: "/docs/integrations", label: "Integrations" },
       { href: "/docs/self-hosting", label: "Self-Hosting" },
+      { href: "/docs/github-app", label: "GitHub App Setup" },
       { href: "/docs/oauth-setup", label: "Google & GitHub Login" },
     ],
   },

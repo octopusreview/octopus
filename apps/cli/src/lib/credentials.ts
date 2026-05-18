@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, unlink } from "node:fs/promises";
 import { ensureOctopusHome, getCredentialsPath } from "./paths.js";
 
 /**
@@ -46,10 +46,15 @@ export async function saveCredentials(c: Credentials): Promise<void> {
 
 /**
  * Remove the credentials file. No-op if absent.
+ *
+ * We `unlink` rather than truncate so callers using a `stat`-based "is the
+ * user signed in?" check see the file actually disappear. `loadCredentials`
+ * already tolerates a missing file (returns null), so this is purely a
+ * disk-state correctness fix.
  */
 export async function clearCredentials(): Promise<void> {
   try {
-    await writeFile(getCredentialsPath(), "", { mode: 0o600 });
+    await unlink(getCredentialsPath());
   } catch {
     // ignore — file may not exist
   }

@@ -3,6 +3,7 @@ import React from "react";
 import { render } from "ink";
 import { OnboardWizard } from "./OnboardWizard.js";
 import { isOnboarded, loadConfig } from "./lib/config.js";
+import { agentServeCommand } from "./commands/agent-serve.js";
 
 const VERSION = "0.1.0";
 
@@ -39,9 +40,13 @@ Usage:
   octp                       Launch the onboarding wizard (first run) or dashboard
   octp onboard [--reset]     Run the onboarding wizard explicitly
   octp review <pr>           Trigger a review on a pull request          (coming soon)
-  octp agent serve           Start the local-agent bridge for Ollama     (coming soon)
+  octp agent serve           Run as a local-agent bridge (poll for tasks, run via Ollama)
   octp config <get|set>      Manage ~/.octopus/config.json               (coming soon)
   octp doctor                Environment + auth health check             (coming soon)
+
+octp agent serve flags:
+  --name <name>              Agent name reported to the server (default: hostname-pid)
+  --verbose, -v              Log every task claim + completion
 
 Flags:
   --skip-onboard             Skip the first-run wizard
@@ -87,6 +92,16 @@ async function main(argv: string[]): Promise<number> {
 
   if (first === "onboard") {
     return await renderWizard();
+  }
+
+  if (first === "agent") {
+    const sub = argv[1];
+    if (sub === "serve") {
+      return await agentServeCommand(argv.slice(2));
+    }
+    console.error(`Unknown agent subcommand: ${sub ?? "(none)"}`);
+    console.error("Try: octp agent serve");
+    return 2;
   }
 
   if (KNOWN_SUBCOMMANDS.has(first)) {

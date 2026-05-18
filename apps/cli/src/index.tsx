@@ -5,6 +5,7 @@ import { OnboardWizard } from "./OnboardWizard.js";
 import { isOnboarded, loadConfig } from "./lib/config.js";
 import { agentServeCommand } from "./commands/agent-serve.js";
 import { doctorCommand } from "./commands/doctor.js";
+import { reviewCommand } from "./commands/review.js";
 
 const VERSION = "0.1.0";
 
@@ -40,7 +41,7 @@ function printHelp(): void {
 Usage:
   octp                       Launch the onboarding wizard (first run) or dashboard
   octp onboard [--reset]     Run the onboarding wizard explicitly
-  octp review <pr>           Trigger a review on a pull request          (coming soon)
+  octp review [--staged]     Review local changes pre-PR (see \`octp review --help\`)
   octp agent serve           Run as a local-agent bridge (poll for tasks, run via Ollama)
   octp config <get|set>      Manage ~/.octopus/config.json               (coming soon)
   octp doctor                Environment + auth health check
@@ -107,6 +108,10 @@ async function main(argv: string[]): Promise<number> {
 
   if (first === "doctor") {
     return await doctorCommand(argv.slice(1));
+  }
+
+  if (first === "review") {
+    return await reviewCommand(argv.slice(1));
   }
 
   if (KNOWN_SUBCOMMANDS.has(first)) {

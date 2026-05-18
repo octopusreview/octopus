@@ -1,11 +1,12 @@
-import { IconServer } from "@tabler/icons-react";
+import Link from "@/components/link";
+import { IconServer, IconBolt, IconBrain, IconRobot } from "@tabler/icons-react";
 import { CodeBlock } from "./code-block";
 import { EnvGenerator } from "./env-generator";
 
 export const metadata = {
   title: "Self-Hosting — Octopus Docs",
   description:
-    "Deploy Octopus on your own infrastructure with Docker. Full setup guide, environment variables, and a production checklist for air-gapped deployments.",
+    "Deploy Octopus on your own infrastructure with Docker. The fastest path is a single docker compose up; alternatively run Postgres, Qdrant, and Node by hand. Supports local Ollama, Claude Code subscription, and other harnesses for reviews.",
   alternates: {
     canonical: "https://octopus-review.ai/docs/self-hosting",
   },
@@ -28,177 +29,213 @@ export default function SelfHostingPage() {
         </p>
       </div>
 
-      {/* Prerequisites */}
-      <Section title="Prerequisites">
-        <div className="mb-4 grid gap-3 sm:grid-cols-2">
-          <RequirementCard title="PostgreSQL 15+" description="Primary database for all application data." />
-          <RequirementCard title="Qdrant" description="Vector database for code embeddings and search." />
-          <RequirementCard title="Node.js 20+ or Bun" description="Runtime for the Next.js application." />
-          <RequirementCard title="OpenAI API Key" description="For generating code embeddings (text-embedding-3-large)." />
+      {/* Fastest path */}
+      <Section title="Fastest path — 3 commands">
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-cyan-900/30 bg-cyan-950/10 px-3 py-2 text-xs text-cyan-200">
+          <IconBolt className="size-4 shrink-0" />
+          <span>
+            <strong>Only Docker is required.</strong> The compose file ships
+            Postgres and Qdrant alongside the web app — no separate installs.
+          </span>
         </div>
+        <CodeBlock>{`git clone https://github.com/octopusreview/octopus.git
+cd octopus
+docker compose up -d
+docker compose exec web bun run db:migrate`}</CodeBlock>
         <Paragraph>
-          You&apos;ll also need an AI provider key (Anthropic Claude or OpenAI)
-          for the review engine.
+          The first run pulls images and starts Postgres, Qdrant, and the web
+          app. <Mono>bun run db:migrate</Mono> applies the Prisma schema —
+          re-run after every upgrade. Visit{" "}
+          <Mono>http://localhost:3000</Mono> when the containers report healthy.
+        </Paragraph>
+        <Paragraph>
+          You&apos;ll still need to drop a <Mono>.env</Mono> in the repo root
+          with an AI provider key (see <a href="#ai-provider" className="text-cyan-400 underline">AI provider choices</a> below)
+          and a GitHub App for repo integration (see <a href="#github-app" className="text-cyan-400 underline">GitHub App setup</a>).
+          For login providers see{" "}
+          <Link href="/docs/oauth-setup" className="text-cyan-400 underline">
+            Google &amp; GitHub login setup
+          </Link>
+          .
         </Paragraph>
       </Section>
 
-      {/* Quick start */}
-      <Section title="Quick Start with Docker">
-        <Step number={1} title="Clone the repository">
-          <CodeBlock>{`git clone https://github.com/octopusreview/octopus.git
-cd octopus`}</CodeBlock>
-        </Step>
+      {/* AI provider choices */}
+      <Section id="ai-provider" title="AI provider choices">
+        <Paragraph>
+          The review engine routes through any of these. Pick whatever matches
+          your privacy / cost posture — multiple can coexist and orgs can
+          override per-repo.
+        </Paragraph>
 
-        <Step number={2} title="Create your .env file">
+        <ProviderCard
+          icon={<IconBrain className="size-4 text-cyan-400" />}
+          title="Hosted API (BYOK)"
+          subtitle="Anthropic Claude · OpenAI · Google Gemini · Grok · OpenRouter"
+        >
           <Paragraph>
-            Use the <a href="#environment-variables" className="text-white underline underline-offset-2 hover:text-[#ccc]">environment generator below</a> to
-            create a <Mono>.env</Mono> file with a pre-generated auth secret,
-            then save it to the project root. Fill in your API keys before
-            continuing.
+            Drop your key in <Mono>.env</Mono>, pick a model in{" "}
+            <Mono>Settings → Models</Mono>. Embeddings still need OpenAI
+            (<Mono>OPENAI_API_KEY</Mono>) regardless of the review model
+            you choose — that&apos;s the only hard external dependency.
           </Paragraph>
-        </Step>
+        </ProviderCard>
 
-        <Step number={3} title="Start with Docker Compose">
+        <ProviderCard
+          icon={<IconRobot className="size-4 text-cyan-400" />}
+          title="Local — Ollama"
+          subtitle="Zero cost, never leaves the machine"
+        >
           <Paragraph>
-            The project includes a <Mono>docker-compose.yml</Mono> that runs
-            Octopus, PostgreSQL, and Qdrant together. Database and Qdrant URLs
-            are automatically configured for Docker&apos;s internal network.
+            Install Ollama, pull a coding model (eg.{" "}
+            <Mono>ollama pull qwen2.5-coder:32b</Mono>), then either:
           </Paragraph>
-          <CodeBlock title="docker-compose.yml">{`services:
-  octopus:
-    build:
-      context: .
-      dockerfile: apps/web/Dockerfile
-    ports:
-      - "3000:3000"
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql://octopus:octopus@postgres:5432/octopus
-      QDRANT_URL: http://qdrant:6333
-    depends_on:
-      postgres:
-        condition: service_healthy
-      qdrant:
-        condition: service_started
-    restart: unless-stopped
+          <UL>
+            <li>
+              Set the repo&apos;s review model to <Mono>ollama:&lt;model-id&gt;</Mono>{" "}
+              if Octopus and Ollama share a network (eg. on the same host).
+            </li>
+            <li>
+              For cloud-hosted Octopus reviewing private repos: run{" "}
+              <Mono>octp agent serve</Mono> on a developer laptop with Ollama
+              installed. Tasks dispatch to that laptop. See{" "}
+              <Link href="/docs/cli" className="text-cyan-400 underline">CLI docs</Link>.
+            </li>
+          </UL>
+        </ProviderCard>
 
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: octopus
-      POSTGRES_USER: octopus
-      POSTGRES_PASSWORD: octopus
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U octopus"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  qdrant:
-    image: qdrant/qdrant:latest
-    volumes:
-      - qdrant_data:/qdrant/storage
-
-volumes:
-  pgdata:
-  qdrant_data:`}</CodeBlock>
-        </Step>
-
-        <Step number={4} title="Build and run">
-          <CodeBlock>{`docker compose up -d --build`}</CodeBlock>
+        <ProviderCard
+          icon={<IconBolt className="size-4 text-cyan-400" />}
+          title="Existing subscription — Claude Code, OpenCode, ACPX"
+          subtitle="Use the CLI tools you already pay for"
+        >
           <Paragraph>
-            First run will build the Octopus image from source — this may take a
-            few minutes. Subsequent starts use the cached image.
+            <strong>Claude Code</strong> in subscription mode shells out to the{" "}
+            <Mono>claude</Mono> CLI which carries your Pro / Max auth —
+            Octopus never sees the credential. Set{" "}
+            <Mono>Organization.claudeCodeAuthMode = &quot;subscription&quot;</Mono>{" "}
+            (per-org in settings) and route via the local-agent bridge.
           </Paragraph>
-        </Step>
-
-        <Step number={5} title="Run database migrations">
-          <CodeBlock>{`docker compose exec octopus bun run db:migrate`}</CodeBlock>
-        </Step>
-
-        <Step number={6} title="Open Octopus">
           <Paragraph>
-            Visit <Mono>http://localhost:3000</Mono> to access your self-hosted
-            Octopus instance. Create your first account and connect a GitHub
-            repository to get started.
+            <strong>OpenCode</strong> and <strong>ACPX</strong> work the same
+            way as OpenAI-compatible gateways — set the base URL + bearer
+            token on the organization, pick a model with the relevant prefix
+            (<Mono>opencode:</Mono>, <Mono>acp:</Mono>).
           </Paragraph>
-        </Step>
+        </ProviderCard>
       </Section>
 
       {/* Environment variables */}
-      <Section id="environment-variables" title="Environment Variables">
+      <Section id="environment-variables" title="Environment variables">
         <Paragraph>
-          Generate a default <Mono>.env</Mono> file with pre-filled defaults for
-          database, Qdrant, and auth. A unique{" "}
-          <Mono>BETTER_AUTH_SECRET</Mono> is generated automatically.
-          Fill in the remaining values (API keys, GitHub App, etc.) before
-          starting.
+          Use the generator to produce a starter <Mono>.env</Mono> with the
+          required defaults filled in. A unique{" "}
+          <Mono>BETTER_AUTH_SECRET</Mono> is generated for you; the AI provider
+          key still needs to be pasted in.
         </Paragraph>
 
         <EnvGenerator />
 
         <EnvGroup title="Required — fill these in">
-          <EnvVar name="OPENAI_API_KEY" example="sk-..." required description="Used for embeddings" />
-          <EnvVar name="ANTHROPIC_API_KEY" example="sk-ant-..." description="Claude for reviews" />
+          <EnvVar
+            name="OPENAI_API_KEY"
+            example="sk-..."
+            required
+            description="Used for embeddings (text-embedding-3-large). Required even if you don't use OpenAI for reviews."
+          />
+          <EnvVar
+            name="ANTHROPIC_API_KEY"
+            example="sk-ant-..."
+            description="Optional review provider. Drop one of the AI-provider keys."
+          />
           <EnvVar name="GITHUB_APP_ID" example="123456" required />
           <EnvVar name="GITHUB_APP_PRIVATE_KEY" example="-----BEGIN RSA..." required />
           <EnvVar name="GITHUB_WEBHOOK_SECRET" example="whsec_..." required />
-          <EnvVar name="GITHUB_CLIENT_ID" example="Iv1.abc123" />
-          <EnvVar name="GITHUB_CLIENT_SECRET" example="secret" />
+        </EnvGroup>
+
+        <EnvGroup title="Optional review providers (BYOK)">
+          <EnvVar name="GOOGLE_API_KEY" example="AIza..." description="Gemini" />
+          <EnvVar name="GROK_API_KEY" example="xai-..." description="xAI Grok" />
+          <EnvVar name="OPENROUTER_API_KEY" example="sk-or-..." description="OpenRouter aggregator" />
         </EnvGroup>
 
         <EnvGroup title="Pre-filled defaults">
-          <EnvVar name="DATABASE_URL" example="postgresql://octopus:octopus@localhost:5432/octopus" required />
-          <EnvVar name="QDRANT_URL" example="http://localhost:6333" required />
+          <EnvVar name="DATABASE_URL" example="postgresql://octopus:octopus@postgres:5432/octopus" required />
+          <EnvVar name="QDRANT_URL" example="http://qdrant:6333" required />
           <EnvVar name="BETTER_AUTH_SECRET" example="Auto-generated (64-char hex)" required />
           <EnvVar name="BETTER_AUTH_URL" example="http://localhost:3000" required />
+          <EnvVar name="NEXT_PUBLIC_OCTOPUS_SELF_HOSTED" example="true" description="Surfaces the Updates settings page." />
         </EnvGroup>
 
-        <EnvGroup title="Optional">
+        <EnvGroup title="OAuth login (optional)">
+          <EnvVar name="GITHUB_CLIENT_ID" example="Iv1.abc123" description="Sign in with GitHub button" />
+          <EnvVar name="GITHUB_CLIENT_SECRET" example="secret" />
+          <EnvVar name="GOOGLE_CLIENT_ID" example="...apps.googleusercontent.com" description="Sign in with Google button" />
+          <EnvVar name="GOOGLE_CLIENT_SECRET" example="GOCSPX-..." />
+        </EnvGroup>
+
+        <EnvGroup title="Other optional">
           <EnvVar name="QDRANT_API_KEY" example="your-qdrant-api-key" description="If Qdrant auth is enabled" />
           <EnvVar name="COHERE_API_KEY" example="..." description="For reranking search results" />
-          <EnvVar name="STRIPE_SECRET_KEY" example="sk_..." description="For billing" />
+          <EnvVar name="STRIPE_SECRET_KEY" example="sk_..." description="For billing (not required for free self-hosted use)" />
         </EnvGroup>
-      </Section>
-
-      {/* Database setup */}
-      <Section title="Database Setup">
-        <Paragraph>Run migrations to set up the database schema:</Paragraph>
-        <CodeBlock>{`# If running from source
-bun run db:migrate
-
-# If running with Docker
-docker exec -it octopus-web bun run db:migrate`}</CodeBlock>
       </Section>
 
       {/* GitHub App */}
-      <Section title="GitHub App Setup">
+      <Section id="github-app" title="GitHub App setup">
         <Paragraph>
-          To receive webhook events, you need to create a GitHub App:
+          Octopus needs a GitHub App to receive webhook events and post review
+          comments:
         </Paragraph>
         <ol className="mb-4 list-inside list-decimal space-y-2 text-sm text-[#888]">
           <li>
-            Go to <Mono>GitHub Settings &rarr; Developer settings &rarr; GitHub Apps</Mono>
+            Go to <Mono>GitHub Settings → Developer settings → GitHub Apps</Mono>
           </li>
-          <li>Create a new GitHub App with a webhook URL pointing to <Mono>https://your-domain/api/github/webhook</Mono></li>
           <li>
-            Enable permissions: <Mono>Pull requests</Mono> (read/write),{" "}
+            Create a new GitHub App with webhook URL{" "}
+            <Mono>https://your-domain/api/github/webhook</Mono>
+          </li>
+          <li>
+            Permissions: <Mono>Pull requests</Mono> (read/write),{" "}
             <Mono>Contents</Mono> (read), <Mono>Checks</Mono> (read/write)
           </li>
-          <li>Subscribe to events: <Mono>Pull request</Mono>, <Mono>Pull request review</Mono></li>
-          <li>Generate a private key and add it to your environment</li>
+          <li>
+            Events: <Mono>Pull request</Mono>, <Mono>Pull request review</Mono>
+          </li>
+          <li>Generate a private key, paste it into <Mono>GITHUB_APP_PRIVATE_KEY</Mono></li>
         </ol>
+        <Paragraph>
+          This is a separate thing from OAuth login — see{" "}
+          <Link href="/docs/oauth-setup" className="text-cyan-400 underline">
+            OAuth setup
+          </Link>{" "}
+          if you also want &quot;Sign in with GitHub&quot;.
+        </Paragraph>
+      </Section>
+
+      {/* Updates */}
+      <Section title="Updating">
+        <Paragraph>
+          With <Mono>NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true</Mono> set, an admin
+          can visit <Mono>/settings/updates</Mono> in the running app to see
+          the current version against the latest GitHub release and get a
+          ready-to-paste upgrade snippet:
+        </Paragraph>
+        <CodeBlock>{`docker compose pull
+docker compose up -d
+docker compose exec web bun run db:migrate`}</CodeBlock>
       </Section>
 
       {/* Production tips */}
-      <Section title="Production Tips">
+      <Section title="Production tips">
         <div className="space-y-3">
           <TipCard
+            title="Pin to a release"
+            description="Set OCTOPUS_VERSION=0.X.Y in your .env so docker compose pulls a specific image instead of :latest. Aligns with the version surfaced on /settings/updates."
+          />
+          <TipCard
             title="Use connection pooling"
-            description="Use PgBouncer or Supabase pooler for PostgreSQL connections. Next.js serverless functions can exhaust connection limits quickly."
+            description="Use PgBouncer or Supabase pooler for Postgres connections. Next.js serverless functions can exhaust connection limits quickly."
           />
           <TipCard
             title="Secure Qdrant"
@@ -206,7 +243,7 @@ docker exec -it octopus-web bun run db:migrate`}</CodeBlock>
           />
           <TipCard
             title="Set a spend limit"
-            description="Configure per-organization spend limits in the admin panel to control AI costs."
+            description="Configure per-organization spend limits in the admin panel to control AI costs (no-op when using local Ollama)."
           />
           <TipCard
             title="Enable HTTPS"
@@ -215,24 +252,32 @@ docker exec -it octopus-web bun run db:migrate`}</CodeBlock>
         </div>
       </Section>
 
-      {/* From source */}
-      <Section title="Running without Docker">
+      {/* Alternative paths */}
+      <Section title="Alternative — run components separately">
         <Paragraph>
-          If you prefer to run Octopus directly, you&apos;ll need PostgreSQL,
-          Qdrant, and Bun installed on your machine. Create your{" "}
-          <Mono>.env</Mono> file first using the generator above.
+          If you don&apos;t want to use Docker, or you want to point Octopus at
+          an existing managed Postgres / Qdrant, run the web app directly. You
+          provide:
         </Paragraph>
+        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <RequirementCard title="PostgreSQL 17+" description="Primary database for all application data." />
+          <RequirementCard title="Qdrant" description="Vector database for code embeddings and search." />
+          <RequirementCard title="Bun" description="Runtime for the Next.js application. See `bun.lock` for the version pinned by the repo." />
+          <RequirementCard title="An AI provider" description="Any of the options listed above — at least one." />
+        </div>
         <CodeBlock>{`git clone https://github.com/octopusreview/octopus.git
 cd octopus
 bun install
+# Point DATABASE_URL / QDRANT_URL in .env at your own instances
 bun run db:generate
 bun run db:migrate
 bun run build
 bun run start`}</CodeBlock>
         <Paragraph>
-          The standalone output is at{" "}
-          <Mono>apps/web/.next/standalone</Mono>. You can deploy this directory
-          directly.
+          The Next.js standalone output is at{" "}
+          <Mono>apps/web/.next/standalone</Mono>. You can copy that directory to
+          a production host and run it under a process manager (systemd, pm2,
+          etc.).
         </Paragraph>
       </Section>
     </article>
@@ -264,6 +309,14 @@ function Paragraph({ children }: { children: React.ReactNode }) {
   return <p className="mb-3 text-sm leading-relaxed text-[#888]">{children}</p>;
 }
 
+function UL({ children }: { children: React.ReactNode }) {
+  return (
+    <ul className="mb-3 list-inside list-disc space-y-2 pl-2 text-sm leading-relaxed text-[#888]">
+      {children}
+    </ul>
+  );
+}
+
 function Mono({ children }: { children: React.ReactNode }) {
   return (
     <code className="rounded bg-white/[0.06] px-1.5 py-0.5 text-xs text-[#ccc]">
@@ -272,6 +325,28 @@ function Mono({ children }: { children: React.ReactNode }) {
   );
 }
 
+function ProviderCard({
+  icon,
+  title,
+  subtitle,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mb-4 rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
+      <div className="mb-2 flex items-center gap-2">
+        {icon}
+        <h3 className="text-sm font-medium text-white">{title}</h3>
+      </div>
+      <p className="mb-3 text-xs text-[#666]">{subtitle}</p>
+      {children}
+    </div>
+  );
+}
 
 function RequirementCard({
   title,
@@ -327,28 +402,6 @@ function EnvVar({
       <span className="mt-1 block text-xs text-[#555]">
         {description || example}
       </span>
-    </div>
-  );
-}
-
-function Step({
-  number,
-  title,
-  children,
-}: {
-  number: number;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="mb-5">
-      <div className="mb-2 flex items-center gap-2.5">
-        <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-xs font-semibold text-white">
-          {number}
-        </span>
-        <h3 className="text-sm font-medium text-white">{title}</h3>
-      </div>
-      <div className="ml-8">{children}</div>
     </div>
   );
 }

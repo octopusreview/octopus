@@ -4,6 +4,7 @@ import { render } from "ink";
 import { OnboardWizard } from "./OnboardWizard.js";
 import { isOnboarded, loadConfig } from "./lib/config.js";
 import { agentServeCommand } from "./commands/agent-serve.js";
+import { doctorCommand } from "./commands/doctor.js";
 
 const VERSION = "0.1.0";
 
@@ -42,7 +43,7 @@ Usage:
   octp review <pr>           Trigger a review on a pull request          (coming soon)
   octp agent serve           Run as a local-agent bridge (poll for tasks, run via Ollama)
   octp config <get|set>      Manage ~/.octopus/config.json               (coming soon)
-  octp doctor                Environment + auth health check             (coming soon)
+  octp doctor                Environment + auth health check
 
 octp agent serve flags:
   --name <name>              Agent name reported to the server (default: hostname-pid)
@@ -102,6 +103,10 @@ async function main(argv: string[]): Promise<number> {
     console.error(`Unknown agent subcommand: ${sub ?? "(none)"}`);
     console.error("Try: octp agent serve");
     return 2;
+  }
+
+  if (first === "doctor") {
+    return await doctorCommand(argv.slice(1));
   }
 
   if (KNOWN_SUBCOMMANDS.has(first)) {

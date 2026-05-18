@@ -86,7 +86,11 @@ export function DoneStep({ answers }: DoneStepProps) {
       <Text>  Server:   {summary.baseUrl ? <Text color="cyan">{summary.baseUrl}</Text> : <Text dimColor>not signed in</Text>}</Text>
       <Text>  Org:      {summary.orgName ?? <Text dimColor>—</Text>}</Text>
       <Text>  Provider: {summary.provider ?? <Text dimColor>not chosen</Text>}</Text>
-      <Text>  Model:    {summary.model ?? <Text dimColor>not chosen</Text>}</Text>
+      {summary.provider === "ollama" ? (
+        <Text>  Model:    <Text dimColor>chosen per-repo from whatever you&apos;ve `ollama pull`ed</Text></Text>
+      ) : (
+        <Text>  Model:    {summary.model ?? <Text dimColor>not chosen</Text>}</Text>
+      )}
       <Text>  BYOK key: {summary.byokSaved ? <Text color="green">saved</Text> : <Text dimColor>none</Text>}</Text>
       {summary.provider === "ollama" ? (
         <Text>  Ollama URL: <Text color="cyan">{summary.ollamaBaseUrl ?? "http://localhost:11434 (default)"}</Text></Text>

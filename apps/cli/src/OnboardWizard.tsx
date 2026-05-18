@@ -61,9 +61,19 @@ export function OnboardWizard({ reset = false }: OnboardWizardProps = {}) {
   const [answers, setAnswers] = useState<Partial<OctopusConfig>>({});
   const [seeded, setSeeded] = useState(!reset); // skip the seed effect when not in --reset mode
 
-  // Conditional sequence. In later phases this returns a subset based on
-  // hosted-vs-self-hosted, presence of an existing org, etc.
-  const sequence = useMemo<StepKey[]>(() => STEPS.map((s) => s.key), []);
+  // Conditional sequence. Steps that don't apply for the current answers
+  // are filtered out — currently:
+  //   - "model" is skipped when provider is "ollama". Ollama is BYO-model:
+  //     the user picks from whatever they've `ollama pull`ed locally at
+  //     repo-config time, so a wizard picker would either be empty or
+  //     wrong. The Models settings page handles the real picker against
+  //     the agent's reported tag list.
+  const sequence = useMemo<StepKey[]>(() => {
+    return STEPS.map((s) => s.key).filter((k) => {
+      if (k === "model" && answers.provider === "ollama") return false;
+      return true;
+    });
+  }, [answers.provider]);
 
   // One-shot: load existing config and use as initial answers (--reset).
   useEffect(() => {

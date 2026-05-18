@@ -27,6 +27,16 @@ const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
 // agent indefinitely, which then misses heartbeats. Override via
 // OCTP_OLLAMA_TIMEOUT_MS for large models that legitimately need more time.
 const OLLAMA_TIMEOUT_MS = Number(process.env.OCTP_OLLAMA_TIMEOUT_MS ?? 5 * 60_000);
+// How many tasks to run in parallel. Default 1 (serial) — Ollama generally
+// shares a single GPU and parallel calls just queue inside the daemon. Bump
+// to N (e.g. 2-4) on multi-GPU rigs or when running a tiny model that fits
+// many copies in memory. Clamped to [1, 16] so a typo can't kick off 1000
+// concurrent fetches.
+const RAW_CONCURRENCY = Number(process.env.OCTP_AGENT_CONCURRENCY ?? 1);
+const CONCURRENCY = Math.max(
+  1,
+  Math.min(16, Number.isFinite(RAW_CONCURRENCY) ? Math.floor(RAW_CONCURRENCY) : 1),
+);
 
 type AgentRegisterResponse = {
   agentId: string;
@@ -81,12 +91,12 @@ export async function agentServeCommand(argv: string[]): Promise<number> {
   const { agentId } = reg.data;
   console.log(`✓ Registered as agent ${agentId}`);
 
-  // Shutdown: clear timers, wait briefly for any in-flight task to post its
-  // result so the server doesn't see a hung "claimed" task, then disconnect.
+  // Shutdown: clear timers, wait briefly for in-flight tasks to post their
+  // results so the server doesn't see hung "claimed" tasks, then disconnect.
   // The shuttingDown flag is checked inside the poll/heartbeat loops so they
   // exit before this function calls process.exit().
   let shuttingDown = false;
-  let inFlightTask: Promise<void> | null = null;
+  const inFlight = new Set<Promise<void>>();
   const SHUTDOWN_GRACE_MS = 5000;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
   const shutdown = async () => {
@@ -94,10 +104,10 @@ export async function agentServeCommand(argv: string[]): Promise<number> {
     shuttingDown = true;
     console.log("\nShutting down — sending disconnect …");
     if (heartbeat) clearInterval(heartbeat);
-    // Give the in-flight task up to SHUTDOWN_GRACE_MS to post its result.
-    if (inFlightTask) {
+    // Give the in-flight task(s) up to SHUTDOWN_GRACE_MS to post their results.
+    if (inFlight.size > 0) {
       await Promise.race([
-        inFlightTask,
+        Promise.all(Array.from(inFlight)),
         sleep(SHUTDOWN_GRACE_MS),
       ]).catch(() => {});
     }
@@ -116,22 +126,36 @@ export async function agentServeCommand(argv: string[]): Promise<number> {
   }, HEARTBEAT_INTERVAL_MS);
   heartbeat.unref();
 
-  // Polling loop
-  console.log(`Polling for tasks every ${POLL_INTERVAL_MS / 1000}s. Ctrl+C to stop.`);
+  // Polling loop. Tasks within a single poll run with up to CONCURRENCY
+  // parallelism — see RAW_CONCURRENCY at top-of-file for the env override.
+  // Default 1 (serial) matches the single-GPU-Ollama common case.
+  console.log(
+    `Polling for tasks every ${POLL_INTERVAL_MS / 1000}s (concurrency=${CONCURRENCY}). Ctrl+C to stop.`,
+  );
   let exitCode = 0;
   while (!shuttingDown) {
     try {
       const tasks = await fetchTasks(creds, agentId);
-      for (const task of tasks) {
+      // Process tasks in chunks of CONCURRENCY so shutdown can break between
+      // chunks rather than waiting for every claimed task to finish.
+      for (let i = 0; i < tasks.length; i += CONCURRENCY) {
         if (shuttingDown) break;
-        if (verbose) console.log(`  task ${task.id} model=${task.modelId}`);
-        // Track the in-flight task so shutdown can await it.
-        inFlightTask = runOneTask(creds, agentId, task, verbose);
-        try {
-          await inFlightTask;
-        } finally {
-          inFlightTask = null;
+        const chunk = tasks.slice(i, i + CONCURRENCY);
+        if (verbose) {
+          for (const task of chunk) console.log(`  task ${task.id} model=${task.modelId}`);
         }
+        const promises = chunk.map((task) => {
+          const p = runOneTask(creds, agentId, task, verbose).finally(() => {
+            inFlight.delete(p);
+          });
+          inFlight.add(p);
+          return p;
+        });
+        await Promise.all(promises).catch(() => {
+          // runOneTask catches its own errors and reports failure via /complete;
+          // a rejection here would only come from an unexpected throw and is
+          // already logged by runOneTask.
+        });
       }
     } catch (e) {
       // Auth failure won't recover by retrying — surface and exit so a

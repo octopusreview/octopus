@@ -17,12 +17,14 @@ import { writeAuditLog } from "@/lib/audit";
  *
  * Audited as action="local-agent.revoke".
  */
-export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const reqHeaders = await headers();
 
-  // Same-origin enforcement: the Origin header is set by browsers on every
-  // CORS/DELETE request. If it's present it must match the request host;
-  // if it's absent, fall back to Referer. Reject if neither matches.
+  // Same-origin enforcement: modern browsers ALWAYS send `Origin` on
+  // state-changing requests, so requiring it to be present and match the
+  // host is safe. Falling back to `Referer` covers a small set of legacy
+  // clients; if neither is present we reject — a missing Origin from a
+  // browser is suspicious for a DELETE.
   const host = reqHeaders.get("host");
   const origin = reqHeaders.get("origin");
   const referer = reqHeaders.get("referer");
@@ -69,10 +71,6 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     console.error("[agent/revoke] writeAuditLog failed:", err);
   });
 
-  // request is used implicitly via the headers() helper; reference it so the
-  // linter doesn't flag it unused after the refactor.
-  void request;
-
   return Response.json({ ok: true });
 }
 
@@ -90,6 +88,7 @@ function isSameOrigin(
       return false;
     }
   }
+  // No Origin — fall back to Referer for the small legacy-client window.
   if (referer) {
     try {
       return new URL(referer).host.toLowerCase() === expected;
@@ -97,10 +96,9 @@ function isSameOrigin(
       return false;
     }
   }
-  // No Origin and no Referer is suspicious for a state-changing request from
-  // a browser — but server-side callers (Next.js internal RSC requests, the
-  // doctor command etc.) may legitimately omit both. The session cookie
-  // (SameSite=Lax) is the load-bearing protection in that case; admin role
-  // requirement above adds another layer. Allow with a warning.
-  return true;
+  // Neither header present — reject. Server-side internal callers shouldn't
+  // be hitting this endpoint anyway (revoke is a UI action), and a missing
+  // Origin from a real browser is the exact shape a script-driven attempt
+  // from a hostile extension takes.
+  return false;
 }

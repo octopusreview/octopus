@@ -15,8 +15,12 @@ import {
   IconTerminal2,
   IconBell,
   IconDevices,
-  IconHistory,
+  IconArrowUp,
 } from "@tabler/icons-react";
+
+// Self-hosted-only nav items are filtered out at render time when
+// process.env.NEXT_PUBLIC_OCTOPUS_SELF_HOSTED !== "true".
+const SELF_HOSTED_ONLY = new Set(["/settings/updates"]);
 
 const sections = [
   {
@@ -26,9 +30,6 @@ const sections = [
       { href: "/settings/team", label: "Team", icon: IconUsers },
       { href: "/settings/billing", label: "Billing", icon: IconCreditCard },
       { href: "/settings/notifications", label: "Notifications", icon: IconBell },
-      // Admin-only — the page itself enforces role; this nav entry is always
-      // visible but the click flow redirects non-admins to /settings.
-      { href: "/settings/audit-log", label: "Audit Log", icon: IconHistory },
     ],
   },
   {
@@ -58,14 +59,32 @@ const sections = [
       { href: "/settings/documents", label: "Documents", icon: IconFileText },
     ],
   },
+  {
+    label: "System",
+    items: [
+      // Self-hosted-only — filtered at render via SELF_HOSTED_ONLY.
+      { href: "/settings/updates", label: "Updates", icon: IconArrowUp },
+    ],
+  },
 ];
+
+const IS_SELF_HOSTED = process.env.NEXT_PUBLIC_OCTOPUS_SELF_HOSTED === "true";
 
 export function SettingsNav() {
   const pathname = usePathname();
 
+  // Strip self-hosted-only sections when we're not in self-hosted mode.
+  // The pages themselves also gate, so this is defense-in-depth + cleaner UX.
+  const visibleSections = sections
+    .map((s) => ({
+      ...s,
+      items: s.items.filter((i) => IS_SELF_HOSTED || !SELF_HOSTED_ONLY.has(i.href)),
+    }))
+    .filter((s) => s.items.length > 0);
+
   return (
     <nav className="flex gap-1 overflow-x-auto md:flex-col">
-      {sections.map((section, sectionIndex) => (
+      {visibleSections.map((section, sectionIndex) => (
         <div
           key={section.label}
           className={cn(

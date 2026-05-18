@@ -1,5 +1,9 @@
 services:
   web:
+    # Use the published GHCR image by default. Override OCTOPUS_VERSION to
+    # pin a specific release. For local development against unreleased code,
+    # `docker compose build` against the same Dockerfile still works.
+    image: ghcr.io/octopusreview/octopus:${OCTOPUS_VERSION:-latest}
     build:
       context: .
       dockerfile: apps/web/Dockerfile
@@ -9,6 +13,10 @@ services:
       - DATABASE_URL=postgresql://octopus:octopus@postgres:5432/octopus
       - QDRANT_URL=http://qdrant:6333
       - ENABLE_REVIEW_WORKERS=true
+      # Single source of truth — Next.js inlines NEXT_PUBLIC_* into the client
+      # bundle and also exposes it on the server, so one var covers both
+      # the SettingsNav (client) and the /settings/updates page (server).
+      - NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true
     depends_on:
       postgres:
         condition: service_healthy

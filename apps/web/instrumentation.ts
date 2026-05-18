@@ -16,6 +16,11 @@ export async function register() {
       await recoverCommunityReviewJobs();
       await cleanupExpiredCommunityReviewJobs();
 
+      // Daily release-cache refresh (self-hosted update page reads from this).
+      // Cron 04:00 UTC — well after typical release windows but before most
+      // working hours so users see fresh data when they check their settings.
+      await boss.schedule("refresh-release-cache", "0 4 * * *");
+
       // Periodic TTL cleanup (every hour)
       const cleanupTimer = setInterval(() => {
         cleanupExpiredCommunityReviewJobs().catch((err) =>
@@ -23,11 +28,6 @@ export async function register() {
         );
       }, 60 * 60 * 1000);
       cleanupTimer.unref?.();
-
-      // Daily audit-log retention enforcement. pg-boss handles dedup across
-      // multiple instances. The worker registered in queue-workers.ts is what
-      // actually executes the deletion.
-      await boss.schedule("enforce-audit-retention", "0 3 * * *");
     }
 
     // Graceful shutdown: wait for active jobs (e.g. in-progress reviews) to finish

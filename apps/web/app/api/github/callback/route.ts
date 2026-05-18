@@ -18,7 +18,17 @@ export async function GET(request: NextRequest) {
   const stateParam = request.nextUrl.searchParams.get("state");
 
   if (!stateParam) {
-    return errorRedirect("missing_state");
+    const loginUrl = new URL("/login", baseUrl);
+    const returnTo = new URL("/api/github/install", baseUrl);
+    returnTo.searchParams.set("returnTo", "/settings/integrations");
+    if (installationId) {
+      returnTo.searchParams.set("installation_id", installationId);
+    }
+    loginUrl.searchParams.set(
+      "callbackUrl",
+      returnTo.pathname + returnTo.search,
+    );
+    return NextResponse.redirect(loginUrl);
   }
 
   const verified = verifyInstallState(stateParam);

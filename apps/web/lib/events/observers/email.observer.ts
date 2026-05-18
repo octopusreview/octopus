@@ -148,17 +148,54 @@ async function getAdminRecipients(
 const CREDIT_LOW_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24h
 
 async function onCreditLow(event: CreditLowEvent): Promise<void> {
-  // DB-backed cooldown: check last credit_low_email transaction
-  const recent = await prisma.creditTransaction.findFirst({
-    where: {
-      organizationId: event.orgId,
-      type: "credit_low_email",
-      createdAt: { gte: new Date(Date.now() - CREDIT_LOW_COOLDOWN_MS) },
-    },
-    select: { id: true },
-  });
+  // Atomically claim the cooldown slot before sending. Two concurrent
+  // `credit-low` events would otherwise both miss the cooldown read and
+  // each send an email; Serializable isolation guarantees at most one
+  // transaction succeeds, the other either sees the inserted row or
+  // aborts and gets caught below.
+  //
+  // The cooldown row is committed unconditionally — if sendEmail later
+  // fails (SMTP down, all recipients invalid), we deliberately hold the
+  // 24h window rather than retry. Re-sending on every failed delivery
+  // would amplify into a spam loop against an already-flaky mail path.
+  let claimed = false;
+  try {
+    claimed = await prisma.$transaction(
+      async (tx) => {
+        const recent = await tx.creditTransaction.findFirst({
+          where: {
+            organizationId: event.orgId,
+            type: "credit_low_email",
+            createdAt: { gte: new Date(Date.now() - CREDIT_LOW_COOLDOWN_MS) },
+          },
+          select: { id: true },
+        });
 
-  if (recent) return;
+        if (recent) return false;
+
+        await tx.creditTransaction.create({
+          data: {
+            amount: 0,
+            type: "credit_low_email",
+            description: "Credit low notification sent",
+            balanceAfter: event.remainingBalance,
+            organizationId: event.orgId,
+          },
+        });
+        return true;
+      },
+      { isolationLevel: "Serializable" },
+    );
+  } catch (err) {
+    // Serialization failure means another transaction won the race —
+    // the winner already claimed the cooldown and will send (or already
+    // sent) the email. Logged as an error so it shows up in alerting if
+    // the rate is unexpectedly high, which would point at a hot loop.
+    console.error("[email-observer] credit-low cooldown claim lost:", err);
+    return;
+  }
+
+  if (!claimed) return;
 
   const recipients = await getAdminRecipients(event.orgId);
   if (recipients.length === 0) return;
@@ -173,26 +210,13 @@ async function onCreditLow(event: CreditLowEvent): Promise<void> {
 
   if (!result) return;
 
-  const results = await Promise.allSettled(
+  await Promise.allSettled(
     recipients.map((r) =>
       sendEmail({ to: r.email, subject: result.subject, html: result.html }).catch((err) =>
         console.error(`[email-observer] Failed to send credit-low to ${r.email}:`, err),
       ),
     ),
   );
-
-  const anySucceeded = results.some((r) => r.status === "fulfilled");
-  if (anySucceeded) {
-    await prisma.creditTransaction.create({
-      data: {
-        amount: 0,
-        type: "credit_low_email",
-        description: "Credit low notification sent",
-        balanceAfter: event.remainingBalance,
-        organizationId: event.orgId,
-      },
-    });
-  }
 }
 
 export function registerEmailObserver(): void {

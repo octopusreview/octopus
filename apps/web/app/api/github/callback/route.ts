@@ -21,9 +21,6 @@ export async function GET(request: NextRequest) {
     const loginUrl = new URL("/login", baseUrl);
     const returnTo = new URL("/api/github/install", baseUrl);
     returnTo.searchParams.set("returnTo", "/settings/integrations");
-    if (installationId) {
-      returnTo.searchParams.set("installation_id", installationId);
-    }
     loginUrl.searchParams.set(
       "callbackUrl",
       returnTo.pathname + returnTo.search,

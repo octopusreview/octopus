@@ -1,6 +1,6 @@
 import { authenticateApiToken } from "@/lib/api-auth";
 import { prisma } from "@octopus/db";
-import { generateLocalReview } from "@/lib/review-core";
+import { generateLocalReview, ReviewConfigError } from "@/lib/review-core";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { NextRequest } from "next/server";
 
@@ -74,6 +74,11 @@ export async function POST(
     // include err.message in dev so self-hosters can diagnose their
     // first install without grepping server logs.
     console.error("[local-review] Review generation failed:", err);
+    if (err instanceof ReviewConfigError) {
+      // Safe-to-surface actionable message; 422 lets the CLI handle this
+      // case distinctly from generic 500s.
+      return Response.json({ error: err.message }, { status: 422 });
+    }
     const isProd = process.env.NODE_ENV === "production";
     const detail = err instanceof Error ? err.message : String(err);
     return Response.json(

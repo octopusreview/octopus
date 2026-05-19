@@ -12,21 +12,36 @@ export type ApiResult<T> = ApiOk<T> | ApiErr;
 
 const USER_AGENT = "octp-cli/0.1";
 
+export type PostJsonOptions = {
+  /**
+   * Per-request timeout in ms. Pass when the call may legitimately take a
+   * long time (eg. LLM-backed review endpoints) — without it the CLI hangs
+   * indefinitely if the server stalls. Implemented with AbortController.
+   */
+  timeoutMs?: number;
+};
+
 export async function postJson<T>(
   url: string,
   body: unknown,
   bearerToken?: string,
+  options: PostJsonOptions = {},
 ): Promise<ApiResult<T>> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
     "user-agent": USER_AGENT,
   };
   if (bearerToken) headers.authorization = `Bearer ${bearerToken}`;
-  return await jsonRequest<T>(url, {
+
+  const init: RequestInit = {
     method: "POST",
     headers,
     body: JSON.stringify(body),
-  });
+  };
+  if (options.timeoutMs && options.timeoutMs > 0) {
+    init.signal = AbortSignal.timeout(options.timeoutMs);
+  }
+  return await jsonRequest<T>(url, init);
 }
 
 export async function getJson<T>(url: string, init: RequestInit = {}): Promise<ApiResult<T>> {
@@ -42,7 +57,14 @@ async function jsonRequest<T>(url: string, init: RequestInit): Promise<ApiResult
   try {
     response = await fetch(url, init);
   } catch (e) {
-    return { ok: false, status: 0, error: e instanceof Error ? e.message : String(e) };
+    // AbortError surfaces as a generic "AbortError" which is unhelpful; map
+    // it to something the user can act on. Network failures bubble through
+    // unchanged.
+    const msg = e instanceof Error ? e.message : String(e);
+    if (e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError")) {
+      return { ok: false, status: 0, error: `Request timed out — ${msg}` };
+    }
+    return { ok: false, status: 0, error: msg };
   }
 
   const text = await response.text();

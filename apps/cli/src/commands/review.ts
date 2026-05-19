@@ -25,6 +25,11 @@ import { getJson, postJson } from "../lib/api.js";
  */
 
 const MAX_DIFF_BYTES = 500 * 1024; // matches the server cap on /local-review
+// CLI-side timeout on the review request. Without this the CLI hangs
+// indefinitely if the server's LLM call stalls (eg. Ollama daemon down,
+// or a long context-building step). 5 min is generous enough for the
+// largest real reviews; override with OCTP_REVIEW_TIMEOUT_MS for outliers.
+const REVIEW_TIMEOUT_MS = Number(process.env.OCTP_REVIEW_TIMEOUT_MS ?? 5 * 60_000);
 
 type Finding = {
   severity: string;
@@ -166,6 +171,10 @@ export async function reviewCommand(argv: string[]): Promise<number> {
     ? `${creds.baseUrl}/api/cli/repos/${encodeURIComponent(repoMatch.id)}/local-review`
     : `${creds.baseUrl}/api/cli/review-local`;
 
+  if (verbose) {
+    const mins = (REVIEW_TIMEOUT_MS / 60_000).toFixed(0);
+    console.error(`Request timeout: ${mins} min (override with OCTP_REVIEW_TIMEOUT_MS)`);
+  }
   const res = await postJson<ReviewResponse>(
     endpoint,
     {
@@ -175,12 +184,21 @@ export async function reviewCommand(argv: string[]): Promise<number> {
       model: modelOverride,
     },
     creds.token,
+    { timeoutMs: REVIEW_TIMEOUT_MS },
   );
   if (!res.ok) {
     if (res.status === 402) {
       console.error(
         "Monthly spend limit reached for this org. Adjust in /settings/billing or wait until next cycle.",
       );
+    } else if (res.status === 422) {
+      // ReviewConfigError on the server — message is safe to show and
+      // is actionable (set API key, pick a model, start Ollama, etc.).
+      console.error(res.error);
+    } else if (res.status === 0) {
+      // Timeout / network failure from the CLI side. Already prefixed
+      // "Request timed out — …" in api.ts when it's an abort.
+      console.error(res.error);
     } else {
       // Server returns a generic message in production and a "<generic>:
       // <real error>" form in development — same wrapper either way.

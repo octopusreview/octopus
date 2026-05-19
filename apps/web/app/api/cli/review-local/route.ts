@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { authenticateApiToken } from "@/lib/api-auth";
-import { generateBareLocalReview } from "@/lib/review-core";
+import { generateBareLocalReview, ReviewConfigError } from "@/lib/review-core";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 
 /**
@@ -73,21 +73,20 @@ export async function POST(request: Request) {
       bareMode: true,
     });
   } catch (err) {
-    // Log the real error server-side. In production, return a generic
-    // message so internal context (model names, org ids, provider error
-    // bodies) doesn't leak. In dev, include err.message so self-hosters
-    // can diagnose their first install without grepping server logs.
     console.error("[review-local] Review generation failed:", err);
+    // Recoverable config error — the message is safe to surface in
+    // production because it tells the user how to fix the problem
+    // (set an API key / pick a different model) without leaking
+    // internal context. Return 422 so the CLI can distinguish from
+    // generic 500s.
+    if (err instanceof ReviewConfigError) {
+      return NextResponse.json({ error: err.message }, { status: 422 });
+    }
+    // Everything else: generic in prod, real error in dev.
     const isProd = process.env.NODE_ENV === "production";
     const detail = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
-      {
-        // Generic message in production so internal details (model names,
-        // org ids, provider error bodies) never leak via the API. In dev,
-        // append the real error so self-hosters can diagnose without
-        // grepping server logs.
-        error: isProd ? "Review generation failed" : `Review generation failed: ${detail}`,
-      },
+      { error: isProd ? "Review generation failed" : `Review generation failed: ${detail}` },
       { status: 500 },
     );
   }

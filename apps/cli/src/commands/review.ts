@@ -45,6 +45,8 @@ type ReviewResponse = {
   summary?: string;
   model: string;
   usage: { inputTokens: number; outputTokens: number };
+  /** Server flag — true when the bare (no-repo-context) path was used. */
+  bareMode?: boolean;
 };
 
 type RepoMatch = { id: string; fullName: string; provider: string };
@@ -101,38 +103,40 @@ export async function reviewCommand(argv: string[]): Promise<number> {
     return 0;
   }
 
-  // Resolve the git remote → Octopus repo id
+  // Try to resolve the git remote → Octopus repo id. If the repo is
+  // registered, we use the context-aware path. If not, we fall through
+  // to bare mode — lower quality but doesn't force the user to install
+  // the GitHub App just to test the review feature.
   const remoteUrl = gitRemoteUrl();
-  if (!remoteUrl) {
-    console.error(
-      "No git remote configured. Add a remote (`git remote add origin <url>`) and push the repo to GitHub/GitLab/Bitbucket first, then connect it via /settings/integrations.",
+  let repoMatch: RepoMatch | null = null;
+  if (remoteUrl) {
+    if (verbose) console.error(`Resolving repo for ${remoteUrl}…`);
+    const resolveRes = await getJson<RepoMatch>(
+      `${creds.baseUrl}/api/cli/repos/by-remote?url=${encodeURIComponent(remoteUrl)}`,
+      { headers: { authorization: `Bearer ${creds.token}` } },
     );
-    return 2;
-  }
-  if (verbose) console.error(`Resolving repo for ${remoteUrl}…`);
-  const resolveRes = await getJson<RepoMatch>(
-    `${creds.baseUrl}/api/cli/repos/by-remote?url=${encodeURIComponent(remoteUrl)}`,
-    { headers: { authorization: `Bearer ${creds.token}` } },
-  );
-  if (!resolveRes.ok) {
-    if (resolveRes.status === 404) {
-      console.error(
-        `${remoteUrl} isn't registered with Octopus in org "${creds.orgName}". ` +
-          `Open /settings/integrations on ${creds.baseUrl} and connect the repo first.`,
-      );
-    } else {
-      console.error(`Could not resolve repo: ${resolveRes.error}`);
+    if (resolveRes.ok) {
+      repoMatch = resolveRes.data;
+    } else if (resolveRes.status !== 404 && verbose) {
+      console.error(`Could not resolve repo (HTTP ${resolveRes.status}): ${resolveRes.error}`);
     }
-    return 1;
-  }
-  if (verbose) {
-    const sizeKb = (diff.length / 1024).toFixed(1);
-    console.error(`Reviewing ${sizeKb} KB of diff against ${resolveRes.data.fullName}…`);
   }
 
-  // Hit the canonical local-review endpoint
+  if (verbose) {
+    const sizeKb = (diff.length / 1024).toFixed(1);
+    if (repoMatch) {
+      console.error(`Reviewing ${sizeKb} KB of diff against ${repoMatch.fullName}…`);
+    } else {
+      console.error(`Reviewing ${sizeKb} KB of diff in bare mode (no repo context)…`);
+    }
+  }
+
+  const endpoint = repoMatch
+    ? `${creds.baseUrl}/api/cli/repos/${encodeURIComponent(repoMatch.id)}/local-review`
+    : `${creds.baseUrl}/api/cli/review-local`;
+
   const res = await postJson<ReviewResponse>(
-    `${creds.baseUrl}/api/cli/repos/${encodeURIComponent(resolveRes.data.id)}/local-review`,
+    endpoint,
     {
       diff,
       title: commitSubject() ?? undefined,
@@ -157,7 +161,7 @@ export async function reviewCommand(argv: string[]): Promise<number> {
   } else if (format === "markdown") {
     console.log(renderMarkdown(data));
   } else {
-    renderHuman(data, resolveRes.data.fullName);
+    renderHuman(data, repoMatch?.fullName ?? "(bare mode, no repo context)");
   }
 
   if (strict) {
@@ -288,6 +292,11 @@ function renderHuman(data: RenderedData, repoFullName: string): void {
   console.log(
     `${COLOR.bold}🐙 octp review${COLOR.reset}  ${COLOR.dim}${repoFullName} · ${model} · ${usage.inputTokens}→${usage.outputTokens} tokens${COLOR.reset}`,
   );
+  if (data.bareMode) {
+    console.log(
+      `${COLOR.yellow}ℹ bare mode — no codebase context. Connect the repo at /settings/integrations for higher-quality reviews.${COLOR.reset}`,
+    );
+  }
   if (data.truncated) {
     console.log(
       `${COLOR.yellow}⚠ diff truncated to ${(MAX_DIFF_BYTES / 1024).toFixed(0)} KB — findings may be incomplete${COLOR.reset}`,
@@ -375,12 +384,14 @@ Flags:
   --help, -h                         This help
 
 Notes:
-  • Uses the same review pipeline as cloud PR reviews — context search,
-    finding capping, your repo's reviewConfig, the works.
-  • Requires the repo to be connected to Octopus (Settings → Integrations).
+  • If the repo is connected to Octopus (Settings → Integrations), reviews
+    use the canonical pipeline with codebase context, finding capping, and
+    your repo's reviewConfig — same as cloud PR reviews.
+  • If the repo isn't connected, falls back to "bare mode" — same LLM
+    call but no codebase context. Lower quality; an inline note tells
+    you when it happens.
   • The cloud PR review still runs on every PR — this is additive feedback
-    for individual developers before they push. Coverage isn't gated on
-    the CLI being installed.
+    for individual developers before they push.
   • Hard cap of 500 KB diff. Larger diffs get truncated with a warning.
 `);
 }

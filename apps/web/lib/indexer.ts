@@ -10,30 +10,11 @@ import * as gitlabLib from "@/lib/gitlab";
 import { ensureCollection, upsertChunks, deleteRepoChunks, deleteRepoFileChunks } from "@/lib/qdrant";
 import { generateSparseVectors } from "@/lib/sparse-vector";
 import { parseOctopusIgnore, type Ignore } from "@/lib/octopus-ignore";
+import { shouldIndex, chunkText, MAX_FILE_SIZE } from "@/lib/index-chunking";
 
 const execFileAsync = promisify(execFile);
 
 const GITHUB_API = "https://api.github.com";
-const MAX_FILE_SIZE = 100_000; // 100KB — skip larger files
-const CHUNK_SIZE = 1500; // ~375 tokens
-const CHUNK_OVERLAP = 200;
-
-// File extensions we want to index
-const CODE_EXTENSIONS = new Set([
-  ".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rs", ".java", ".rb",
-  ".c", ".cpp", ".h", ".hpp", ".cs", ".swift", ".kt", ".scala",
-  ".vue", ".svelte", ".astro", ".html", ".css", ".scss",
-  ".sql", ".graphql", ".proto", ".yaml", ".yml", ".toml",
-  ".md", ".mdx", ".txt", ".json", ".xml",
-  ".sh", ".bash", ".zsh", ".fish",
-  ".dockerfile", ".prisma", ".env.example",
-]);
-
-const IGNORE_PATHS = [
-  "node_modules/", ".git/", "dist/", "build/", ".next/",
-  "vendor/", "__pycache__/", ".turbo/", "coverage/",
-  "package-lock.json", "bun.lock", "yarn.lock", "pnpm-lock.yaml",
-];
 
 interface TreeItem {
   path: string;
@@ -45,83 +26,6 @@ interface TreeItem {
 export type LogLevel = "info" | "success" | "error" | "warning";
 
 export type OnLog = (message: string, level?: LogLevel) => void;
-
-function shouldIndex(path: string, size?: number, ig?: Ignore): boolean {
-  if (size && size > MAX_FILE_SIZE) return false;
-  if (IGNORE_PATHS.some((p) => path.includes(p))) return false;
-  if (ig?.ignores(path)) return false;
-
-  const ext = "." + path.split(".").pop()?.toLowerCase();
-  const basename = path.split("/").pop() ?? "";
-
-  // Handle extensionless files like Dockerfile, Makefile
-  if (basename === "Dockerfile" || basename === "Makefile") return true;
-
-  return CODE_EXTENSIONS.has(ext);
-}
-
-function chunkText(
-  content: string,
-  filePath: string,
-): { text: string; startLine: number; endLine: number }[] {
-  const lines = content.split("\n");
-  const chunks: { text: string; startLine: number; endLine: number }[] = [];
-
-  let currentChunk = "";
-  let startLine = 1;
-  let currentLine = 1;
-
-  for (const line of lines) {
-    // If a single line exceeds CHUNK_SIZE, split it into smaller pieces
-    if (line.length > CHUNK_SIZE) {
-      // First, flush any accumulated chunk
-      if (currentChunk.length > 0) {
-        chunks.push({
-          text: `// File: ${filePath}\n${currentChunk}`,
-          startLine,
-          endLine: currentLine - 1,
-        });
-        currentChunk = "";
-      }
-
-      // Split the long line into CHUNK_SIZE pieces
-      for (let j = 0; j < line.length; j += CHUNK_SIZE - CHUNK_OVERLAP) {
-        const piece = line.slice(j, j + CHUNK_SIZE);
-        chunks.push({
-          text: `// File: ${filePath}\n${piece}`,
-          startLine: currentLine,
-          endLine: currentLine,
-        });
-      }
-
-      startLine = currentLine + 1;
-    } else if (currentChunk.length + line.length + 1 > CHUNK_SIZE && currentChunk.length > 0) {
-      chunks.push({
-        text: `// File: ${filePath}\n${currentChunk}`,
-        startLine,
-        endLine: currentLine - 1,
-      });
-
-      // Overlap: go back a few lines
-      const overlapLines = currentChunk.split("\n").slice(-3);
-      currentChunk = overlapLines.join("\n") + "\n" + line;
-      startLine = currentLine - overlapLines.length;
-    } else {
-      currentChunk += (currentChunk ? "\n" : "") + line;
-    }
-    currentLine++;
-  }
-
-  if (currentChunk.trim()) {
-    chunks.push({
-      text: `// File: ${filePath}\n${currentChunk}`,
-      startLine,
-      endLine: currentLine - 1,
-    });
-  }
-
-  return chunks;
-}
 
 export interface Contributor {
   login: string;

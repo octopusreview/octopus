@@ -1,7 +1,9 @@
 import { spawnSync } from "node:child_process";
+import { createInterface } from "node:readline";
 import { loadCredentials } from "../lib/credentials.js";
 import { loadConfig } from "../lib/config.js";
 import { getJson, postJson } from "../lib/api.js";
+import { ensureRepoIndexed } from "../lib/local-index.js";
 
 /**
  * `octp review` — pre-PR review of local changes.
@@ -86,6 +88,12 @@ export async function reviewCommand(argv: string[]): Promise<number> {
     return 2;
   }
   const verbose = argv.includes("--verbose") || argv.includes("-v");
+  const indexFlag = argv.includes("--index");
+  const noIndexFlag = argv.includes("--no-index");
+  if (indexFlag && noIndexFlag) {
+    console.error("--index and --no-index are mutually exclusive.");
+    return 2;
+  }
 
   // Compute the diff
   const diffResult = computeDiff(mode);
@@ -110,18 +118,17 @@ export async function reviewCommand(argv: string[]): Promise<number> {
   }
 
   // Try to resolve the git remote → Octopus repo id. If the repo is
-  // registered, we use the context-aware path. If not (or if there's no
-  // git remote at all), we fall through to bare mode — lower quality but
-  // doesn't force the user to install the GitHub App just to use the CLI.
+  // registered, we use the context-aware path. If not, offer to index
+  // the working tree locally (CLI uploads files; server embeds + stores
+  // in qdrant) so the next review — and this one — gets codebase context
+  // without requiring the GitHub App install. The bare-mode fallback
+  // remains for "no remote at all" and "user declined indexing."
   const remoteUrl = gitRemoteUrl();
   let repoMatch: RepoMatch | null = null;
   if (!remoteUrl) {
-    // No remote configured. Bare mode is still useful (eg. unpublished
-    // personal repo, scratch repo). Always log this — silent quality
-    // downgrade is the bug the bot called out.
     console.error(
       "No git remote configured — falling back to bare mode (no codebase context). " +
-        "Connect the repo on github/gitlab/bitbucket and via /settings/integrations for context-aware reviews.",
+        "Add a remote and re-run to index this repo for context-aware reviews.",
     );
   } else {
     if (verbose) console.error(`Resolving repo for ${remoteUrl}…`);
@@ -132,13 +139,52 @@ export async function reviewCommand(argv: string[]): Promise<number> {
     if (resolveRes.ok) {
       repoMatch = resolveRes.data;
     } else if (resolveRes.status === 404) {
-      // Expected case: the remote isn't connected to Octopus. Silent
-      // fall-through; the renderer surfaces the caveat.
+      // Repo isn't connected yet. Offer to index the working tree (or
+      // auto-index when --index is passed). Skipping (--no-index or "n"
+      // at the prompt) falls through to bare mode like the old behaviour.
+      const decision = await decideIndex({
+        autoYes: indexFlag,
+        autoNo: noIndexFlag,
+      });
+      if (decision === "yes") {
+        console.error(
+          `\nIndexing working tree for context-aware reviews. ` +
+            `This sends file contents to ${creds.baseUrl} — same trust ` +
+            `boundary as cloud PR reviews. Skip with --no-index.\n`,
+        );
+        const indexResult = await ensureRepoIndexed(creds, remoteUrl, process.cwd(), {
+          tty: Boolean(process.stderr.isTTY),
+        });
+        if (indexResult.ok) {
+          // Either we just indexed (kind: "indexed") or the server told us
+          // the repo is already managed via the platform install
+          // (kind: "platform-managed"). Both cases want the canonical
+          // review path against an existing repoId, so a single by-remote
+          // re-fetch covers them — no caller-side branching needed.
+          repoMatch = await refetchRepoMatch(creds, remoteUrl, verbose);
+          if (!repoMatch) {
+            // shouldn't happen — but if it does, fall back to bare mode
+            // rather than crashing.
+            console.error(
+              "Index step succeeded but the repo couldn't be resolved by-remote. Continuing in bare mode.",
+            );
+          } else if (verbose) {
+            console.error(`Indexed — now reviewing against ${repoMatch.fullName}.`);
+          }
+        } else if (indexResult.reason === "timeout") {
+          console.error(
+            "Indexing is still running on the server (timed out after 10 min). " +
+              "Continuing in bare mode for this run — re-run `octp review` later for context-aware output.",
+          );
+        } else {
+          console.error(
+            `Indexing failed (${indexResult.error}). Continuing in bare mode for this run.`,
+          );
+        }
+      }
+      // decision === "no" → silent fallthrough to bare mode (renderer
+      // surfaces the caveat in the output banner).
     } else {
-      // Unexpected: server hiccup, 401, etc. Falling to bare mode would
-      // silently downgrade review quality without the user knowing —
-      // surface the error so they can decide whether to retry. Always
-      // logged (not gated on --verbose).
       console.error(
         `Could not check whether this repo is connected to Octopus ` +
           `(HTTP ${resolveRes.status}: ${resolveRes.error}). ` +
@@ -221,6 +267,76 @@ export async function reviewCommand(argv: string[]): Promise<number> {
     if (criticalCount > 0) return 1;
   }
   return 0;
+}
+
+// ── Indexing prompt ──────────────────────────────────────────────────────────
+
+/**
+ * Decide whether to offer (or skip) the local-indexing flow when the repo
+ * isn't yet connected. Order of precedence:
+ *   1. --no-index flag → "no" (script-friendly: never prompt, never index)
+ *   2. --index flag → "yes" (script-friendly: always index without prompt)
+ *   3. stdin not a TTY → "no" (CI/scripts: don't hang waiting for input)
+ *   4. interactive → ask the user; default "no" on bare Enter
+ *
+ * Default-no is deliberate: this prompt initiates a one-way upload of the
+ * working-tree contents (potentially untracked-but-unignored secrets,
+ * proprietary code, customer data in scratch repos). An accidental Enter
+ * on a prompt the user didn't fully read shouldn't exfiltrate source —
+ * users who want the upload say "y" explicitly. The flag-driven paths
+ * `--index` (consent recorded out of band) and `--no-index` (explicit opt-out)
+ * are unaffected.
+ */
+async function decideIndex(opts: { autoYes: boolean; autoNo: boolean }): Promise<"yes" | "no"> {
+  if (opts.autoNo) return "no";
+  if (opts.autoYes) return "yes";
+  if (!process.stdin.isTTY) return "no";
+
+  process.stderr.write(
+    "\nThis repo isn't indexed in Octopus yet.\n" +
+      "Index it now for context-aware reviews? Files are uploaded to your Octopus server.\n" +
+      "  [y] yes   [N] no, just review the diff in bare mode   (default: N)\n> ",
+  );
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    // `once("line")` and `once("close")` race — the loser stays registered
+    // unless explicitly removed. Without the off() calls, the listener that
+    // didn't fire leaks until the process exits, and a future close fires
+    // a no-op handler (or worse, if we later re-use rl). Remove the loser
+    // as soon as the winner resolves.
+    const answer = await new Promise<string>((resolveAnswer) => {
+      const onLine = (s: string) => {
+        rl.off("close", onClose);
+        resolveAnswer(s);
+      };
+      const onClose = () => {
+        rl.off("line", onLine);
+        resolveAnswer("");
+      };
+      rl.once("line", onLine);
+      rl.once("close", onClose);
+    });
+    const ch = answer.trim().toLowerCase()[0] ?? "n";
+    return ch === "y" ? "yes" : "no";
+  } finally {
+    rl.close();
+  }
+}
+
+async function refetchRepoMatch(
+  creds: { baseUrl: string; token: string },
+  remoteUrl: string,
+  verbose: boolean,
+): Promise<RepoMatch | null> {
+  const res = await getJson<RepoMatch>(
+    `${creds.baseUrl}/api/cli/repos/by-remote?url=${encodeURIComponent(remoteUrl)}`,
+    { headers: { authorization: `Bearer ${creds.token}` } },
+  );
+  if (res.ok) return res.data;
+  if (verbose) {
+    console.error(`by-remote re-fetch failed: HTTP ${res.status} — ${res.error}`);
+  }
+  return null;
 }
 
 // ── Flag parsing ─────────────────────────────────────────────────────────────
@@ -432,6 +548,8 @@ Usage:
 Flags:
   --strict                           Exit 1 if any critical (🔴) findings — for pre-commit hooks
   --format <human|json|markdown>     Output format (default: human)
+  --index                            Index the working tree now without prompting (script-friendly)
+  --no-index                         Skip the index prompt — always review in bare mode
   --verbose, -v                      Log progress to stderr
   --help, -h                         This help
 
@@ -439,9 +557,11 @@ Notes:
   • If the repo is connected to Octopus (Settings → Integrations), reviews
     use the canonical pipeline with codebase context, finding capping, and
     your repo's reviewConfig — same as cloud PR reviews.
-  • If the repo isn't connected, falls back to "bare mode" — same LLM
-    call but no codebase context. Lower quality; an inline note tells
-    you when it happens.
+  • If the repo isn't connected, you'll be prompted to index the working
+    tree (files are uploaded to your Octopus server). Once indexed,
+    subsequent reviews use the same context-aware path as cloud reviews.
+  • Decline the index prompt (or pass --no-index) to review in "bare mode"
+    instead — same LLM call but no codebase context.
   • The cloud PR review still runs on every PR — this is additive feedback
     for individual developers before they push.
   • Hard cap of 500 KB diff. Larger diffs get truncated with a warning.

@@ -97,8 +97,8 @@ export function DoneStep({ answers }: DoneStepProps) {
       ) : null}
       <Text> </Text>
       <Text bold>Next steps</Text>
-      <Text>  • Open a pull request — Octopus will review it automatically.</Text>
-      <Text>  • Run <Text color="cyan">octp review &lt;PR&gt;</Text> to trigger a review on demand.</Text>
+      <Text>  • Run <Text color="cyan">octp review</Text> in any git repo to review your local changes before committing.</Text>
+      <Text>  • Connect a repo at <Text color="cyan">/settings/integrations</Text> for cloud reviews on every PR — and for richer context-aware <Text color="cyan">octp review</Text> output.</Text>
       <Text>  • Re-run this wizard any time with <Text color="cyan">octp onboard --reset</Text>.</Text>
     </Box>
   );

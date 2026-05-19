@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { loadCredentials } from "../lib/credentials.js";
+import { loadConfig } from "../lib/config.js";
 import { getJson, postJson } from "../lib/api.js";
 
 /**
@@ -24,6 +25,11 @@ import { getJson, postJson } from "../lib/api.js";
  */
 
 const MAX_DIFF_BYTES = 500 * 1024; // matches the server cap on /local-review
+// CLI-side timeout on the review request. Without this the CLI hangs
+// indefinitely if the server's LLM call stalls (eg. Ollama daemon down,
+// or a long context-building step). 5 min is generous enough for the
+// largest real reviews; override with OCTP_REVIEW_TIMEOUT_MS for outliers.
+const REVIEW_TIMEOUT_MS = Number(process.env.OCTP_REVIEW_TIMEOUT_MS ?? 5 * 60_000);
 
 type Finding = {
   severity: string;
@@ -45,6 +51,8 @@ type ReviewResponse = {
   summary?: string;
   model: string;
   usage: { inputTokens: number; outputTokens: number };
+  /** Server flag — true when the bare (no-repo-context) path was used. */
+  bareMode?: boolean;
 };
 
 type RepoMatch = { id: string; fullName: string; provider: string };
@@ -101,51 +109,99 @@ export async function reviewCommand(argv: string[]): Promise<number> {
     return 0;
   }
 
-  // Resolve the git remote → Octopus repo id
+  // Try to resolve the git remote → Octopus repo id. If the repo is
+  // registered, we use the context-aware path. If not (or if there's no
+  // git remote at all), we fall through to bare mode — lower quality but
+  // doesn't force the user to install the GitHub App just to use the CLI.
   const remoteUrl = gitRemoteUrl();
+  let repoMatch: RepoMatch | null = null;
   if (!remoteUrl) {
+    // No remote configured. Bare mode is still useful (eg. unpublished
+    // personal repo, scratch repo). Always log this — silent quality
+    // downgrade is the bug the bot called out.
     console.error(
-      "No git remote configured. Add a remote (`git remote add origin <url>`) and push the repo to GitHub/GitLab/Bitbucket first, then connect it via /settings/integrations.",
+      "No git remote configured — falling back to bare mode (no codebase context). " +
+        "Connect the repo on github/gitlab/bitbucket and via /settings/integrations for context-aware reviews.",
     );
-    return 2;
-  }
-  if (verbose) console.error(`Resolving repo for ${remoteUrl}…`);
-  const resolveRes = await getJson<RepoMatch>(
-    `${creds.baseUrl}/api/cli/repos/by-remote?url=${encodeURIComponent(remoteUrl)}`,
-    { headers: { authorization: `Bearer ${creds.token}` } },
-  );
-  if (!resolveRes.ok) {
-    if (resolveRes.status === 404) {
-      console.error(
-        `${remoteUrl} isn't registered with Octopus in org "${creds.orgName}". ` +
-          `Open /settings/integrations on ${creds.baseUrl} and connect the repo first.`,
-      );
+  } else {
+    if (verbose) console.error(`Resolving repo for ${remoteUrl}…`);
+    const resolveRes = await getJson<RepoMatch>(
+      `${creds.baseUrl}/api/cli/repos/by-remote?url=${encodeURIComponent(remoteUrl)}`,
+      { headers: { authorization: `Bearer ${creds.token}` } },
+    );
+    if (resolveRes.ok) {
+      repoMatch = resolveRes.data;
+    } else if (resolveRes.status === 404) {
+      // Expected case: the remote isn't connected to Octopus. Silent
+      // fall-through; the renderer surfaces the caveat.
     } else {
-      console.error(`Could not resolve repo: ${resolveRes.error}`);
+      // Unexpected: server hiccup, 401, etc. Falling to bare mode would
+      // silently downgrade review quality without the user knowing —
+      // surface the error so they can decide whether to retry. Always
+      // logged (not gated on --verbose).
+      console.error(
+        `Could not check whether this repo is connected to Octopus ` +
+          `(HTTP ${resolveRes.status}: ${resolveRes.error}). ` +
+          `Falling back to bare mode — review quality will be lower than usual.`,
+      );
     }
-    return 1;
-  }
-  if (verbose) {
-    const sizeKb = (diff.length / 1024).toFixed(1);
-    console.error(`Reviewing ${sizeKb} KB of diff against ${resolveRes.data.fullName}…`);
   }
 
-  // Hit the canonical local-review endpoint
+  // Honour the wizard's model pick if it set one. The server's
+  // `getReviewModel` chain only considers repo/org/platform defaults, not
+  // anything saved to ~/.octopus/config.json. Without this pass-through,
+  // a user who picked Ollama in the wizard would still get hit by whatever
+  // the org default is (often missing API key → 500).
+  const localConfig = await loadConfig();
+  const modelOverride = localConfig.model || undefined;
+  if (modelOverride && verbose) {
+    console.error(`Using locally-configured model: ${modelOverride}`);
+  }
+
+  if (verbose) {
+    const sizeKb = (diff.length / 1024).toFixed(1);
+    if (repoMatch) {
+      console.error(`Reviewing ${sizeKb} KB of diff against ${repoMatch.fullName}…`);
+    } else {
+      console.error(`Reviewing ${sizeKb} KB of diff in bare mode (no repo context)…`);
+    }
+  }
+
+  const endpoint = repoMatch
+    ? `${creds.baseUrl}/api/cli/repos/${encodeURIComponent(repoMatch.id)}/local-review`
+    : `${creds.baseUrl}/api/cli/review-local`;
+
+  if (verbose) {
+    const mins = (REVIEW_TIMEOUT_MS / 60_000).toFixed(0);
+    console.error(`Request timeout: ${mins} min (override with OCTP_REVIEW_TIMEOUT_MS)`);
+  }
   const res = await postJson<ReviewResponse>(
-    `${creds.baseUrl}/api/cli/repos/${encodeURIComponent(resolveRes.data.id)}/local-review`,
+    endpoint,
     {
       diff,
       title: commitSubject() ?? undefined,
       author: gitAuthorName() ?? undefined,
+      model: modelOverride,
     },
     creds.token,
+    { timeoutMs: REVIEW_TIMEOUT_MS },
   );
   if (!res.ok) {
     if (res.status === 402) {
       console.error(
         "Monthly spend limit reached for this org. Adjust in /settings/billing or wait until next cycle.",
       );
+    } else if (res.status === 422) {
+      // ReviewConfigError on the server — message is safe to show and
+      // is actionable (set API key, pick a model, start Ollama, etc.).
+      console.error(res.error);
+    } else if (res.status === 0) {
+      // Timeout / network failure from the CLI side. Already prefixed
+      // "Request timed out — …" in api.ts when it's an abort.
+      console.error(res.error);
     } else {
+      // Server returns a generic message in production and a "<generic>:
+      // <real error>" form in development — same wrapper either way.
       console.error(`Review request failed (HTTP ${res.status}): ${res.error}`);
     }
     return 1;
@@ -157,7 +213,7 @@ export async function reviewCommand(argv: string[]): Promise<number> {
   } else if (format === "markdown") {
     console.log(renderMarkdown(data));
   } else {
-    renderHuman(data, resolveRes.data.fullName);
+    renderHuman(data, repoMatch?.fullName ?? "(bare mode, no repo context)");
   }
 
   if (strict) {
@@ -288,6 +344,11 @@ function renderHuman(data: RenderedData, repoFullName: string): void {
   console.log(
     `${COLOR.bold}🐙 octp review${COLOR.reset}  ${COLOR.dim}${repoFullName} · ${model} · ${usage.inputTokens}→${usage.outputTokens} tokens${COLOR.reset}`,
   );
+  if (data.bareMode) {
+    console.log(
+      `${COLOR.yellow}ℹ bare mode — no codebase context. Connect the repo at /settings/integrations for higher-quality reviews.${COLOR.reset}`,
+    );
+  }
   if (data.truncated) {
     console.log(
       `${COLOR.yellow}⚠ diff truncated to ${(MAX_DIFF_BYTES / 1024).toFixed(0)} KB — findings may be incomplete${COLOR.reset}`,
@@ -375,12 +436,14 @@ Flags:
   --help, -h                         This help
 
 Notes:
-  • Uses the same review pipeline as cloud PR reviews — context search,
-    finding capping, your repo's reviewConfig, the works.
-  • Requires the repo to be connected to Octopus (Settings → Integrations).
+  • If the repo is connected to Octopus (Settings → Integrations), reviews
+    use the canonical pipeline with codebase context, finding capping, and
+    your repo's reviewConfig — same as cloud PR reviews.
+  • If the repo isn't connected, falls back to "bare mode" — same LLM
+    call but no codebase context. Lower quality; an inline note tells
+    you when it happens.
   • The cloud PR review still runs on every PR — this is additive feedback
-    for individual developers before they push. Coverage isn't gated on
-    the CLI being installed.
+    for individual developers before they push.
   • Hard cap of 500 KB diff. Larger diffs get truncated with a warning.
 `);
 }

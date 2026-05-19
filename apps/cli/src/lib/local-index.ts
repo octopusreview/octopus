@@ -49,9 +49,22 @@ const IGNORE_BASENAMES = new Set([
   "package-lock.json", "bun.lock", "yarn.lock", "pnpm-lock.yaml",
 ]);
 
+/**
+ * Result shapes:
+ *   - `ok: true, kind: "indexed"` — CLI uploaded files and the server reported indexed.
+ *   - `ok: true, kind: "platform-managed"` — server told us the repo is already managed via the
+ *     platform install; caller should re-resolve by-remote and use the existing repoId. Modelled
+ *     as `ok: true` because from the caller's perspective the repo IS connected — same review
+ *     code path applies; we just skipped the upload.
+ *   - `ok: false, reason: "timeout"` — polling hit POLL_MAX_MS without the server settling.
+ *     Distinct from `failed` so the CLI can suggest "indexing is still running on the server,
+ *     try `octp review` again in a few minutes."
+ *   - `ok: false, reason: "failed"` — explicit server-reported failure or upload error.
+ */
 export type EnsureRepoIndexedResult =
-  | { ok: true; repoId: string; reIndexed: boolean }
-  | { ok: false; reason: "managed-by-platform"; repoId: string }
+  | { ok: true; kind: "indexed"; repoId: string }
+  | { ok: true; kind: "platform-managed" }
+  | { ok: false; reason: "timeout" }
   | { ok: false; reason: "failed"; error: string };
 
 export type EnsureRepoIndexedOptions = {
@@ -112,10 +125,10 @@ export async function ensureRepoIndexed(
     if (!res.ok) {
       if (i === 0 && res.status === 409) {
         // Server says this repo is already managed via the platform install.
-        // No upload needed — caller should re-resolve via by-remote to get
+        // No upload needed — caller will re-resolve via by-remote to get
         // the repoId for the canonical review path.
         drawProgressDone(opts.tty);
-        return { ok: false, reason: "managed-by-platform", repoId: "" };
+        return { ok: true, kind: "platform-managed" };
       }
       drawProgressDone(opts.tty);
       return {
@@ -136,17 +149,26 @@ export async function ensureRepoIndexed(
   // final poll covers the case where a tail status update was in flight.
   const final = await pollStatus(creds, repoId, opts);
   drawProgressDone(opts.tty);
-  if (final.indexStatus === "failed") {
+  if (final === "timeout") {
+    return { ok: false, reason: "timeout" };
+  }
+  if (final === "failed") {
     return { ok: false, reason: "failed", error: "Server reported indexStatus=failed" };
   }
-  return { ok: true, repoId, reIndexed: false };
+  return { ok: true, kind: "indexed", repoId };
 }
 
+/**
+ * Poll the repo status endpoint until the server flips to `indexed` / `failed`,
+ * or we hit `POLL_MAX_MS`. Returns a discriminated string so the caller can
+ * distinguish "indexing is still running, give up for now" (`timeout`) from
+ * "server explicitly said it failed" (`failed`).
+ */
 async function pollStatus(
   creds: Credentials,
   repoId: string,
   opts: EnsureRepoIndexedOptions,
-): Promise<{ indexStatus: string }> {
+): Promise<"indexed" | "failed" | "timeout"> {
   const start = Date.now();
   while (Date.now() - start < POLL_MAX_MS) {
     const res = await fetch(
@@ -156,13 +178,13 @@ async function pollStatus(
     if (res.ok) {
       const j = (await res.json()) as { repo: { indexStatus: string; indexedFiles: number; totalFiles: number } };
       if (j.repo.indexStatus === "indexed" || j.repo.indexStatus === "failed") {
-        return { indexStatus: j.repo.indexStatus };
+        return j.repo.indexStatus as "indexed" | "failed";
       }
       drawProgressIndexing(j.repo.indexedFiles, j.repo.totalFiles, opts.tty);
     }
     await sleep(POLL_INTERVAL_MS);
   }
-  return { indexStatus: "failed" };
+  return "timeout";
 }
 
 // ── Walker ──────────────────────────────────────────────────────────────────
@@ -194,7 +216,12 @@ function isEligible(path: string): boolean {
   const basename = path.split("/").pop() ?? "";
   if (IGNORE_BASENAMES.has(basename)) return false;
   if (basename === "Dockerfile" || basename === "Makefile") return true;
-  const ext = "." + path.split(".").pop()?.toLowerCase();
+  // Extension match only — never collapse a dotless basename like `LICENSE`
+  // to a fake extension. Mirrors the server-side `shouldIndex` filter so
+  // CLI doesn't waste bandwidth uploading files the server would skip.
+  const dot = basename.lastIndexOf(".");
+  if (dot <= 0) return false;
+  const ext = basename.slice(dot).toLowerCase();
   return CODE_EXTENSIONS.has(ext);
 }
 
@@ -229,8 +256,19 @@ function packBatches(files: { path: string; bytes: number }[]): { path: string; 
 // ── Git helpers ─────────────────────────────────────────────────────────────
 
 function detectDefaultBranch(cwd: string): string {
-  const r = spawnSync("git", ["symbolic-ref", "--short", "HEAD"], { cwd, encoding: "utf8" });
-  if (r.status === 0 && r.stdout.trim()) return r.stdout.trim();
+  // Default branch is what `origin/HEAD` points at. `HEAD` alone is the
+  // *currently checked-out* branch which is misleading on any feature
+  // branch (we'd record "fix/foo" as the repo's default). Strip the
+  // `origin/` prefix when present so we record just the branch name.
+  const r = spawnSync(
+    "git",
+    ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+    { cwd, encoding: "utf8" },
+  );
+  if (r.status === 0 && r.stdout.trim()) {
+    const ref = r.stdout.trim();
+    return ref.startsWith("origin/") ? ref.slice("origin/".length) : ref;
+  }
   return "main";
 }
 

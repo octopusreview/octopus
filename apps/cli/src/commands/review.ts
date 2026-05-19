@@ -156,27 +156,26 @@ export async function reviewCommand(argv: string[]): Promise<number> {
           tty: Boolean(process.stderr.isTTY),
         });
         if (indexResult.ok) {
-          // Resolve the freshly-indexed repo via by-remote so we use
-          // the same code path as already-connected repos.
+          // Either we just indexed (kind: "indexed") or the server told us
+          // the repo is already managed via the platform install
+          // (kind: "platform-managed"). Both cases want the canonical
+          // review path against an existing repoId, so a single by-remote
+          // re-fetch covers them — no caller-side branching needed.
           repoMatch = await refetchRepoMatch(creds, remoteUrl, verbose);
           if (!repoMatch) {
             // shouldn't happen — but if it does, fall back to bare mode
             // rather than crashing.
             console.error(
-              "Index completed but the repo couldn't be resolved by-remote. Continuing in bare mode.",
+              "Index step succeeded but the repo couldn't be resolved by-remote. Continuing in bare mode.",
             );
           } else if (verbose) {
             console.error(`Indexed — now reviewing against ${repoMatch.fullName}.`);
           }
-        } else if (indexResult.reason === "managed-by-platform") {
-          // Server told us this repo is already managed by the
-          // platform install — use its repoId directly.
-          repoMatch = await refetchRepoMatch(creds, remoteUrl, verbose);
-          if (!repoMatch) {
-            console.error(
-              "Repo is managed via the platform install but couldn't be resolved — continuing in bare mode.",
-            );
-          }
+        } else if (indexResult.reason === "timeout") {
+          console.error(
+            "Indexing is still running on the server (timed out after 10 min). " +
+              "Continuing in bare mode for this run — re-run `octp review` later for context-aware output.",
+          );
         } else {
           console.error(
             `Indexing failed (${indexResult.error}). Continuing in bare mode for this run.`,
@@ -278,7 +277,15 @@ export async function reviewCommand(argv: string[]): Promise<number> {
  *   1. --no-index flag → "no" (script-friendly: never prompt, never index)
  *   2. --index flag → "yes" (script-friendly: always index without prompt)
  *   3. stdin not a TTY → "no" (CI/scripts: don't hang waiting for input)
- *   4. interactive → ask the user, default "yes" on bare enter
+ *   4. interactive → ask the user; default "no" on bare Enter
+ *
+ * Default-no is deliberate: this prompt initiates a one-way upload of the
+ * working-tree contents (potentially untracked-but-unignored secrets,
+ * proprietary code, customer data in scratch repos). An accidental Enter
+ * on a prompt the user didn't fully read shouldn't exfiltrate source —
+ * users who want the upload say "y" explicitly. The flag-driven paths
+ * `--index` (consent recorded out of band) and `--no-index` (explicit opt-out)
+ * are unaffected.
  */
 async function decideIndex(opts: { autoYes: boolean; autoNo: boolean }): Promise<"yes" | "no"> {
   if (opts.autoNo) return "no";
@@ -288,16 +295,29 @@ async function decideIndex(opts: { autoYes: boolean; autoNo: boolean }): Promise
   process.stderr.write(
     "\nThis repo isn't indexed in Octopus yet.\n" +
       "Index it now for context-aware reviews? Files are uploaded to your Octopus server.\n" +
-      "  [Y] yes   [n] no, just review the diff in bare mode   (default: Y)\n> ",
+      "  [y] yes   [N] no, just review the diff in bare mode   (default: N)\n> ",
   );
   const rl = createInterface({ input: process.stdin, output: process.stderr });
   try {
-    const answer = await new Promise<string>((resolve) => {
-      rl.once("line", resolve);
-      rl.once("close", () => resolve(""));
+    // `once("line")` and `once("close")` race — the loser stays registered
+    // unless explicitly removed. Without the off() calls, the listener that
+    // didn't fire leaks until the process exits, and a future close fires
+    // a no-op handler (or worse, if we later re-use rl). Remove the loser
+    // as soon as the winner resolves.
+    const answer = await new Promise<string>((resolveAnswer) => {
+      const onLine = (s: string) => {
+        rl.off("close", onClose);
+        resolveAnswer(s);
+      };
+      const onClose = () => {
+        rl.off("line", onLine);
+        resolveAnswer("");
+      };
+      rl.once("line", onLine);
+      rl.once("close", onClose);
     });
-    const ch = (answer.trim().toLowerCase()[0] ?? "y");
-    return ch === "n" ? "no" : "yes";
+    const ch = answer.trim().toLowerCase()[0] ?? "n";
+    return ch === "y" ? "yes" : "no";
   } finally {
     rl.close();
   }

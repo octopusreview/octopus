@@ -33,11 +33,16 @@ export function shouldIndex(path: string, size?: number, ig?: Ignore): boolean {
   if (IGNORE_PATHS.some((p) => path.includes(p))) return false;
   if (ig?.ignores(path)) return false;
 
-  const ext = "." + path.split(".").pop()?.toLowerCase();
   const basename = path.split("/").pop() ?? "";
 
   if (basename === "Dockerfile" || basename === "Makefile") return true;
 
+  // Extension match only — never collapse a dotless basename like `LICENSE`
+  // or `Procfile` to a fake extension. `lastIndexOf` returns -1 with no dot,
+  // and a leading-dot file (`.env`) has dot at index 0; both cases bail.
+  const dot = basename.lastIndexOf(".");
+  if (dot <= 0) return false;
+  const ext = basename.slice(dot).toLowerCase();
   return CODE_EXTENSIONS.has(ext);
 }
 

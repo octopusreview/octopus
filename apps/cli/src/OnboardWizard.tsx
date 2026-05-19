@@ -63,6 +63,13 @@ export function OnboardWizard({ reset = false }: OnboardWizardProps = {}) {
   const [stepIndex, setStepIndex] = useState(0);
   const [answers, setAnswers] = useState<Partial<OctopusConfig>>({});
   const [seeded, setSeeded] = useState(!reset); // skip the seed effect when not in --reset mode
+  // Provider-shape tabs (Ollama vs the rest) only diverge AFTER the user
+  // has passed through ProviderStep this session. Until then we don't
+  // know what they actually want — `answers.provider` may be pre-seeded
+  // from a prior --reset run, but pre-seeding shouldn't dictate the
+  // header layout while they're still on Auth/Org. ProviderStep flips
+  // this true as it advances.
+  const [providerConfirmed, setProviderConfirmed] = useState(false);
 
   // Conditional sequence. Steps that don't apply for the current answers
   // are filtered out:
@@ -73,16 +80,22 @@ export function OnboardWizard({ reset = false }: OnboardWizardProps = {}) {
   //     Ollama doesn't have. Skipping them gets the user to Done faster
   //     and removes empty tabs from the header.
   //   - "ollama-setup" is also skipped for non-Ollama providers.
+  //
+  // The Ollama-vs-rest reshape only takes effect once ProviderStep has
+  // been passed through this session (`providerConfirmed`). Before that
+  // we show the full sequence so a --reset user who wants to switch
+  // away from Ollama isn't confused by the Ollama tab in the header.
   const sequence = useMemo<StepKey[]>(() => {
+    const isOllama = providerConfirmed && answers.provider === "ollama";
     return STEPS.map((s) => s.key).filter((k) => {
-      if (answers.provider === "ollama") {
+      if (isOllama) {
         if (k === "model" || k === "byok" || k === "validate") return false;
       } else {
         if (k === "ollama-setup") return false;
       }
       return true;
     });
-  }, [answers.provider]);
+  }, [answers.provider, providerConfirmed]);
 
   // One-shot: load existing config and use as initial answers (--reset).
   useEffect(() => {
@@ -119,7 +132,14 @@ export function OnboardWizard({ reset = false }: OnboardWizardProps = {}) {
       {activeKey === "welcome" && <WelcomeStep onNext={() => next()} />}
       {activeKey === "auth" && <AuthStep onNext={(p) => next(p)} />}
       {activeKey === "org" && <OrgStep onNext={() => next()} onSwitchOrg={() => jumpTo("auth")} />}
-      {activeKey === "provider" && <ProviderStep onNext={(p) => next(p)} />}
+      {activeKey === "provider" && (
+        <ProviderStep
+          onNext={(p) => {
+            setProviderConfirmed(true);
+            next(p);
+          }}
+        />
+      )}
       {activeKey === "model" && (
         <ModelStep provider={answers.provider ?? ""} onNext={(p) => next(p)} />
       )}

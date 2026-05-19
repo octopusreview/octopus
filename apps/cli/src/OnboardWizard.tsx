@@ -66,14 +66,20 @@ export function OnboardWizard({ reset = false }: OnboardWizardProps = {}) {
 
   // Conditional sequence. Steps that don't apply for the current answers
   // are filtered out:
-  //   - "model" is skipped when provider is "ollama" — Ollama has its own
-  //     tailored step ("ollama-setup") that talks to the local daemon to
-  //     pick from already-installed models or offer to pull one.
-  //   - "ollama-setup" is skipped when provider is anything else.
+  //   - For Ollama, the "ollama-setup" step does everything (URL prompt,
+  //     daemon probe, model picker/puller) so the separate "model", "byok",
+  //     and "validate" steps are all redundant. Validate would just re-probe
+  //     the same URL ollama-setup already probed; byok asks for a key
+  //     Ollama doesn't have. Skipping them gets the user to Done faster
+  //     and removes empty tabs from the header.
+  //   - "ollama-setup" is also skipped for non-Ollama providers.
   const sequence = useMemo<StepKey[]>(() => {
     return STEPS.map((s) => s.key).filter((k) => {
-      if (k === "model" && answers.provider === "ollama") return false;
-      if (k === "ollama-setup" && answers.provider !== "ollama") return false;
+      if (answers.provider === "ollama") {
+        if (k === "model" || k === "byok" || k === "validate") return false;
+      } else {
+        if (k === "ollama-setup") return false;
+      }
       return true;
     });
   }, [answers.provider]);
@@ -120,10 +126,7 @@ export function OnboardWizard({ reset = false }: OnboardWizardProps = {}) {
       {activeKey === "byok" && (
         <ByokStep
           provider={answers.provider ?? ""}
-          ollamaBaseUrl={answers.ollamaBaseUrl}
-          onNext={(patch) =>
-            next(patch.ollamaBaseUrl ? { ollamaBaseUrl: patch.ollamaBaseUrl } : {})
-          }
+          onNext={() => next()}
         />
       )}
       {activeKey === "ollama-setup" && (

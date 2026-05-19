@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
+import TextInput from "ink-text-input";
 import {
   CURATED_MODELS,
   installInstructionFor,
@@ -8,7 +9,6 @@ import {
   isOllamaInstalledLocally,
   listOllamaModels,
   pullOllamaModel,
-  type CuratedModel,
   type OllamaModel,
   type PullProgress,
 } from "../lib/ollama.js";
@@ -16,10 +16,11 @@ import { DEFAULT_OLLAMA_BASE_URL } from "../lib/config.js";
 
 export type OllamaSetupStepProps = {
   ollamaBaseUrl?: string;
-  onNext: (patch: { model?: string }) => void;
+  onNext: (patch: { model?: string; ollamaBaseUrl?: string }) => void;
 };
 
 type Phase =
+  | "url-input" // first: ask for the URL, pre-filled to localhost:11434
   | "probing" // checking install + querying /api/tags
   | "remote-empty" // remote URL, no models — can't pull for them
   | "remote-pick" // remote URL, models exist
@@ -51,38 +52,61 @@ type Phase =
  * UI at /settings/models.
  */
 export function OllamaSetupStep({ ollamaBaseUrl, onNext }: OllamaSetupStepProps) {
-  const baseUrl = ollamaBaseUrl ?? DEFAULT_OLLAMA_BASE_URL;
+  // baseUrl is now mutable state: starts at the wizard-prop / default, the
+  // user can edit it in `url-input`, and edits also bring us back to this
+  // phase from any of the not-reachable terminals (so they can fix a typo
+  // without restarting onboarding).
+  const [baseUrl, setBaseUrl] = useState<string>(ollamaBaseUrl ?? DEFAULT_OLLAMA_BASE_URL);
+  const [urlInputValue, setUrlInputValue] = useState<string>(
+    ollamaBaseUrl ?? DEFAULT_OLLAMA_BASE_URL,
+  );
   const isLocal = isLocalhostUrl(baseUrl);
 
-  const [phase, setPhase] = useState<Phase>("probing");
+  const [phase, setPhase] = useState<Phase>("url-input");
   const [installedModels, setInstalledModels] = useState<OllamaModel[]>([]);
   const [pullingModel, setPullingModel] = useState<string>("");
   const [pullStatus, setPullStatus] = useState<string>("");
   const [error, setError] = useState<string>("");
+  const [urlInputError, setUrlInputError] = useState<string>("");
 
   // Esc → skip at any non-pulling phase. We don't allow interrupting a
   // pull mid-stream because the partial layers stay on disk and re-runs
   // resume cleanly anyway — no destructive state.
-  useInput((_input, key) => {
+  // From any of the "not reachable" / "not installed" phases, `b`/backspace
+  // jumps back to the URL input so the user can fix a typo without restarting.
+  useInput((input, key) => {
     if (key.escape && phase !== "pulling" && phase !== "done") {
-      onNext({});
+      // Still emit the URL on skip if the user explicitly changed it from
+      // the default — losing their typing would be surprising. emitPatch
+      // suppresses it for the default case so the config file stays clean.
+      emitPatch({});
+    }
+    if (
+      (phase === "local-not-installed" ||
+        phase === "local-not-running" ||
+        phase === "remote-empty") &&
+      (input === "b" || input === "B" || key.backspace || key.delete)
+    ) {
+      setError("");
+      setUrlInputError("");
+      setPhase("url-input");
     }
   });
 
-  // Probe on mount: list models, then derive phase.
+  // Probe whenever we (re-)enter "probing". List models, derive phase.
   useEffect(() => {
+    if (phase !== "probing") return;
     let cancelled = false;
     (async () => {
       const models = await listOllamaModels(baseUrl);
       if (cancelled) return;
       if (models === null) {
-        // Daemon unreachable. Figure out whether the binary exists at all.
         if (isLocal) {
           const installed = await isOllamaInstalledLocally();
           if (cancelled) return;
           setPhase(installed ? "local-not-running" : "local-not-installed");
         } else {
-          setPhase("remote-empty"); // unreachable-remote handled in the same panel
+          setPhase("remote-empty");
           setError(`Couldn't reach Ollama at ${baseUrl}.`);
         }
         return;
@@ -97,9 +121,57 @@ export function OllamaSetupStep({ ollamaBaseUrl, onNext }: OllamaSetupStepProps)
     return () => {
       cancelled = true;
     };
-  }, [baseUrl, isLocal]);
+  }, [phase, baseUrl, isLocal]);
+
+  function submitUrl(submitted: string) {
+    const url = submitted.trim() || DEFAULT_OLLAMA_BASE_URL;
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        setUrlInputError(`URL must be http(s); got ${parsed.protocol}`);
+        return;
+      }
+    } catch {
+      setUrlInputError(`Not a parseable URL: ${url.slice(0, 60)}`);
+      return;
+    }
+    setUrlInputError("");
+    setBaseUrl(url);
+    setUrlInputValue(url);
+    setPhase("probing");
+  }
+
+  // Emit the URL on patch when (and only when) it differs from the default,
+  // so the saved config stays minimal for the common case.
+  function emitPatch(patch: { model?: string }) {
+    const ollamaPatch =
+      baseUrl !== DEFAULT_OLLAMA_BASE_URL ? { ollamaBaseUrl: baseUrl } : {};
+    onNext({ ...patch, ...ollamaPatch });
+  }
 
   // ── Render phases ──────────────────────────────────────────────────────────
+
+  if (phase === "url-input") {
+    return (
+      <Box flexDirection="column">
+        <Text bold>Ollama base URL</Text>
+        <Text dimColor>
+          Default is <Text color="cyan">{DEFAULT_OLLAMA_BASE_URL}</Text>. Change
+          only if your Ollama daemon runs on a different host or port.
+        </Text>
+        <Text> </Text>
+        <Text>URL: </Text>
+        <TextInput
+          value={urlInputValue}
+          onChange={setUrlInputValue}
+          onSubmit={submitUrl}
+        />
+        {urlInputError ? <Text color="red">{urlInputError}</Text> : null}
+        <Text> </Text>
+        <Text dimColor>Enter: continue · Esc: skip</Text>
+      </Box>
+    );
+  }
 
   if (phase === "probing") {
     return (
@@ -121,11 +193,10 @@ export function OllamaSetupStep({ ollamaBaseUrl, onNext }: OllamaSetupStepProps)
         <Text dimColor>Or download: <Text color="cyan">{inst.alternativeUrl}</Text></Text>
         <Text> </Text>
         <Text>
-          Once installed, start the daemon with <Text color="cyan">ollama serve</Text>{" "}
-          and re-run <Text color="cyan">octp onboard --reset</Text>.
+          Once installed, start the daemon with <Text color="cyan">ollama serve</Text>.
         </Text>
         <Text> </Text>
-        <Text dimColor>Esc: skip — configure later from /settings/models</Text>
+        <Text dimColor>B: edit URL · Esc: skip — configure later from /settings/models</Text>
       </Box>
     );
   }
@@ -137,11 +208,8 @@ export function OllamaSetupStep({ ollamaBaseUrl, onNext }: OllamaSetupStepProps)
         <Text> </Text>
         <Text>Start the daemon in another terminal:</Text>
         <Text color="cyan">  ollama serve</Text>
-        <Text dimColor>
-          Then re-run <Text color="cyan">octp onboard --reset</Text> to pick a model.
-        </Text>
         <Text> </Text>
-        <Text dimColor>Esc: skip — configure later</Text>
+        <Text dimColor>B: edit URL · Esc: skip — configure later</Text>
       </Box>
     );
   }
@@ -158,11 +226,10 @@ export function OllamaSetupStep({ ollamaBaseUrl, onNext }: OllamaSetupStepProps)
         <Text dimColor>
           That host is remote — we can&apos;t install or pull models on
           your behalf. Pull a model there with{" "}
-          <Text color="cyan">ollama pull qwen2.5-coder:32b</Text> (or similar),
-          then re-run <Text color="cyan">octp onboard --reset</Text>.
+          <Text color="cyan">ollama pull qwen2.5-coder:32b</Text> (or similar).
         </Text>
         <Text> </Text>
-        <Text dimColor>Esc: skip — configure later</Text>
+        <Text dimColor>B: edit URL · Esc: skip — configure later</Text>
       </Box>
     );
   }
@@ -189,7 +256,7 @@ export function OllamaSetupStep({ ollamaBaseUrl, onNext }: OllamaSetupStepProps)
           ]}
           onSelect={(item) => {
             if (item.value === "__skip__") {
-              onNext({});
+              emitPatch({});
               return;
             }
             void runPull(item.value);
@@ -221,12 +288,12 @@ export function OllamaSetupStep({ ollamaBaseUrl, onNext }: OllamaSetupStepProps)
           ]}
           onSelect={(item) => {
             if (item.value === "__skip__") {
-              onNext({});
+              emitPatch({});
               return;
             }
             // model id stored in OctopusConfig is `ollama:<name>` so
             // ai-router's prefix fallback routes through ollamaProvider.
-            onNext({ model: `ollama:${item.value}` });
+            emitPatch({ model: `ollama:${item.value}` });
           }}
         />
         <Text> </Text>
@@ -274,7 +341,7 @@ export function OllamaSetupStep({ ollamaBaseUrl, onNext }: OllamaSetupStepProps)
           setPullStatus(update.status);
         }
       });
-      onNext({ model: `ollama:${modelName}` });
+      emitPatch({ model: `ollama:${modelName}` });
     } catch (e) {
       setError(`Pull failed: ${e instanceof Error ? e.message : String(e)}`);
       // Drop back to the picker so the user can either pick a different

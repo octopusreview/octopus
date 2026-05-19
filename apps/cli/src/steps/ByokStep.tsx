@@ -4,47 +4,29 @@ import SelectInput from "ink-select-input";
 import TextInput from "ink-text-input";
 import { setByokKey } from "../lib/byok.js";
 import { hintFor } from "../lib/keys.js";
-import { DEFAULT_OLLAMA_BASE_URL } from "../lib/config.js";
 
 export type ByokStepProps = {
   provider: string;
-  /** Pre-existing ollama URL from a prior wizard run (passed when --reset). */
-  ollamaBaseUrl?: string;
-  onNext: (patch: { byokSaved?: boolean; ollamaBaseUrl?: string }) => void;
+  onNext: (patch: { byokSaved?: boolean }) => void;
 };
 
-type Mode =
-  | "intro"
-  | "entering"
-  | "saving"
-  | "saved"
-  | "failed"
-  | "skipped"
-  | "ollama-url"; // Special pre-filled URL input for ollama
+type Mode = "intro" | "entering" | "saving" | "saved" | "failed" | "skipped";
 
 /**
  * Collect an API key for the chosen provider. Two adornments:
  *   - masked TextInput so the key isn't echoed to the terminal
  *   - placeholder text + a one-line dashboard URL hint specific to the provider
  *
- * For keyless providers (Ollama, the agent harnesses when the user already
- * has their CLI authed), we offer a "skip" path up front rather than forcing
- * the user through a meaningless prompt.
+ * For keyless providers (the agent harnesses when the user already has their
+ * CLI authed) we offer a "skip" path up front rather than forcing the user
+ * through a meaningless prompt. Ollama doesn't reach this step at all — its
+ * URL + model setup happens in `OllamaSetupStep` which collapses what used to
+ * be three separate tabs into one.
  */
-export function ByokStep({ provider, ollamaBaseUrl, onNext }: ByokStepProps) {
+export function ByokStep({ provider, onNext }: ByokStepProps) {
   const hint = hintFor(provider);
-  const isOllama = provider === "ollama";
-  // For ollama, go straight to URL entry (pre-filled). Other keyless providers
-  // see the intro/skip picker as before. Keyed providers go to `entering`.
-  const initialMode: Mode = isOllama
-    ? "ollama-url"
-    : hint.keyless
-      ? "intro"
-      : "entering";
-  const [mode, setMode] = useState<Mode>(initialMode);
-  const [value, setValue] = useState<string>(
-    isOllama ? ollamaBaseUrl ?? DEFAULT_OLLAMA_BASE_URL : "",
-  );
+  const [mode, setMode] = useState<Mode>(hint.keyless ? "intro" : "entering");
+  const [value, setValue] = useState<string>("");
   const [error, setError] = useState<string>("");
 
   useInput((_input, key) => {
@@ -58,49 +40,6 @@ export function ByokStep({ provider, ollamaBaseUrl, onNext }: ByokStepProps) {
   if (!provider) {
     onNext({ byokSaved: false });
     return null;
-  }
-
-  if (mode === "ollama-url") {
-    return (
-      <Box flexDirection="column">
-        <Text bold>Ollama base URL</Text>
-        <Text dimColor>
-          Default is <Text color="cyan">{DEFAULT_OLLAMA_BASE_URL}</Text>. Change
-          only if your Ollama daemon runs on a different host or port.
-        </Text>
-        <Text> </Text>
-        <Text>URL: </Text>
-        <TextInput
-          value={value}
-          onChange={setValue}
-          onSubmit={(submitted) => {
-            const url = submitted.trim() || DEFAULT_OLLAMA_BASE_URL;
-            try {
-              const parsed = new URL(url);
-              if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-                setError(`URL must be http(s); got ${parsed.protocol}`);
-                return;
-              }
-            } catch {
-              setError(`Not a parseable URL: ${url.slice(0, 60)}`);
-              return;
-            }
-            setError("");
-            // Persist the URL on the patch so OnboardWizard saves it to
-            // ~/.octopus/config.json. Only emit if it differs from the
-            // default — keeps the config file minimal for the common case.
-            const patch =
-              url === DEFAULT_OLLAMA_BASE_URL
-                ? { byokSaved: false }
-                : { byokSaved: false, ollamaBaseUrl: url };
-            onNext(patch);
-          }}
-        />
-        {error ? <Text color="red">{error}</Text> : null}
-        <Text> </Text>
-        <Text dimColor>Enter: save · Esc: skip (use default)</Text>
-      </Box>
-    );
   }
 
   if (mode === "intro") {

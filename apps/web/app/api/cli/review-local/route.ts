@@ -28,6 +28,12 @@ type Body = {
   diff?: string;
   title?: string;
   author?: string;
+  /**
+   * Optional model id the CLI passes from the wizard's saved config so the
+   * server honours per-machine choices (eg. "ollama:qwen2.5-coder:32b"). Falls
+   * back to the org default when absent.
+   */
+  model?: string;
 };
 
 export async function POST(request: Request) {
@@ -57,6 +63,7 @@ export async function POST(request: Request) {
       orgId: auth.org.id,
       title: body.title,
       author: body.author,
+      modelOverride: typeof body.model === "string" ? body.model : undefined,
     });
     return NextResponse.json({
       findings: result.findings,
@@ -66,12 +73,22 @@ export async function POST(request: Request) {
       bareMode: true,
     });
   } catch (err) {
-    // Log the real error server-side; return a generic message to the
-    // client. Internal errors (database, provider API responses, prompt-
-    // template failures) can carry model names / org ids / stack context
-    // that shouldn't leak to a token holder. Matches the convention in
-    // the sibling /api/cli/repos/[id]/local-review route.
+    // Log the real error server-side. In production, return a generic
+    // message so internal context (model names, org ids, provider error
+    // bodies) doesn't leak. In dev, include err.message so self-hosters
+    // can diagnose their first install without grepping server logs.
     console.error("[review-local] Review generation failed:", err);
-    return NextResponse.json({ error: "Review generation failed" }, { status: 500 });
+    const isProd = process.env.NODE_ENV === "production";
+    const detail = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      {
+        // Generic message in production so internal details (model names,
+        // org ids, provider error bodies) never leak via the API. In dev,
+        // append the real error so self-hosters can diagnose without
+        // grepping server logs.
+        error: isProd ? "Review generation failed" : `Review generation failed: ${detail}`,
+      },
+      { status: 500 },
+    );
   }
 }

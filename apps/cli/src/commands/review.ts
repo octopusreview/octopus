@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { loadCredentials } from "../lib/credentials.js";
+import { loadConfig } from "../lib/config.js";
 import { getJson, postJson } from "../lib/api.js";
 
 /**
@@ -104,12 +105,20 @@ export async function reviewCommand(argv: string[]): Promise<number> {
   }
 
   // Try to resolve the git remote → Octopus repo id. If the repo is
-  // registered, we use the context-aware path. If not, we fall through
-  // to bare mode — lower quality but doesn't force the user to install
-  // the GitHub App just to test the review feature.
+  // registered, we use the context-aware path. If not (or if there's no
+  // git remote at all), we fall through to bare mode — lower quality but
+  // doesn't force the user to install the GitHub App just to use the CLI.
   const remoteUrl = gitRemoteUrl();
   let repoMatch: RepoMatch | null = null;
-  if (remoteUrl) {
+  if (!remoteUrl) {
+    // No remote configured. Bare mode is still useful (eg. unpublished
+    // personal repo, scratch repo). Always log this — silent quality
+    // downgrade is the bug the bot called out.
+    console.error(
+      "No git remote configured — falling back to bare mode (no codebase context). " +
+        "Connect the repo on github/gitlab/bitbucket and via /settings/integrations for context-aware reviews.",
+    );
+  } else {
     if (verbose) console.error(`Resolving repo for ${remoteUrl}…`);
     const resolveRes = await getJson<RepoMatch>(
       `${creds.baseUrl}/api/cli/repos/by-remote?url=${encodeURIComponent(remoteUrl)}`,
@@ -119,7 +128,7 @@ export async function reviewCommand(argv: string[]): Promise<number> {
       repoMatch = resolveRes.data;
     } else if (resolveRes.status === 404) {
       // Expected case: the remote isn't connected to Octopus. Silent
-      // fall-through to bare mode; the renderer surfaces the caveat.
+      // fall-through; the renderer surfaces the caveat.
     } else {
       // Unexpected: server hiccup, 401, etc. Falling to bare mode would
       // silently downgrade review quality without the user knowing —
@@ -131,6 +140,17 @@ export async function reviewCommand(argv: string[]): Promise<number> {
           `Falling back to bare mode — review quality will be lower than usual.`,
       );
     }
+  }
+
+  // Honour the wizard's model pick if it set one. The server's
+  // `getReviewModel` chain only considers repo/org/platform defaults, not
+  // anything saved to ~/.octopus/config.json. Without this pass-through,
+  // a user who picked Ollama in the wizard would still get hit by whatever
+  // the org default is (often missing API key → 500).
+  const localConfig = await loadConfig();
+  const modelOverride = localConfig.model || undefined;
+  if (modelOverride && verbose) {
+    console.error(`Using locally-configured model: ${modelOverride}`);
   }
 
   if (verbose) {
@@ -152,6 +172,7 @@ export async function reviewCommand(argv: string[]): Promise<number> {
       diff,
       title: commitSubject() ?? undefined,
       author: gitAuthorName() ?? undefined,
+      model: modelOverride,
     },
     creds.token,
   );
@@ -161,6 +182,8 @@ export async function reviewCommand(argv: string[]): Promise<number> {
         "Monthly spend limit reached for this org. Adjust in /settings/billing or wait until next cycle.",
       );
     } else {
+      // Server returns a generic message in production and a "<generic>:
+      // <real error>" form in development — same wrapper either way.
       console.error(`Review request failed (HTTP ${res.status}): ${res.error}`);
     }
     return 1;

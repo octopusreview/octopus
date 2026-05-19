@@ -30,11 +30,13 @@ export async function POST(
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { diff, title, author, fileTree } = body as {
+  const { diff, title, author, fileTree, model } = body as {
     diff?: string;
     title?: string;
     author?: string;
     fileTree?: string[];
+    /** Optional per-machine model override sent by `octp review`. */
+    model?: string;
   };
 
   if (!diff || typeof diff !== "string") {
@@ -58,6 +60,7 @@ export async function POST(
       title: typeof title === "string" ? title : undefined,
       author: typeof author === "string" ? author : undefined,
       fileTree: Array.isArray(fileTree) ? fileTree : undefined,
+      modelOverride: typeof model === "string" ? model : undefined,
     });
 
     return Response.json({
@@ -67,7 +70,19 @@ export async function POST(
       usage: reviewResult.usage,
     });
   } catch (err) {
+    // Log the real error server-side. Generic message in production;
+    // include err.message in dev so self-hosters can diagnose their
+    // first install without grepping server logs.
     console.error("[local-review] Review generation failed:", err);
-    return Response.json({ error: "Review generation failed" }, { status: 500 });
+    const isProd = process.env.NODE_ENV === "production";
+    const detail = err instanceof Error ? err.message : String(err);
+    return Response.json(
+      {
+        error: isProd
+          ? "Review generation failed"
+          : `Review generation failed: ${detail}`,
+      },
+      { status: 500 },
+    );
   }
 }

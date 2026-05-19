@@ -48,6 +48,15 @@ export type LocalReviewParams = {
   operation?: "local-review" | "community-review";
   /** PR number for the SYSTEM_PROMPT.md {{PR_NUMBER}} template. Defaults to 0 (used by CLI / non-PR flows). */
   prNumber?: number;
+  /**
+   * Explicit model override — wins over getReviewModel(orgId, repoId). Used
+   * by `octp review` to honour the local wizard's per-machine model choice
+   * (eg. "ollama:qwen2.5-coder:32b") without mutating the org's default.
+   * Validated against the AvailableModel table is the caller's
+   * responsibility; an unknown model name falls through to ai-router's
+   * prefix-based provider resolution.
+   */
+  modelOverride?: string;
 };
 
 export type LocalReviewResult = {
@@ -197,8 +206,9 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
   const repoConfig = parseReviewConfig(repo.reviewConfig);
   const reviewConfig = mergeReviewConfigs(systemConfig, orgConfig, repoConfig);
 
-  // Resolve model
-  const reviewModel = await getReviewModel(org.id, repo.id);
+  // Resolve model — explicit override (eg. CLI passing the wizard's choice)
+  // wins; otherwise fall back to the repo/org/platform-default chain.
+  const reviewModel = params.modelOverride ?? (await getReviewModel(org.id, repo.id));
   console.log(`[review-core] Using model: ${reviewModel}`);
 
   // Step 1: Embed diff → semantic search for codebase context
@@ -619,6 +629,8 @@ export type BareLocalReviewParams = {
   orgId: string;
   title?: string;
   author?: string;
+  /** See LocalReviewParams.modelOverride — same semantics. */
+  modelOverride?: string;
 };
 
 /**
@@ -641,18 +653,25 @@ export type BareLocalReviewParams = {
 export async function generateBareLocalReview(
   params: BareLocalReviewParams,
 ): Promise<LocalReviewResult> {
-  const { diff, orgId, title, author } = params;
+  const { diff, orgId, title, author, modelOverride } = params;
 
   const org = await prisma.organization.findUnique({ where: { id: orgId } });
   if (!org) throw new Error(`Organization not found: ${orgId}`);
 
-  // Pick the org's default review model. No repo, so getReviewModel's
-  // repo-fallback chain is reduced to org-default → platform-default.
-  const reviewModel = await getReviewModel(org.id);
+  // Resolve model — explicit override (eg. CLI passing the wizard's choice)
+  // wins; otherwise fall back to org-default → platform-default. No repo
+  // here so the repo-fallback link of the chain doesn't apply.
+  const reviewModel = modelOverride ?? (await getReviewModel(org.id));
 
   // System prompt gets a minimal template substitution. The template
   // placeholders that depend on repo/PR context get safe defaults so the
   // prompt is still well-formed.
+  //
+  // REVIEW_LANGUAGE hard-codes "en" because we don't have a repo whose
+  // reviewLanguage column we'd respect, and the bare endpoint has no
+  // other signal for which language the developer prefers. If this
+  // becomes a real concern, expose `reviewLanguage` on the wizard
+  // config and have the CLI pass it through alongside `modelOverride`.
   const systemPrompt = getSystemPrompt()
     .replace(/\{\{REPO_NAME\}\}/g, "Local working tree")
     .replace(/\{\{REPO_DESCRIPTION\}\}/g, "")

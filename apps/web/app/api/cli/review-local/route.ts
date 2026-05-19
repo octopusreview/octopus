@@ -66,10 +66,12 @@ export async function POST(request: Request) {
       bareMode: true,
     });
   } catch (err) {
+    // Log the real error server-side; return a generic message to the
+    // client. Internal errors (database, provider API responses, prompt-
+    // template failures) can carry model names / org ids / stack context
+    // that shouldn't leak to a token holder. Matches the convention in
+    // the sibling /api/cli/repos/[id]/local-review route.
     console.error("[review-local] Review generation failed:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Review generation failed" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Review generation failed" }, { status: 500 });
   }
 }

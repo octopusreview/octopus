@@ -1,8 +1,10 @@
 import "server-only";
 import OpenAI from "openai";
 import { logAiUsage } from "@/lib/ai-usage";
+import { getEmbedModel } from "@/lib/ai-client";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { getEmbedConfig, type EmbedConfig } from "@/lib/embed-config";
+import { validateProviderUrl } from "@/lib/providers/url-validation";
 
 let openai: OpenAI | null = null;
 
@@ -19,16 +21,11 @@ function getOpenAIClient(): OpenAI {
 // under the smaller of those.
 const MAX_EMBEDDING_CHARS = 24_000;
 
-// OpenAI batching ceilings — 300k total tokens per request, 512 items per call.
-// Conservative target leaves headroom for tokenization variance (dense content
-// like lockfiles or CJK tokenize at ~2 chars/token in cl100k/o200k).
-const MAX_BATCH_TOKENS = 200_000;
-const MAX_BATCH_ITEMS = 512;
-
-// Ollama embedding endpoint typically processes one or a few inputs at a time
-// per HTTP call. The newer /api/embed accepts arrays, but we batch small for
-// timeout safety on CPU-only setups where each embed call can take seconds.
-const OLLAMA_BATCH_ITEMS = 64;
+// Batching is provider-specific: OpenAI accepts large multi-item requests
+// (constrained by token + item ceilings); Ollama processes synchronously
+// per call, so we send modest fixed-size batches for timeout safety on
+// CPU-only setups. Constants for each path live next to the path that
+// uses them, not at module scope.
 
 function estimateTokens(text: string): number {
   let ascii = 0;
@@ -66,7 +63,25 @@ export async function createEmbeddings(
     return texts.map(() => []);
   }
 
-  const config = getEmbedConfig();
+  const baseConfig = getEmbedConfig();
+
+  // Per-org / per-repo embed-model override beats the env default. The
+  // existing `getEmbedModel` chain returns Repository.embedModelId →
+  // Organization.defaultEmbedModelId → platform default. We only consult
+  // it for the org-tracked path; system-level embeddings (no org context)
+  // get the env-configured model unchanged.
+  //
+  // Caveat: an org-level override has to produce vectors with the same
+  // dim as the global Qdrant collection. Mismatched dim is rejected
+  // explicitly below so the failure has an actionable message instead of
+  // a cryptic Qdrant 400. Hosters who want per-org dims would need
+  // per-org collections — out of scope for this change.
+  let model = baseConfig.model;
+  if (tracking?.organizationId) {
+    const resolved = await getEmbedModel(tracking.organizationId, tracking.repositoryId);
+    if (resolved) model = resolved;
+  }
+  const config: EmbedConfig = { ...baseConfig, model };
 
   const { validTexts, validIndexes } = filterAndTruncate(texts);
   if (validTexts.length === 0) {
@@ -112,6 +127,13 @@ function filterAndTruncate(texts: string[]): { validTexts: string[]; validIndexe
   return { validTexts, validIndexes };
 }
 
+// OpenAI batching ceilings — 300k total tokens per request, 512 items per
+// call. Conservative target leaves headroom for tokenization variance
+// (dense content like lockfiles or CJK tokenize at ~2 chars/token in
+// cl100k/o200k tokenizers).
+const OPENAI_MAX_BATCH_TOKENS = 200_000;
+const OPENAI_MAX_BATCH_ITEMS = 512;
+
 async function embedWithOpenAI(
   texts: string[],
   config: EmbedConfig,
@@ -143,9 +165,9 @@ async function embedWithOpenAI(
   while (batchStart < texts.length) {
     let batchTokens = 0;
     let batchEnd = batchStart;
-    while (batchEnd < texts.length && batchEnd - batchStart < MAX_BATCH_ITEMS) {
+    while (batchEnd < texts.length && batchEnd - batchStart < OPENAI_MAX_BATCH_ITEMS) {
       const itemTokens = estimateTokens(texts[batchEnd]);
-      if (batchEnd > batchStart && batchTokens + itemTokens > MAX_BATCH_TOKENS) break;
+      if (batchEnd > batchStart && batchTokens + itemTokens > OPENAI_MAX_BATCH_TOKENS) break;
       batchTokens += itemTokens;
       batchEnd++;
     }
@@ -155,6 +177,12 @@ async function embedWithOpenAI(
 
   return { vectors, promptTokens };
 }
+
+// Ollama processes embedding requests synchronously per call; large batches
+// would slow first-response wall time without saving wall time overall.
+// 64-item chunks keep each call well under typical timeout thresholds on
+// CPU-only setups.
+const OLLAMA_BATCH_ITEMS = 64;
 
 /**
  * Call Ollama's /api/embed in modest batches. Ollama doesn't return usage
@@ -169,12 +197,19 @@ async function embedWithOllama(
   if (!config.ollamaBaseUrl) {
     throw new Error("Ollama embeddings selected but OCTOPUS_OLLAMA_BASE_URL not configured");
   }
+  // Defense-in-depth: even though the URL is operator-controlled via env
+  // (low SSRF risk), route it through the same validator the per-org BYOK
+  // path uses. `hosted: false` mirrors the `SELF_HOSTED` env default and
+  // allows localhost / RFC1918 destinations for self-hosters.
+  const safeBaseUrl = validateProviderUrl(config.ollamaBaseUrl, {
+    hosted: process.env.SELF_HOSTED !== "true",
+  });
   const vectors: number[][] = [];
   let promptTokens = 0;
 
   for (let i = 0; i < texts.length; i += OLLAMA_BATCH_ITEMS) {
     const batch = texts.slice(i, i + OLLAMA_BATCH_ITEMS);
-    const res = await fetch(`${config.ollamaBaseUrl}/api/embed`, {
+    const res = await fetch(`${safeBaseUrl}/api/embed`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ model: config.model, input: batch }),
@@ -182,7 +217,7 @@ async function embedWithOllama(
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
       throw new Error(
-        `Ollama embeddings HTTP ${res.status} from ${config.ollamaBaseUrl}/api/embed: ${detail.slice(0, 200)}`,
+        `Ollama embeddings HTTP ${res.status} from ${safeBaseUrl}/api/embed: ${detail.slice(0, 200)}`,
       );
     }
     const j = (await res.json()) as { embeddings?: number[][]; embedding?: number[] };

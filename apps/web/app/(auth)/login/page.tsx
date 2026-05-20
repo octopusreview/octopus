@@ -30,6 +30,17 @@ function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
+function MicrosoftIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none">
+      <path d="M2 2h9.5v9.5H2z" fill="#F25022" />
+      <path d="M12.5 2H22v9.5h-9.5z" fill="#7FBA00" />
+      <path d="M2 12.5h9.5V22H2z" fill="#00A4EF" />
+      <path d="M12.5 12.5H22V22h-9.5z" fill="#FFB900" />
+    </svg>
+  );
+}
+
 const LoginOctopus = lazy(() =>
   import("@/components/login-octopus").then((m) => ({ default: m.LoginOctopus }))
 );
@@ -125,6 +136,17 @@ function LoginContent() {
         >
           <IconBrandGithub data-icon="inline-start" className="size-5" />
           Sign in with GitHub
+        </Button>
+        <Button
+          type="button"
+          className="w-full bg-white/[0.06] hover:bg-white/[0.12] text-white border border-white/[0.1] h-11 text-sm font-medium"
+          onClick={() => {
+            trackEvent("login_method_click", { method: "microsoft" });
+            signIn.social({ provider: "microsoft", callbackURL: callbackUrl });
+          }}
+        >
+          <MicrosoftIcon className="size-5 shrink-0" />
+          Sign in with Microsoft
         </Button>
       </div>
 

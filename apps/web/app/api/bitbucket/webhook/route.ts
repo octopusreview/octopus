@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
   const body = await request.text();
   const event = request.headers.get("x-event-key");
   const signature = request.headers.get("x-hub-signature");
+  const hookUuidHeader = request.headers.get("x-hook-uuid");
 
   if (!event) {
     return NextResponse.json({ error: "Missing event header" }, { status: 400 });
@@ -55,18 +56,29 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing repository workspace" }, { status: 400 });
   }
 
-  // Find integration by workspace slug
-  const integration = await prisma.bitbucketIntegration.findFirst({
-    where: { workspaceSlug: workspace },
-    select: {
-      id: true,
-      organizationId: true,
-      webhookSecret: true,
-    },
-  });
+  // Bitbucket sends X-Hook-UUID identifying the exact webhook config. Multiple
+  // orgs can share the same workspaceSlug, so match by UUID first to avoid
+  // verifying the signature with the wrong tenant's secret.
+  const hookUuid = hookUuidHeader
+    ? hookUuidHeader.startsWith("{")
+      ? hookUuidHeader
+      : `{${hookUuidHeader}}`
+    : null;
+
+  const integration = hookUuid
+    ? await prisma.bitbucketIntegration.findFirst({
+        where: { webhookUuid: hookUuid },
+        select: { id: true, organizationId: true, webhookSecret: true },
+      })
+    : await prisma.bitbucketIntegration.findFirst({
+        where: { workspaceSlug: workspace },
+        select: { id: true, organizationId: true, webhookSecret: true },
+      });
 
   if (!integration) {
-    console.warn(`[bitbucket-webhook] No integration found for workspace: ${workspace}`);
+    console.warn(
+      `[bitbucket-webhook] No integration found — workspace: ${workspace}, hookUuid: ${hookUuid ?? "(none)"}`,
+    );
     return NextResponse.json({ error: "Unknown workspace" }, { status: 404 });
   }
 

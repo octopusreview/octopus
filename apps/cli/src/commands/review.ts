@@ -145,6 +145,7 @@ export async function reviewCommand(argv: string[]): Promise<number> {
       const decision = await decideIndex({
         autoYes: indexFlag,
         autoNo: noIndexFlag,
+        baseUrl: creds.baseUrl,
       });
       if (decision === "yes") {
         console.error(
@@ -277,33 +278,47 @@ export async function reviewCommand(argv: string[]): Promise<number> {
  *   1. --no-index flag → "no" (script-friendly: never prompt, never index)
  *   2. --index flag → "yes" (script-friendly: always index without prompt)
  *   3. stdin not a TTY → "no" (CI/scripts: don't hang waiting for input)
- *   4. interactive → ask the user; default "no" on bare Enter
+ *   4. interactive → ask the user; default depends on `baseUrl`
  *
- * Default-no is deliberate: this prompt initiates a one-way upload of the
- * working-tree contents (potentially untracked-but-unignored secrets,
- * proprietary code, customer data in scratch repos). An accidental Enter
- * on a prompt the user didn't fully read shouldn't exfiltrate source —
- * users who want the upload say "y" explicitly. The flag-driven paths
- * `--index` (consent recorded out of band) and `--no-index` (explicit opt-out)
- * are unaffected.
+ * The default on bare Enter depends on whether the configured server is
+ * reachable only from the local machine / private network:
+ *   - localhost / 127.x.x.x / ::1 / *.local / RFC1918 IPs → default "yes".
+ *     There's no data egress beyond what the user already controls, so
+ *     the prompt is just a heads-up about the action.
+ *   - anything else (cloud / public host) → default "no". This is a
+ *     one-way upload of working-tree contents (untracked-but-unignored
+ *     secrets, proprietary code) that we don't want to exfiltrate on
+ *     an accidental Enter.
+ *
+ * The flag-driven paths (`--index`, `--no-index`) are unaffected by the
+ * host classification.
  */
-async function decideIndex(opts: { autoYes: boolean; autoNo: boolean }): Promise<"yes" | "no"> {
+async function decideIndex(opts: {
+  autoYes: boolean;
+  autoNo: boolean;
+  baseUrl: string;
+}): Promise<"yes" | "no"> {
   if (opts.autoNo) return "no";
   if (opts.autoYes) return "yes";
   if (!process.stdin.isTTY) return "no";
 
+  const local = isLocalServer(opts.baseUrl);
+  const yesLabel = local ? "[Y]" : "[y]";
+  const noLabel = local ? "[n]" : "[N]";
+  const def = local ? "Y" : "N";
+  const hostHint = local ? ` (local server — ${opts.baseUrl})` : "";
+
   process.stderr.write(
     "\nThis repo isn't indexed in Octopus yet.\n" +
-      "Index it now for context-aware reviews? Files are uploaded to your Octopus server.\n" +
-      "  [y] yes   [N] no, just review the diff in bare mode   (default: N)\n> ",
+      `Index it now for context-aware reviews? Files are uploaded to your Octopus server${hostHint}.\n` +
+      `  ${yesLabel} yes   ${noLabel} no, just review the diff in bare mode   (default: ${def})\n> `,
   );
   const rl = createInterface({ input: process.stdin, output: process.stderr });
   try {
     // `once("line")` and `once("close")` race — the loser stays registered
     // unless explicitly removed. Without the off() calls, the listener that
     // didn't fire leaks until the process exits, and a future close fires
-    // a no-op handler (or worse, if we later re-use rl). Remove the loser
-    // as soon as the winner resolves.
+    // a no-op handler (or worse, if we later re-use rl).
     const answer = await new Promise<string>((resolveAnswer) => {
       const onLine = (s: string) => {
         rl.off("close", onClose);
@@ -316,11 +331,52 @@ async function decideIndex(opts: { autoYes: boolean; autoNo: boolean }): Promise
       rl.once("line", onLine);
       rl.once("close", onClose);
     });
-    const ch = answer.trim().toLowerCase()[0] ?? "n";
-    return ch === "y" ? "yes" : "no";
+    const trimmed = answer.trim().toLowerCase();
+    if (trimmed === "") return local ? "yes" : "no";
+    return trimmed[0] === "y" ? "yes" : "no";
   } finally {
     rl.close();
   }
+}
+
+/**
+ * Treat the server as "local" (and therefore safe to default to indexing on)
+ * when it's reachable only from the same machine / private LAN. The
+ * classification is conservative — any URL we can't parse, or any public
+ * hostname, gets treated as non-local so default-no applies.
+ *
+ * Covered:
+ *   - hostname `localhost` (any case)
+ *   - IPv4 loopback `127.0.0.0/8`
+ *   - IPv6 loopback `::1`
+ *   - mDNS `*.local` hostnames
+ *   - RFC1918 private IPv4 (10/8, 172.16/12, 192.168/16)
+ *   - IPv6 link-local (fe80::/10) and unique-local (fc00::/7)
+ */
+export function isLocalServer(baseUrl: string): boolean {
+  let host: string;
+  try {
+    const u = new URL(baseUrl);
+    host = u.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  } catch {
+    return false;
+  }
+  if (host === "localhost" || host === "::1") return true;
+  if (host.endsWith(".local")) return true;
+  // IPv4
+  const v4 = host.split(".");
+  if (v4.length === 4 && v4.every((p) => /^\d+$/.test(p))) {
+    const [a, b] = v4.map(Number);
+    if (a === 127) return true;
+    if (a === 10) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    return false;
+  }
+  // IPv6 — very rough match for link-local / unique-local prefixes.
+  if (host.startsWith("fe80:") || host.startsWith("fe80::")) return true;
+  if (/^f[cd]/.test(host)) return true;
+  return false;
 }
 
 async function refetchRepoMatch(
@@ -558,8 +614,10 @@ Notes:
     use the canonical pipeline with codebase context, finding capping, and
     your repo's reviewConfig — same as cloud PR reviews.
   • If the repo isn't connected, you'll be prompted to index the working
-    tree (files are uploaded to your Octopus server). Once indexed,
-    subsequent reviews use the same context-aware path as cloud reviews.
+    tree (files are uploaded to your Octopus server). The bare-Enter
+    default is "yes" for local servers (localhost / private LAN) and
+    "no" for public hosts. Once indexed, subsequent reviews use the
+    same context-aware path as cloud reviews.
   • Decline the index prompt (or pass --no-index) to review in "bare mode"
     instead — same LLM call but no codebase context.
   • The cloud PR review still runs on every PR — this is additive feedback

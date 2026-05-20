@@ -4,6 +4,7 @@ import { authenticateApiToken } from "@/lib/api-auth";
 import { generateBareLocalReview, ReviewConfigError } from "@/lib/review-core";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { writeAuditLog } from "@/lib/audit";
+import { MAX_LOCAL_REVIEW_DIFF_BYTES } from "@/lib/cli-limits";
 
 /**
  * POST /api/cli/review-local
@@ -24,7 +25,7 @@ import { writeAuditLog } from "@/lib/audit";
  * the same `local-review` operation tag as the context-aware path so
  * billing/reporting groups them together.
  */
-const MAX_DIFF_BYTES = 500 * 1024;
+const MAX_DIFF_BYTES = MAX_LOCAL_REVIEW_DIFF_BYTES;
 
 type Body = {
   diff?: string;

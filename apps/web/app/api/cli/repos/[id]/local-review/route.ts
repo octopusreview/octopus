@@ -3,6 +3,7 @@ import { prisma } from "@octopus/db";
 import { generateLocalReview, ReviewConfigError } from "@/lib/review-core";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { writeAuditLog } from "@/lib/audit";
+import { MAX_LOCAL_REVIEW_DIFF_BYTES } from "@/lib/cli-limits";
 import { NextRequest } from "next/server";
 
 export async function POST(
@@ -44,9 +45,11 @@ export async function POST(
     return Response.json({ error: "Missing or invalid 'diff' field" }, { status: 400 });
   }
 
-  // 500KB max
-  if (diff.length > 500_000) {
-    return Response.json({ error: "Diff too large (max 500KB)" }, { status: 413 });
+  if (diff.length > MAX_LOCAL_REVIEW_DIFF_BYTES) {
+    return Response.json(
+      { error: `Diff too large (max ${MAX_LOCAL_REVIEW_DIFF_BYTES} bytes)` },
+      { status: 413 },
+    );
   }
 
   if (await isOrgOverSpendLimit(result.org.id)) {

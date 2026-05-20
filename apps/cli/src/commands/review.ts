@@ -26,7 +26,11 @@ import { ensureRepoIndexed } from "../lib/local-index.js";
  * installed. This is just the fast individual-dev feedback loop.
  */
 
-const MAX_DIFF_BYTES = 500 * 1024; // matches the server cap on /local-review
+// Mirror of `MAX_LOCAL_REVIEW_DIFF_BYTES` in apps/web/lib/cli-limits.ts.
+// Drift between the two is a bug — the CLI truncates to this value and the
+// server rejects anything larger; if the numbers disagree, requests in the
+// gap pass client-side and fail server-side with HTTP 413.
+const MAX_DIFF_BYTES = 500 * 1024;
 // CLI-side timeout on the review request. Without this the CLI hangs
 // indefinitely if the server's LLM call stalls (eg. Ollama daemon down,
 // or a long context-building step). 5 min is generous enough for the

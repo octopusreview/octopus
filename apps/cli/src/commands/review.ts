@@ -361,20 +361,25 @@ export function isLocalServer(baseUrl: string): boolean {
   } catch {
     return false;
   }
-  if (host === "localhost" || host === "::1") return true;
+  if (host === "localhost" || host === "::1" || host === "::") return true;
   if (host.endsWith(".local")) return true;
   // IPv4
   const v4 = host.split(".");
   if (v4.length === 4 && v4.every((p) => /^\d+$/.test(p))) {
     const [a, b] = v4.map(Number);
+    // 0.0.0.0 is the wildcard bind address — a `baseUrl` pointing at it
+    // can only mean "this machine", same as 127.x.
+    if (a === 0 && b === 0 && v4[2] === "0" && v4[3] === "0") return true;
     if (a === 127) return true;
     if (a === 10) return true;
     if (a === 192 && b === 168) return true;
     if (a === 172 && b >= 16 && b <= 31) return true;
     return false;
   }
-  // IPv6 — very rough match for link-local / unique-local prefixes.
-  if (host.startsWith("fe80:") || host.startsWith("fe80::")) return true;
+  // IPv6 — rough prefix match for link-local / unique-local. `fe80:` alone
+  // catches both the compressed (`fe80::1`) and uncompressed forms because
+  // both share the same leading 5 chars.
+  if (host.startsWith("fe80:")) return true;
   if (/^f[cd]/.test(host)) return true;
   return false;
 }

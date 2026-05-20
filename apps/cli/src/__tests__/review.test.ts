@@ -16,6 +16,18 @@ describe("isLocalServer", () => {
     expect(isLocalServer("http://[::1]:3000")).toBe(true);
   });
 
+  it("treats IPv6 unspecified `::` as local", () => {
+    expect(isLocalServer("http://[::]:3000")).toBe(true);
+  });
+
+  it("treats IPv4 unspecified `0.0.0.0` as local", () => {
+    expect(isLocalServer("http://0.0.0.0:3000")).toBe(true);
+  });
+
+  it("treats IPv6 link-local as local (compressed form)", () => {
+    expect(isLocalServer("http://[fe80::1]:3000")).toBe(true);
+  });
+
   it("treats RFC1918 private IPv4 as local", () => {
     expect(isLocalServer("http://10.0.0.5")).toBe(true);
     expect(isLocalServer("http://192.168.1.10:3000")).toBe(true);

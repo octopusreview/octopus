@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { generateSparseVector } from "@/lib/sparse-vector";
+import { getEmbedConfig } from "@/lib/embed-config";
 
 // Qdrant point IDs must be uint or UUID. Existing UUID inputs pass through
 // unchanged (so callers using crypto.randomUUID() are unaffected); non-UUID
@@ -95,7 +96,12 @@ async function withQdrantRetry<T>(fn: () => Promise<T>, label: string, maxAttemp
 }
 
 const COLLECTION_NAME = "code_chunks";
-const VECTOR_SIZE = 3072; // text-embedding-3-large
+// Vector dim resolved from env via `getEmbedConfig()` so self-hosters can
+// swap to Ollama (typically 768 for nomic-embed-text) without source edits.
+// Resolved once at module load — changing OCTOPUS_EMBED_DIM after the
+// collections are created requires dropping the collections, since
+// different models produce non-comparable vectors.
+const VECTOR_SIZE = getEmbedConfig().dim;
 const SPARSE_VECTOR_NAME = "sparse";
 
 let client: QdrantClient | null = null;

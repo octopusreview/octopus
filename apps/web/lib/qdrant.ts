@@ -145,6 +145,10 @@ export async function upsertChunks(
     sparseVector?: { indices: number[]; values: number[] };
   }[],
 ) {
+  // createEmbeddings returns [] for points whose org is over its spend limit;
+  // qdrant rejects dim=0 dense vectors, so drop those points before sending.
+  points = points.filter((p) => p.vector.length > 0);
+  if (points.length === 0) return;
   const qdrant = getQdrantClient();
   // Qdrant accepts max 100 points per request
   for (let i = 0; i < points.length; i += 100) {
@@ -370,6 +374,8 @@ export async function upsertKnowledgeChunks(
     sparseVector?: { indices: number[]; values: number[] };
   }[],
 ) {
+  points = points.filter((p) => p.vector.length > 0);
+  if (points.length === 0) return;
   const qdrant = getQdrantClient();
   for (let i = 0; i < points.length; i += 100) {
     const slice = points.slice(i, i + 100).map((p) => ({ ...applyQdrantId(p.id, p.payload), vector: p.vector, sparseVector: p.sparseVector }));
@@ -528,6 +534,8 @@ export async function upsertReviewChunks(
     sparseVector?: { indices: number[]; values: number[] };
   }[],
 ) {
+  points = points.filter((p) => p.vector.length > 0);
+  if (points.length === 0) return;
   const qdrant = getQdrantClient();
   for (let i = 0; i < points.length; i += 100) {
     const slice = points.slice(i, i + 100).map((p) => ({ ...applyQdrantId(p.id, p.payload), vector: p.vector, sparseVector: p.sparseVector }));
@@ -664,6 +672,7 @@ export async function upsertChatChunk(point: {
   payload: Record<string, unknown>;
   sparseVector?: { indices: number[]; values: number[] };
 }) {
+  if (point.vector.length === 0) return;
   const qdrant = getQdrantClient();
   const { id, payload } = applyQdrantId(point.id, point.payload);
   const qdrantPoint = {
@@ -813,6 +822,7 @@ export async function upsertDiagramChunk(point: {
   payload: Record<string, unknown>;
   sparseVector?: { indices: number[]; values: number[] };
 }) {
+  if (point.vector.length === 0) return;
   const qdrant = getQdrantClient();
   const { id, payload } = applyQdrantId(point.id, point.payload);
   const qdrantPoint = {
@@ -947,6 +957,7 @@ export async function upsertFeedbackPattern(point: {
   payload: Record<string, unknown>;
   sparseVector?: { indices: number[]; values: number[] };
 }) {
+  if (point.vector.length === 0) return;
   const qdrant = getQdrantClient();
   // Feedback also stores `issueId` explicitly because it's the semantic name
   // callers expect for this collection; applyQdrantId additionally writes
@@ -1081,6 +1092,8 @@ export async function upsertDocsChunks(
     sparseVector?: { indices: number[]; values: number[] };
   }[],
 ) {
+  points = points.filter((p) => p.vector.length > 0);
+  if (points.length === 0) return;
   const qdrant = getQdrantClient();
   for (let i = 0; i < points.length; i += 100) {
     const slice = points.slice(i, i + 100).map((p) => ({ ...applyQdrantId(p.id, p.payload), vector: p.vector, sparseVector: p.sparseVector }));

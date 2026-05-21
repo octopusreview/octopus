@@ -11,6 +11,7 @@ import { rerankDocuments } from "@/lib/reranker";
 import Anthropic from "@anthropic-ai/sdk";
 import { requestAgentSearch } from "@/lib/agent-search";
 import { getReviewModel } from "@/lib/ai-client";
+import { getOrgSpendLimitStatus } from "@/lib/cost";
 
 let anthropicClient: Anthropic | null = null;
 
@@ -33,6 +34,21 @@ export async function POST(request: Request) {
   }
 
   const orgId = result.org.id;
+
+  // Spend-limit gate — reject before any AI calls or conversation state
+  // changes. Mirrors the gate in /api/chat and lib/chat-queue-processor.
+  const spendStatus = await getOrgSpendLimitStatus(orgId);
+  if (spendStatus.blocked) {
+    const limitMsg =
+      spendStatus.reason === "no_credits"
+        ? "Your organization is out of credits. Top up in Settings or add your own API keys to continue."
+        : "Your organization has reached its monthly AI usage limit. Increase the limit or add your own API keys in Settings to continue.";
+    console.warn(`[chat-cli] Org ${orgId} over spend limit (${spendStatus.reason}) — rejecting chat`);
+    return Response.json(
+      { blocked: true, reason: spendStatus.reason, message: limitMsg },
+      { status: 402 },
+    );
+  }
 
   // Get or create conversation
   let conversation;

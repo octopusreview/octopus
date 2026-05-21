@@ -17,6 +17,7 @@ import { logAiUsage } from "@/lib/ai-usage";
 import { rerankDocuments } from "@/lib/reranker";
 import { pubby } from "@/lib/pubby";
 import { processNextInQueue } from "@/lib/chat-queue-processor";
+import { getOrgSpendLimitStatus } from "@/lib/cost";
 import { generateSparseVector } from "@/lib/sparse-vector";
 import { requestAgentSearch, findClaudeAgent, requestAgentAnswer } from "@/lib/agent-search";
 import { getReviewModel } from "@/lib/ai-client";
@@ -133,7 +134,39 @@ export async function POST(request: Request) {
         userName: session.user.name,
       });
     } catch {}
+  }
 
+  // Spend-limit gate — reject before any AI calls. The queue processor has the
+  // same check, but it only fires when a follow-up message is dequeued, so the
+  // first request after going over limit would otherwise still run a full chat.
+  const spendStatus = await getOrgSpendLimitStatus(orgId);
+  if (spendStatus.blocked) {
+    const limitMsg =
+      spendStatus.reason === "no_credits"
+        ? "Your organization is out of credits. Top up in Settings or add your own API keys to continue."
+        : "Your organization has reached its monthly AI usage limit. Increase the limit or add your own API keys in Settings to continue.";
+    const savedAssistantMsg = await prisma.chatMessage.create({
+      data: { role: "assistant", content: limitMsg, conversationId: conversation.id },
+    });
+    if (conversation.isShared) {
+      try {
+        await pubby.trigger(`presence-chat-${conversation.id}`, "chat-message-complete", {
+          id: savedAssistantMsg.id,
+          role: "assistant",
+          content: limitMsg,
+        });
+      } catch {}
+    }
+    console.warn(`[chat] Org ${orgId} over spend limit (${spendStatus.reason}) — rejecting chat`);
+    return Response.json({
+      blocked: true,
+      reason: spendStatus.reason,
+      conversationId: conversation.id,
+      message: limitMsg,
+    }, { status: 402 });
+  }
+
+  if (conversation.isShared) {
     // Queue mechanism for shared chats
     const processingEntry = await prisma.chatQueue.findFirst({
       where: { conversationId: conversation.id, status: "processing" },

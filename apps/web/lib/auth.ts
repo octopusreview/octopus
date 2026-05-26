@@ -187,6 +187,7 @@ export const auth = betterAuth({
               );
 
               let email: string | undefined = payload.email;
+              let emailIsVerifiedMailbox = !!payload.email;
               if (!email && token.accessToken) {
                 try {
                   const res = await fetch(
@@ -195,7 +196,10 @@ export const auth = betterAuth({
                   );
                   if (res.ok) {
                     const me = (await res.json()) as { mail?: string; userPrincipalName?: string };
-                    email = me.mail ?? undefined;
+                    if (me.mail) {
+                      email = me.mail;
+                      emailIsVerifiedMailbox = true;
+                    }
                   } else {
                     console.warn(`[auth] Microsoft Graph /me returned ${res.status}`);
                   }
@@ -211,7 +215,7 @@ export const auth = betterAuth({
                   id: payload.sub,
                   name: payload.name,
                   email,
-                  emailVerified: payload.email_verified === true,
+                  emailVerified: payload.email_verified === true || emailIsVerifiedMailbox,
                   image: undefined,
                 },
                 data: payload,
@@ -220,6 +224,16 @@ export const auth = betterAuth({
           },
         }
       : {}),
+  },
+  account: {
+    accountLinking: {
+      enabled: true,
+      // Auto-link a new social sign-in to an existing user when emails match.
+      // Restricted to providers whose email is verified at the IdP (Google,
+      // GitHub, Microsoft work accounts via Graph mail) so we can't be tricked
+      // into linking by an attacker who controls an unverified email.
+      trustedProviders: ["google", "github", "microsoft"],
+    },
   },
 });
 

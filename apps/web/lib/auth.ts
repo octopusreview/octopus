@@ -172,13 +172,51 @@ export const auth = betterAuth({
             clientId: process.env.MICROSOFT_CLIENT_ID,
             clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
             tenantId: process.env.MICROSOFT_TENANT_ID ?? "common",
-            // Entra ID accounts without a mailbox (mail attribute unset) get an
-            // ID token with no `email` claim even when the optional claim is
-            // configured; fall back to preferred_username / upn (both are the
-            // user's sign-in email for work and personal accounts).
-            mapProfileToUser: (profile) => ({
-              email: profile.email ?? profile.preferred_username ?? profile.upn,
-            }),
+            // Override the default user-info extraction so we can resolve a real
+            // email when the ID token's `email` claim is missing (Entra ID does
+            // not emit it unless the optional claim is configured AND the user
+            // has a mailbox). Resolution order: id_token.email → Microsoft Graph
+            // /me.mail → preferred_username/upn (last resort, may be a UPN that
+            // is not a deliverable mailbox).
+            getUserInfo: async (token) => {
+              if (!token.idToken) return null;
+              const parts = token.idToken.split(".");
+              if (parts.length !== 3 || !parts[1]) return null;
+              const payload = JSON.parse(
+                Buffer.from(parts[1].replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"),
+              );
+
+              let email: string | undefined = payload.email;
+              if (!email && token.accessToken) {
+                try {
+                  const res = await fetch(
+                    "https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName,displayName,id",
+                    { headers: { Authorization: `Bearer ${token.accessToken}` } },
+                  );
+                  if (res.ok) {
+                    const me = (await res.json()) as { mail?: string; userPrincipalName?: string };
+                    email = me.mail ?? undefined;
+                  } else {
+                    console.warn(`[auth] Microsoft Graph /me returned ${res.status}`);
+                  }
+                } catch (e) {
+                  console.warn("[auth] Microsoft Graph /me fetch failed:", e);
+                }
+              }
+              email = email ?? payload.preferred_username ?? payload.upn;
+              if (!email) return null;
+
+              return {
+                user: {
+                  id: payload.sub,
+                  name: payload.name,
+                  email,
+                  emailVerified: payload.email_verified === true,
+                  image: undefined,
+                },
+                data: payload,
+              };
+            },
           },
         }
       : {}),

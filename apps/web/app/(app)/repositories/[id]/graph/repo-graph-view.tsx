@@ -3,6 +3,7 @@
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { useTheme } from "next-themes";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -141,6 +142,8 @@ export function RepoGraphView({
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<ForceGraphHandle | null>(null);
   const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
 
   useEffect(() => {
     if (indexStatus !== "indexed") return;
@@ -285,7 +288,9 @@ export function RepoGraphView({
                 nodeLabel={(n: NodeObject) => n.path}
                 nodeColor={(n: NodeObject) =>
                   focusedId === n.id
-                    ? "#ffffff"
+                    ? isDark
+                      ? "#ffffff"
+                      : "#0f172a"
                     : dirColors.get(n.dir) ?? DIR_PALETTE[0]
                 }
                 linkColor={(l: LinkObject) =>
@@ -316,17 +321,34 @@ export function RepoGraphView({
                   if (focusedId === node.id) {
                     ctx.beginPath();
                     ctx.arc(node.x ?? 0, node.y ?? 0, r + 4, 0, Math.PI * 2);
-                    ctx.fillStyle = "rgba(255,255,255,0.18)";
+                    ctx.fillStyle = isDark
+                      ? "rgba(255,255,255,0.18)"
+                      : "rgba(15,23,42,0.12)";
                     ctx.fill();
                   }
                   if (globalScale < 1.5 && focusedId !== node.id) return;
                   const label = node.name;
                   const fontSize = 10 / globalScale;
                   ctx.font = `${fontSize}px sans-serif`;
-                  ctx.fillStyle = "rgba(255,255,255,0.85)";
+                  const x = node.x ?? 0;
+                  const y = (node.y ?? 0) + r + 1;
+                  const textWidth = ctx.measureText(label).width;
+                  const pad = 2 / globalScale;
+                  ctx.fillStyle = isDark
+                    ? "rgba(15,23,42,0.6)"
+                    : "rgba(255,255,255,0.85)";
+                  ctx.fillRect(
+                    x - textWidth / 2 - pad,
+                    y - pad / 2,
+                    textWidth + pad * 2,
+                    fontSize + pad,
+                  );
+                  ctx.fillStyle = isDark
+                    ? "rgba(255,255,255,0.9)"
+                    : "rgba(15,23,42,0.9)";
                   ctx.textAlign = "center";
                   ctx.textBaseline = "top";
-                  ctx.fillText(label, node.x ?? 0, (node.y ?? 0) + r + 1);
+                  ctx.fillText(label, x, y);
                 }}
               />
             )}

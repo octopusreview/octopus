@@ -147,8 +147,12 @@ export async function upsertChunks(
 ) {
   // createEmbeddings returns [] for points whose org is over its spend limit;
   // qdrant rejects dim=0 dense vectors, so drop those points before sending.
+  const originalCount = points.length;
   points = points.filter((p) => p.vector.length > 0);
-  if (points.length === 0) return;
+  if (points.length === 0) {
+    if (originalCount > 0) console.warn(`[qdrant] upsertChunks: all ${originalCount} points had empty vectors, skipping upsert (org may be over spend limit)`);
+    return;
+  }
   const qdrant = getQdrantClient();
   // Qdrant accepts max 100 points per request
   for (let i = 0; i < points.length; i += 100) {
@@ -374,8 +378,14 @@ export async function upsertKnowledgeChunks(
     sparseVector?: { indices: number[]; values: number[] };
   }[],
 ) {
+  // createEmbeddings returns [] for points whose org is over its spend limit;
+  // qdrant rejects dim=0 dense vectors, so drop those points before sending.
+  const originalCount = points.length;
   points = points.filter((p) => p.vector.length > 0);
-  if (points.length === 0) return;
+  if (points.length === 0) {
+    if (originalCount > 0) console.warn(`[qdrant] upsertKnowledgeChunks: all ${originalCount} points had empty vectors, skipping upsert (org may be over spend limit)`);
+    return;
+  }
   const qdrant = getQdrantClient();
   for (let i = 0; i < points.length; i += 100) {
     const slice = points.slice(i, i + 100).map((p) => ({ ...applyQdrantId(p.id, p.payload), vector: p.vector, sparseVector: p.sparseVector }));
@@ -534,8 +544,14 @@ export async function upsertReviewChunks(
     sparseVector?: { indices: number[]; values: number[] };
   }[],
 ) {
+  // createEmbeddings returns [] for points whose org is over its spend limit;
+  // qdrant rejects dim=0 dense vectors, so drop those points before sending.
+  const originalCount = points.length;
   points = points.filter((p) => p.vector.length > 0);
-  if (points.length === 0) return;
+  if (points.length === 0) {
+    if (originalCount > 0) console.warn(`[qdrant] upsertReviewChunks: all ${originalCount} points had empty vectors, skipping upsert (org may be over spend limit)`);
+    return;
+  }
   const qdrant = getQdrantClient();
   for (let i = 0; i < points.length; i += 100) {
     const slice = points.slice(i, i + 100).map((p) => ({ ...applyQdrantId(p.id, p.payload), vector: p.vector, sparseVector: p.sparseVector }));
@@ -672,7 +688,10 @@ export async function upsertChatChunk(point: {
   payload: Record<string, unknown>;
   sparseVector?: { indices: number[]; values: number[] };
 }) {
-  if (point.vector.length === 0) return;
+  if (point.vector.length === 0) {
+    console.warn(`[qdrant] upsertChatChunk: point ${point.id} had empty vector, skipping upsert (org may be over spend limit)`);
+    return;
+  }
   const qdrant = getQdrantClient();
   const { id, payload } = applyQdrantId(point.id, point.payload);
   const qdrantPoint = {
@@ -822,7 +841,10 @@ export async function upsertDiagramChunk(point: {
   payload: Record<string, unknown>;
   sparseVector?: { indices: number[]; values: number[] };
 }) {
-  if (point.vector.length === 0) return;
+  if (point.vector.length === 0) {
+    console.warn(`[qdrant] upsertDiagramChunk: point ${point.id} had empty vector, skipping upsert (org may be over spend limit)`);
+    return;
+  }
   const qdrant = getQdrantClient();
   const { id, payload } = applyQdrantId(point.id, point.payload);
   const qdrantPoint = {
@@ -957,7 +979,10 @@ export async function upsertFeedbackPattern(point: {
   payload: Record<string, unknown>;
   sparseVector?: { indices: number[]; values: number[] };
 }) {
-  if (point.vector.length === 0) return;
+  if (point.vector.length === 0) {
+    console.warn(`[qdrant] upsertFeedbackPattern: point ${point.id} had empty vector, skipping upsert (org may be over spend limit)`);
+    return;
+  }
   const qdrant = getQdrantClient();
   // Feedback also stores `issueId` explicitly because it's the semantic name
   // callers expect for this collection; applyQdrantId additionally writes
@@ -1092,8 +1117,14 @@ export async function upsertDocsChunks(
     sparseVector?: { indices: number[]; values: number[] };
   }[],
 ) {
+  // createEmbeddings returns [] for points whose org is over its spend limit;
+  // qdrant rejects dim=0 dense vectors, so drop those points before sending.
+  const originalCount = points.length;
   points = points.filter((p) => p.vector.length > 0);
-  if (points.length === 0) return;
+  if (points.length === 0) {
+    if (originalCount > 0) console.warn(`[qdrant] upsertDocsChunks: all ${originalCount} points had empty vectors, skipping upsert (org may be over spend limit)`);
+    return;
+  }
   const qdrant = getQdrantClient();
   for (let i = 0; i < points.length; i += 100) {
     const slice = points.slice(i, i + 100).map((p) => ({ ...applyQdrantId(p.id, p.payload), vector: p.vector, sparseVector: p.sparseVector }));

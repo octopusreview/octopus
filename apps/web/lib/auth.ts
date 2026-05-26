@@ -172,6 +172,13 @@ export const auth = betterAuth({
             clientId: process.env.MICROSOFT_CLIENT_ID,
             clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
             tenantId: process.env.MICROSOFT_TENANT_ID ?? "common",
+            // Entra ID accounts without a mailbox (mail attribute unset) get an
+            // ID token with no `email` claim even when the optional claim is
+            // configured; fall back to preferred_username / upn (both are the
+            // user's sign-in email for work and personal accounts).
+            mapProfileToUser: (profile) => ({
+              email: profile.email ?? profile.preferred_username ?? profile.upn,
+            }),
           },
         }
       : {}),

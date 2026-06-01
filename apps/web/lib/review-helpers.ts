@@ -477,7 +477,7 @@ export function extractCrossFileQueries(findings: InlineFinding[], diff: string)
     // Named function/method references
     for (const match of text.matchAll(/(?:function|method|calls?)\s+[`"]?(\w{3,})[`"]?/gi)) {
       const funcName = match[1];
-      if (!seen.has(funcName) && !["the", "this", "that", "from", "with"].includes(funcName.toLowerCase())) {
+      if (!seen.has(funcName) && !STOP_WORDS.has(funcName.toLowerCase())) {
         seen.add(funcName);
         queries.push({ findingIndex: i, query: funcName });
       }
@@ -509,6 +509,22 @@ export type VerificationQuery = {
 };
 
 /**
+ * Common English stop-words that are never a real code symbol. Used to reject
+ * tokens the heuristics would otherwise treat as identifiers (e.g. "missing the
+ * handler" must not yield the symbol "the").
+ */
+const STOP_WORDS = new Set([
+  "the", "a", "an", "any", "some", "this", "that", "these", "those",
+  "from", "with", "for", "and", "or", "of", "to", "in", "on", "at", "by",
+  "it", "its", "their", "is", "are", "be", "been", "proper", "valid",
+]);
+
+/** True when a captured token is unusable as a symbol (stop-word or too short). */
+function isUnusableSymbol(token: string): boolean {
+  return token.length < 3 || STOP_WORDS.has(token.toLowerCase());
+}
+
+/**
  * Missing-X patterns: "missing import", "no import", "lacks import",
  * "missing error handling", "missing validation", etc.
  */
@@ -538,7 +554,11 @@ export function generateVerificationQueries(
 
     // 1. "Missing X" claims — search the finding's own file for X
     const missingMatch = text.match(MISSING_PATTERN);
-    if (missingMatch && f.filePath) {
+    // Guard against the regex capturing a stop-word ("missing the handler" must
+    // not search the file for "the" — that always matches and would wrongly
+    // suppress a genuine missing-X finding). Fall through to the generic
+    // per-file context query (section 3) when the token is unusable.
+    if (missingMatch && f.filePath && !isUnusableSymbol(missingMatch[1])) {
       const missingThing = missingMatch[1];
       queries.push({
         findingIndex: i,

@@ -1848,7 +1848,7 @@ Rules:
           }
         }
 
-        findings = await validateFindings(findings, diff, org.id, confidenceThreshold, crossFileContext || undefined, "[reviewer]", verificationContext);
+        findings = await validateFindings(findings, diff, org.id, confidenceThreshold, crossFileContext || undefined, "[reviewer]", verificationContext, fileTree);
       } catch (err) {
         console.warn("[reviewer] Two-pass validation failed, keeping all findings:", err);
       }

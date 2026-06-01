@@ -537,7 +537,7 @@ Rules:
         }
       }
 
-      findings = await validateFindings(findings, diff, org.id, confidenceThreshold, crossFileContext || undefined, "[review-core]", verificationContext);
+      findings = await validateFindings(findings, diff, org.id, confidenceThreshold, crossFileContext || undefined, "[review-core]", verificationContext, fileTreeStr || undefined);
     } catch (err) {
       console.warn("[review-core] Two-pass validation failed, keeping all findings:", err);
     }

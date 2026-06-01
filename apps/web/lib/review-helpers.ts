@@ -497,6 +497,15 @@ export type VerificationQuery = {
   filePath?: string;
   /** What the finding claims — used by the validator to check against context */
   claim: string;
+  /**
+   * True when this query checks an existence / "missing X" claim. These must be
+   * verified against the ACTUAL file content (not inferred from a possibly
+   * truncated diff), so gatherVerificationContext always fetches the full file
+   * and searches it for `symbol` rather than relying on Qdrant snippets.
+   */
+  existence?: boolean;
+  /** The symbol the finding claims is missing (route, import, export, handler). */
+  symbol?: string;
 };
 
 /**
@@ -536,6 +545,8 @@ export function generateVerificationQueries(
         query: `import ${missingThing} in ${f.filePath}`,
         filePath: f.filePath,
         claim: `Claims "${missingThing}" is missing from ${f.filePath}`,
+        existence: true,
+        symbol: missingThing,
       });
       // Also search for the thing itself (not just import)
       queries.push({
@@ -543,6 +554,8 @@ export function generateVerificationQueries(
         query: `${missingThing} ${f.filePath}`,
         filePath: f.filePath,
         claim: `Verify "${missingThing}" existence in ${f.filePath}`,
+        existence: true,
+        symbol: missingThing,
       });
     }
 

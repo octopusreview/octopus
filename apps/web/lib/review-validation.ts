@@ -82,6 +82,38 @@ export async function gatherCrossFileContext(
   return chunks.join("\n\n");
 }
 
+// ─── Existence Evidence ─────────────────────────────────────────────────────
+
+/** Cap the full-file scan for existence checks so a pathological file can't blow up the prompt. */
+const MAX_VERIFY_FILE_CHARS = 200_000;
+
+/**
+ * Search the FULL file for a symbol a finding claims is "missing" and return a
+ * definitive existence signal. This is the truncation-proof check: a "route not
+ * registered" / "missing export" finding is verified against the real file, so
+ * the validator never has to infer absence from a (possibly truncated) diff.
+ */
+function buildExistenceEvidence(filePath: string, content: string, symbol: string): string {
+  const lines = content.slice(0, MAX_VERIFY_FILE_CHARS).split("\n");
+  const needle = symbol.toLowerCase();
+  const hits: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].toLowerCase().includes(needle)) {
+      hits.push(i);
+      if (hits.length >= 3) break;
+    }
+  }
+  const header = `[SAME FILE — FULL FILE SEARCHED] // ${filePath} (${lines.length} lines)`;
+  if (hits.length === 0) {
+    return `${header}\n>> SYMBOL "${symbol}" NOT FOUND anywhere in the file — the "missing" claim may be correct.`;
+  }
+  const snippets = hits.map((ln) => {
+    const body = lines.slice(Math.max(0, ln - 4), Math.min(lines.length, ln + 5)).join("\n");
+    return `>> SYMBOL "${symbol}" FOUND at ${filePath}:L${ln + 1}\n${body}`;
+  });
+  return `${header}\n${snippets.join("\n\n")}`;
+}
+
 // ─── Finding Verification Context ──────────────────────────────────────────
 
 /**
@@ -117,6 +149,18 @@ export async function gatherVerificationContext(
   // Search Qdrant for each query and group results by finding index
   const findingChunks = new Map<number, string[]>();
 
+  // Dedupe file fetches across queries (existence checks often fetch the same file twice).
+  const fileCache = new Map<string, Promise<string>>();
+  const fetchFile = (path: string): Promise<string> => {
+    if (!fileContentFetcher) return Promise.resolve("");
+    let p = fileCache.get(path);
+    if (!p) {
+      p = fileContentFetcher(path).catch(() => "");
+      fileCache.set(path, p);
+    }
+    return p;
+  };
+
   for (let i = 0; i < queries.length; i++) {
     const query = queries[i];
     const vector = embeddings[i];
@@ -138,17 +182,26 @@ export async function gatherVerificationContext(
       // Qdrant search failed — try fallback
     }
 
-    // Fallback: fetch file directly if we have a filePath and no same-file results
-    const hasSameFileResult = chunks.some((c) => c.startsWith("[SAME FILE]"));
-    if (!hasSameFileResult && query.filePath && fileContentFetcher) {
-      try {
-        const content = await fileContentFetcher(query.filePath);
+    // Existence / "missing X" claims must be checked against the REAL file, not
+    // inferred from a (possibly truncated) diff or a partial Qdrant snippet.
+    // Always fetch the full file and search it for the symbol — this is what
+    // kills "route still missing" false positives on truncated diffs.
+    if (query.existence && query.filePath && query.symbol && fileContentFetcher) {
+      const content = await fetchFile(query.filePath);
+      chunks.push(
+        content
+          ? buildExistenceEvidence(query.filePath, content, query.symbol)
+          : `[SAME FILE — FETCH FAILED] // ${query.filePath}\n>> Could not fetch the file to verify "${query.symbol}". Do NOT confirm absence you cannot verify.`,
+      );
+    } else {
+      // Fallback: fetch file header if we have a filePath and no same-file results
+      const hasSameFileResult = chunks.some((c) => c.startsWith("[SAME FILE]"));
+      if (!hasSameFileResult && query.filePath && fileContentFetcher) {
+        const content = await fetchFile(query.filePath);
         if (content) {
           // Get the first 2000 chars (imports/header section) which is most useful for verification
           chunks.push(`[SAME FILE] // ${query.filePath}:L1 (file header)\n${content.slice(0, 2000)}`);
         }
-      } catch {
-        // File fetch failed — skip
       }
     }
   }
@@ -177,6 +230,7 @@ export async function validateFindings(
   crossFileContext?: string,
   logPrefix = "[review-validation]",
   verificationContext?: Map<number, string>,
+  fileTree?: string,
 ): Promise<InlineFinding[]> {
   if (findings.length === 0) return findings;
 
@@ -196,6 +250,19 @@ export async function validateFindings(
     ? `\n\n## Referenced Code Context (for cross-file verification)\nThese code snippets are from files referenced by findings. Use them to verify function signatures, types, and APIs:\n\n${crossFileContext}`
     : "";
 
+  // The diff shown here is a window, not the whole change. Tell the model so it
+  // never infers that something is "missing" just because it falls outside it.
+  const DIFF_WINDOW = 12000;
+  const diffWindow =
+    diff.length > DIFF_WINDOW
+      ? diff.slice(0, DIFF_WINDOW) +
+        `\n\n[... diff truncated for validation — only the first ${DIFF_WINDOW.toLocaleString()} of ${diff.length.toLocaleString()} chars are shown. Do NOT infer that anything is "missing" or "absent" from this window; the rest of the diff, and the unchanged parts of each file, are not shown here.]`
+      : diff;
+
+  const fileTreeSection = fileTree
+    ? `\n\nREPOSITORY FILE TREE (ground truth for file existence — if a path appears here, the file exists even when it is absent from the diff window):\n${fileTree}`
+    : "";
+
   const response = await createAiMessage(
     {
       model: VALIDATION_MODEL,
@@ -210,8 +277,8 @@ ${findingsSummary}
 
 DIFF:
 \`\`\`diff
-${diff.slice(0, 12000)}
-\`\`\`${crossFileSection}
+${diffWindow}
+\`\`\`${crossFileSection}${fileTreeSection}
 
 Scoring guide:
 - 90-100: Issue is directly visible in the diff with near-certainty
@@ -242,6 +309,13 @@ Some findings include a ">> VERIFICATION CONTEXT" section with actual code from 
 - If a finding claims "inconsistent pattern" but the verification context shows the pattern difference is due to different call-site architectures (both achieving the same result), assign confidence 0-10
 - Lines marked [SAME FILE] are from the finding's own file — these are the strongest evidence for or against the claim
 - If verification context CONFIRMS the issue (e.g., the import truly does not exist), keep or raise confidence
+
+EXISTENCE / "MISSING X" FINDINGS (route not registered, handler/export/import missing, file not found):
+- These were checked against the ACTUAL file, not just the diff. Look for a ">> SYMBOL ... FOUND" or ">> SYMBOL ... NOT FOUND" line, or a "[SAME FILE — FULL FILE SEARCHED]" block, in the verification context.
+- If the symbol was FOUND in the file, the thing EXISTS — assign confidence 0-10 (false positive), even if it is not visible in the diff window above. The diff is only a window; the file is the ground truth.
+- If the verification context says "FETCH FAILED" or the symbol could not be checked, you CANNOT verify absence — assign confidence ≤20. Never confirm a "missing" claim you were unable to verify against the file.
+- Never raise confidence on a "missing X" finding solely because X is absent from the (possibly truncated) diff window.
+- If the file path appears in the REPOSITORY FILE TREE, never confirm a "file does not exist / missing file" finding for it.
 
 When a finding claims something is "missing" from a new function (missing DB save, missing auth, missing cleanup):
 - Check if the function is called from a larger handler visible in the diff — the caller may already do it

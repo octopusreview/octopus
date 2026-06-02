@@ -750,7 +750,12 @@ export async function processReview(pullRequestId: string): Promise<void> {
       console.warn("[reviewer] Failed to fetch branch head, skipping tree cache:", err);
     }
 
-    if (headSha && repo.treeSha === headSha && Array.isArray(repo.treePaths)) {
+    if (
+      headSha &&
+      repo.treeSha === headSha &&
+      Array.isArray(repo.treePaths) &&
+      repo.treePaths.every((p) => typeof p === "string")
+    ) {
       const cached = repo.treePaths as string[];
       console.log(`[reviewer] Tree cache hit for ${repo.fullName}@${headSha.slice(0, 8)} (${cached.length} files)`);
       return cached;

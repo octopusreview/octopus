@@ -38,9 +38,22 @@ function isCiphertext(value: string): boolean {
 }
 
 async function main() {
-  if (!process.env.BETTER_AUTH_SECRET) {
-    console.error("BETTER_AUTH_SECRET is required to encrypt keys.");
+  // Encryption uses OCTOPUS_DATA_KEY when set, otherwise the legacy
+  // BETTER_AUTH_SECRET-derived key — either one is enough to encrypt.
+  if (!process.env.OCTOPUS_DATA_KEY && !process.env.BETTER_AUTH_SECRET) {
+    console.error("Set OCTOPUS_DATA_KEY or BETTER_AUTH_SECRET to encrypt keys.");
     process.exit(1);
+  }
+
+  // Without BETTER_AUTH_SECRET the legacy decryption fallback is unavailable, so
+  // ciphertext written under the old BETTER_AUTH_SECRET-derived key would not be
+  // recognized by isCiphertext() and would get re-encrypted (double-encrypted).
+  // Only safe when every row is already under OCTOPUS_DATA_KEY.
+  if (process.env.OCTOPUS_DATA_KEY && !process.env.BETTER_AUTH_SECRET) {
+    console.warn(
+      "[encrypt-ai-keys] BETTER_AUTH_SECRET is not set: legacy ciphertext cannot be detected. " +
+        "Only run this if all existing keys are already encrypted under OCTOPUS_DATA_KEY.\n",
+    );
   }
 
   console.log(

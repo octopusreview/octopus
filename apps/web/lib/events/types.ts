@@ -55,6 +55,10 @@ export type CreditLowEvent = {
   type: "credit-low";
   orgId: string;
   remainingBalance: number;
+  /** Dollars spent over the last hour, used to estimate remaining runway. */
+  burnRatePerHour?: number;
+  /** Estimated minutes until the balance is depleted at the recent burn rate. */
+  runwayMinutes?: number;
 };
 
 export type OrgTypeChangedEvent = {

@@ -154,16 +154,23 @@ const CREDIT_LOW_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24h
  */
 export function buildPaceLine(event: CreditLowEvent): string {
   const { burnRatePerHour, runwayMinutes } = event;
-  if (!burnRatePerHour || burnRatePerHour <= 0 || runwayMinutes === undefined) {
+  if (
+    !burnRatePerHour ||
+    !Number.isFinite(burnRatePerHour) ||
+    burnRatePerHour <= 0 ||
+    runwayMinutes === undefined ||
+    !Number.isFinite(runwayMinutes)
+  ) {
     return "";
   }
 
   const rate = `$${burnRatePerHour.toFixed(2)}`;
   const mins = Math.round(runwayMinutes);
+  const hours = Math.round(mins / 60);
   const when =
     mins < 90
       ? `about ${mins} minute${mins === 1 ? "" : "s"}`
-      : `about ${Math.round(mins / 60)} hours`;
+      : `about ${hours} hour${hours === 1 ? "" : "s"}`;
 
   return `At your current pace (~${rate}/hour), this will run out in ${when}.`;
 }

@@ -22,9 +22,25 @@ describe("buildPaceLine", () => {
     );
   });
 
+  it("still reports minutes at the 60-minute boundary", () => {
+    expect(buildPaceLine({ ...base, burnRatePerHour: 5, runwayMinutes: 60 })).toBe(
+      "At your current pace (~$5.00/hour), this will run out in about 60 minutes.",
+    );
+  });
+
+  it("switches to hours at the 90-minute boundary", () => {
+    expect(buildPaceLine({ ...base, burnRatePerHour: 4, runwayMinutes: 90 })).toBe(
+      "At your current pace (~$4.00/hour), this will run out in about 2 hours.",
+    );
+  });
+
   it("switches to hours once runway reaches 90 minutes", () => {
     expect(buildPaceLine({ ...base, burnRatePerHour: 4, runwayMinutes: 120 })).toBe(
       "At your current pace (~$4.00/hour), this will run out in about 2 hours.",
     );
+  });
+
+  it("returns empty string for a non-finite burn rate", () => {
+    expect(buildPaceLine({ ...base, burnRatePerHour: Infinity, runwayMinutes: 0 })).toBe("");
   });
 });

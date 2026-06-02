@@ -725,6 +725,54 @@ export async function processReview(pullRequestId: string): Promise<void> {
       : isGitlab
         ? gitlab.getRepositoryTree(org.id, projectPath, branch)
         : bitbucket.getRepositoryTree(org.id, owner, repoName, branch);
+
+  // Cheap HEAD-SHA lookup used to validate the cached file tree. GitHub returns
+  // the whole tree in one request, so caching it saves nothing — only Bitbucket
+  // (one request per directory) and GitLab (paginated walk) benefit.
+  const providerGetBranchHead = (branch: string): Promise<string | null> =>
+    isBitbucket
+      ? bitbucket.getBranchHead(org.id, owner, repoName, branch)
+      : isGitlab
+        ? gitlab.getBranchHead(org.id, projectPath, branch)
+        : Promise.resolve(null);
+
+  // Walk the repo tree, but reuse a cached copy when the branch HEAD hasn't
+  // moved since we last walked it. The full walk floods provider rate limits
+  // (see [bitbucket] getRepositoryTree), so we trade it for a single HEAD-SHA
+  // request on every review where the tree is unchanged.
+  const getRepoTreeCached = async (branch: string): Promise<string[]> => {
+    if (isGitHub) return providerGetTree(branch);
+
+    let headSha: string | null = null;
+    try {
+      headSha = await providerGetBranchHead(branch);
+    } catch (err) {
+      console.warn("[reviewer] Failed to fetch branch head, skipping tree cache:", err);
+    }
+
+    if (headSha && repo.treeSha === headSha && Array.isArray(repo.treePaths)) {
+      const cached = repo.treePaths as string[];
+      console.log(`[reviewer] Tree cache hit for ${repo.fullName}@${headSha.slice(0, 8)} (${cached.length} files)`);
+      return cached;
+    }
+
+    const paths = await providerGetTree(branch);
+
+    // Only persist when we know which commit the tree belongs to — otherwise a
+    // future HEAD-SHA lookup could match a stale cache it never validated.
+    if (headSha) {
+      try {
+        await prisma.repository.update({
+          where: { id: repo.id },
+          data: { treeSha: headSha, treePaths: paths },
+        });
+        console.log(`[reviewer] Tree cache stored for ${repo.fullName}@${headSha.slice(0, 8)} (${paths.length} files)`);
+      } catch (err) {
+        console.warn("[reviewer] Failed to persist tree cache:", err);
+      }
+    }
+    return paths;
+  };
   let reviewCommentId = pr.reviewCommentId ? Number(pr.reviewCommentId) : null;
   const baseEvent = {
     repoId: repo.id,
@@ -1095,7 +1143,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
       }
       throw err;
     }
-    const repoTree = await providerGetTree(repo.defaultBranch);
+    const repoTree = await getRepoTreeCached(repo.defaultBranch);
 
     // Detect committed build artifacts / dependency folders
     const badFiles = detectBadCommits(rawDiff);

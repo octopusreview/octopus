@@ -385,6 +385,30 @@ export async function createInlineComment(
 
 // ── Repository Tree & Content ──
 
+/**
+ * Fetch the HEAD commit SHA of a branch in a single cheap request, used to
+ * validate a cached file tree before re-walking it. Returns null on failure
+ * so callers can fall back to walking the tree.
+ */
+export async function getBranchHead(
+  organizationId: string,
+  projectPath: string,
+  branch: string,
+): Promise<string | null> {
+  const token = await getAccessToken(organizationId);
+  const host = await getHost(organizationId);
+  const res = await fetch(
+    `${apiBase(host)}/projects/${encodeURIComponent(projectPath)}/repository/branches/${encodeURIComponent(branch)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) {
+    console.warn(`[gitlab] Failed to get branch head for ${branch}: ${res.status}`);
+    return null;
+  }
+  const data = await res.json();
+  return data.commit?.id ?? null;
+}
+
 export async function getRepositoryTree(
   organizationId: string,
   projectPath: string,

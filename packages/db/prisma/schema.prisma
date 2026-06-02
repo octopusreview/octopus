@@ -212,6 +212,8 @@ model Repository {
   totalChunks    Int      @default(0)
   totalVectors   Int      @default(0)
   indexDurationMs    Int?
+  treeSha        String?  // default-branch HEAD commit SHA that treePaths was cached at
+  treePaths      Json?    // cached repo file tree (string[]) valid for treeSha; avoids re-walking the tree on every review
   contributorCount   Int      @default(0)
   contributors       Json     @default("[]")
   summary        String?

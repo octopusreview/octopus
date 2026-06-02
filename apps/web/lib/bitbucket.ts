@@ -275,6 +275,31 @@ export async function createInlineComment(
 
 // ── Repository Tree & Content ──
 
+/**
+ * Fetch the HEAD commit SHA of a branch in a single cheap request. Used to
+ * decide whether a cached file tree is still valid before walking the whole
+ * tree (which costs one request per directory). Returns null on failure so
+ * callers can fall back to walking the tree.
+ */
+export async function getBranchHead(
+  organizationId: string,
+  workspace: string,
+  repoSlug: string,
+  branch: string,
+): Promise<string | null> {
+  const token = await getAccessToken(organizationId);
+  const res = await fetch(
+    `${BITBUCKET_API}/repositories/${workspace}/${repoSlug}/refs/branches/${encodeURIComponent(branch)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) {
+    console.warn(`[bitbucket] Failed to get branch head for ${branch}: ${res.status}`);
+    return null;
+  }
+  const data = await res.json();
+  return data.target?.hash ?? null;
+}
+
 export async function getRepositoryTree(
   organizationId: string,
   workspace: string,

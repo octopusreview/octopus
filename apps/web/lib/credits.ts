@@ -122,19 +122,60 @@ export async function deductCredits(
     });
   });
 
-  const CREDIT_LOW_THRESHOLD = 10; // dollars
-  if (totalAfter > 0 && totalAfter < CREDIT_LOW_THRESHOLD) {
-    eventBus.emit({
-      type: "credit-low",
-      orgId,
-      remainingBalance: totalAfter,
-    });
-  }
+  await maybeNotifyCreditLow(orgId, totalAfter);
 
   // Check auto-reload after deduction (fire-and-forget)
   triggerAutoReloadIfNeeded(orgId, totalAfter).catch((err) =>
     console.error("[credits] Auto-reload failed:", err),
   );
+}
+
+// Minimum low-credit threshold for slow/steady usage; preserves the original
+// $10 warning floor so nothing regresses for low-volume orgs.
+const CREDIT_LOW_FLOOR = 10; // dollars
+// Window used to estimate the org's recent burn rate.
+const BURN_LOOKBACK_MS = 60 * 60 * 1000; // 1 hour
+// Skip the burn-rate query entirely for well-funded orgs to keep the
+// deduction hot path cheap. Orgs above this balance never need a warning;
+// the next deduction that drops them below it will re-evaluate.
+const BURN_QUERY_CEILING = 100; // dollars
+
+/**
+ * Emit a `credit-low` event when the balance can no longer cover the org's
+ * projected next hour of usage. The threshold adapts to burn rate: a fast
+ * burner is warned with roughly an hour of runway left, while a slow/steady
+ * org keeps the original $10 floor.
+ */
+async function maybeNotifyCreditLow(
+  orgId: string,
+  totalAfter: number,
+): Promise<void> {
+  if (totalAfter <= 0 || totalAfter >= BURN_QUERY_CEILING) return;
+
+  // Sum of usage over the last hour. Usage amounts are stored negative, so the
+  // absolute value is dollars-per-hour at the recent pace.
+  const recent = await prisma.creditTransaction.aggregate({
+    where: {
+      organizationId: orgId,
+      type: "usage",
+      createdAt: { gte: new Date(Date.now() - BURN_LOOKBACK_MS) },
+    },
+    _sum: { amount: true },
+  });
+
+  const burnPerHour = Math.abs(Number(recent._sum.amount ?? 0));
+  // Warn once the balance can't fund the next projected hour, never below the floor.
+  const threshold = Math.max(CREDIT_LOW_FLOOR, burnPerHour);
+
+  if (totalAfter >= threshold) return;
+
+  eventBus.emit({
+    type: "credit-low",
+    orgId,
+    remainingBalance: totalAfter,
+    burnRatePerHour: burnPerHour,
+    runwayMinutes: burnPerHour > 0 ? (totalAfter / burnPerHour) * 60 : undefined,
+  });
 }
 
 async function triggerAutoReloadIfNeeded(

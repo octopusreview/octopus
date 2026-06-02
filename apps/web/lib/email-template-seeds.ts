@@ -187,10 +187,12 @@ If this was you, you can ignore this email. If you don't recognize this activity
     subject: "Credit Balance Low: {{balance}} remaining",
     body: `Your organization's credit balance has dropped to **{{balance}}**.
 
+{{paceLine}}
+
 When credits run out, PR reviews and other AI-powered features will stop working.`,
     buttonText: "Add Credits",
     buttonUrl: "{{appUrl}}/settings/billing",
-    variables: ["balance", "appUrl"],
+    variables: ["balance", "paceLine", "appUrl"],
   },
 
   // ── Marketing templates (for Send Email) ──────────────────────────────

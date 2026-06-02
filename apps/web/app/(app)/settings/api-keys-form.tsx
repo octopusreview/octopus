@@ -16,12 +16,6 @@ import { Separator } from "@/components/ui/separator";
 import { IconX } from "@tabler/icons-react";
 import { updateApiKeys, removeApiKey } from "../actions";
 
-function maskKey(key: string | null): string {
-  if (!key) return "";
-  if (key.length <= 8) return "••••••••";
-  return key.slice(0, 7) + "••••••••" + key.slice(-4);
-}
-
 export function ApiKeysForm({
   openaiApiKey,
   anthropicApiKey,
@@ -29,6 +23,8 @@ export function ApiKeysForm({
   cohereApiKey,
   isOwner,
 }: {
+  // Masked previews (e.g. "sk-abc••••••••wxyz"), not full keys. The server masks
+  // the decrypted key so plaintext never reaches the browser.
   openaiApiKey: string | null;
   anthropicApiKey: string | null;
   googleApiKey: string | null;
@@ -68,7 +64,7 @@ export function ApiKeysForm({
               <Label htmlFor="openaiApiKey">OpenAI</Label>
               {openaiApiKey ? (
                 <Badge variant="outline" className="gap-1 text-[10px] font-normal">
-                  {maskKey(openaiApiKey)}
+                  {openaiApiKey}
                   {isOwner && (
                     <button
                       type="button"
@@ -103,7 +99,7 @@ export function ApiKeysForm({
               <Label htmlFor="anthropicApiKey">Anthropic</Label>
               {anthropicApiKey ? (
                 <Badge variant="outline" className="gap-1 text-[10px] font-normal">
-                  {maskKey(anthropicApiKey)}
+                  {anthropicApiKey}
                   {isOwner && (
                     <button
                       type="button"
@@ -138,7 +134,7 @@ export function ApiKeysForm({
               <Label htmlFor="googleApiKey">Google AI</Label>
               {googleApiKey ? (
                 <Badge variant="outline" className="gap-1 text-[10px] font-normal">
-                  {maskKey(googleApiKey)}
+                  {googleApiKey}
                   {isOwner && (
                     <button
                       type="button"
@@ -176,7 +172,7 @@ export function ApiKeysForm({
               <Label htmlFor="cohereApiKey">Cohere Rerank</Label>
               {cohereApiKey ? (
                 <Badge variant="outline" className="gap-1 text-[10px] font-normal">
-                  {maskKey(cohereApiKey)}
+                  {cohereApiKey}
                   {isOwner && (
                     <button
                       type="button"

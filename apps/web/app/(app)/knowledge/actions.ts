@@ -11,6 +11,7 @@ import { deleteKnowledgeDocumentChunks } from "@/lib/qdrant";
 import Anthropic from "@anthropic-ai/sdk";
 import { logAiUsage } from "@/lib/ai-usage";
 import { knowledgeTemplates } from "@/lib/knowledge-templates";
+import { decryptStringMaybeLegacy } from "@/lib/crypto";
 
 export async function createKnowledgeDocument(
   _prevState: { error?: string },
@@ -526,7 +527,9 @@ export async function enhanceKnowledgeContent(
     });
 
     const client = new Anthropic({
-      apiKey: org?.anthropicApiKey || process.env.ANTHROPIC_API_KEY!,
+      apiKey: org?.anthropicApiKey
+        ? decryptStringMaybeLegacy(org.anthropicApiKey)
+        : process.env.ANTHROPIC_API_KEY!,
     });
 
     const response = await client.messages.create({

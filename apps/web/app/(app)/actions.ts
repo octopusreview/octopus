@@ -15,6 +15,7 @@ import { runIndexingInBackground } from "@/lib/indexing-runner";
 import { toBaseSlug, randomSlugSuffix } from "@/lib/slug";
 import { canUserCreateOrg } from "@/lib/org-limits";
 import { MAX_OWNED_ORGS_PER_USER } from "@/lib/constants";
+import { encryptString } from "@/lib/crypto";
 
 export async function clearOrgCookie() {
   const cookieStore = await cookies();
@@ -256,12 +257,13 @@ export async function updateApiKeys(
     return { error: "Invalid Google AI API key format." };
   }
 
-  // Only update keys that have new values — empty fields keep the existing key
+  // Only update keys that have new values — empty fields keep the existing key.
+  // Keys are encrypted at rest with the same helper used for OAuth tokens.
   const data: Record<string, string | null> = {};
-  if (openaiApiKey) data.openaiApiKey = openaiApiKey;
-  if (anthropicApiKey) data.anthropicApiKey = anthropicApiKey;
-  if (googleApiKey) data.googleApiKey = googleApiKey;
-  if (cohereApiKey) data.cohereApiKey = cohereApiKey;
+  if (openaiApiKey) data.openaiApiKey = encryptString(openaiApiKey);
+  if (anthropicApiKey) data.anthropicApiKey = encryptString(anthropicApiKey);
+  if (googleApiKey) data.googleApiKey = encryptString(googleApiKey);
+  if (cohereApiKey) data.cohereApiKey = encryptString(cohereApiKey);
 
   if (Object.keys(data).length === 0) {
     return { error: "Enter at least one API key to save." };

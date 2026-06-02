@@ -2,7 +2,17 @@ import { headers, cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
+import { decryptStringMaybeLegacy } from "@/lib/crypto";
 import { ApiKeysForm } from "../api-keys-form";
+
+// Decrypt the stored key (ciphertext at rest) and return a masked preview so the
+// full plaintext key never reaches the browser.
+function maskStoredKey(stored: string | null): string | null {
+  if (!stored) return null;
+  const key = decryptStringMaybeLegacy(stored);
+  if (key.length <= 8) return "••••••••";
+  return key.slice(0, 7) + "••••••••" + key.slice(-4);
+}
 
 export default async function ApiKeysPage() {
   const session = await auth.api.getSession({
@@ -40,10 +50,10 @@ export default async function ApiKeysPage() {
   return (
     <ApiKeysForm
       key={member.organization.id}
-      openaiApiKey={member.organization.openaiApiKey}
-      anthropicApiKey={member.organization.anthropicApiKey}
-      googleApiKey={member.organization.googleApiKey}
-      cohereApiKey={member.organization.cohereApiKey}
+      openaiApiKey={maskStoredKey(member.organization.openaiApiKey)}
+      anthropicApiKey={maskStoredKey(member.organization.anthropicApiKey)}
+      googleApiKey={maskStoredKey(member.organization.googleApiKey)}
+      cohereApiKey={maskStoredKey(member.organization.cohereApiKey)}
       isOwner={isOwner}
     />
   );

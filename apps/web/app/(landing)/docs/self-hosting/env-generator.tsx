@@ -17,6 +17,7 @@ const DEFAULT_ENV = {
 
 export function EnvGenerator() {
   const [secret, setSecret] = useState(() => generateSecret());
+  const [dataKey, setDataKey] = useState(() => generateSecret());
   const [copied, setCopied] = useState(false);
 
   const envContent = `# Database (overridden by docker-compose when using Docker)
@@ -29,6 +30,11 @@ QDRANT_API_KEY=
 # Auth
 BETTER_AUTH_SECRET=${secret}
 BETTER_AUTH_URL=${DEFAULT_ENV.BETTER_AUTH_URL}
+
+# Data encryption key (32 bytes hex). Encrypts OAuth tokens and per-org AI
+# provider keys at rest. Decoupled from BETTER_AUTH_SECRET so the auth secret
+# can rotate without invalidating encrypted data.
+OCTOPUS_DATA_KEY=${dataKey}
 
 # AI Providers
 OPENAI_API_KEY=
@@ -50,6 +56,7 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=`;
 
   const regenerate = useCallback(() => {
     setSecret(generateSecret());
+    setDataKey(generateSecret());
     setCopied(false);
   }, []);
 

@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "@octopus/db";
+import { decryptStringMaybeLegacy } from "@/lib/crypto";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -127,9 +128,9 @@ async function getOrgKeys(orgId: string): Promise<OrgKeys> {
     select: { anthropicApiKey: true, openaiApiKey: true, googleApiKey: true },
   });
   return {
-    anthropicApiKey: org?.anthropicApiKey ?? null,
-    openaiApiKey: org?.openaiApiKey ?? null,
-    googleApiKey: org?.googleApiKey ?? null,
+    anthropicApiKey: org?.anthropicApiKey ? decryptStringMaybeLegacy(org.anthropicApiKey) : null,
+    openaiApiKey: org?.openaiApiKey ? decryptStringMaybeLegacy(org.openaiApiKey) : null,
+    googleApiKey: org?.googleApiKey ? decryptStringMaybeLegacy(org.googleApiKey) : null,
   };
 }
 

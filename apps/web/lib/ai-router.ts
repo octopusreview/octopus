@@ -185,11 +185,21 @@ async function callAnthropic(
   };
 }
 
+// Codex / agentic coding models (e.g. gpt-5.3-codex) are served only via the
+// Responses API; chat.completions returns 404 "not a chat model".
+function usesResponsesApi(model: string): boolean {
+  return model.includes("codex");
+}
+
 async function callOpenAI(
   params: AiCreateParams,
   apiKey?: string | null,
 ): Promise<AiResponse> {
   const client = getOpenAI(apiKey);
+
+  if (usesResponsesApi(params.model)) {
+    return callOpenAIResponses(client, params);
+  }
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
   if (params.system) {
@@ -215,6 +225,30 @@ async function callOpenAI(
       inputTokens: response.usage?.prompt_tokens ?? 0,
       outputTokens: response.usage?.completion_tokens ?? 0,
       cacheReadTokens: response.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+      cacheWriteTokens: 0,
+    },
+  };
+}
+
+async function callOpenAIResponses(
+  client: OpenAI,
+  params: AiCreateParams,
+): Promise<AiResponse> {
+  const response = await client.responses.create({
+    model: params.model,
+    instructions: params.system,
+    input: params.messages.map((m) => ({ role: m.role, content: m.content })),
+    max_output_tokens: params.maxTokens,
+  });
+
+  return {
+    text: response.output_text ?? "",
+    provider: "openai",
+    model: params.model,
+    usage: {
+      inputTokens: response.usage?.input_tokens ?? 0,
+      outputTokens: response.usage?.output_tokens ?? 0,
+      cacheReadTokens: response.usage?.input_tokens_details?.cached_tokens ?? 0,
       cacheWriteTokens: 0,
     },
   };

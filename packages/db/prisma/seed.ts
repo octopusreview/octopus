@@ -719,15 +719,8 @@ async function main() {
     // Google
     { modelId: "gemini-2.5-pro", displayName: "Gemini 2.5 Pro", provider: "google", category: "llm", inputPrice: 1.25, outputPrice: 10, sortOrder: 5 },
     { modelId: "gemini-2.5-flash", displayName: "Gemini 2.5 Flash", provider: "google", category: "llm", inputPrice: 0.15, outputPrice: 0.6, sortOrder: 6 },
-    // OpenAI
-    { modelId: "gpt-4o", displayName: "GPT-4o", provider: "openai", category: "llm", inputPrice: 2.5, outputPrice: 10, sortOrder: 7 },
-    { modelId: "gpt-4o-mini", displayName: "GPT-4o Mini", provider: "openai", category: "llm", inputPrice: 0.15, outputPrice: 0.6, sortOrder: 8 },
-    { modelId: "o3", displayName: "OpenAI o3", provider: "openai", category: "llm", inputPrice: 10, outputPrice: 40, sortOrder: 9 },
-    { modelId: "o3-mini", displayName: "OpenAI o3 Mini", provider: "openai", category: "llm", inputPrice: 1.1, outputPrice: 4.4, sortOrder: 10 },
-    { modelId: "o4-mini", displayName: "OpenAI o4 Mini", provider: "openai", category: "llm", inputPrice: 1.1, outputPrice: 4.4, sortOrder: 11 },
-    { modelId: "gpt-5.3-codex", displayName: "GPT-5.3 Codex", provider: "openai", category: "llm", inputPrice: 1.25, outputPrice: 10, sortOrder: 12 },
-    { modelId: "gpt-5.3-codex-mini", displayName: "GPT-5.3 Codex Mini", provider: "openai", category: "llm", inputPrice: 0.25, outputPrice: 2, sortOrder: 13 },
-    { modelId: "codex-mini-latest", displayName: "Codex Mini", provider: "openai", category: "llm", inputPrice: 1.5, outputPrice: 6, sortOrder: 14 },
+    // OpenAI — Codex is the only OpenAI LLM we offer; served via the Responses API.
+    { modelId: "gpt-5.3-codex", displayName: "GPT-5.3 Codex", provider: "openai", category: "llm", inputPrice: 1.75, outputPrice: 14, sortOrder: 7 },
     // Embeddings
     { modelId: "text-embedding-3-large", displayName: "Embedding 3 Large", provider: "openai", category: "embedding", inputPrice: 0.13, outputPrice: 0, sortOrder: 0 },
     { modelId: "text-embedding-3-small", displayName: "Embedding 3 Small", provider: "openai", category: "embedding", inputPrice: 0.02, outputPrice: 0, sortOrder: 1 },

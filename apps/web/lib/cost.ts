@@ -17,6 +17,7 @@ const FALLBACK_PRICING: Record<string, ModelPricing> = {
   "claude-haiku-4-5-20251001": { input: 1, output: 5 },
   "gemini-2.5-pro": { input: 1.25, output: 10 },
   "gemini-2.5-flash": { input: 0.15, output: 0.6 },
+  "gpt-5.3-codex": { input: 1.75, output: 14 },
   "text-embedding-3-large": { input: 0.13, output: 0 },
   "rerank-v3.5": { input: 2000.0, output: 0 },
 };

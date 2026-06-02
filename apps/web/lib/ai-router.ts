@@ -241,8 +241,19 @@ async function callOpenAIResponses(
     max_output_tokens: params.maxTokens,
   });
 
+  const text = response.output_text ?? "";
+  // Surface non-text or truncated responses as errors instead of silently
+  // returning an empty review (e.g. status "incomplete" when max_output_tokens
+  // is hit, or a refusal/non-text output item).
+  if (!text) {
+    const reason = response.incomplete_details?.reason;
+    throw new Error(
+      `OpenAI Responses returned no text (status: ${response.status}${reason ? `, reason: ${reason}` : ""})`,
+    );
+  }
+
   return {
-    text: response.output_text ?? "",
+    text,
     provider: "openai",
     model: params.model,
     usage: {

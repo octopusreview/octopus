@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { IconBrandGitlab, IconArrowRight } from "@tabler/icons-react";
+import { IconBrandGitlab, IconArrowRight, IconCopy, IconCheck } from "@tabler/icons-react";
 import { disconnectGitlab, startGitlabOAuth } from "./actions";
 
 type GitlabData = {
@@ -22,13 +22,35 @@ type GitlabData = {
 } | null;
 
 const DEFAULT_HOST = "https://gitlab.com";
+const REQUIRED_SCOPES = "api read_api read_user read_repository write_repository";
 
-export function GitlabIntegrationCard({ data }: { data: GitlabData }) {
+export function GitlabIntegrationCard({
+  data,
+  redirectUri,
+}: {
+  data: GitlabData;
+  redirectUri: string | null;
+}) {
   const [isPending, startTransition] = useTransition();
   const [host, setHost] = useState(DEFAULT_HOST);
+  const [copied, setCopied] = useState<string | null>(null);
 
   const isSelfHosted =
     host.trim() !== "" && host.replace(/\/+$/, "") !== DEFAULT_HOST;
+
+  const copy = (value: string, key: string) => {
+    navigator.clipboard.writeText(value);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 1500);
+  };
+
+  // Authoritative value used in the OAuth flow; falls back to the current
+  // origin when the server env isn't exposed to the client.
+  const effectiveRedirectUri =
+    redirectUri ??
+    (typeof window !== "undefined"
+      ? `${window.location.origin}/api/gitlab/callback`
+      : "");
 
   if (!data) {
     return (
@@ -84,8 +106,43 @@ export function GitlabIntegrationCard({ data }: { data: GitlabData }) {
                   </p>
                   <p className="text-amber-700 dark:text-amber-300 text-xs mb-3">
                     Create one at <span className="font-mono">{host.replace(/\/+$/, "")}/admin/applications</span>{" "}
-                    (or User Settings → Applications). Redirect URI must match this app&apos;s callback URL.
+                    (or User Settings → Applications) with the exact Redirect URI and scopes below.
                   </p>
+
+                  <div className="mb-3 space-y-2">
+                    <div>
+                      <p className="text-amber-700 dark:text-amber-300 text-[11px] font-medium mb-1">
+                        Redirect URI
+                      </p>
+                      <div className="flex items-center gap-1.5">
+                        <code className="min-w-0 flex-1 truncate rounded bg-amber-100 dark:bg-amber-900/50 px-2 py-1 text-[11px] text-amber-900 dark:text-amber-100">
+                          {effectiveRedirectUri}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => copy(effectiveRedirectUri, "uri")}
+                          className="shrink-0 rounded p-1 text-amber-700 hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-900/50"
+                          aria-label="Copy redirect URI"
+                        >
+                          {copied === "uri" ? (
+                            <IconCheck className="size-3.5" />
+                          ) : (
+                            <IconCopy className="size-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-amber-700 dark:text-amber-300 text-[11px] font-medium mb-1">
+                        Scopes
+                      </p>
+                      <code className="block rounded bg-amber-100 dark:bg-amber-900/50 px-2 py-1 text-[11px] leading-relaxed text-amber-900 dark:text-amber-100 break-words">
+                        {REQUIRED_SCOPES}
+                      </code>
+                    </div>
+                  </div>
+
                   <div className="space-y-2">
                     <Input
                       name="clientId"

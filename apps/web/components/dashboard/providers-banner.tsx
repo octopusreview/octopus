@@ -22,10 +22,19 @@ import {
   IconArrowRight,
   IconGitPullRequest,
   IconShieldCheck,
+  IconCopy,
+  IconCheck,
 } from "@tabler/icons-react";
 import { startGitlabOAuth } from "@/app/(app)/settings/integrations/actions";
 
 const DEFAULT_GITLAB_HOST = "https://gitlab.com";
+const GITLAB_REQUIRED_SCOPES =
+  "api read_api read_user read_repository write_repository";
+
+// Bottom sheet on mobile (pinned edge-to-edge so content can't overflow
+// sideways), centered dialog on sm+ screens.
+const SHEET_CONTENT_CLASS =
+  "inset-x-0 bottom-0 top-auto max-h-[85vh] max-w-full translate-x-0 translate-y-0 gap-4 overflow-y-auto overflow-x-hidden rounded-b-none rounded-t-2xl sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl";
 
 function setCookie(name: string, value: string, days: number) {
   const expires = new Date(Date.now() + days * 864e5).toUTCString();
@@ -37,23 +46,40 @@ export function ProvidersBanner({
   bitbucketConnected,
   gitlabConnected,
   githubAppSlug,
+  gitlabRedirectUri,
 }: {
   githubConnected: boolean;
   bitbucketConnected: boolean;
   gitlabConnected: boolean;
   githubAppSlug: string | undefined;
+  gitlabRedirectUri: string | null;
 }) {
   const [dismissed, setDismissed] = useState(false);
   const [bbDialogOpen, setBbDialogOpen] = useState(false);
   const [glDialogOpen, setGlDialogOpen] = useState(false);
   const [workspaceSlug, setWorkspaceSlug] = useState("");
   const [glHost, setGlHost] = useState(DEFAULT_GITLAB_HOST);
+  const [glCopied, setGlCopied] = useState<string | null>(null);
 
   if (dismissed) return null;
 
   const githubInstallUrl = githubAppSlug ? "/api/github/install?returnTo=/dashboard" : null;
   const isGlSelfHosted =
     glHost.trim() !== "" && glHost.replace(/\/+$/, "") !== DEFAULT_GITLAB_HOST;
+
+  const copyGl = (value: string, key: string) => {
+    navigator.clipboard.writeText(value);
+    setGlCopied(key);
+    setTimeout(() => setGlCopied(null), 1500);
+  };
+
+  // Authoritative value used in the OAuth flow; falls back to the current
+  // origin when the server env isn't exposed to the client.
+  const glEffectiveRedirectUri =
+    gitlabRedirectUri ??
+    (typeof window !== "undefined"
+      ? `${window.location.origin}/api/gitlab/callback`
+      : "");
 
   return (
     <>
@@ -225,7 +251,7 @@ export function ProvidersBanner({
       </Card>
 
       <Dialog open={bbDialogOpen} onOpenChange={setBbDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className={SHEET_CONTENT_CLASS}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <IconBrandBitbucket className="size-5 text-[#0052CC] dark:text-[#79B8FF]" />
@@ -236,7 +262,7 @@ export function ProvidersBanner({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="pt-2">
+          <div className="min-w-0 pt-2">
             <p className="text-sm font-medium mb-3">How it works</p>
             <ol className="text-sm text-muted-foreground space-y-1.5 list-decimal list-inside mb-5">
               <li>Enter your workspace slug below</li>
@@ -279,7 +305,7 @@ export function ProvidersBanner({
       </Dialog>
 
       <Dialog open={glDialogOpen} onOpenChange={setGlDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className={SHEET_CONTENT_CLASS}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <IconBrandGitlab className="size-5 text-[#FC6D26]" />
@@ -290,7 +316,7 @@ export function ProvidersBanner({
             </DialogDescription>
           </DialogHeader>
 
-          <form action={startGitlabOAuth} className="space-y-3 pt-2">
+          <form action={startGitlabOAuth} className="min-w-0 space-y-3 pt-2">
             <div className="space-y-1.5">
               <Label htmlFor="gl-banner-host">GitLab host</Label>
               <Input
@@ -319,8 +345,43 @@ export function ProvidersBanner({
                 </p>
                 <p className="text-amber-700 dark:text-amber-300 text-xs mb-3">
                   Create one at <span className="font-mono">{glHost.replace(/\/+$/, "")}/admin/applications</span>{" "}
-                  (or User Settings → Applications). Redirect URI must match this app&apos;s callback URL.
+                  (or User Settings → Applications) with the exact Redirect URI and scopes below.
                 </p>
+
+                <div className="mb-3 space-y-2">
+                  <div>
+                    <p className="text-amber-700 dark:text-amber-300 text-[11px] font-medium mb-1">
+                      Redirect URI
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <code className="min-w-0 flex-1 truncate rounded bg-amber-100 dark:bg-amber-900/50 px-2 py-1 text-[11px] text-amber-900 dark:text-amber-100">
+                        {glEffectiveRedirectUri}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => copyGl(glEffectiveRedirectUri, "uri")}
+                        className="shrink-0 rounded p-1 text-amber-700 hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-900/50"
+                        aria-label="Copy redirect URI"
+                      >
+                        {glCopied === "uri" ? (
+                          <IconCheck className="size-3.5" />
+                        ) : (
+                          <IconCopy className="size-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-amber-700 dark:text-amber-300 text-[11px] font-medium mb-1">
+                      Scopes
+                    </p>
+                    <code className="block rounded bg-amber-100 dark:bg-amber-900/50 px-2 py-1 text-[11px] leading-relaxed text-amber-900 dark:text-amber-100 break-words">
+                      {GITLAB_REQUIRED_SCOPES}
+                    </code>
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <Input
                     name="clientId"

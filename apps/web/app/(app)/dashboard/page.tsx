@@ -504,6 +504,7 @@ export default async function DashboardPage({
           bitbucketConnected={bitbucketConnected}
           gitlabConnected={gitlabConnected}
           githubAppSlug={githubAppSlug}
+          gitlabRedirectUri={process.env.GITLAB_REDIRECT_URI ?? null}
         />
       )}
 

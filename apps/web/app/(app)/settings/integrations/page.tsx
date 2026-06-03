@@ -132,7 +132,10 @@ export default async function IntegrationsPage({
         error={githubError}
       />
       <BitbucketIntegrationCard data={bitbucketIntegration} />
-      <GitlabIntegrationCard data={gitlabIntegration} />
+      <GitlabIntegrationCard
+        data={gitlabIntegration}
+        redirectUri={process.env.GITLAB_REDIRECT_URI ?? null}
+      />
       <SlackIntegrationCard data={slackIntegration} />
       <LinearIntegrationCard data={linearIntegration} />
       <JiraIntegrationCard data={jiraIntegration} />

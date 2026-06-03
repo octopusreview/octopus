@@ -3,9 +3,15 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { sendInvitationEmail } from "@/lib/invitation-email";
+import { fixedWindowLimit, tooManyRequests } from "@/lib/rate-limit";
 
 const INVITATION_EXPIRY_DAYS = 7;
 const DAYS_TO_MS = 24 * 60 * 60 * 1000;
+
+// Resends also send an email, so they share the create endpoint's per-inviter
+// burst budget. Keep these in sync with the values in ../../route.ts.
+const INVITE_USER_LIMIT = 30;
+const INVITE_USER_WINDOW_S = 10 * 60;
 
 // POST /api/orgs/:orgId/invitations/:id/resend — Resend invitation
 export async function POST(
@@ -29,6 +35,18 @@ export async function POST(
   });
   if (!member) {
     return NextResponse.json({ error: "Forbidden: admin role required" }, { status: 403 });
+  }
+
+  const userLimit = await fixedWindowLimit(
+    `invite:user:${session.user.id}`,
+    INVITE_USER_LIMIT,
+    INVITE_USER_WINDOW_S,
+  );
+  if (!userLimit.ok) {
+    return tooManyRequests(
+      "Too many invitations sent. Please wait a moment before inviting more people.",
+      userLimit.retryAfterSeconds,
+    );
   }
 
   const invitation = await prisma.organizationInvitation.findFirst({

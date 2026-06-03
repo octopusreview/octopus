@@ -4,10 +4,20 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { sendInvitationEmail } from "@/lib/invitation-email";
 import { normalizeEmail } from "@/lib/email-normalize";
+import { fixedWindowLimit, tooManyRequests } from "@/lib/rate-limit";
 
 const INVITATION_EXPIRY_DAYS = 7;
 const DAYS_TO_MS = 24 * 60 * 60 * 1000;
 const VALID_ROLES = ["admin", "member"];
+
+// Invitation rate limits. Each invitation sends an email, so these guard
+// against email-spam abuse while staying well clear of real team onboarding
+// (most orgs invite far fewer people than these ceilings).
+const INVITE_USER_LIMIT = 30; // per inviter, burst window
+const INVITE_USER_WINDOW_S = 10 * 60; // 10 minutes
+const INVITE_ORG_LIMIT = 100; // per org, sustained window
+const INVITE_ORG_WINDOW_S = 24 * 60 * 60; // 24 hours
+const INVITE_ORG_PENDING_CAP = 200; // max outstanding pending invitations per org
 
 async function getAdminMember(orgId: string, userId: string) {
   return prisma.organizationMember.findFirst({
@@ -35,6 +45,32 @@ export async function POST(
   const member = await getAdminMember(orgId, session.user.id);
   if (!member) {
     return NextResponse.json({ error: "Forbidden: admin role required" }, { status: 403 });
+  }
+
+  // Per-inviter burst limit (shared with resend). Catches scripted firing.
+  const userLimit = await fixedWindowLimit(
+    `invite:user:${session.user.id}`,
+    INVITE_USER_LIMIT,
+    INVITE_USER_WINDOW_S,
+  );
+  if (!userLimit.ok) {
+    return tooManyRequests(
+      "Too many invitations sent. Please wait a moment before inviting more people.",
+      userLimit.retryAfterSeconds,
+    );
+  }
+
+  // Per-org sustained limit. Guards against a single org spraying invitations.
+  const orgLimit = await fixedWindowLimit(
+    `invite:org:${orgId}`,
+    INVITE_ORG_LIMIT,
+    INVITE_ORG_WINDOW_S,
+  );
+  if (!orgLimit.ok) {
+    return tooManyRequests(
+      "This organization has reached its daily invitation limit. Please try again later.",
+      orgLimit.retryAfterSeconds,
+    );
   }
 
   const body = await request.json();
@@ -73,6 +109,17 @@ export async function POST(
   });
   if (existingInvitation) {
     return NextResponse.json({ error: "A pending invitation already exists for this email" }, { status: 409 });
+  }
+
+  // Hard cap on outstanding pending invitations per org.
+  const pendingCount = await prisma.organizationInvitation.count({
+    where: { organizationId: orgId, status: "pending" },
+  });
+  if (pendingCount >= INVITE_ORG_PENDING_CAP) {
+    return NextResponse.json(
+      { error: "Too many pending invitations. Revoke some before sending more." },
+      { status: 409 },
+    );
   }
 
   const org = await prisma.organization.findUniqueOrThrow({ where: { id: orgId } });

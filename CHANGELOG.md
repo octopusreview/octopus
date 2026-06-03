@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.17] - 2026-06-03
+
+### Added
+- Rate-limit team invitations to prevent email spam abuse (#400)
+- GitLab/CLI: show OAuth redirect URI and scopes, and review unsynced PRs on demand (#399)
+- OpenAI Codex (gpt-5.3-codex) support via the Responses API (#397)
+- Adaptive low-credit warning threshold based on burn rate (#396)
+- Gate chat completion on the org spend limit (#385)
+- Microsoft social login, with Graph-based email resolution and account linking (#383)
+- Remove and restore repositories with sync-safe dismissal (#379)
+- Seed GPT-5 Codex and GPT-5 Codex Mini models (#374)
+- Docs: right-side table of contents, floating Ask AI, and restructured navigation
+
+### Fixed
+- Verify "missing X" findings against the full file to kill truncated-diff false positives (#392)
+- Encrypt per-org AI provider keys at rest and decouple the data key (#395)
+- Bitbucket: cache repo file tree by branch HEAD SHA to stop rate limits (#398)
+- Bitbucket: resolve integration by webhook UUID to fix multi-tenant 401 errors (#382)
+- Qdrant: skip upsert for points with empty embedding vectors (#384)
+- Repo graph labels and focus state now readable in light mode (#386)
+- Email: claim credit-low cooldown atomically to prevent duplicate sends (#381)
+- GitHub: redirect to login when the install callback has no state (#380)
+
 ## [1.0.16] - 2026-05-11
 
 ### Added
@@ -304,6 +327,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Suppress dismissed findings in Additional findings summary (#25)
 - CI lint failures across all packages (#36)
 
+[1.0.17]: https://github.com/octopusreview/octopus/compare/v1.0.16...v1.0.17
 [1.0.16]: https://github.com/octopusreview/octopus/compare/v1.0.15...v1.0.16
 [1.0.15]: https://github.com/octopusreview/octopus/compare/v1.0.14...v1.0.15
 [1.0.14]: https://github.com/octopusreview/octopus/compare/v1.0.13...v1.0.14

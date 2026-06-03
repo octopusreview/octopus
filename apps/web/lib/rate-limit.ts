@@ -1,5 +1,15 @@
 import { getRedis } from "./redis";
 
+// Shared invitation limits, imported by both the create and resend routes so
+// the two endpoints enforce the same budgets against the same Redis counters.
+// Each invitation (create or resend) sends a real AWS SES email, so these
+// guard sender reputation and cost while staying clear of real team onboarding.
+export const INVITE_USER_LIMIT = 30; // per inviter, burst window
+export const INVITE_USER_WINDOW_S = 10 * 60; // 10 minutes
+export const INVITE_ORG_LIMIT = 100; // per org, sustained window
+export const INVITE_ORG_WINDOW_S = 24 * 60 * 60; // 24 hours
+export const INVITE_ORG_PENDING_CAP = 200; // max outstanding pending invitations per org
+
 export type RateLimitResult = {
   ok: boolean;
   remaining: number;

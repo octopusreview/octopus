@@ -4,20 +4,20 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { sendInvitationEmail } from "@/lib/invitation-email";
 import { normalizeEmail } from "@/lib/email-normalize";
-import { fixedWindowLimit, tooManyRequests } from "@/lib/rate-limit";
+import { validateEmailForSignup, reasonToMessage } from "@/lib/email-validator";
+import {
+  fixedWindowLimit,
+  tooManyRequests,
+  INVITE_USER_LIMIT,
+  INVITE_USER_WINDOW_S,
+  INVITE_ORG_LIMIT,
+  INVITE_ORG_WINDOW_S,
+  INVITE_ORG_PENDING_CAP,
+} from "@/lib/rate-limit";
 
 const INVITATION_EXPIRY_DAYS = 7;
 const DAYS_TO_MS = 24 * 60 * 60 * 1000;
 const VALID_ROLES = ["admin", "member"];
-
-// Invitation rate limits. Each invitation sends an email, so these guard
-// against email-spam abuse while staying well clear of real team onboarding
-// (most orgs invite far fewer people than these ceilings).
-const INVITE_USER_LIMIT = 30; // per inviter, burst window
-const INVITE_USER_WINDOW_S = 10 * 60; // 10 minutes
-const INVITE_ORG_LIMIT = 100; // per org, sustained window
-const INVITE_ORG_WINDOW_S = 24 * 60 * 60; // 24 hours
-const INVITE_ORG_PENDING_CAP = 200; // max outstanding pending invitations per org
 
 async function getAdminMember(orgId: string, userId: string) {
   return prisma.organizationMember.findFirst({
@@ -81,6 +81,14 @@ export async function POST(
   }
 
   const email = normalizeEmail(rawEmail);
+
+  // Validate the recipient address before sending. Invitations go out via AWS
+  // SES, so blocking disposable domains and addresses with no valid MX record
+  // (the same checks the signup flow runs) protects sender reputation.
+  const emailValidation = await validateEmailForSignup(email);
+  if (!emailValidation.ok) {
+    return NextResponse.json({ error: reasonToMessage(emailValidation.reason) }, { status: 400 });
+  }
 
   if (role && !VALID_ROLES.includes(role)) {
     return NextResponse.json({ error: `Invalid role. Must be one of: ${VALID_ROLES.join(", ")}` }, { status: 400 });

@@ -26,18 +26,18 @@ const SITE_URL = "https://octopus-review.ai";
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default:
-      "Octopus: AI-Powered Automated Code Review for GitHub & Bitbucket",
+    default: "AI Code Review | Octopus | Every PR, Reviewed in Minutes",
     template: "%s | Octopus",
   },
   description:
-    "Automate pull request reviews with AI. Octopus indexes your codebase, analyzes diffs, and posts severity-rated findings directly on GitHub & Bitbucket PRs.",
+    "Octopus reviews every pull request in minutes with AI. Works with GitHub, GitLab, and Bitbucket. Indexes your codebase, analyzes diffs, and posts severity-rated findings to catch bugs before they merge.",
   keywords: [
     "code review",
     "AI code review",
     "pull request review",
     "automated code review",
     "GitHub code review",
+    "GitLab code review",
     "Bitbucket code review",
     "codebase indexing",
     "severity-rated findings",
@@ -52,10 +52,9 @@ export const metadata: Metadata = {
     locale: "en_US",
     url: SITE_URL,
     siteName: "Octopus",
-    title:
-      "Octopus: AI-Powered Automated Code Review for GitHub & Bitbucket",
+    title: "AI Code Review | Octopus | Every PR, Reviewed in Minutes",
     description:
-      "Automate pull request reviews with AI. Octopus indexes your codebase, analyzes diffs, and posts severity-rated findings directly on your PRs.",
+      "Octopus reviews every pull request in minutes with AI. Works with GitHub, GitLab, and Bitbucket. Indexes your codebase, analyzes diffs, and posts severity-rated findings to catch bugs before they merge.",
     images: [
       {
         url: "/og-image.png",
@@ -67,10 +66,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title:
-      "Octopus: AI-Powered Automated Code Review for GitHub & Bitbucket",
+    title: "AI Code Review | Octopus | Every PR, Reviewed in Minutes",
     description:
-      "Automate PR reviews with AI. Indexes your codebase, analyzes diffs, and posts severity-rated findings on GitHub & Bitbucket pull requests.",
+      "Octopus reviews every pull request in minutes with AI. Works with GitHub, GitLab, and Bitbucket. Catch bugs before they merge.",
     images: ["/og-image.png"],
   },
   robots: {

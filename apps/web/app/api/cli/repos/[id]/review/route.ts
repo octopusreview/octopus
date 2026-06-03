@@ -42,7 +42,11 @@ export async function POST(
     // On-demand: the PR/MR exists on the provider but isn't synced into our DB yet
     // (e.g. opened before the repo was connected, so no webhook ever fired for it).
     // Fetch it straight from the provider API and kick off the full review flow.
-    const [owner, repoName] = repo.fullName.split("/");
+    const parts = repo.fullName.split("/");
+    if (parts.length < 2) {
+      return Response.json({ error: "Invalid repository name" }, { status: 500 });
+    }
+    const [owner, repoName] = parts;
     try {
       let details;
       if (repo.provider === "github") {

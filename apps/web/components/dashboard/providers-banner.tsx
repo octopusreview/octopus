@@ -68,9 +68,16 @@ export function ProvidersBanner({
     glHost.trim() !== "" && glHost.replace(/\/+$/, "") !== DEFAULT_GITLAB_HOST;
 
   const copyGl = (value: string, key: string) => {
-    navigator.clipboard.writeText(value);
-    setGlCopied(key);
-    setTimeout(() => setGlCopied(null), 1500);
+    navigator.clipboard
+      .writeText(value)
+      .then(() => {
+        setGlCopied(key);
+        setTimeout(() => setGlCopied(null), 1500);
+      })
+      .catch(() => {
+        // Clipboard unavailable (page not focused, older browser) — skip the
+        // success feedback so the UI doesn't claim a copy that didn't happen.
+      });
   };
 
   // Authoritative value used in the OAuth flow; falls back to the current

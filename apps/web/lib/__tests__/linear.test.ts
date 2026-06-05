@@ -111,7 +111,13 @@ describe("Linear integration helpers", () => {
       identifier: "ENG-123",
     });
   });
+it("throws LinearAuthError for 401 Unauthorized", async () => {
+  globalThis.fetch = mock(async () => new Response("Unauthorized", { status: 401 })) as unknown as typeof fetch;
 
+  await expect(getLinearTeams("revoked-token")).rejects.toBeInstanceOf(
+    LinearAuthError,
+  );
+});
   it("throws LinearAuthError for auth failures", async () => {
     globalThis.fetch = mock(async () => new Response("Forbidden", { status: 403 })) as unknown as typeof fetch;
 

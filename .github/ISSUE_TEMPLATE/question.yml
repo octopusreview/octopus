@@ -1,0 +1,30 @@
+name: Question / Support
+description: Ask a question or request help
+title: "[QUESTION] "
+labels:
+  - question
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reaching out!
+
+  - type: textarea
+    id: question
+    attributes:
+      label: What is your question?
+      description: Describe the issue or help you need.
+    validations:
+      required: true
+
+  - type: textarea
+    id: attempted
+    attributes:
+      label: What have you tried?
+      description: Include troubleshooting steps if applicable.
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context

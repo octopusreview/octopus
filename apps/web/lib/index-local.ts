@@ -110,15 +110,30 @@ export async function prepareRepoForLocalIndex(
 ): Promise<
   | { ok: true; repoId: string; reIndex: boolean }
   | { ok: false; reason: "managed-by-platform"; repoId: string }
+  | { ok: false; reason: "in-flight"; repoId: string }
 > {
   const existing = await prisma.repository.findFirst({
     where: { organizationId, provider, fullName, isActive: true },
-    select: { id: true, installationId: true },
+    select: { id: true, installationId: true, indexStatus: true, updatedAt: true },
   });
 
   if (existing) {
     if (existing.installationId != null) {
       return { ok: false, reason: "managed-by-platform", repoId: existing.id };
+    }
+    // Re-index guard: if a concurrent run is mid-way (indexStatus="indexing"
+    // and updated within the last 5 minutes), reject this batch instead of
+    // wiping the in-flight run's chunks. Without this guard, a second
+    // `octp review --index` collides with the first — run B's first batch
+    // deletes A's already-upserted chunks and resets counters, then A's
+    // later batches keep upserting under A's repoId, ending in a partially-
+    // mixed chunk set and inconsistent file/chunk counters.
+    const IN_FLIGHT_WINDOW_MS = 5 * 60 * 1000;
+    if (
+      existing.indexStatus === "indexing" &&
+      Date.now() - existing.updatedAt.getTime() < IN_FLIGHT_WINDOW_MS
+    ) {
+      return { ok: false, reason: "in-flight", repoId: existing.id };
     }
     // Re-index path: wipe prior chunks so stale content doesn't pollute retrieval.
     await deleteRepoChunks(existing.id);

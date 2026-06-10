@@ -144,7 +144,34 @@ async function embedWithOpenAI(
 
   async function embedBatch(batch: string[]): Promise<void> {
     try {
-      const res = await client.embeddings.create({ model: config.model, input: batch });
+      // For text-embedding-3-* models OpenAI accepts an explicit
+      // `dimensions` arg and returns vectors at that length. Pass
+      // config.dim through so an org override (eg. 1536 for compact
+      // storage) actually takes effect instead of defaulting to the
+      // model's native dim and producing a Qdrant 400 at upsert time.
+      // Older embedding models reject the field, so only opt in for
+      // the v3 family.
+      const supportsDimensionsArg = config.model.startsWith("text-embedding-3-");
+      const res = await client.embeddings.create({
+        model: config.model,
+        input: batch,
+        ...(supportsDimensionsArg ? { dimensions: config.dim } : {}),
+      });
+      // The createEmbeddings header comment promises a dim-mismatch
+      // check with an actionable error. Honour it on the OpenAI path
+      // too (the Ollama path already has one) so a misconfigured
+      // OCTOPUS_EMBED_DIM fails loud before the Qdrant upsert returns
+      // a cryptic 400 a layer away.
+      if (res.data.length > 0) {
+        const gotDim = res.data[0].embedding.length;
+        if (gotDim !== config.dim) {
+          throw new Error(
+            `OpenAI embeddings dim mismatch: model "${config.model}" returned ` +
+              `${gotDim}-dim vectors, but OCTOPUS_EMBED_DIM is ${config.dim}. ` +
+              `Set OCTOPUS_EMBED_DIM=${gotDim} (and wipe Qdrant collections so they get re-created).`,
+          );
+        }
+      }
       for (const item of res.data) vectors.push(item.embedding);
       promptTokens += res.usage.prompt_tokens;
     } catch (err) {

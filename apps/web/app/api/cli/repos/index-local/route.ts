@@ -120,12 +120,12 @@ export async function POST(request: Request) {
       first.defaultBranch || "main",
     );
     if (!prep.ok) {
+      const message =
+        prep.reason === "managed-by-platform"
+          ? "This repo is connected via the platform installation. Use the dashboard to re-index it."
+          : "Another local index for this repo is in-flight. Wait for it to complete or fail (status flips after 10min of no activity), then retry.";
       return NextResponse.json(
-        {
-          error:
-            "This repo is connected via the platform installation. Use the dashboard to re-index it.",
-          repoId: prep.repoId,
-        },
+        { error: message, repoId: prep.repoId, reason: prep.reason },
         { status: 409 },
       );
     }

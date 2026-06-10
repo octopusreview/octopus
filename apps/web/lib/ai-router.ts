@@ -7,7 +7,17 @@ export type { AiCreateParams, AiMessage, AiProvider, AiResponse } from "./provid
 
 // ── Provider resolution ──────────────────────────────────────────────────────
 
+// ORDER MATTERS: this object is iterated in insertion order and the first
+// `startsWith` match wins (see resolveProvider's fallback loop). Longer /
+// more-specific prefixes MUST come before any shorter prefix that would
+// also match — otherwise the shorter one shadows it. Pre-existing
+// example: "mock-fail-" before "mock-". Don't reorder without re-checking.
 const PROVIDER_FALLBACK: Record<string, AiProvider> = {
+  // `claude-code:` MUST come before `claude` — both match a "claude-code:…"
+  // model and "claude" would otherwise win, mis-routing claude-code models
+  // to the anthropic provider with a literal "claude-code:…" model string
+  // (which the Anthropic API rejects).
+  "claude-code:": "claude-code",
   claude: "anthropic",
   gpt: "openai",
   o1: "openai",
@@ -21,11 +31,6 @@ const PROVIDER_FALLBACK: Record<string, AiProvider> = {
   "openrouter/": "openrouter", // OpenRouter uses vendor/model IDs (e.g. openai/gpt-4o)
   "acp:": "acp",
   "opencode:": "opencode",
-  "claude-code:": "claude-code",
-  // ORDER MATTERS: longer prefix must come before its shorter sibling so the
-  // `for…in startsWith` loop matches "mock-fail-…" against "mock-fail-"
-  // before it falls through to "mock-". Object key insertion order is
-  // iteration order in V8 — do not reorder these two without re-checking.
   "mock-fail-": "mock-fail",
   "mock-": "mock",
 };

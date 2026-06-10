@@ -64,6 +64,7 @@ import {
   extractCrossFileQueries,
   generateVerificationQueries,
   resolveIndexClaimWait,
+  normalizeScoreDenominators,
 } from "@/lib/review-helpers";
 import type { ReviewConfig } from "@/lib/review-helpers";
 import { getCategoryConfidenceThreshold } from "@/lib/review-categories";
@@ -1608,6 +1609,9 @@ export async function processReview(pullRequestId: string): Promise<void> {
     // 2. ``` merged with next line: "```### Checklist" → "```\n\n### Checklist"
     //    Only match ``` followed by non-language-tag chars to preserve ```mermaid etc.
     reviewBody = reviewBody.replace(/```([^`\n\sa-z])/g, "```\n\n$1");
+
+    // Fix wrong score denominators ("4/4" → "4/5") in the Score table
+    reviewBody = normalizeScoreDenominators(reviewBody);
 
     // Strip empty diagram sections: remove "### Diagram" when there's no meaningful mermaid content.
     // Matches from "### Diagram" up to the next ### heading or end of string.

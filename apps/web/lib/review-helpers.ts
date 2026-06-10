@@ -109,6 +109,24 @@ export function countFindingsFromTable(reviewBody: string): number {
   return total;
 }
 
+/**
+ * Normalize score denominators in the "### Score" table. The rubric is always
+ * x/5, but the model occasionally emits a wrong denominator (e.g. "4/4").
+ * Only the Score section is touched so legitimate fractions elsewhere in the
+ * review body (e.g. "4/4 tests passed") are preserved.
+ */
+export function normalizeScoreDenominators(reviewBody: string): string {
+  return reviewBody.replace(
+    /### Score\s*\n[\s\S]*?(?=\n### |\n## |$)/,
+    (section) =>
+      section.replace(
+        /(\*{0,2})([1-5])\/(\d+)(\*{0,2})/g,
+        (match, open: string, score: string, denom: string, close: string) =>
+          denom === "5" ? match : `${open}${score}/5${close}`,
+      ),
+  );
+}
+
 // ─── Diff Parsing ───────────────────────────────────────────────────────────
 
 /**

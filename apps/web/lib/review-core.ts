@@ -25,7 +25,7 @@ import {
   parseFindingsFromJson,
   parseFindingsFromMarkdown,
 } from "@/lib/review-dedup";
-import { extractCrossFileQueries, generateVerificationQueries } from "@/lib/review-helpers";
+import { extractCrossFileQueries, generateVerificationQueries, normalizeScoreDenominators } from "@/lib/review-helpers";
 import { gatherCrossFileContext, gatherVerificationContext, validateFindings } from "@/lib/review-validation";
 import { logAiUsage } from "@/lib/ai-usage";
 import { getReviewModel } from "@/lib/ai-client";
@@ -367,6 +367,9 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
   // Step 5: Parse and clean review body
   let reviewBody = response.text.replace(/([^\n])```(\n|$)/g, "$1\n```$2");
   reviewBody = reviewBody.replace(/```([^`\n\sa-z])/g, "```\n\n$1");
+
+  // Fix wrong score denominators ("4/4" → "4/5") in the Score table
+  reviewBody = normalizeScoreDenominators(reviewBody);
 
   // Strip empty diagram sections
   reviewBody = reviewBody.replace(

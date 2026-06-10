@@ -13,7 +13,7 @@ export type OctopusConfig = {
   onboardedAt?: string;
   /** Provider slug chosen during onboarding ("anthropic" | "openai" | "google" | …). */
   provider?: string;
-  /** Model ID chosen during onboarding (e.g. "claude-sonnet-4-6", "gpt-4o"). */
+  /** Model ID chosen during onboarding (e.g. "claude-sonnet-4-6-20250619", "gpt-4o"). */
   model?: string;
   /** Hosted API base URL when self-hosting. Absent when using the SaaS. */
   selfHostedBaseUrl?: string;

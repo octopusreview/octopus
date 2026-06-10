@@ -21,7 +21,7 @@ describe("modelsFor", () => {
 
 describe("defaultModelFor", () => {
   it("returns the isDefault model when one is marked", () => {
-    expect(defaultModelFor("anthropic")?.modelId).toBe("claude-sonnet-4-6");
+    expect(defaultModelFor("anthropic")?.modelId).toBe("claude-sonnet-4-6-20250619");
     expect(defaultModelFor("openai")?.modelId).toBe("gpt-4o");
     expect(defaultModelFor("google")?.modelId).toBe("gemini-2.5-pro");
   });

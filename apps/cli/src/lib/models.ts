@@ -18,20 +18,27 @@ export type ModelInfo = {
   isDefault?: boolean;
 };
 
+// Anthropic model IDs are the *dated* canonical forms (matching what the
+// server seeds and prices). Undated aliases like "claude-sonnet-4-6" are
+// API aliases that route to the same model but DO NOT match server-side
+// pricing lookup (cost.ts does exact-key get with no alias fallback) —
+// so usage logged under an undated id silently prices to $0 and bypasses
+// the org spend-limit check. Pricing fields below match cost.ts's
+// FALLBACK_PRICING + seed.ts exactly.
 export const MODELS_BY_PROVIDER: Record<string, ModelInfo[]> = {
   anthropic: [
-    { modelId: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6", inputPrice: 3, outputPrice: 15, isDefault: true },
-    { modelId: "claude-opus-4-7", displayName: "Claude Opus 4.7", inputPrice: 15, outputPrice: 75 },
-    { modelId: "claude-haiku-4-5", displayName: "Claude Haiku 4.5", inputPrice: 0.8, outputPrice: 4 },
+    { modelId: "claude-sonnet-4-6-20250619", displayName: "Claude Sonnet 4.6", inputPrice: 3, outputPrice: 15, isDefault: true },
+    { modelId: "claude-opus-4-6-20250619", displayName: "Claude Opus 4.6", inputPrice: 15, outputPrice: 75 },
+    { modelId: "claude-haiku-4-5-20251001", displayName: "Claude Haiku 4.5", inputPrice: 1, outputPrice: 5 },
   ],
   openai: [
     { modelId: "gpt-4o", displayName: "GPT-4o", inputPrice: 2.5, outputPrice: 10, isDefault: true },
     { modelId: "gpt-4o-mini", displayName: "GPT-4o mini", inputPrice: 0.15, outputPrice: 0.6 },
     { modelId: "o4-mini", displayName: "o4-mini (reasoning)", inputPrice: 1.1, outputPrice: 4.4 },
-    { modelId: "codex-mini-latest", displayName: "Codex mini", inputPrice: 0.15, outputPrice: 0.6 },
+    { modelId: "codex-mini-latest", displayName: "Codex mini", inputPrice: 1.5, outputPrice: 6 },
   ],
   google: [
-    { modelId: "gemini-2.5-pro", displayName: "Gemini 2.5 Pro", inputPrice: 1.25, outputPrice: 5, isDefault: true },
+    { modelId: "gemini-2.5-pro", displayName: "Gemini 2.5 Pro", inputPrice: 1.25, outputPrice: 10, isDefault: true },
     { modelId: "gemini-2.5-flash", displayName: "Gemini 2.5 Flash", inputPrice: 0.15, outputPrice: 0.6 },
   ],
   // Coming-soon providers: empty until their model lists are seeded by the

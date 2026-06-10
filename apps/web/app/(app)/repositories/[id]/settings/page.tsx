@@ -39,7 +39,9 @@ export default async function RepoSettingsPage({
 
   if (!repo || repo.organization.members.length === 0) notFound();
 
-  const isOwner = repo.organization.members[0].role === "owner";
+  const isOwner =
+    repo.organization.members[0].role === "owner" ||
+    repo.organization.members[0].role === "admin";
   const reviewConfig = (repo.reviewConfig as Record<string, unknown>) ?? {};
   const initialFiles = normalizeRepoConfigFiles(repo.repoConfigFiles);
   const initialFilesOrDefault = initialFiles.length > 0 ? initialFiles : [...DEFAULT_REPO_CONFIG_FILES];

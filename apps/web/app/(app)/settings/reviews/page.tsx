@@ -49,26 +49,28 @@ export default async function ReviewsSettingsPage() {
   });
   const globalBlockedAuthors = (globalConfig?.blockedAuthors as string[]) ?? [];
 
+  const canManage = member.role === "owner" || member.role === "admin";
+
   return (
     <div key={member.organization.id} className="space-y-6">
       <ReviewsPausedSwitch
-        isOwner={member.role === "owner"}
+        isOwner={canManage}
         paused={member.organization.reviewsPaused}
       />
       <ReviewSettingsForm
-        isOwner={member.role === "owner"}
+        isOwner={canManage}
         currentThreshold={member.organization.checkFailureThreshold}
       />
       <OrgReviewConfigForm
-        isOwner={member.role === "owner"}
+        isOwner={canManage}
         initialConfig={orgReviewConfig}
       />
       <ReviewLanguageForm
-        isOwner={member.role === "owner"}
+        isOwner={canManage}
         initialLanguage={member.organization.reviewLanguage ?? "en"}
       />
       <BlockedAuthorsForm
-        isOwner={member.role === "owner"}
+        isOwner={canManage}
         initialAuthors={orgBlockedAuthors}
         globalAuthors={globalBlockedAuthors}
       />

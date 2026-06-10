@@ -81,7 +81,6 @@ interface InvitationsPanelProps {
 export function InvitationsPanel({ orgId, isAdmin }: InvitationsPanelProps) {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
-  const [callerRole, setCallerRole] = useState<string>("member");
   const [callerUserId, setCallerUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [membersLoading, setMembersLoading] = useState(true);
@@ -98,7 +97,6 @@ export function InvitationsPanel({ orgId, isAdmin }: InvitationsPanelProps) {
       if (!res.ok) return;
       const data = await res.json();
       setMembers(data.members);
-      setCallerRole(data.callerRole);
       setCallerUserId(data.callerUserId);
     } finally {
       setMembersLoading(false);
@@ -193,23 +191,17 @@ export function InvitationsPanel({ orgId, isAdmin }: InvitationsPanelProps) {
     if (!isAdmin) return false;
     if (target.user.id === callerUserId) return false;
     if (target.role === "owner") return false;
-    if (callerRole !== "owner" && target.role === "admin") return false;
     return true;
   }
 
   function canChangeRole(target: Member): boolean {
     if (!isAdmin) return false;
     if (target.role === "owner") return false;
-    // Only owner can manage admin roles
-    if (callerRole !== "owner" && target.role === "admin") return false;
     return true;
   }
 
-  function getAvailableRoles(target: Member): string[] {
-    if (callerRole === "owner") return ["admin", "member"];
-    // Admin can only toggle member role (not admin)
-    if (target.role === "member") return ["admin", "member"];
-    return [];
+  function getAvailableRoles(): string[] {
+    return ["admin", "member"];
   }
 
   function formatDate(d: string) {
@@ -274,7 +266,7 @@ export function InvitationsPanel({ orgId, isAdmin }: InvitationsPanelProps) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {getAvailableRoles(m).map((role) => (
+                {getAvailableRoles().map((role) => (
                   <SelectItem key={role} value={role} className="text-xs capitalize">
                     {role}
                   </SelectItem>

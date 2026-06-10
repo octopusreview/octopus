@@ -184,7 +184,7 @@ export function OrgReviewConfigForm({
 
           {!isOwner && (
             <p className="text-muted-foreground text-center text-xs">
-              Only owners can change review defaults.
+              Only owners and admins can change review defaults.
             </p>
           )}
         </fieldset>

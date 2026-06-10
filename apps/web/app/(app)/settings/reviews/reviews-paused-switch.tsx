@@ -60,7 +60,7 @@ export function ReviewsPausedSwitch({
 
           {!isOwner && (
             <p className="text-muted-foreground text-xs mt-3">
-              Only owners can pause or resume reviews.
+              Only owners and admins can pause or resume reviews.
             </p>
           )}
         </form>

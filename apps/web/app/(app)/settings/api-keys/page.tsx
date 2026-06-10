@@ -45,7 +45,7 @@ export default async function ApiKeysPage() {
 
   if (!member) redirect("/dashboard");
 
-  const isOwner = member.role === "owner";
+  const isOwner = member.role === "owner" || member.role === "admin";
 
   return (
     <ApiKeysForm

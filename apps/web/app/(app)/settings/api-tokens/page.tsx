@@ -47,7 +47,6 @@ export default async function ApiTokensPage() {
         expiresAt: t.expiresAt?.toISOString() ?? null,
         createdAt: t.createdAt.toISOString(),
       }))}
-      isOwner={member.role === "owner"}
     />
   );
 }

@@ -84,7 +84,7 @@ export function ReviewLanguageForm({
 
           {!isOwner && (
             <p className="text-muted-foreground text-center text-xs">
-              Only owners can change the review language.
+              Only owners and admins can change the review language.
             </p>
           )}
         </fieldset>

@@ -537,8 +537,11 @@ export async function updateRepoModels(
     return { error: "Repository not found." };
   }
 
-  if (repo.organization.members[0].role !== "owner") {
-    return { error: "Only organization owners can change model settings." };
+  if (
+    repo.organization.members[0].role !== "owner" &&
+    repo.organization.members[0].role !== "admin"
+  ) {
+    return { error: "Only organization owners and admins can change model settings." };
   }
 
   await prisma.repository.update({
@@ -589,8 +592,11 @@ export async function transferRepository(
     return { error: "Repository not found." };
   }
 
-  if (repo.organization.members[0].role !== "owner") {
-    return { error: "Only organization owners can transfer repositories." };
+  if (
+    repo.organization.members[0].role !== "owner" &&
+    repo.organization.members[0].role !== "admin"
+  ) {
+    return { error: "Only organization owners and admins can transfer repositories." };
   }
 
   if (repo.organizationId === targetOrgId) {
@@ -674,8 +680,11 @@ export async function removeRepository(
     return { error: "Repository not found." };
   }
 
-  if (repo.organization.members[0].role !== "owner") {
-    return { error: "Only organization owners can remove repositories." };
+  if (
+    repo.organization.members[0].role !== "owner" &&
+    repo.organization.members[0].role !== "admin"
+  ) {
+    return { error: "Only organization owners and admins can remove repositories." };
   }
 
   abortAnalysis(repoId);
@@ -730,8 +739,11 @@ export async function restoreRepository(
     return { error: "Repository not found." };
   }
 
-  if (repo.organization.members[0].role !== "owner") {
-    return { error: "Only organization owners can restore repositories." };
+  if (
+    repo.organization.members[0].role !== "owner" &&
+    repo.organization.members[0].role !== "admin"
+  ) {
+    return { error: "Only organization owners and admins can restore repositories." };
   }
 
   if (!repo.dismissedAt) {
@@ -825,8 +837,11 @@ export async function updateReviewConfig(
     return { error: "Repository not found." };
   }
 
-  if (repo.organization.members[0].role !== "owner") {
-    return { error: "Only organization owners can change review config." };
+  if (
+    repo.organization.members[0].role !== "owner" &&
+    repo.organization.members[0].role !== "admin"
+  ) {
+    return { error: "Only organization owners and admins can change review config." };
   }
 
   // Validate config values
@@ -885,8 +900,11 @@ export async function updateRepoConfigSettings(
   if (!repo || repo.organization.members.length === 0) {
     return { error: "Repository not found." };
   }
-  if (repo.organization.members[0].role !== "owner") {
-    return { error: "Only organization owners can change repo config settings." };
+  if (
+    repo.organization.members[0].role !== "owner" &&
+    repo.organization.members[0].role !== "admin"
+  ) {
+    return { error: "Only organization owners and admins can change repo config settings." };
   }
 
   if (input.useRepoConfig && input.repoConfigFiles.length === 0) {

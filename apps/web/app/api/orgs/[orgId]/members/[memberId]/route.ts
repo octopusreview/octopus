@@ -56,11 +56,6 @@ export async function PATCH(
     return NextResponse.json({ error: "Cannot change the owner's role" }, { status: 400 });
   }
 
-  // Only owner can promote to admin or demote admins
-  if (caller.role !== "owner" && (target.role === "admin" || role === "admin")) {
-    return NextResponse.json({ error: "Only the owner can manage admin roles" }, { status: 403 });
-  }
-
   if (target.role === role) {
     return NextResponse.json({ error: "Member already has this role" }, { status: 400 });
   }
@@ -118,11 +113,6 @@ export async function DELETE(
   // Cannot remove the owner
   if (target.role === "owner") {
     return NextResponse.json({ error: "Cannot remove the owner" }, { status: 400 });
-  }
-
-  // Only owner can remove admins
-  if (caller.role !== "owner" && target.role === "admin") {
-    return NextResponse.json({ error: "Only the owner can remove admins" }, { status: 403 });
   }
 
   await prisma.organizationMember.update({

@@ -21,13 +21,7 @@ interface Token {
   createdBy: { name: string; email: string };
 }
 
-export function ApiTokensClient({
-  tokens,
-  isOwner,
-}: {
-  tokens: Token[];
-  isOwner: boolean;
-}) {
+export function ApiTokensClient({ tokens }: { tokens: Token[] }) {
   const [newToken, setNewToken] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -98,7 +92,7 @@ export function ApiTokensClient({
         </div>
       )}
 
-      {isOwner && (showForm ? (
+      {showForm ? (
         <form action={handleCreate} className="flex items-end gap-3">
           <div className="flex-1">
             <label htmlFor="token-name" className="text-sm font-medium">
@@ -136,7 +130,7 @@ export function ApiTokensClient({
           <IconPlus className="size-4" />
           Create Token
         </button>
-      ))}
+      )}
 
       {tokens.length > 0 ? (
         <div className="overflow-hidden rounded-lg border dark:border-stone-700">

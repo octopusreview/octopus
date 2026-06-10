@@ -648,7 +648,7 @@ export function BillingSettings({
 
           {!isOwner && (
             <p className="text-muted-foreground text-center text-xs">
-              Only owners can manage billing settings.
+              Only owners and admins can manage billing settings.
             </p>
           )}
         </CardContent>

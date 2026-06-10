@@ -221,7 +221,7 @@ export function ApiKeysForm({
 
           {!isOwner && (
             <p className="text-muted-foreground text-center text-xs">
-              Only owners can manage API keys.
+              Only owners and admins can manage API keys.
             </p>
           )}
         </form>

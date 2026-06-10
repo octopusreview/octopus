@@ -456,7 +456,7 @@ export function ModelsSettings({
 
             {!isOwner && (
               <p className="text-muted-foreground text-center text-xs">
-                Only owners can change default models.
+                Only owners and admins can change default models.
               </p>
             )}
           </form>

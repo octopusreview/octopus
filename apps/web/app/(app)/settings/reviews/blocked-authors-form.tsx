@@ -100,7 +100,7 @@ export function BlockedAuthorsForm({
 
           {!isOwner && (
             <p className="text-muted-foreground text-center text-xs">
-              Only owners can change blocked authors.
+              Only owners and admins can change blocked authors.
             </p>
           )}
         </fieldset>

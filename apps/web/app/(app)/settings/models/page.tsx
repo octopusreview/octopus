@@ -71,7 +71,7 @@ export default async function ModelsPage() {
     return 0;
   });
 
-  const isOwner = member.role === "owner";
+  const isOwner = member.role === "owner" || member.role === "admin";
 
   const platformDefaults = await prisma.availableModel.findMany({
     where: { isPlatformDefault: true, isActive: true },

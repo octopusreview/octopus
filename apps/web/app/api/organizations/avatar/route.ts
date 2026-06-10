@@ -24,8 +24,8 @@ async function getOwnerContext() {
     where: { organizationId: orgId, userId: session.user.id, deletedAt: null },
     select: { role: true },
   });
-  if (!member || member.role !== "owner") {
-    return { error: "Only organization owners can change the avatar.", status: 403 as const };
+  if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    return { error: "Only organization owners and admins can change the avatar.", status: 403 as const };
   }
   return { userId: session.user.id, userEmail: session.user.email, orgId };
 }

@@ -247,7 +247,7 @@ export function ReviewConfigForm({
 
           {!isOwner && (
             <p className="text-muted-foreground text-center text-xs">
-              Only owners can change review configuration.
+              Only owners and admins can change review configuration.
             </p>
           )}
         </form>

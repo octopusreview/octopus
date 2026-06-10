@@ -172,7 +172,7 @@ export function RepoConfigForm({
 
           {!isOwner && (
             <p className="text-muted-foreground text-center text-xs">
-              Only owners can change repository config settings.
+              Only owners and admins can change repository config settings.
             </p>
           )}
         </fieldset>

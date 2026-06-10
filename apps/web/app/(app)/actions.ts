@@ -193,8 +193,8 @@ export async function updateOrganizationName(
     select: { role: true },
   });
 
-  if (!member || member.role !== "owner") {
-    return { error: "Only organization owners can change the name." };
+  if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    return { error: "Only organization owners and admins can change the name." };
   }
 
   const name = (formData.get("name") as string)?.trim();
@@ -236,8 +236,8 @@ export async function updateApiKeys(
     select: { role: true },
   });
 
-  if (!member || member.role !== "owner") {
-    return { error: "Only organization owners can update API keys." };
+  if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    return { error: "Only organization owners and admins can update API keys." };
   }
 
   const openaiApiKey = (formData.get("openaiApiKey") as string)?.trim() || null;
@@ -302,8 +302,8 @@ export async function removeApiKey(
     select: { role: true },
   });
 
-  if (!member || member.role !== "owner") {
-    return { error: "Only organization owners can manage API keys." };
+  if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    return { error: "Only organization owners and admins can manage API keys." };
   }
 
   await prisma.organization.update({
@@ -334,8 +334,8 @@ export async function updateDefaultModels(
     select: { role: true },
   });
 
-  if (!member || member.role !== "owner") {
-    return { error: "Only organization owners can change default models." };
+  if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    return { error: "Only organization owners and admins can change default models." };
   }
 
   const defaultModelId = (formData.get("defaultModelId") as string)?.trim() || null;
@@ -796,8 +796,8 @@ export async function updateCheckFailureThreshold(
     select: { role: true },
   });
 
-  if (!member || member.role !== "owner") {
-    return { error: "Only organization owners can change review settings." };
+  if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    return { error: "Only organization owners and admins can change review settings." };
   }
 
   const threshold = formData.get("threshold") as string;
@@ -833,8 +833,8 @@ export async function toggleReviewsPaused(
     select: { role: true },
   });
 
-  if (!member || member.role !== "owner") {
-    return { error: "Only organization owners can pause reviews." };
+  if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    return { error: "Only organization owners and admins can pause reviews." };
   }
 
   const paused = formData.get("paused") === "true";
@@ -866,8 +866,8 @@ export async function updateOrgDefaultReviewConfig(
     select: { role: true },
   });
 
-  if (!member || member.role !== "owner") {
-    return { error: "Only organization owners can change review defaults." };
+  if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    return { error: "Only organization owners and admins can change review defaults." };
   }
 
   await prisma.organization.update({
@@ -894,8 +894,8 @@ export async function updateOrgReviewLanguage(
     select: { role: true },
   });
 
-  if (!member || member.role !== "owner") {
-    return { error: "Only organization owners can change the review language." };
+  if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    return { error: "Only organization owners and admins can change the review language." };
   }
 
   if (!isSupportedReviewLanguage(language)) {
@@ -929,8 +929,8 @@ export async function updateOrgBlockedAuthors(
     select: { role: true },
   });
 
-  if (!member || member.role !== "owner") {
-    return { error: "Only organization owners can change blocked authors." };
+  if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    return { error: "Only organization owners and admins can change blocked authors." };
   }
 
   if (authors.length > 50) {

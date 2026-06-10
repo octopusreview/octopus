@@ -224,7 +224,7 @@ export function OrgNameForm({
             )}
             {!isOwner && (
               <p className="text-muted-foreground text-xs">
-                Only owners can change the organization details.
+                Only owners and admins can change the organization details.
               </p>
             )}
           </form>

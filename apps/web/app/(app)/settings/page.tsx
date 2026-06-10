@@ -32,6 +32,7 @@ export default async function SettingsPage() {
   if (!member) redirect("/dashboard");
 
   const isOwner = member.role === "owner";
+  const canManage = member.role === "owner" || member.role === "admin";
 
   let isLastOrg = false;
   if (isOwner) {
@@ -51,7 +52,7 @@ export default async function SettingsPage() {
       <OrgNameForm
         currentName={member.organization.name}
         avatarUrl={member.organization.avatarUrl}
-        isOwner={isOwner}
+        isOwner={canManage}
       />
       {isOwner && <DangerZoneCard orgSlug={member.organization.slug} isLastOrg={isLastOrg} />}
     </div>

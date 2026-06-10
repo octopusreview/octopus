@@ -42,7 +42,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-octopus}
       # Hardcoded default is intentionally "octopus" to keep zero-config local
       # dev working. SELF-HOSTERS MUST set POSTGRES_PASSWORD in their `.env` —
-      # rotation guidance lives in docs/deployment/self-hosting.mdx.
+      # see the self-hosting docs at /docs/self-hosting (rendered from
+      # apps/web/app/(landing)/docs/self-hosting/page.tsx) for rotation
+      # guidance; CHANGELOG's "Unreleased" entry also documents this break.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-octopus}
       POSTGRES_DB: ${POSTGRES_DB:-octopus}
     volumes:

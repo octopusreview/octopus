@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ⚠️ Breaking
+- **Side-services (Postgres, Qdrant) now bind to `127.0.0.1` by default.** Previously
+  they were published on `0.0.0.0` with hardcoded credentials and (Qdrant)
+  no authentication, exposing both services to the internet on any
+  VPS-style deployment. If you were intentionally connecting from another
+  host, set `OCTOPUS_PG_BIND=0.0.0.0` and/or `OCTOPUS_QDRANT_BIND=0.0.0.0`
+  in your `.env` AND rotate `POSTGRES_PASSWORD` from the default first.
+- **`POSTGRES_PASSWORD` is now read from `.env`** (was hardcoded to
+  `octopus`). The web service's `DATABASE_URL` uses the same vars, so
+  rotating the password in one place flows through to both.
+
+### Fixed
+- Self-hosted upgrade command in README / release notes / Updates page
+  (`docker compose exec web bunx prisma migrate deploy`) was a no-op:
+  the runner image had no bun, no Prisma CLI, no schema, no migrations.
+  Image now ships the Prisma schema, migrations, and CLI; docs updated
+  to use `npx prisma migrate deploy --schema packages/db/prisma/schema.prisma`.
+
 ## [1.0.16] - 2026-05-11
 
 ### Added

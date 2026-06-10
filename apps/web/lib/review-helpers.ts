@@ -251,11 +251,21 @@ export function buildLowSeveritySummary(findings: InlineFinding[]): string {
  * Strip ALL finding-related content from the review body so the main comment
  * contains only the high-level overview (Summary, Score, Risk, Highlights,
  * Important Files, Diagram, Checklist).
+ *
+ * Findings still appear in the PR — they go inline as review comments via
+ * `parseFindings(reviewBody)`. This function only controls what's in the
+ * main comment thread (where every char counts against GitHub's
+ * 65,536-char-per-comment cap).
+ *
+ * The function is conservative: it strips well-known shapes, then sweeps
+ * for things that LOOK like findings even when the model went off-prompt.
+ * Comments cite which shape each rule targets so future shapes are easy
+ * to add.
  */
 export function stripDetailedFindings(reviewBody: string): string {
   let result = reviewBody;
 
-  // 1. JSON findings block (HTML comment delimiters)
+  // 1. JSON findings block (HTML comment delimiters — the documented shape)
   const startIdx = result.indexOf(FINDINGS_START_MARKER);
   const endIdx = result.indexOf(FINDINGS_END_MARKER);
   if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
@@ -264,34 +274,58 @@ export function stripDetailedFindings(reviewBody: string): string {
     result = before + (after ? "\n\n" + after : "");
   }
 
-  // 2. Legacy <details> "Detailed Findings" block
+  // 2. Stray fenced JSON blocks that look like a findings array.
+  //    The prompt says to wrap findings in the HTML-comment markers above,
+  //    but verbose models (claude-fable-5, etc.) sometimes also emit a
+  //    bare ```json``` fence containing the same array — or, worse, ONLY
+  //    the bare fence with no markers. Detect by content: a fenced JSON
+  //    block that contains both `"severity"` and `"filePath"` is the
+  //    finding-array shape.
+  result = result.replace(
+    /\n*```json\s*\n[\s\S]*?\n```\s*/g,
+    (match) =>
+      /"severity"\s*:/.test(match) && /"filePath"\s*:/.test(match) ? "" : match,
+  );
+
+  // 3. Legacy <details> "Detailed Findings" block
   result = result.replace(
     /\n*<details>\s*\n\s*<summary>\s*Detailed Findings\s*<\/summary>[\s\S]*?<\/details>\s*/i,
     "",
   );
 
-  // 3. "### Detailed Findings" section — runs until next ### / ## heading or end of string
+  // 4. Finding-shaped ### sections.
+  //    Catches "### Detailed Findings", "### Findings Summary", "### Critical
+  //    Findings" (the documented ones), plus the off-prompt variants models
+  //    actually emit: "### Findings", "### Bug Details", "### Issues",
+  //    "### Bugs", "### Findings Detail". Each runs until the next ###/##
+  //    heading or end of string.
+  const FINDING_HEADING_WORDS =
+    "(?:Detailed Findings|Findings Summary|Critical Findings|Findings(?:\\s+Detail)?|Bugs?|Issues?|Bug Details?|Detailed Issues|Finding Details?)";
   result = result.replace(
-    /\n*###\s+Detailed Findings\b[\s\S]*?(?=\n###?\s|\n## |$)/gi,
+    new RegExp(
+      `\\n*###\\s+${FINDING_HEADING_WORDS}\\b[\\s\\S]*?(?=\\n###?\\s|\\n## |$)`,
+      "gi",
+    ),
     "",
   );
 
-  // 4. "### Findings Summary" section — runs until next ### / ## heading or end of string
+  // 5. Individual finding headings emitted in markdown instead of JSON:
+  //    "#### Finding #N: ..." or "#### 🔴 ..." (severity emoji).
+  //    The /u flag is critical — severity markers (🔴🟠🟡🔵💡) are UTF-16
+  //    surrogate pairs and a /u-less character class matches lone
+  //    surrogates instead of the actual emoji, leaving these sections
+  //    intact. Also drop the trailing `\b` — word boundary is undefined
+  //    after an astral codepoint.
   result = result.replace(
-    /\n*###\s+Findings Summary\b[\s\S]*?(?=\n###?\s|\n## |$)/gi,
+    /\n*####\s+(?:Finding\s*#?\d+|[🔴🟠🟡🔵💡])[\s\S]*?(?=\n#{2,4}\s|$)/gu,
     "",
   );
 
-  // 5. "### Critical Findings" section (security report mode bleed)
+  // 6. Trailing "## Findings" / "## Findings (N)" H2 — same off-prompt
+  //    pattern at H2 level. Many models default to H2 for top-level
+  //    sections when the prompt doesn't say otherwise.
   result = result.replace(
-    /\n*###\s+Critical Findings\b[\s\S]*?(?=\n###?\s|\n## |$)/gi,
-    "",
-  );
-
-  // 6. Individual finding headings: "#### Finding #N: ..." or "#### 🔴/🟠/🟡/🔵/💡 ..."
-  //    Each runs until the next #### / ### / ## heading or end of string
-  result = result.replace(
-    /\n*####\s+(?:Finding\s*#\d+|[🔴🟠🟡🔵💡]\s)\b[\s\S]*?(?=\n#{2,4}\s|$)/g,
+    /\n*##\s+Findings(?:\s+\(\d+\))?\b[\s\S]*?(?=\n## |$)/gi,
     "",
   );
 

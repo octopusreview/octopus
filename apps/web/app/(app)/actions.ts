@@ -15,6 +15,7 @@ import { runIndexingInBackground } from "@/lib/indexing-runner";
 import { toBaseSlug, randomSlugSuffix } from "@/lib/slug";
 import { canUserCreateOrg } from "@/lib/org-limits";
 import { MAX_OWNED_ORGS_PER_USER } from "@/lib/constants";
+import { acquireOrgCreationLock } from "@/lib/org-creation-lock";
 
 export async function clearOrgCookie() {
   const cookieStore = await cookies();
@@ -90,10 +91,15 @@ export async function createOrganization(
     slug = `${baseSlug}-${randomSlugSuffix()}`;
   }
 
-  // Re-check limit and create atomically to prevent TOCTOU race
+  // Per-user advisory lock + cap re-check inside the transaction. The lock
+  // serialises concurrent createOrganization / createOrgForUser calls for the
+  // same user so two of them can't both see ownedCount=0 and both insert an
+  // org with the $150 welcome bonus. Released automatically at transaction end.
   let org;
   try {
     org = await prisma.$transaction(async (tx) => {
+      await acquireOrgCreationLock(tx, user.id);
+
       const ownedCount = await tx.organizationMember.count({
         where: { userId: user.id, role: "owner", deletedAt: null, organization: { deletedAt: null } },
       });

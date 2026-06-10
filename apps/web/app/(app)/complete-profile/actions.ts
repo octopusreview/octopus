@@ -7,6 +7,7 @@ import { prisma } from "@octopus/db";
 import { toBaseSlug, randomSlugSuffix } from "@/lib/slug";
 import { canUserCreateOrg } from "@/lib/org-limits";
 import { MAX_OWNED_ORGS_PER_USER } from "@/lib/constants";
+import { acquireOrgCreationLock } from "@/lib/org-creation-lock";
 
 export async function completeProfile(
   _prevState: { error?: string },
@@ -73,13 +74,9 @@ export async function createOrgForUser(userId: string, userName: string) {
   }
 
   // Per-user advisory lock so concurrent calls for the same user serialize.
-  // Without this, two parallel transactions both see ownedCount === 0 under
-  // Postgres's default read-committed isolation and both insert an org with
-  // the $150 welcome bonus — Next.js RSC prefetch fires several (app) layout
-  // renders concurrently on first login, so this triggers organically.
-  // pg_advisory_xact_lock is released automatically at transaction end.
+  // See `acquireOrgCreationLock` for the race we're guarding against.
   const org = await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${"createOrgForUser:" + userId}, 0))`;
+    await acquireOrgCreationLock(tx, userId);
 
     const ownedCount = await tx.organizationMember.count({
       where: { userId, role: "owner", deletedAt: null, organization: { deletedAt: null } },

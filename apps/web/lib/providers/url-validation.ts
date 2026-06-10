@@ -33,12 +33,15 @@ export type UrlValidationOptions = {
 const PRIVATE_HOST_PATTERNS: RegExp[] = [
   /^localhost$/i,
   /^127\./,                                  // loopback
+  /^0\.0\.0\.0$/,                            // IPv4 wildcard — Linux/macOS route this to loopback
   /^10\./,                                   // RFC1918
   /^192\.168\./,                             // RFC1918
   /^172\.(1[6-9]|2\d|3[01])\./,              // RFC1918
   /^169\.254\./,                             // link-local (cloud metadata!)
   /^fe80:/i,                                 // IPv6 link-local
   /^::1$/i,                                  // IPv6 loopback
+  /^::$/,                                    // IPv6 unspecified
+  /^::ffff:/i,                               // IPv4-mapped IPv6 — kernel routes to embedded v4 (bypasses 169.254. via [::ffff:169.254.169.254])
   /^fc[0-9a-f][0-9a-f]:/i,                   // IPv6 unique local (fc00::/7)
   /^fd[0-9a-f][0-9a-f]:/i,                   // IPv6 unique local
 ];
@@ -70,7 +73,10 @@ export function validateProviderUrl(
 
   const hosted = options.hosted ?? process.env.SELF_HOSTED !== "true";
   if (hosted) {
-    const host = parsed.hostname.toLowerCase();
+    // `URL.hostname` keeps surrounding brackets on IPv6 (e.g. "[::1]"), so
+    // strip them before matching the `^`-anchored IPv6 patterns. Without this
+    // the entire IPv6 family bypasses the denylist.
+    const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
     if (PRIVATE_HOST_PATTERNS.some((re) => re.test(host))) {
       throw new Error(
         `Provider URL host "${host}" is private/loopback/link-local; ` +

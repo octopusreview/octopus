@@ -63,6 +63,20 @@ describe("validateProviderUrl", () => {
       expect(() => validateProviderUrl("http://[fd12::1]", { hosted: true })).toThrow();
     });
 
+    it("blocks IPv4 wildcard 0.0.0.0 (routes to loopback on Linux/macOS)", () => {
+      expect(() => validateProviderUrl("http://0.0.0.0:11434", { hosted: true })).toThrow();
+    });
+
+    it("blocks IPv6 unspecified `::`", () => {
+      expect(() => validateProviderUrl("http://[::]:11434", { hosted: true })).toThrow();
+    });
+
+    it("blocks IPv4-mapped IPv6 (cloud-metadata bypass)", () => {
+      // ::ffff:127.0.0.1 → loopback, ::ffff:169.254.169.254 → cloud metadata
+      expect(() => validateProviderUrl("http://[::ffff:127.0.0.1]", { hosted: true })).toThrow();
+      expect(() => validateProviderUrl("http://[::ffff:169.254.169.254]", { hosted: true })).toThrow();
+    });
+
     it("allows public hosts in hosted mode", () => {
       expect(validateProviderUrl("https://api.example.com", { hosted: true })).toBe("https://api.example.com");
       expect(validateProviderUrl("https://1.1.1.1", { hosted: true })).toBe("https://1.1.1.1");

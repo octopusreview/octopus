@@ -293,6 +293,7 @@ Each category is scored 1-5 based on the changes in THIS PR only:
 1 — Critical: CRITICAL-severity issues present. Must fix before merge.
 
 SCORING RULES:
+- The denominator is ALWAYS 5. Write scores as "4/5" — never "4/4" or any other denominator.
 - Score based ONLY on what changed in this diff, not the entire codebase
 - If a category is not applicable (e.g., no security-relevant changes), use "N/A"
 - The Overall Score is the LOWEST individual score (not the average)

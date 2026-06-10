@@ -77,6 +77,36 @@ describe("validateProviderUrl", () => {
       expect(() => validateProviderUrl("http://[::ffff:169.254.169.254]", { hosted: true })).toThrow();
     });
 
+    it("blocks 6to4 (2002::/16) — embeds v4 in next 32 bits", () => {
+      // [2002:7f00:1::] addresses 127.0.0.1 via 6to4
+      expect(() => validateProviderUrl("http://[2002:7f00:1::]", { hosted: true })).toThrow();
+      // [2002:a9fe:a9fe::] addresses 169.254.169.254 via 6to4 (cloud-metadata bypass)
+      expect(() => validateProviderUrl("http://[2002:a9fe:a9fe::]", { hosted: true })).toThrow();
+    });
+
+    it("blocks NAT64 well-known prefix (64:ff9b::/96)", () => {
+      // [64:ff9b::a9fe:a9fe] addresses 169.254.169.254 via NAT64
+      expect(() => validateProviderUrl("http://[64:ff9b::a9fe:a9fe]", { hosted: true })).toThrow();
+      // [64:ff9b::7f00:1] addresses 127.0.0.1 via NAT64
+      expect(() => validateProviderUrl("http://[64:ff9b::7f00:1]", { hosted: true })).toThrow();
+    });
+
+    it("blocks IPv4-compatible IPv6 (`::a.b.c.d` deprecated form)", () => {
+      // [::127.0.0.1] canonicalizes to [::7f00:1] — reaches 127.0.0.1
+      expect(() => validateProviderUrl("http://[::127.0.0.1]", { hosted: true })).toThrow();
+      expect(() => validateProviderUrl("http://[::169.254.169.254]", { hosted: true })).toThrow();
+    });
+
+    it("blocks non-canonical IPv6 forms via WHATWG canonicalization", () => {
+      // [0::1] and [0:0:0:0:0:0:0:1] both canonicalize to [::1]
+      expect(() => validateProviderUrl("http://[0::1]", { hosted: true })).toThrow();
+      expect(() => validateProviderUrl("http://[0:0:0:0:0:0:0:1]", { hosted: true })).toThrow();
+      // [::ffff:0:127.0.0.1] canonicalizes to [::ffff:0:7f00:1] (matches ::ffff:)
+      expect(() => validateProviderUrl("http://[::ffff:0:127.0.0.1]", { hosted: true })).toThrow();
+      // Expanded ::ffff:a9fe:a9fe form
+      expect(() => validateProviderUrl("http://[0:0:0:0:0:ffff:a9fe:a9fe]", { hosted: true })).toThrow();
+    });
+
     it("allows public hosts in hosted mode", () => {
       expect(validateProviderUrl("https://api.example.com", { hosted: true })).toBe("https://api.example.com");
       expect(validateProviderUrl("https://1.1.1.1", { hosted: true })).toBe("https://1.1.1.1");

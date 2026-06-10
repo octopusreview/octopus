@@ -45,7 +45,7 @@ export default async function ApiKeysPage() {
 
   if (!member) redirect("/dashboard");
 
-  const isOwner = member.role === "owner" || member.role === "admin";
+  const canManage = member.role === "owner" || member.role === "admin";
 
   return (
     <ApiKeysForm
@@ -54,7 +54,7 @@ export default async function ApiKeysPage() {
       anthropicApiKey={maskStoredKey(member.organization.anthropicApiKey)}
       googleApiKey={maskStoredKey(member.organization.googleApiKey)}
       cohereApiKey={maskStoredKey(member.organization.cohereApiKey)}
-      isOwner={isOwner}
+      isOwner={canManage}
     />
   );
 }

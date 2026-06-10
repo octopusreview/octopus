@@ -39,7 +39,7 @@ export default async function RepoSettingsPage({
 
   if (!repo || repo.organization.members.length === 0) notFound();
 
-  const isOwner =
+  const canManage =
     repo.organization.members[0].role === "owner" ||
     repo.organization.members[0].role === "admin";
   const reviewConfig = (repo.reviewConfig as Record<string, unknown>) ?? {};
@@ -54,12 +54,12 @@ export default async function RepoSettingsPage({
       </div>
       <ReviewConfigForm
         repoId={repo.id}
-        isOwner={isOwner}
+        isOwner={canManage}
         initialConfig={reviewConfig}
       />
       <RepoConfigForm
         repoId={repo.id}
-        isOwner={isOwner}
+        isOwner={canManage}
         initialEnabled={repo.useRepoConfig}
         initialFiles={initialFilesOrDefault}
       />

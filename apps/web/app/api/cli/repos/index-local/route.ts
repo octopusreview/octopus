@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
 import { writeAuditLog } from "@/lib/audit";
+import { isOrgOverSpendLimit } from "@/lib/cost";
 import { normaliseRemoteUrl } from "@/app/api/cli/repos/by-remote/route";
 import {
   indexLocalBatch,
@@ -75,6 +76,17 @@ export async function POST(request: Request) {
   const auth = await authenticateApiToken(request);
   if (!auth) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Match the spend-limit invariant the sibling CLI review endpoints
+  // (review-local, [id]/local-review) already enforce: once the org has
+  // exceeded its monthly AI cap, a token can't keep running paid embeddings.
+  // Each batch upserts vectors with cost-per-chunk on the configured embed
+  // provider (OpenAI's text-embedding-3-large by default), so an attacker
+  // already blocked from reviews could otherwise drive uncapped spend via
+  // `octp review --index` against arbitrarily large repos.
+  if (await isOrgOverSpendLimit(auth.org.id)) {
+    return NextResponse.json({ error: "Monthly spend limit reached" }, { status: 402 });
   }
 
   const rawText = await request.text();
@@ -169,7 +181,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await indexLocalBatch(repoId, fullName, body.files);
+    const result = await indexLocalBatch(repoId, fullName, auth.org.id, body.files);
     await recordLocalIndexProgress(
       repoId,
       startedAt,

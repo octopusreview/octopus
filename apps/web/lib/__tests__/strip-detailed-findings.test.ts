@@ -63,6 +63,33 @@ ${FINDINGS_END_MARKER}`;
     expect(out).toContain('"key": "value"');
   });
 
+  it("keeps a ```json``` block that mentions severity+filePath but isn't a finding array", () => {
+    // Tighter scope guard: stray-fence rule only fires when the block is an
+    // ARRAY containing all three of severity, filePath, AND startLine. A doc
+    // example that explains the schema as an object should pass through.
+    const body =
+      HIGH_LEVEL +
+      "\n### Schema example\n```json\n" +
+      '{\n  "severity": "string — one of 🔴🟠🟡🔵💡",\n  "filePath": "relative path",\n  "rationale": "why this finding"\n}\n' +
+      "```\n";
+    const out = stripDetailedFindings(body);
+    expect(out).toContain('"severity"');
+    expect(out).toContain('"filePath"');
+    expect(out).toContain("Schema example");
+  });
+
+  it("keeps an array that mentions severity+filePath but lacks startLine", () => {
+    // Without startLine the block isn't a real Octopus finding array — could
+    // be a different tool's output format being referenced.
+    const body =
+      HIGH_LEVEL +
+      "\n### Other tool output\n```json\n" +
+      '[{"severity":"high","filePath":"a.ts","tool":"eslint"}]\n' +
+      "```\n";
+    const out = stripDetailedFindings(body);
+    expect(out).toContain('"tool":"eslint"');
+  });
+
   it("strips individual #### emoji finding sections (the /u flag fix)", () => {
     // Pre-fix the char class without /u matched lone surrogates, so these
     // sections survived unchanged. Use the real severity emoji to catch

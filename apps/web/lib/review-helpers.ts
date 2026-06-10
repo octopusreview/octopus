@@ -278,36 +278,26 @@ export function stripDetailedFindings(reviewBody: string): string {
   //    The prompt says to wrap findings in the HTML-comment markers above,
   //    but verbose models (claude-fable-5, etc.) sometimes also emit a
   //    bare ```json``` fence containing the same array — or, worse, ONLY
-  //    the bare fence with no markers. Detect by content: a fenced JSON
-  //    block that contains both `"severity"` and `"filePath"` is the
-  //    finding-array shape.
-  result = result.replace(
-    /\n*```json\s*\n[\s\S]*?\n```\s*/g,
-    (match) =>
-      /"severity"\s*:/.test(match) && /"filePath"\s*:/.test(match) ? "" : match,
-  );
+  //    the bare fence with no markers. Detect by *shape*, not by keyword
+  //    presence alone: the block must (a) be a JSON array, and (b) contain
+  //    THREE finding-specific keys — severity, filePath, AND startLine.
+  //    Requiring all three avoids stripping unrelated JSON examples that
+  //    happen to mention severity or filePath in passing.
+  result = result.replace(/\n*```json\s*\n([\s\S]*?)\n```\s*/g, (match, content) => {
+    const trimmed = (content as string).trim();
+    if (!trimmed.startsWith("[")) return match;
+    const hasSeverity = /"severity"\s*:/.test(trimmed);
+    const hasFilePath = /"filePath"\s*:/.test(trimmed);
+    const hasStartLine = /"startLine"\s*:/.test(trimmed);
+    return hasSeverity && hasFilePath && hasStartLine ? "" : match;
+  });
 
   // 3. Legacy <details> "Detailed Findings" block
-  result = result.replace(
-    /\n*<details>\s*\n\s*<summary>\s*Detailed Findings\s*<\/summary>[\s\S]*?<\/details>\s*/i,
-    "",
-  );
+  result = result.replace(LEGACY_DETAILS_FINDINGS_RX, "");
 
-  // 4. Finding-shaped ### sections.
-  //    Catches "### Detailed Findings", "### Findings Summary", "### Critical
-  //    Findings" (the documented ones), plus the off-prompt variants models
-  //    actually emit: "### Findings", "### Bug Details", "### Issues",
-  //    "### Bugs", "### Findings Detail". Each runs until the next ###/##
-  //    heading or end of string.
-  const FINDING_HEADING_WORDS =
-    "(?:Detailed Findings|Findings Summary|Critical Findings|Findings(?:\\s+Detail)?|Bugs?|Issues?|Bug Details?|Detailed Issues|Finding Details?)";
-  result = result.replace(
-    new RegExp(
-      `\\n*###\\s+${FINDING_HEADING_WORDS}\\b[\\s\\S]*?(?=\\n###?\\s|\\n## |$)`,
-      "gi",
-    ),
-    "",
-  );
+  // 4. Finding-shaped ### sections — see FINDING_HEADING_WORDS at module
+  //    scope for the targeted variants.
+  result = result.replace(FINDING_SECTION_H3_RX, "");
 
   // 5. Individual finding headings emitted in markdown instead of JSON:
   //    "#### Finding #N: ..." or "#### 🔴 ..." (severity emoji).
@@ -316,24 +306,39 @@ export function stripDetailedFindings(reviewBody: string): string {
   //    surrogates instead of the actual emoji, leaving these sections
   //    intact. Also drop the trailing `\b` — word boundary is undefined
   //    after an astral codepoint.
-  result = result.replace(
-    /\n*####\s+(?:Finding\s*#?\d+|[🔴🟠🟡🔵💡])[\s\S]*?(?=\n#{2,4}\s|$)/gu,
-    "",
-  );
+  result = result.replace(FINDING_HEADING_H4_RX, "");
 
   // 6. Trailing "## Findings" / "## Findings (N)" H2 — same off-prompt
   //    pattern at H2 level. Many models default to H2 for top-level
   //    sections when the prompt doesn't say otherwise.
-  result = result.replace(
-    /\n*##\s+Findings(?:\s+\(\d+\))?\b[\s\S]*?(?=\n## |$)/gi,
-    "",
-  );
+  result = result.replace(FINDING_SECTION_H2_RX, "");
 
   // Clean up excessive blank lines left behind by stripping
   result = result.replace(/\n{3,}/g, "\n\n");
 
   return result.trimEnd();
 }
+
+// Targeted heading variants for rule #4 — the documented shapes ("Detailed
+// Findings", "Findings Summary", "Critical Findings") plus the off-prompt
+// variants verbose models actually emit. Hoisted to module scope so the
+// regex compiles once per process, not per call.
+const FINDING_HEADING_WORDS =
+  "(?:Detailed Findings|Findings Summary|Critical Findings|Findings(?:\\s+Detail)?|Bugs?|Issues?|Bug Details?|Detailed Issues|Finding Details?)";
+
+const LEGACY_DETAILS_FINDINGS_RX =
+  /\n*<details>\s*\n\s*<summary>\s*Detailed Findings\s*<\/summary>[\s\S]*?<\/details>\s*/i;
+
+const FINDING_SECTION_H3_RX = new RegExp(
+  `\\n*###\\s+${FINDING_HEADING_WORDS}\\b[\\s\\S]*?(?=\\n###?\\s|\\n## |$)`,
+  "gi",
+);
+
+const FINDING_HEADING_H4_RX =
+  /\n*####\s+(?:Finding\s*#?\d+|[🔴🟠🟡🔵💡])[\s\S]*?(?=\n#{2,4}\s|$)/gu;
+
+const FINDING_SECTION_H2_RX =
+  /\n*##\s+Findings(?:\s+\(\d+\))?\b[\s\S]*?(?=\n## |$)/gi;
 
 // ─── Inline Comments ────────────────────────────────────────────────────────
 

@@ -41,4 +41,17 @@ describe("truncateForGithubComment", () => {
     expect(out.length).toBeLessThanOrEqual(MAX_GITHUB_COMMENT_BODY);
     expect(out).toContain("Comment truncated");
   });
+
+  it("does not end on a lone surrogate (would break JSON encode)", () => {
+    // 🔴 is a surrogate pair in UTF-16. A body of contiguous 🔴 with no
+    // newlines lands in the hard-cut path; without the guard, slice may
+    // cut between the high and low surrogate and emit a malformed string.
+    // String.prototype.isWellFormed() (ES2024) reports unpaired surrogates.
+    const body = "🔴".repeat(MAX_GITHUB_COMMENT_BODY);
+    const out = truncateForGithubComment(body);
+    expect(out.length).toBeLessThanOrEqual(MAX_GITHUB_COMMENT_BODY);
+    expect(out.isWellFormed()).toBe(true);
+    // Sanity: re-encoding through JSON preserves all code points.
+    expect(() => JSON.parse(JSON.stringify({ body: out }))).not.toThrow();
+  });
 });

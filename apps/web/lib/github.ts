@@ -443,7 +443,15 @@ export function truncateForGithubComment(body: string): string {
   // doesn't land mid-codeblock or mid-finding.
   const hardCut = body.slice(0, room);
   const lastBoundary = Math.max(hardCut.lastIndexOf("\n\n"), hardCut.lastIndexOf("\n## "));
-  const cut = lastBoundary > room * 0.8 ? hardCut.slice(0, lastBoundary) : hardCut;
+  let cut = lastBoundary > room * 0.8 ? hardCut.slice(0, lastBoundary) : hardCut;
+  // Never end on a lone high surrogate — `String.slice` operates on UTF-16
+  // code units and can bisect a surrogate pair (emoji, including the
+  // 🔴🟠🟡 severity markers Octopus reviews are full of). The result is a
+  // malformed string that `JSON.stringify` emits as an unpaired \ud83d
+  // escape, which RFC 8259 leaves to the receiver's discretion — GitHub
+  // may reject it, recreating the same silent-after-paid-LLM-call failure
+  // mode this whole function exists to prevent.
+  if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1);
   return cut + marker;
 }
 

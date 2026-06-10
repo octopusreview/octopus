@@ -199,6 +199,12 @@ async function registerAgent(creds: Credentials, agentName: string) {
     `${creds.baseUrl}/api/agent/register`,
     {
       name: agentName,
+      // Server validation requires Array.isArray(repoFullNames); the agent
+      // serves any LLM task for the org regardless of source repo, so we
+      // send an empty array rather than enumerating. Without this, every
+      // registration was rejected with 400 "name and repoFullNames are
+      // required" — the bridge feature was dead on arrival.
+      repoFullNames: [],
       capabilities: ["llm-completion", "ollama"],
       machineInfo: {
         os: process.platform,

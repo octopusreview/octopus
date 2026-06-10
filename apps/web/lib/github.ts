@@ -254,6 +254,10 @@ export async function createPullRequestReview(
   event: "COMMENT" | "REQUEST_CHANGES" | "APPROVE",
   comments: ReviewComment[],
 ): Promise<number> {
+  // The review-record `body` is subject to the same 65,536-char limit as
+  // issue/PR comments; without this the standard-pipeline review path can
+  // 422 even when the issue-comment path is safe.
+  const safeBody = truncateForGithubComment(body);
   const token = await getInstallationToken(installationId);
   const res = await fetchWithRetry(
     `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/reviews`,
@@ -264,7 +268,7 @@ export async function createPullRequestReview(
         Accept: "application/vnd.github+json",
       },
       body: JSON.stringify({
-        body,
+        body: safeBody,
         event,
         comments,
       }),
@@ -443,7 +447,11 @@ export function truncateForGithubComment(body: string): string {
   // doesn't land mid-codeblock or mid-finding.
   const hardCut = body.slice(0, room);
   const lastBoundary = Math.max(hardCut.lastIndexOf("\n\n"), hardCut.lastIndexOf("\n## "));
-  let cut = lastBoundary > room * 0.8 ? hardCut.slice(0, lastBoundary) : hardCut;
+  // `lastIndexOf` returns -1 when no boundary exists; the numeric comparison
+  // -1 > 0.8 * room is already false (room is positive), but the explicit
+  // `>= 0` guard documents the intent and makes the fallthrough obvious.
+  const cutAtBoundary = lastBoundary >= 0 && lastBoundary > room * 0.8;
+  let cut = cutAtBoundary ? hardCut.slice(0, lastBoundary) : hardCut;
   // Never end on a lone high surrogate — `String.slice` operates on UTF-16
   // code units and can bisect a surrogate pair (emoji, including the
   // 🔴🟠🟡 severity markers Octopus reviews are full of). The result is a

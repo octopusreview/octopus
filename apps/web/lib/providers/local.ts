@@ -21,6 +21,13 @@ import type { Provider, AiCreateParams, AiResponse } from "./index";
 const POLL_INTERVAL_MS = 2000;
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
+// Agents that haven't heartbeated within this window are treated as offline
+// — matches the staleness threshold /api/agent/status and the settings page
+// use. Without this check, a crashed agent stays status="online" in the DB
+// (the heartbeat endpoint is the only writer) and the fail-fast count below
+// keeps dispatching to it until the per-task timeout fires.
+const AGENT_STALE_THRESHOLD_MS = 90_000;
+
 export const localProvider: Provider = {
   name: "local" as never,
   supportsJsonSchema: false, // depends on the agent's underlying provider; advertise conservatively
@@ -37,8 +44,16 @@ export const localProvider: Provider = {
 
     // Sanity-check at least one agent is online so we fail fast instead of
     // polling for the full timeout while the user has no agent running.
+    // `status: "online"` alone is insufficient — that column is only written
+    // by the heartbeat endpoint, so a crashed agent stays "online" forever
+    // and this check passes. The 90s lastSeenAt window matches the same
+    // check applied in /api/agent/status and the settings page.
     const onlineAgents = await prisma.localAgent.count({
-      where: { organizationId: orgId, status: "online" },
+      where: {
+        organizationId: orgId,
+        status: "online",
+        lastSeenAt: { gte: new Date(Date.now() - AGENT_STALE_THRESHOLD_MS) },
+      },
     });
     if (onlineAgents === 0) {
       throw new Error(
@@ -95,11 +110,23 @@ async function pollUntilTerminal(taskId: string, timeoutMs: number) {
     if (row.status === "completed" || row.status === "failed") return row;
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
-  // Mark as timeout for observability.
-  await prisma.agentLlmTask.update({
-    where: { id: taskId },
+  // Mark as timeout — guarded so a concurrent /complete that lands during
+  // the final sleep doesn't get its terminal state clobbered. updateMany
+  // with a status condition is atomic; count===0 means the agent finished
+  // first, so re-read and return whatever it wrote.
+  const flipped = await prisma.agentLlmTask.updateMany({
+    where: { id: taskId, status: { in: ["pending", "claimed"] } },
     data: { status: "timeout", completedAt: new Date() },
   });
+  if (flipped.count === 0) {
+    const row = await prisma.agentLlmTask.findUnique({
+      where: { id: taskId },
+      select: { status: true, resultText: true, resultUsage: true, errorMessage: true },
+    });
+    if (row && (row.status === "completed" || row.status === "failed")) {
+      return row;
+    }
+  }
   return {
     status: "timeout" as const,
     resultText: null,

@@ -1,3 +1,4 @@
+import os from "node:os";
 import { loadCredentials, type Credentials } from "../lib/credentials.js";
 import { loadConfig, DEFAULT_OLLAMA_BASE_URL } from "../lib/config.js";
 import { getJson, postJson } from "../lib/api.js";
@@ -234,6 +235,17 @@ async function fetchTasks(creds: Credentials, agentId: string): Promise<LlmTask[
     if (res.status === 401 || res.status === 403) {
       throw new AuthError(res.status, res.error);
     }
+    // 404 = the agent's LocalAgent row no longer exists — the operator
+    // revoked it via DELETE /api/agent/[id]. Retrying would 404 forever
+    // (the row's gone, the token may even still work). Surface as AuthError
+    // so the polling loop exits with the actionable "restart to re-register"
+    // message instead of silently spinning until the user notices.
+    if (res.status === 404) {
+      throw new AuthError(
+        res.status,
+        "This agent was revoked from the dashboard. Restart `octp agent serve` to re-register.",
+      );
+    }
     throw new Error(res.error);
   }
   return res.data.tasks;
@@ -287,7 +299,13 @@ async function runOneTask(
     // the caller is the agent that originally claimed the task and returns
     // 403 on mismatch, preventing one agent from overwriting another's
     // in-flight result.
-    await postJson(
+    //
+    // postJson never rejects — it resolves {ok:false} on HTTP/network errors.
+    // Failing to deliver the result must be loud (the work is lost, the
+    // server-side task stays "claimed" until the provider's 5-minute timeout
+    // fails the review). Capture the result and log + throw on !ok so the
+    // outer catch posts the error to /complete for fast surface.
+    const deliver = await postJson(
       completeUrl,
       {
         agentId,
@@ -299,10 +317,18 @@ async function runOneTask(
       },
       creds.token,
     );
+    if (!deliver.ok) {
+      throw new Error(
+        `failed to deliver result to /complete (HTTP ${deliver.status}: ${deliver.error})`,
+      );
+    }
     if (verbose) console.log(`  ✓ completed ${task.id} (${text.length} chars)`);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`  ✗ failed ${task.id}: ${msg}`);
+    // Best-effort error-side delivery. postJson resolves {ok:false} so the
+    // catch is technically dead today, but harmless and defends against
+    // a future change.
     await postJson(completeUrl, { agentId, error: msg }, creds.token).catch(() => {});
   }
 }
@@ -316,8 +342,14 @@ function flagValue(argv: string[], flag: string): string | undefined {
 }
 
 function defaultAgentName(): string {
-  const host = process.env.HOSTNAME ?? "agent";
-  return `${host}-${process.pid}`;
+  // process.env.HOSTNAME is unset in most macOS/Linux shells (zsh exports
+  // HOST, not HOSTNAME; node doesn't pull it in either), so the previous
+  // default "agent-<pid>" changed every restart and the server's upsert
+  // on (org, name) never reused the row. Using os.hostname() (the OS-level
+  // hostname) keeps the same machine's agent row stable across restarts —
+  // matches the file's own "reuse existing by name" lifecycle comment.
+  // Drop the pid suffix for the same reason.
+  return os.hostname() || "agent";
 }
 
 function sleep(ms: number): Promise<void> {

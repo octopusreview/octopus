@@ -1,7 +1,12 @@
 import "server-only";
 import { prisma } from "@octopus/db";
+import {
+  selectLatestWebRelease,
+  type GitHubReleaseListItem,
+} from "./releases-select";
 
 export { compareSemver } from "./semver";
+export { selectLatestWebRelease } from "./releases-select";
 
 /**
  * Single source of truth for the self-hosted release-check feature.
@@ -13,7 +18,14 @@ export { compareSemver } from "./semver";
  * fail at worker boot), and ensures only one upsert call site exists.
  */
 
-const RELEASES_API = "https://api.github.com/repos/octopusreview/octopus/releases/latest";
+// We deliberately do NOT use `/releases/latest` — the repo hosts two release
+// trains (web `v*` tags via release.yml + CLI `octp-v*` tags via
+// octp-release.yml), both published as normal (non-prerelease) releases.
+// `/releases/latest` returns the most recently published one regardless of
+// tag, so a fresh octp CLI cut would otherwise be presented to a self-hoster
+// as a 'new web release available' upgrade panel pointing at the wrong tag.
+// Listing + filtering via `selectLatestWebRelease` keeps the update check honest.
+const RELEASES_API = "https://api.github.com/repos/octopusreview/octopus/releases?per_page=30";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export type CachedRelease = {
@@ -64,18 +76,15 @@ export async function fetchLatestRelease(): Promise<CachedRelease | null> {
       console.warn(`[releases] GitHub Releases API returned ${r.status}`);
       return null;
     }
-    const body = (await r.json()) as {
-      tag_name?: string;
-      html_url?: string;
-      published_at?: string;
-      body?: string;
-    };
-    if (!body.tag_name || !body.html_url || !body.published_at) return null;
+    const list = (await r.json()) as GitHubReleaseListItem[];
+    if (!Array.isArray(list)) return null;
+    const latest = selectLatestWebRelease(list);
+    if (!latest) return null;
     return {
-      tagName: body.tag_name,
-      htmlUrl: body.html_url,
-      publishedAt: body.published_at,
-      body: body.body ?? "",
+      tagName: latest.tag_name,
+      htmlUrl: latest.html_url,
+      publishedAt: latest.published_at,
+      body: latest.body ?? "",
       fetchedAt: new Date().toISOString(),
     };
   } catch (e) {

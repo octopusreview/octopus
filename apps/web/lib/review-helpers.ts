@@ -271,9 +271,14 @@ export function stripDetailedFindings(reviewBody: string): string {
   );
 
   // 6. Individual finding headings: "#### Finding #N: ..." or "#### 🔴/🟠/🟡/🔵/💡 ..."
-  //    Each runs until the next #### / ### / ## heading or end of string
+  //    Each runs until the next #### / ### / ## heading or end of string.
+  //    The `u` flag matters: severity emoji are surrogate pairs in UTF-16,
+  //    and a character class without /u matches the lone surrogates rather
+  //    than the emoji, so this regex never matched any finding heading.
+  //    Also drop the trailing `\b` — word-boundary is undefined after an
+  //    astral codepoint and breaks the alternation in some regex engines.
   result = result.replace(
-    /\n*####\s+(?:Finding\s*#\d+|[🔴🟠🟡🔵💡]\s)\b[\s\S]*?(?=\n#{2,4}\s|$)/g,
+    /\n*####\s+(?:Finding\s*#\d+|[🔴🟠🟡🔵💡])\s[\s\S]*?(?=\n#{2,4}\s|$)/gu,
     "",
   );
 

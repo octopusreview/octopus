@@ -18,6 +18,7 @@ import { extractAllMermaidBlocks, extractNodeLabels, DIAGRAM_TYPE_LABELS, saniti
 import { loadQueueConfig, computeStaleReclaimMs, enqueue } from "@/lib/queue";
 import { createEmbeddings } from "@/lib/embeddings";
 import { generateSparseVector } from "@/lib/sparse-vector";
+import { substitutePromptVars } from "@/lib/prompt-substitute";
 import { rerankDocuments } from "@/lib/reranker";
 import { resolveReviewLanguage } from "@/lib/review-language";
 import { getAlwaysIncludeKnowledge, mergeKnowledgeChunks } from "@/lib/knowledge-context";
@@ -1520,18 +1521,22 @@ export async function processReview(pullRequestId: string): Promise<void> {
       }
     }
 
-    const systemPrompt = getSystemPrompt()
-      .replace("{{CODEBASE_CONTEXT}}", codebaseContext)
-      .replace("{{FILE_TREE}}", fileTree)
-      .replace("{{KNOWLEDGE_CONTEXT}}", knowledgeContext)
-      .replace("{{PR_NUMBER}}", String(pr.number))
-      .replace("{{USER_INSTRUCTION}}", userInstruction)
-      .replace("{{PROVIDER}}", isGitHub ? "GitHub" : isBitbucket ? "Bitbucket" : isGitlab ? "GitLab" : repo.provider)
-      .replace("{{FALSE_POSITIVE_CONTEXT}}", falsePositiveContext)
-      .replace("{{RE_REVIEW_CONTEXT}}", priorReviewContext)
-      .replace("{{CONFLICT_DETECTION}}", conflictPrompt)
-      .replace("{{REVIEW_LANGUAGE}}", reviewLanguage.code)
-      .replace("{{REVIEW_LANGUAGE_NAME}}", reviewLanguage.promptName);
+    // Function-form replace so `$&`/`$'`/`$\``/`$<name>` in repo content
+    // (codebaseContext, userInstruction, etc.) is treated literally instead
+    // of as a Replace pattern. See substitutePromptVars's docstring.
+    const systemPrompt = substitutePromptVars(getSystemPrompt(), {
+      CODEBASE_CONTEXT: codebaseContext,
+      FILE_TREE: fileTree,
+      KNOWLEDGE_CONTEXT: knowledgeContext,
+      PR_NUMBER: String(pr.number),
+      USER_INSTRUCTION: userInstruction,
+      PROVIDER: isGitHub ? "GitHub" : isBitbucket ? "Bitbucket" : isGitlab ? "GitLab" : repo.provider,
+      FALSE_POSITIVE_CONTEXT: falsePositiveContext,
+      RE_REVIEW_CONTEXT: priorReviewContext,
+      CONFLICT_DETECTION: conflictPrompt,
+      REVIEW_LANGUAGE: reviewLanguage.code,
+      REVIEW_LANGUAGE_NAME: reviewLanguage.promptName,
+    });
 
     const response = await createAiMessage(
       {

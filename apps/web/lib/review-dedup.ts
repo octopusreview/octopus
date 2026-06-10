@@ -68,6 +68,11 @@ export function parseFindingsFromJson(reviewBody: string): InlineFinding[] | nul
 
   const findings: InlineFinding[] = [];
   for (const item of parsed) {
+    // The model occasionally emits `null` in the findings array (often as
+    // the last element when its output ran past the schema). Without this
+    // guard `typeof item.severity` reads through `null` and crashes the
+    // whole parser, dropping every finding in the block.
+    if (item === null || typeof item !== "object") continue;
     if (
       typeof item.severity !== "string" ||
       typeof item.title !== "string" ||
@@ -166,10 +171,17 @@ const STOP_WORDS = new Set([
 ]);
 
 export function extractKeywords(text: string): Set<string> {
+  // `[^a-z0-9\s]` stripped EVERY non-ASCII codepoint, so non-Latin
+  // review languages (Japanese, Cyrillic, Arabic, …) collapsed every
+  // finding's keyword set to empty. jaccardSimilarity returns 1 for
+  // two empty sets (line 179) → every finding looked 100% similar to
+  // every prior finding → wrongly deduplicated. Using `\p{L}`/`\p{N}`
+  // (Unicode letter / number) with the /u flag keeps non-Latin words
+  // intact while still stripping punctuation and code symbols.
   return new Set(
     text
       .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
       .split(/\s+/)
       .filter((w) => w.length > 2 && !STOP_WORDS.has(w)),
   );

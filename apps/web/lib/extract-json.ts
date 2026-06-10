@@ -4,10 +4,11 @@
  * Three-tier recovery, returning the first that parses successfully:
  *   1. Strict `JSON.parse` on the whole input.
  *   2. Strip a single triple-backtick code fence (` ```json ` or ` ``` `) and parse the inner content.
- *   3. Walk the input looking for balanced `{...}` blocks and parse each candidate.
+ *   3. Walk the input looking for balanced `{...}` or `[...]` blocks and parse each candidate.
  *
- * Returns `null` if nothing parses. Object roots only (the balanced-brace pass
- * walks `{` not `[` — extend if array roots become common in LLM output).
+ * Returns `null` if nothing parses. Both object AND array roots are
+ * supported in tier 3 — earlier versions only walked `{` roots, so an
+ * unfenced top-level findings array (`[{...}, {...}]`) was silently dropped.
  */
 export function extractJson(text: string): unknown | null {
   const trimmed = text.trim();
@@ -29,16 +30,32 @@ export function extractJson(text: string): unknown | null {
     }
   }
 
-  // Tier 3: balanced-brace scan
-  let firstBrace = trimmed.indexOf("{");
-  while (firstBrace !== -1) {
+  // Tier 3: balanced scan — try object roots first (more common in our prompts)
+  // then array roots. Either form may appear unfenced in LLM output.
+  const objectResult = scanForRoot(trimmed, "{", "}");
+  if (objectResult !== null) return objectResult;
+  const arrayResult = scanForRoot(trimmed, "[", "]");
+  if (arrayResult !== null) return arrayResult;
+
+  return null;
+}
+
+/**
+ * Walk the input looking for balanced `open`/`close` delimited blocks
+ * and return the first that parses as JSON. String literals (and their
+ * escape sequences) are tracked so braces / brackets inside strings
+ * don't throw off the depth counter.
+ */
+function scanForRoot(text: string, open: string, close: string): unknown | null {
+  let firstOpen = text.indexOf(open);
+  while (firstOpen !== -1) {
     let depth = 0;
     let inString = false;
     let escape = false;
     let consumedTo = -1;
 
-    for (let i = firstBrace; i < trimmed.length; i += 1) {
-      const ch = trimmed[i];
+    for (let i = firstOpen; i < text.length; i += 1) {
+      const ch = text[i];
       if (escape) {
         escape = false;
         continue;
@@ -52,11 +69,11 @@ export function extractJson(text: string): unknown | null {
         continue;
       }
       if (inString) continue;
-      if (ch === "{") depth += 1;
-      else if (ch === "}") {
+      if (ch === open) depth += 1;
+      else if (ch === close) {
         depth -= 1;
         if (depth === 0) {
-          const candidate = trimmed.slice(firstBrace, i + 1);
+          const candidate = text.slice(firstOpen, i + 1);
           try {
             return JSON.parse(candidate);
           } catch {
@@ -67,8 +84,8 @@ export function extractJson(text: string): unknown | null {
       }
     }
 
-    if (consumedTo === -1) return null; // unbalanced — nothing more to try
-    firstBrace = trimmed.indexOf("{", consumedTo);
+    if (consumedTo === -1) return null;
+    firstOpen = text.indexOf(open, consumedTo);
   }
 
   return null;

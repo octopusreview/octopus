@@ -78,17 +78,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Match the spend-limit invariant the sibling CLI review endpoints
-  // (review-local, [id]/local-review) already enforce: once the org has
-  // exceeded its monthly AI cap, a token can't keep running paid embeddings.
-  // Each batch upserts vectors with cost-per-chunk on the configured embed
-  // provider (OpenAI's text-embedding-3-large by default), so an attacker
-  // already blocked from reviews could otherwise drive uncapped spend via
-  // `octp review --index` against arbitrarily large repos.
-  if (await isOrgOverSpendLimit(auth.org.id)) {
-    return NextResponse.json({ error: "Monthly spend limit reached" }, { status: 402 });
-  }
-
   const rawText = await request.text();
   if (rawText.length > MAX_BODY_BYTES) {
     return NextResponse.json(
@@ -178,6 +167,20 @@ export async function POST(request: Request) {
     repoId = repo.id;
     fullName = repo.fullName;
     startedAt = repo.updatedAt.getTime();
+  }
+
+  // Spend-limit gate — same invariant the sibling CLI review endpoints enforce.
+  // Run AFTER repo resolution so that, if the org crosses its cap between
+  // batch N and N+1, we can mark the repo failed instead of stranding it in
+  // indexStatus="indexing" forever (the CLI's retry loop would otherwise be
+  // stuck waiting for a final-batch state flip that never happens).
+  if (await isOrgOverSpendLimit(auth.org.id)) {
+    if (!isFirstBatch) {
+      await markLocalIndexFailed(repoId).catch((e) =>
+        console.error("[cli.index-local] failed to mark repo failed on 402:", e),
+      );
+    }
+    return NextResponse.json({ error: "Monthly spend limit reached" }, { status: 402 });
   }
 
   try {

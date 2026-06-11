@@ -12,10 +12,12 @@ services:
     # no AI provider keys, no integration credentials — they live in the
     # root .env which compose uses only for variable substitution in this
     # file by default, NOT for delivering env vars to running containers.
-    # required:false so smoke-tests with no .env file still boot.
+    # `required: true` (the default) means a missing .env fails compose
+    # explicitly rather than booting silently with no secrets — which is
+    # better than the prior failure mode where the container started but
+    # 500'd on the first auth call.
     env_file:
-      - path: .env
-        required: false
+      - .env
     environment:
       - DATABASE_URL=postgresql://octopus:octopus@postgres:5432/octopus
       - QDRANT_URL=http://qdrant:6333

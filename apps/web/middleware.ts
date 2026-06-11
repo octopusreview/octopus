@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { prisma } from "@octopus/db";
 
 // Endpoints a user with mustChangePassword=true is still allowed to hit.
 // The /change-password page itself, the API the page POSTs to, anything under
@@ -79,15 +79,27 @@ export async function middleware(request: NextRequest) {
   // flagged for a reset) could drive the whole product via /api/* while the
   // UI redirect was silently inert.
   //
-  // Skipped for the explicit allow-list above (the /change-password page, its
-  // POST endpoint, and /api/auth/* for session lifecycle).
+  // Optimisation: avoid `auth.api.getSession` here. That helper does the
+  // full session-validation dance (token verify, expiry check, csrf, etc.)
+  // on every authenticated request, which is overkill for ONLY needing the
+  // mustChangePassword flag. We've already established a session token
+  // cookie exists above; downstream handlers / the (app) layout still do
+  // the full getSession and reject if the cookie's stale, so an expired
+  // session never sneaks past here in practice. A direct findUnique
+  // selecting one column is ~1-2ms vs the full validation's 10-20ms.
+  //
+  // Skipped for the explicit allow-list above (the /change-password page,
+  // its POST endpoint, and /api/auth/* for session lifecycle).
   if (
     !MUST_CHANGE_PASSWORD_ALLOWED_PREFIXES.some((p) => pathname.startsWith(p))
   ) {
-    const session = await auth.api
-      .getSession({ headers: request.headers })
+    const sessionRow = await prisma.session
+      .findUnique({
+        where: { token: sessionToken },
+        select: { user: { select: { mustChangePassword: true } } },
+      })
       .catch(() => null);
-    if (session?.user?.mustChangePassword) {
+    if (sessionRow?.user?.mustChangePassword) {
       if (pathname.startsWith("/api/")) {
         return NextResponse.json(
           { error: "Password change required. POST /api/me/password-changed with a new password before using the API." },

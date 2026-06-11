@@ -45,18 +45,40 @@ const DEFAULT_ADMIN_NAME = "Admin";
  * doesn't trigger an unwanted force-reset.
  */
 async function isPasswordStillDefault(): Promise<boolean> {
+  // Separate the auth probe from the cleanup. If signInEmail succeeds but
+  // the prior nested deleteMany throws (transient DB blip, etc.), the
+  // single-catch structure swallowed the failure, returned false, AND left
+  // the probe-created session row orphaned — readable until normal expiry,
+  // which weakens the "session never reaches a real client" property AND
+  // skipped a legitimate self-heal.
+  let stillDefault = false;
+  let sessionToken: string | undefined;
   try {
     const result = await auth.api.signInEmail({
       body: { email: DEFAULT_ADMIN_EMAIL, password: DEFAULT_ADMIN_PASSWORD },
     });
-    const sessionToken = result?.token;
-    if (sessionToken) {
-      await prisma.session.deleteMany({ where: { token: sessionToken } });
-    }
-    return Boolean(result?.user);
+    sessionToken = result?.token;
+    stillDefault = Boolean(result?.user);
   } catch {
+    // signInEmail rejected → password is no longer the default (or auth
+    // is otherwise broken). Either way, don't self-heal.
     return false;
   }
+  if (sessionToken) {
+    // Cleanup with its own catch so a delete failure can't shadow the
+    // signInEmail result. A leaked probe session is loud but recoverable
+    // (logged for ops attention); a missed self-heal is silent and not.
+    await prisma.session
+      .deleteMany({ where: { token: sessionToken } })
+      .catch((e) => {
+        console.warn(
+          `[bootstrap-admin] failed to delete probe session ${sessionToken!.slice(0, 8)}…, ` +
+            `manual DELETE recommended:`,
+          e instanceof Error ? e.message : e,
+        );
+      });
+  }
+  return stillDefault;
 }
 
 let bootstrapPromise: Promise<void> | null = null;

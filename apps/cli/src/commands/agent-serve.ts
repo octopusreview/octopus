@@ -1,3 +1,4 @@
+import os from "node:os";
 import { loadCredentials, type Credentials } from "../lib/credentials.js";
 import { loadConfig, DEFAULT_OLLAMA_BASE_URL } from "../lib/config.js";
 import { getJson, postJson } from "../lib/api.js";
@@ -71,8 +72,29 @@ export async function agentServeCommand(argv: string[]): Promise<number> {
   }
 
   // Parse optional flags
-  const agentName = flagValue(argv, "--name") ?? defaultAgentName();
+  const explicitName = flagValue(argv, "--name");
+  const agentName = explicitName ?? defaultAgentName();
   const verbose = argv.includes("--verbose") || argv.includes("-v");
+
+  // Warn (don't fail) when default name + a generic-looking hostname mean
+  // the agent will be hard to tell apart on the server. Generic hostnames
+  // are common in container / VM defaults and almost guarantee a collision
+  // if more than one host is involved.
+  if (!explicitName) {
+    const h = agentName.toLowerCase();
+    const looksGeneric =
+      h === "agent" ||
+      h === "localhost" ||
+      h === "ubuntu" ||
+      h === "debian" ||
+      /^[a-f0-9-]{8,}$/.test(h);
+    if (looksGeneric) {
+      console.warn(
+        `! Default agent name is "${agentName}" — generic hostname likely to collide ` +
+          `with other agents. Pass --name <distinguishing-suffix> if running multiple.`,
+      );
+    }
+  }
 
   // Resolve Ollama URL: env wins, then wizard-saved config, then default.
   const config = await loadConfig();
@@ -234,6 +256,20 @@ async function fetchTasks(creds: Credentials, agentId: string): Promise<LlmTask[
     if (res.status === 401 || res.status === 403) {
       throw new AuthError(res.status, res.error);
     }
+    // 404 = the agent's LocalAgent row no longer exists — the operator
+    // revoked it via DELETE /api/agent/[id]. Retrying would 404 forever
+    // (the row's gone, the token may even still work). Surface as AuthError
+    // so the polling loop exits with the actionable "restart to re-register"
+    // message instead of silently spinning until the user notices.
+    if (res.status === 404) {
+      throw new AuthError(
+        res.status,
+        "This agent was revoked from the dashboard. Re-running `octp agent serve` " +
+          "creates a fresh registration (it is not retrying the failed call) — confirm in the " +
+          "dashboard's Local Agents page that the revocation was intentional first; otherwise " +
+          "the new registration will be revoked again.",
+      );
+    }
     throw new Error(res.error);
   }
   return res.data.tasks;
@@ -287,7 +323,13 @@ async function runOneTask(
     // the caller is the agent that originally claimed the task and returns
     // 403 on mismatch, preventing one agent from overwriting another's
     // in-flight result.
-    await postJson(
+    //
+    // postJson never rejects — it resolves {ok:false} on HTTP/network errors.
+    // Failing to deliver the result must be loud (the work is lost, the
+    // server-side task stays "claimed" until the provider's 5-minute timeout
+    // fails the review). Capture the result and log + throw on !ok so the
+    // outer catch posts the error to /complete for fast surface.
+    const deliver = await postJson(
       completeUrl,
       {
         agentId,
@@ -299,10 +341,18 @@ async function runOneTask(
       },
       creds.token,
     );
+    if (!deliver.ok) {
+      throw new Error(
+        `failed to deliver result to /complete (HTTP ${deliver.status}: ${deliver.error})`,
+      );
+    }
     if (verbose) console.log(`  ✓ completed ${task.id} (${text.length} chars)`);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`  ✗ failed ${task.id}: ${msg}`);
+    // Best-effort error-side delivery. postJson resolves {ok:false} so the
+    // catch is technically dead today, but harmless and defends against
+    // a future change.
     await postJson(completeUrl, { agentId, error: msg }, creds.token).catch(() => {});
   }
 }
@@ -316,8 +366,20 @@ function flagValue(argv: string[], flag: string): string | undefined {
 }
 
 function defaultAgentName(): string {
-  const host = process.env.HOSTNAME ?? "agent";
-  return `${host}-${process.pid}`;
+  // process.env.HOSTNAME is unset in most macOS/Linux shells (zsh exports
+  // HOST, not HOSTNAME; node doesn't pull it in either), so the previous
+  // default "agent-<pid>" changed every restart and the server's upsert
+  // on (org, name) never reused the row. Using os.hostname() (the OS-level
+  // hostname) keeps the same machine's agent row stable across restarts —
+  // matches the file's own "reuse existing by name" lifecycle comment.
+  // Drop the pid suffix for the same reason.
+  //
+  // Trade-off: two agents on the SAME host will collide on this default
+  // (each one's heartbeat overwrites the other's row, and dispatch routes
+  // to whichever heartbeated last). Operators running multi-agent setups
+  // on one host must pass `--name <distinguishing-suffix>` — the startup
+  // banner below logs the chosen name so the collision is visible.
+  return os.hostname() || "agent";
 }
 
 function sleep(ms: number): Promise<void> {

@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import { logAiUsage } from "@/lib/ai-usage";
 import { getEmbedModel } from "@/lib/ai-client";
 import { isOrgOverSpendLimit } from "@/lib/cost";
+import { EMBED_VECTOR_SIZE } from "@/lib/qdrant";
 
 let openai: OpenAI | null = null;
 
@@ -73,13 +74,38 @@ export async function createEmbeddings(
   const validVectors: number[][] = [];
   let totalPromptTokens = 0;
 
+  // text-embedding-3-* models accept a `dimensions` parameter that truncates
+  // the returned embedding to the requested size. Passing it explicitly means
+  // an org-level `embedModelId` override to a smaller model (e.g.
+  // text-embedding-3-small at 1536) still produces vectors at the Qdrant
+  // collection's dim, instead of 400'ing at upsert time.
+  // text-embedding-ada-002 ignores the parameter (it's always 1536) — we
+  // detect that and throw below.
+  const supportsDimensionsParam = /^text-embedding-3-/.test(embedModel);
+
   // Send a batch, splitting in half on the 300k-token 400 error. Token estimates
   // can underestimate for dense content; this lets us recover without failing
   // the whole repo index over one bad batch.
   async function embedBatch(batch: string[]): Promise<void> {
     try {
-      const res = await client.embeddings.create({ model: embedModel, input: batch });
-      for (const item of res.data) validVectors.push(item.embedding);
+      const res = await client.embeddings.create({
+        model: embedModel,
+        input: batch,
+        ...(supportsDimensionsParam ? { dimensions: EMBED_VECTOR_SIZE } : {}),
+      });
+      for (const item of res.data) {
+        // Defense-in-depth: even with `dimensions:` passed, validate. Any
+        // mismatch here means the model couldn't honour the requested dim
+        // (text-embedding-ada-002 ignores it, custom Azure deployments may
+        // too) — surface it now with an actionable message rather than
+        // letting Qdrant reject the upsert with a cryptic dim error.
+        if (item.embedding.length !== EMBED_VECTOR_SIZE) {
+          throw new Error(
+            `Embedding model "${embedModel}" returned ${item.embedding.length}-dim vectors but the Qdrant collection is configured for ${EMBED_VECTOR_SIZE}. Either pick a model whose native or requested dim matches the collection (text-embedding-3-large @ 3072 by default), or re-create the Qdrant collection at the model's dim.`,
+          );
+        }
+        validVectors.push(item.embedding);
+      }
       totalPromptTokens += res.usage.prompt_tokens;
     } catch (err) {
       const isTokenLimit =

@@ -31,9 +31,22 @@ export type IndexLocalBatchResult = {
   chunksInBatch: number;
 };
 
+/**
+ * Process one batch of CLI-uploaded files into chunks + embeddings + Qdrant
+ * points. `organizationId` is required so:
+ *   1. Embeddings resolve through the same `getEmbedModel(orgId, repoId)`
+ *      chain the review query path uses (review-core.ts:216). Without this
+ *      the index would embed with the env-default model while the query
+ *      embeds with the org/repo override — different embedding spaces,
+ *      sometimes different dims → Qdrant 400 or silently garbage retrieval.
+ *   2. `createEmbeddings` logs an `ai_usage` row (provider + tokens) so
+ *      CLI-driven indexing spend is visible to the spend-limit check and
+ *      billing/reporting, matching the review path.
+ */
 export async function indexLocalBatch(
   repoId: string,
   fullName: string,
+  organizationId: string,
   files: LocalFile[],
   ig?: Ignore,
 ): Promise<IndexLocalBatchResult> {
@@ -67,8 +80,39 @@ export async function indexLocalBatch(
 
   // Embed + upsert. Single batch through createEmbeddings — its internal
   // sub-batching handles OpenAI's 200k-token limit, so we don't double up.
+  // Tracking ensures: (a) the same getEmbedModel chain as the query path,
+  // (b) an ai_usage row so spend accounting is honest.
   const texts = allChunks.map((c) => c.text);
-  const vectors = await createEmbeddings(texts);
+  const vectors = await createEmbeddings(texts, {
+    organizationId,
+    operation: "index-local",
+    repositoryId: repoId,
+  });
+
+  // Defense-in-depth: createEmbeddings returns empty vectors when the org
+  // is over its spend limit. The route gate ahead of us already 402s in
+  // that case, but if it ever fails open we'd upsert zero-length vectors
+  // which Qdrant accepts but produces garbage retrieval — fail loud
+  // instead so we never poison the index. Three checks because the
+  // failure modes are distinct:
+  //   1. vectors.length !== texts.length — createEmbeddings dropped some
+  //      inputs (whitespace filter) but the caller expects 1:1 here since
+  //      texts were already validated upstream
+  //   2. vectors.length === 0 — outer call returned nothing
+  //   3. any zero-length vector — over-spend-limit return shape
+  // The original `vectors.every(...)` returned true on `[]` (vacuously)
+  // and missed (1) + (2), so a fail-open in either of those would still
+  // produce a garbage index.
+  if (
+    vectors.length !== texts.length ||
+    vectors.length === 0 ||
+    vectors.some((v) => v.length === 0)
+  ) {
+    throw new Error(
+      `Embedding step returned ${vectors.length} vectors for ${texts.length} inputs (or empty vectors — likely org over spend limit). Aborting upsert to avoid poisoning the index.`,
+    );
+  }
+
   const sparse = generateSparseVectors(texts);
 
   const indexedAt = new Date().toISOString();

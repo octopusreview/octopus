@@ -30,6 +30,7 @@ import { gatherCrossFileContext, gatherVerificationContext, validateFindings } f
 import { logAiUsage } from "@/lib/ai-usage";
 import { getReviewModel } from "@/lib/ai-client";
 import { createAiMessage } from "@/lib/ai-router";
+import { substitutePromptVars } from "@/lib/prompt-substitute";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -324,18 +325,23 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
   const conflictPrompt = enableConflict ? getConflictDetectionPrompt() : "";
 
   const reviewLanguage = resolveReviewLanguage(org.reviewLanguage);
-  const systemPrompt = getSystemPrompt()
-    .replace("{{CODEBASE_CONTEXT}}", codebaseContext)
-    .replace("{{FILE_TREE}}", fileTreeStr)
-    .replace("{{KNOWLEDGE_CONTEXT}}", knowledgeContext)
-    .replace("{{PR_NUMBER}}", String(params.prNumber ?? 0))
-    .replace("{{USER_INSTRUCTION}}", "")
-    .replace("{{PROVIDER}}", "local")
-    .replace("{{FALSE_POSITIVE_CONTEXT}}", falsePositiveContext)
-    .replace("{{RE_REVIEW_CONTEXT}}", "")
-    .replace("{{CONFLICT_DETECTION}}", conflictPrompt)
-    .replace("{{REVIEW_LANGUAGE}}", reviewLanguage.code)
-    .replace("{{REVIEW_LANGUAGE_NAME}}", reviewLanguage.promptName);
+  // Function-form replace via substitutePromptVars so `$&` / `$'` / `$\`` /
+  // `$<name>` in replacement values (codebase context, knowledge context,
+  // PR titles, etc.) are taken literally instead of as `String.replace`
+  // substitution patterns. See `prompt-substitute.ts` for the rationale.
+  const systemPrompt = substitutePromptVars(getSystemPrompt(), {
+    CODEBASE_CONTEXT: codebaseContext,
+    FILE_TREE: fileTreeStr,
+    KNOWLEDGE_CONTEXT: knowledgeContext,
+    PR_NUMBER: String(params.prNumber ?? 0),
+    USER_INSTRUCTION: "",
+    PROVIDER: "local",
+    FALSE_POSITIVE_CONTEXT: falsePositiveContext,
+    RE_REVIEW_CONTEXT: "",
+    CONFLICT_DETECTION: conflictPrompt,
+    REVIEW_LANGUAGE: reviewLanguage.code,
+    REVIEW_LANGUAGE_NAME: reviewLanguage.promptName,
+  });
 
   const response = await createAiMessage(
     {

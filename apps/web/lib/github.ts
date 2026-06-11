@@ -254,6 +254,10 @@ export async function createPullRequestReview(
   event: "COMMENT" | "REQUEST_CHANGES" | "APPROVE",
   comments: ReviewComment[],
 ): Promise<number> {
+  // The review-record `body` is subject to the same 65,536-char limit as
+  // issue/PR comments; without this the standard-pipeline review path can
+  // 422 even when the issue-comment path is safe.
+  const safeBody = truncateForGithubComment(body);
   const token = await getInstallationToken(installationId);
   const res = await fetchWithRetry(
     `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/reviews`,
@@ -264,7 +268,7 @@ export async function createPullRequestReview(
         Accept: "application/vnd.github+json",
       },
       body: JSON.stringify({
-        body,
+        body: safeBody,
         event,
         comments,
       }),
@@ -417,6 +421,48 @@ async function getPullRequestDiffViaFiles(
   return truncateDiff(patches.join(""));
 }
 
+// GitHub's issue / PR comment API rejects bodies larger than 65536 chars
+// with HTTP 422 "Validation Failed" (the field is `body` and the reason is
+// "too_long"). The error is opaque from the user side — it just looks like
+// the bot failed to post — and the LLM spend behind the failed call is
+// already paid. So clamp at a value below the limit, leaving room for the
+// truncation marker we append.
+export const MAX_GITHUB_COMMENT_BODY = 64_000;
+
+/**
+ * Truncate a comment body to GitHub's accepted size, appending a clear
+ * marker so reviewers know there's more. The full review is still
+ * available via the PR's review-record path; truncating only affects
+ * what GitHub renders in the comment thread. Idempotent on bodies that
+ * already fit. Exported for unit testing.
+ */
+export function truncateForGithubComment(body: string): string {
+  if (body.length <= MAX_GITHUB_COMMENT_BODY) return body;
+  // Cut to (MAX - marker length) so the final string fits exactly.
+  const marker =
+    "\n\n---\n\n> ⚠️ **Comment truncated** — this review exceeded GitHub's per-comment size cap. " +
+    "Visit the dashboard for the full version.";
+  const room = MAX_GITHUB_COMMENT_BODY - marker.length;
+  // Prefer cutting at a paragraph boundary near the limit so the truncation
+  // doesn't land mid-codeblock or mid-finding.
+  const hardCut = body.slice(0, room);
+  const lastBoundary = Math.max(hardCut.lastIndexOf("\n\n"), hardCut.lastIndexOf("\n## "));
+  // `lastIndexOf` returns -1 when no boundary exists; the numeric comparison
+  // -1 > 0.8 * room is already false (room is positive), but the explicit
+  // `>= 0` guard documents the intent and makes the fallthrough obvious.
+  const cutAtBoundary = lastBoundary >= 0 && lastBoundary > room * 0.8;
+  let cut = cutAtBoundary ? hardCut.slice(0, lastBoundary) : hardCut;
+  // Never end on a lone high surrogate — `String.slice` operates on UTF-16
+  // code units and can bisect a surrogate pair (emoji, including the
+  // 🔴🟠🟡 severity markers Octopus reviews are full of). The result is a
+  // malformed string that `JSON.stringify` emits as an unpaired \ud83d
+  // escape, which RFC 8259 leaves to the receiver's discretion — GitHub
+  // may reject it, recreating the same silent-after-paid-LLM-call failure
+  // mode this whole function exists to prevent.
+  if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1);
+  return cut + marker;
+}
+
 export async function createPullRequestComment(
   installationId: number,
   owner: string,
@@ -424,6 +470,7 @@ export async function createPullRequestComment(
   prNumber: number,
   body: string,
 ): Promise<number> {
+  const safeBody = truncateForGithubComment(body);
   const token = await getInstallationToken(installationId);
   const res = await fetchWithRetry(
     `${GITHUB_API}/repos/${owner}/${repo}/issues/${prNumber}/comments`,
@@ -433,7 +480,7 @@ export async function createPullRequestComment(
         Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github+json",
       },
-      body: JSON.stringify({ body }),
+      body: JSON.stringify({ body: safeBody }),
     },
   );
 
@@ -452,6 +499,7 @@ export async function updatePullRequestComment(
   commentId: number,
   body: string,
 ): Promise<void> {
+  const safeBody = truncateForGithubComment(body);
   const token = await getInstallationToken(installationId);
   const res = await fetchWithRetry(
     `${GITHUB_API}/repos/${owner}/${repo}/issues/comments/${commentId}`,
@@ -461,7 +509,7 @@ export async function updatePullRequestComment(
         Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github+json",
       },
-      body: JSON.stringify({ body }),
+      body: JSON.stringify({ body: safeBody }),
     },
   );
 

@@ -144,15 +144,37 @@ function getOrgKeyForProvider(keys: OrgKeys, provider: AiProvider): string | nul
 
 // ── Provider-specific call implementations ───────────────────────────────────
 
+/**
+ * Claude Fable/Mythos models have always-on extended thinking that spends
+ * from the max_tokens budget BEFORE any text is produced, and a tokenizer
+ * that uses ~30% more tokens than Opus-tier models. Budgets tuned for other
+ * models (8192 for reviews, 256 for titles) get fully consumed by the
+ * thinking block on hard inputs, the response ends with
+ * stop_reason "max_tokens" and zero text blocks, and the whole review fails.
+ * Raise the cap to a floor that leaves room for thinking + text; max_tokens
+ * is a ceiling, not a spend, so the floor costs nothing on easy inputs.
+ */
+const ALWAYS_THINKING_MODEL_RX = /^claude-(fable|mythos)-/;
+const ALWAYS_THINKING_MAX_TOKENS_FLOOR = 64000;
+
 async function callAnthropic(
   params: AiCreateParams,
   apiKey?: string | null,
 ): Promise<AiResponse> {
   const client = getAnthropic(apiKey);
 
-  const response = await client.messages.create({
+  const maxTokens = ALWAYS_THINKING_MODEL_RX.test(params.model)
+    ? Math.max(params.maxTokens, ALWAYS_THINKING_MAX_TOKENS_FLOOR)
+    : params.maxTokens;
+
+  // Streaming here is purely between this process and the Anthropic API —
+  // finalMessage() buffers the SSE chunks and returns the same complete
+  // Message object messages.create() would. It's required because thinking
+  // models can take minutes before the first byte, and the SDK enforces
+  // streaming for large max_tokens to avoid HTTP timeouts.
+  const stream = client.messages.stream({
     model: params.model,
-    max_tokens: params.maxTokens,
+    max_tokens: maxTokens,
     system: params.system
       ? [
           {
@@ -169,6 +191,7 @@ async function callAnthropic(
       content: m.content,
     })),
   });
+  const response = await stream.finalMessage();
 
   // Models with extended thinking (e.g. claude-fable-5) prepend a thinking
   // block, so the text block is not necessarily content[0] — collect every

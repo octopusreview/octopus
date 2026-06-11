@@ -21,14 +21,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   seven incremental migrations from 2026-04 / 2026-05 have been folded
   into `00000000000000_baseline_schema`. Fresh self-hosted installs now
   work end-to-end via `npx prisma migrate deploy`. **Existing self-hosters
-  whose DB was provisioned by the older migrations must run this once
-  before the next deploy:**
+  whose DB was provisioned by the older migrations must follow these
+  steps in order, ONCE, when upgrading to this release:**
   ```bash
+  # 1. PULL the new image first — `migrate resolve` requires the baseline
+  #    migration directory to be present inside the running container, and
+  #    the old image doesn't have it.
+  docker compose pull
+
+  # 2. Start the new container WITHOUT running migrations yet — the new
+  #    image's startup will try `migrate deploy` and bail because the row
+  #    isn't marked applied.
+  docker compose up -d --no-deps web
+
+  # 3. Mark the baseline as already applied (the existing DB is at that
+  #    schema; we're just telling Prisma so).
   docker compose exec web npx prisma migrate resolve --schema packages/db/prisma/schema.prisma --applied 00000000000000_baseline_schema
+
+  # 4. Now run migrate deploy normally — any post-baseline migrations
+  #    apply on top.
+  docker compose exec web npx prisma migrate deploy --schema packages/db/prisma/schema.prisma
   ```
-  After that, future migrations apply on top normally. Self-hosters who
-  provisioned via `prisma db push` (no migration tracking) need the same
-  command — the baseline state matches the current schema either way.
+  Self-hosters who provisioned via `prisma db push` (no migration tracking)
+  need the same steps — the baseline state matches the current schema
+  either way.
 
 ### Fixed
 - Self-hosted upgrade command in README / release notes / Updates page

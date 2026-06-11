@@ -157,6 +157,17 @@ function getOrgKeyForProvider(keys: OrgKeys, provider: AiProvider): string | nul
 const ALWAYS_THINKING_MODEL_RX = /^claude-(fable|mythos)-/;
 const ALWAYS_THINKING_MAX_TOKENS_FLOOR = 64000;
 
+/**
+ * Hard deadline for one Anthropic call, thinking time included. The SDK's
+ * built-in timeout only covers time-to-response-headers (its clearTimeout
+ * runs as soon as fetch resolves), so once the SSE stream is open a stalled
+ * connection would hang finalMessage() forever. A caller-supplied abort
+ * signal, by contrast, stays attached for the whole body read. Keep this
+ * below the review queue's 900s job timeout so the call fails with a clear,
+ * retryable error instead of the job silently expiring.
+ */
+const ANTHROPIC_CALL_TIMEOUT_MS = 14 * 60 * 1000;
+
 async function callAnthropic(
   params: AiCreateParams,
   apiKey?: string | null,
@@ -190,8 +201,24 @@ async function callAnthropic(
       role: m.role,
       content: m.content,
     })),
-  });
-  const response = await stream.finalMessage();
+  }, { signal: AbortSignal.timeout(ANTHROPIC_CALL_TIMEOUT_MS) });
+
+  let response: Anthropic.Message;
+  try {
+    response = await stream.finalMessage();
+  } catch (err) {
+    // Map the abort (only our timeout signal can trigger it here) to an
+    // actionable error instead of the SDK's generic "Request was aborted".
+    if (
+      err instanceof Anthropic.APIUserAbortError ||
+      (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError"))
+    ) {
+      throw new Error(
+        `Anthropic call timed out after ${ANTHROPIC_CALL_TIMEOUT_MS / 1000}s (model: ${params.model})`,
+      );
+    }
+    throw err;
+  }
 
   // Models with extended thinking (e.g. claude-fable-5) prepend a thinking
   // block, so the text block is not necessarily content[0] — collect every

@@ -11,10 +11,10 @@
 /.github/ @redoh
 
 # Review engine
-/apps/web/lib/reviewer.ts @redoh
-/apps/web/lib/review-core.ts @redoh
-/apps/web/lib/review-dedup.ts @redoh
+/apps/web/lib/reviewer.ts @redoh @cemoso
+/apps/web/lib/review-core.ts @redoh @cemoso
+/apps/web/lib/review-dedup.ts @redoh @cemoso
 
 # Tests
-/apps/web/lib/__tests__/ @redoh @ogulcanaydogan
+/apps/web/lib/__tests__/ @redoh @cemoso @johanfleming
 

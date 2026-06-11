@@ -366,3 +366,79 @@ describe("parseFindingsFromSummaryTable", () => {
     expect(findings[0].keywords.has("user")).toBe(true);
   });
 });
+
+// ─── parseFindingsFromJson null-guard ──────────────────────────────────────
+
+describe("parseFindingsFromJson — null / non-object items", () => {
+  const wrap = (arr: string) =>
+    `${FINDINGS_START_MARKER}\n\`\`\`json\n${arr}\n\`\`\`\n${FINDINGS_END_MARKER}`;
+
+  it("skips a null item and keeps the rest", () => {
+    // Models occasionally emit a trailing `null` when their output runs past
+    // the schema. Pre-fix, this threw at `typeof item.severity` because the
+    // outer try/catch dropped the entire findings array.
+    const body = wrap(
+      '[null,{"severity":"🔴","title":"t","filePath":"a.ts","startLine":1,"description":"d"}]',
+    );
+    const findings = parseFindingsFromJson(body);
+    expect(findings).not.toBeNull();
+    expect(findings!.length).toBe(1);
+    expect(findings![0].title).toBe("t");
+  });
+
+  it("skips non-object items (strings, numbers)", () => {
+    const body = wrap(
+      '["bad",42,{"severity":"🔴","title":"ok","filePath":"a.ts","startLine":1,"description":"d"}]',
+    );
+    const findings = parseFindingsFromJson(body);
+    expect(findings).not.toBeNull();
+    expect(findings!.length).toBe(1);
+    expect(findings![0].title).toBe("ok");
+  });
+
+  it("returns null when the only item is null (no valid findings)", () => {
+    // Pre-fix this threw because of the null deref; now it just yields
+    // zero valid findings, which the helper returns as null per existing
+    // contract (callers treat null === no JSON block / no findings).
+    const body = wrap("[null]");
+    const findings = parseFindingsFromJson(body);
+    expect(findings).toBeNull();
+  });
+});
+
+// ─── extractKeywords — non-Latin scripts ───────────────────────────────────
+
+describe("extractKeywords — non-Latin scripts", () => {
+  it("preserves Japanese tokens (was stripped by /[^a-z0-9\\s]/g)", () => {
+    const out = extractKeywords("SQL インジェクション バグ報告");
+    expect(out.has("sql")).toBe(true);
+    expect(out.has("インジェクション")).toBe(true);
+    expect(out.has("バグ報告")).toBe(true);
+  });
+
+  it("preserves Cyrillic tokens", () => {
+    const out = extractKeywords("Ошибка переполнения буфера");
+    expect(out.has("ошибка")).toBe(true);
+    expect(out.has("переполнения")).toBe(true);
+    expect(out.has("буфера")).toBe(true);
+  });
+
+  it("preserves Arabic tokens", () => {
+    const out = extractKeywords("خطأ في الذاكرة");
+    expect(out.has("خطأ")).toBe(true);
+    expect(out.has("الذاكرة")).toBe(true);
+  });
+
+  it("still strips punctuation and code symbols", () => {
+    const out = extractKeywords("user.input(arg)/code-path");
+    // The punctuation becomes whitespace and tokens split apart cleanly.
+    expect(out.has("user")).toBe(true);
+    expect(out.has("input")).toBe(true);
+    expect(out.has("arg")).toBe(true);
+    expect(out.has("code")).toBe(true);
+    expect(out.has("path")).toBe(true);
+    // Compound symbol-laden tokens don't survive.
+    expect(out.has("user.input")).toBe(false);
+    expect(out.has("user.input(arg)/code-path")).toBe(false);
+  });
+});

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.18] - 2026-06-11
+
+### Added
+- Admins now have the same organization permissions as owners (#510)
+- Health and readiness probes at /api/health and /api/ready (#470)
+- Question/support issue template for GitHub (#439)
+
+### Fixed
+- PR comment bodies are truncated to avoid GitHub 422 errors on long reviews (#511)
+- Review score table denominators are now always normalized to /5 (#509)
+- GitLab webhook route is no longer blocked by auth middleware (#404)
+
+### Changed
+- Homepage title and meta reworked for AI code review positioning
+
+### Security
+- Public Ask Octopus widget hardened against abuse and model disclosure (#405)
+
 ## [1.0.17] - 2026-06-03
 
 ### Added
@@ -327,6 +345,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Suppress dismissed findings in Additional findings summary (#25)
 - CI lint failures across all packages (#36)
 
+[1.0.18]: https://github.com/octopusreview/octopus/compare/v1.0.17...v1.0.18
 [1.0.17]: https://github.com/octopusreview/octopus/compare/v1.0.16...v1.0.17
 [1.0.16]: https://github.com/octopusreview/octopus/compare/v1.0.15...v1.0.16
 [1.0.15]: https://github.com/octopusreview/octopus/compare/v1.0.14...v1.0.15

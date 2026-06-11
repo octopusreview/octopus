@@ -11,7 +11,7 @@ import { getOrgSpendLimitStatus } from "@/lib/cost";
 import { canUserCreateOrg } from "@/lib/org-limits";
 import { OrgCookieSync } from "@/components/org-cookie-sync";
 import { DeviceReporter } from "@/components/device-reporter";
-import { createOrgForUser } from "./complete-profile/actions";
+import { createOrgForUser } from "@/lib/org-create";
 
 /**
  * Derives a display name from an email address.

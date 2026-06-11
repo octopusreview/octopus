@@ -31,6 +31,28 @@ const EMPTY_FILTERS: Filters = {
 
 const CATEGORIES = ["", "auth", "email", "review", "repo", "knowledge", "billing", "admin", "system"];
 
+/**
+ * Build the URLSearchParams the list AND export endpoints both accept.
+ * Both must use the same shape so the export matches the on-screen
+ * filtered view (the compliance use case).
+ *
+ * The `to` field comes from <input type="date"> as "YYYY-MM-DD", and
+ * `new Date("YYYY-MM-DD")` parses to midnight UTC of that day. Used as
+ * `createdAt lte`, that excludes EVERY event on the selected end day
+ * after 00:00:00 UTC — picking from=to=today shows an empty result
+ * even when entries exist today. Widen to end-of-day-UTC so the
+ * inclusive semantics match what an admin expects from a date picker.
+ */
+function filterParams(filters: Filters): URLSearchParams {
+  const params = new URLSearchParams();
+  if (filters.category) params.set("category", filters.category);
+  if (filters.actorEmail) params.set("actorEmail", filters.actorEmail);
+  if (filters.action) params.set("action", filters.action);
+  if (filters.from) params.set("from", new Date(filters.from + "T00:00:00.000Z").toISOString());
+  if (filters.to) params.set("to", new Date(filters.to + "T23:59:59.999Z").toISOString());
+  return params;
+}
+
 export function AuditLogTable({
   initialEntries,
   initialCursor,
@@ -48,12 +70,7 @@ export function AuditLogTable({
     setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams();
-      if (filters.category) params.set("category", filters.category);
-      if (filters.actorEmail) params.set("actorEmail", filters.actorEmail);
-      if (filters.action) params.set("action", filters.action);
-      if (filters.from) params.set("from", new Date(filters.from).toISOString());
-      if (filters.to) params.set("to", new Date(filters.to).toISOString());
+      const params = filterParams(filters);
       if (!reset && cursor) params.set("cursor", cursor);
 
       const res = await fetch(`/api/audit-log?${params.toString()}`);
@@ -78,10 +95,14 @@ export function AuditLogTable({
   }, [filters.category, filters.actorEmail, filters.action, filters.from, filters.to]);
 
   const exportUrl = (format: "csv" | "json"): string => {
-    const params = new URLSearchParams({ format });
-    if (filters.category) params.set("category", filters.category);
-    if (filters.from) params.set("from", new Date(filters.from).toISOString());
-    if (filters.to) params.set("to", new Date(filters.to).toISOString());
+    // Forward the SAME filter set the list view uses, so the export
+    // matches what the admin sees on screen. Previously this only
+    // forwarded category/from/to and silently dropped actorEmail +
+    // action — an admin filtering to one actor and clicking 'Export'
+    // got every actor's rows in the date range, a compliance-artifact
+    // mismatch.
+    const params = filterParams(filters);
+    params.set("format", format);
     return `/api/audit-log/export?${params.toString()}`;
   };
 

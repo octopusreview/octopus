@@ -37,12 +37,21 @@ export async function GET(request: Request) {
   // Without this guard the caller can pass arbitrary strings, polluting the
   // audited export metadata and enabling enumeration of made-up categories.
   const category = validateAuditCategory(searchParams.get("category"));
+  // actorEmail (case-insensitive exact) and action (exact) match the
+  // semantics of the list endpoint at apps/web/app/api/audit-log/route.ts.
+  // Forwarding the full filter set keeps the export matching what the
+  // admin sees on screen, which is the load-bearing property for the
+  // compliance use case.
+  const actorEmail = searchParams.get("actorEmail")?.trim() || undefined;
+  const action = searchParams.get("action")?.trim() || undefined;
   const from = parseDate(searchParams.get("from"));
   const to = parseDate(searchParams.get("to"));
 
   const where = {
     organizationId: currentOrgId,
     ...(category ? { category } : {}),
+    ...(actorEmail ? { actorEmail: { equals: actorEmail, mode: "insensitive" as const } } : {}),
+    ...(action ? { action } : {}),
     ...(from || to
       ? {
           createdAt: {
@@ -67,7 +76,15 @@ export async function GET(request: Request) {
     actorId: session.user.id,
     actorEmail: session.user.email,
     organizationId: currentOrgId,
-    metadata: { format, count: entries.length, category: category ?? null, from: from?.toISOString() ?? null, to: to?.toISOString() ?? null },
+    metadata: {
+      format,
+      count: entries.length,
+      category: category ?? null,
+      actorEmail: actorEmail ?? null,
+      action: action ?? null,
+      from: from?.toISOString() ?? null,
+      to: to?.toISOString() ?? null,
+    },
     ipAddress: reqHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
     userAgent: reqHeaders.get("user-agent") ?? null,
   }).catch((err) => {

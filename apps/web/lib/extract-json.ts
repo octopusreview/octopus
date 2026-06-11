@@ -30,12 +30,17 @@ export function extractJson(text: string): unknown | null {
     }
   }
 
-  // Tier 3: balanced scan — try object roots first (more common in our prompts)
-  // then array roots. Either form may appear unfenced in LLM output.
-  const objectResult = scanForRoot(trimmed, "{", "}");
-  if (objectResult !== null) return objectResult;
+  // Tier 3: balanced scan. Try ARRAY roots first — an unfenced findings
+  // array (`[{...}, {...}]`) always starts with `[` containing inner
+  // objects, so scanning for `{` first would match the first inner object
+  // and return it standalone, losing the rest of the array. That defeats
+  // the array-root recovery this tier was added for. Object roots are
+  // tried second for the case where the model emitted a single object
+  // literal (no surrounding array).
   const arrayResult = scanForRoot(trimmed, "[", "]");
   if (arrayResult !== null) return arrayResult;
+  const objectResult = scanForRoot(trimmed, "{", "}");
+  if (objectResult !== null) return objectResult;
 
   return null;
 }

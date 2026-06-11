@@ -20,7 +20,7 @@
     "@google/generative-ai": "^0.24.1",
     "@octopus/db": "workspace:*",
     "@octopus/package-analyzer": "workspace:*",
-    "@qdrant/js-client-rest": "^1.17.0",
+    "@qdrant/js-client-rest": "^1.18.0",
     "@react-email/components": "^1.0.12",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",

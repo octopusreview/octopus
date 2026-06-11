@@ -1,6 +1,6 @@
 /**
  * Substitute `{{NAME}}` placeholders in a prompt template with literal
- * string values.
+ * string values, in ONE pass.
  *
  * Why this exists: `String.prototype.replace(string, string)` interprets
  * `$&` (whole match), `$'` (suffix), `$\`` (prefix), and `$<name>` in the
@@ -16,6 +16,15 @@
  * "first-occurrence only" quirk of `replace(string, string)` — if a
  * template ever uses the same placeholder twice, both get filled.
  *
+ * Single-pass design: an earlier sequential implementation looped over
+ * `vars` and called `out = out.replace(re, ...)` per key. That re-scanned
+ * the ENTIRE accumulated string on every pass, so a value containing a
+ * later placeholder like `"{{B}}"` got re-expanded on the next iteration —
+ * untrusted content could inject substitution sites that the prompt author
+ * never wrote. The current implementation builds one regex over the union
+ * of all placeholder names and runs a single pass: a `{{B}}` byte sequence
+ * inside the value of `{{A}}` is preserved verbatim.
+ *
  * Callers: `lib/reviewer.ts` (canonical PR review) and `lib/review-core.ts`
  * (local-review). Both used the same vulnerable pattern before this helper.
  */
@@ -23,12 +32,15 @@ export function substitutePromptVars(
   template: string,
   vars: Record<string, string>,
 ): string {
-  let out = template;
-  for (const [name, value] of Object.entries(vars)) {
-    const re = new RegExp(`\\{\\{${escapeForRegex(name)}\\}\\}`, "g");
-    out = out.replace(re, () => value);
-  }
-  return out;
+  const names = Object.keys(vars);
+  if (names.length === 0) return template;
+  // Sort by length descending so longer placeholder names match first when
+  // one name is a prefix of another (e.g. "USER" vs "USER_ID"). Without
+  // this, "USER" would steal the leading 4 chars of "USER_ID" matches.
+  names.sort((a, b) => b.length - a.length);
+  const alternation = names.map(escapeForRegex).join("|");
+  const re = new RegExp(`\\{\\{(${alternation})\\}\\}`, "g");
+  return template.replace(re, (_match, name: string) => vars[name]);
 }
 
 function escapeForRegex(s: string): string {

@@ -67,19 +67,36 @@ if [ -n "${OCTOPUS_INSTALL_TAG:-}" ]; then
   echo "Installing pinned version: $tag"
 else
   echo "Looking up latest octp release on $REPO ..."
-  # Use the GitHub API to find the most recent release whose tag starts with "octp-v".
-  # `jq` is not assumed; parse with grep + sed to keep the installer dependency-free
-  # (works on alpine, distroless, scratch+busybox, etc.).
-  api_url="https://api.github.com/repos/${REPO}/releases?per_page=20"
+  # Find the most recent NON-DRAFT, NON-PRERELEASE octp-v* tag.
+  # `jq` is not assumed (some minimal install targets — alpine, distroless,
+  # CI runners — don't have it), so parse with sed/grep. GitHub returns
+  # `/releases` as a JSON ARRAY where each release is one object on the
+  # same line. We split objects by inserting a real newline at every
+  # `},{` boundary so line-oriented grep can filter by draft/prerelease
+  # siblings without false-matching across objects.
+  #
+  # macOS portability: BSD sed treats `\n` in the REPLACEMENT as a
+  # literal `n` (only the recognise-`\n`-in-pattern semantics is shared
+  # with GNU sed). Use the portable form — a backslash immediately
+  # followed by a real newline character inside the s/// replacement,
+  # which both GNU and BSD sed interpret as a newline. The `[[:space:]]`
+  # POSIX class is used everywhere else for the same portability reason
+  # (GNU `\s` would silently match "s" on busybox grep / BSD sed).
+  # Users testing prerelease tags can still override via OCTOPUS_INSTALL_TAG.
+  api_url="https://api.github.com/repos/${REPO}/releases?per_page=30"
   tag=$(
     curl -fsSL "$api_url" \
-      | grep -E '"tag_name":\s*"octp-v[^"]+' \
+      | sed 's/},{/}\
+{/g' \
+      | grep -v '"draft"[[:space:]]*:[[:space:]]*true' \
+      | grep -v '"prerelease"[[:space:]]*:[[:space:]]*true' \
+      | grep -E '"tag_name"[[:space:]]*:[[:space:]]*"octp-v' \
       | head -1 \
-      | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/'
+      | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'
   )
   if [ -z "$tag" ]; then
-    echo "Error: could not find any octp-v* release on $REPO." >&2
-    echo "If you are testing pre-release, pin a tag with OCTOPUS_INSTALL_TAG=octp-v0.X.Y" >&2
+    echo "Error: could not find any non-prerelease octp-v* on $REPO." >&2
+    echo "If you are testing a prerelease, pin a tag with OCTOPUS_INSTALL_TAG=octp-v0.X.Y" >&2
     exit 1
   fi
   echo "Latest release: $tag"

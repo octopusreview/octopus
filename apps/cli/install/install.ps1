@@ -37,10 +37,16 @@ if ($env:OCTOPUS_INSTALL_TAG) {
   Write-Host "Installing pinned version: $tag"
 } else {
   Write-Host "Looking up latest octp release on $Repo ..."
-  $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=20" -Headers @{ "User-Agent" = "octp-installer" }
-  $tag = ($releases | Where-Object { $_.tag_name -like "octp-v*" } | Select-Object -First 1).tag_name
+  # Find the most recent NON-DRAFT, NON-PRERELEASE octp-v* tag.
+  # Users testing prerelease tags can override via $env:OCTOPUS_INSTALL_TAG.
+  $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=30" -Headers @{ "User-Agent" = "octp-installer" }
+  $tag = (
+    $releases |
+      Where-Object { -not $_.draft -and -not $_.prerelease -and $_.tag_name -like "octp-v*" } |
+      Select-Object -First 1
+  ).tag_name
   if (-not $tag) {
-    Write-Error "Could not find any octp-v* release on $Repo. Pin a tag with `$env:OCTOPUS_INSTALL_TAG = 'octp-v0.X.Y'`."
+    Write-Error "Could not find any non-prerelease octp-v* on $Repo. Pin a tag with `$env:OCTOPUS_INSTALL_TAG = 'octp-v0.X.Y'`."
     exit 1
   }
   Write-Host "Latest release: $tag"

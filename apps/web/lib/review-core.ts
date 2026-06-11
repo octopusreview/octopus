@@ -30,6 +30,7 @@ import { gatherCrossFileContext, gatherVerificationContext, validateFindings } f
 import { logAiUsage } from "@/lib/ai-usage";
 import { getReviewModel } from "@/lib/ai-client";
 import { createAiMessage } from "@/lib/ai-router";
+import { substitutePromptVars } from "@/lib/prompt-substitute";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -334,18 +335,27 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
   const conflictPrompt = enableConflict ? getConflictDetectionPrompt() : "";
 
   const reviewLanguage = resolveReviewLanguage(org.reviewLanguage);
-  const systemPrompt = getSystemPrompt()
-    .replace("{{CODEBASE_CONTEXT}}", codebaseContext)
-    .replace("{{FILE_TREE}}", fileTreeStr)
-    .replace("{{KNOWLEDGE_CONTEXT}}", knowledgeContext)
-    .replace("{{PR_NUMBER}}", String(params.prNumber ?? 0))
-    .replace("{{USER_INSTRUCTION}}", "")
-    .replace("{{PROVIDER}}", "local")
-    .replace("{{FALSE_POSITIVE_CONTEXT}}", falsePositiveContext)
-    .replace("{{RE_REVIEW_CONTEXT}}", "")
-    .replace("{{CONFLICT_DETECTION}}", conflictPrompt)
-    .replace("{{REVIEW_LANGUAGE}}", reviewLanguage.code)
-    .replace("{{REVIEW_LANGUAGE_NAME}}", reviewLanguage.promptName);
+  // Use the function form of replace() so the replacement strings are
+  // taken literally. String.replace(string, string) treats `$&`, `$'`,
+  // `$\``, and `$<name>` in the SECOND arg as special substitution
+  // patterns — and our replacement values come from indexed repo
+  // content (codebaseContext, knowledgeContext, falsePositiveContext),
+  // PR titles, and review-language names, all of which can legitimately
+  // contain those byte sequences. Passing `() => value` makes them
+  // literal, closing the prompt-splicing surface.
+  const systemPrompt = substitutePromptVars(getSystemPrompt(), {
+    CODEBASE_CONTEXT: codebaseContext,
+    FILE_TREE: fileTreeStr,
+    KNOWLEDGE_CONTEXT: knowledgeContext,
+    PR_NUMBER: String(params.prNumber ?? 0),
+    USER_INSTRUCTION: "",
+    PROVIDER: "local",
+    FALSE_POSITIVE_CONTEXT: falsePositiveContext,
+    RE_REVIEW_CONTEXT: "",
+    CONFLICT_DETECTION: conflictPrompt,
+    REVIEW_LANGUAGE: reviewLanguage.code,
+    REVIEW_LANGUAGE_NAME: reviewLanguage.promptName,
+  });
 
   let response;
   try {

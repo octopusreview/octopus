@@ -271,9 +271,22 @@ export function stripDetailedFindings(reviewBody: string): string {
   );
 
   // 6. Individual finding headings: "#### Finding #N: ..." or "#### 🔴/🟠/🟡/🔵/💡 ..."
-  //    Each runs until the next #### / ### / ## heading or end of string
+  //    Each runs until the next #### / ### / ## heading or end of string.
+  //    The `u` flag matters: severity emoji are surrogate pairs in UTF-16,
+  //    and a character class without /u matches the lone surrogates rather
+  //    than the emoji, so this regex never matched any finding heading.
+  //    Also drop the trailing `\b` — word-boundary is undefined after an
+  //    astral codepoint and breaks the alternation in some regex engines.
+  // The two documented heading formats are:
+  //   1. `#### Finding #1: Title`    — colon DIRECTLY after the number
+  //   2. `#### 🔴 Title`             — space DIRECTLY after the emoji
+  // Putting `\s` outside the alternation required it for BOTH branches —
+  // the colon-form (case 1) then never matched (`#1` is followed by `:`,
+  // not space) and those sections leaked through to the main comment.
+  // The separator now lives INSIDE each branch so each matches its own
+  // documented shape exactly.
   result = result.replace(
-    /\n*####\s+(?:Finding\s*#\d+|[🔴🟠🟡🔵💡]\s)\b[\s\S]*?(?=\n#{2,4}\s|$)/g,
+    /\n*####\s+(?:Finding\s*#\d+:|[🔴🟠🟡🔵💡]\s)[\s\S]*?(?=\n#{2,4}\s|$)/gu,
     "",
   );
 

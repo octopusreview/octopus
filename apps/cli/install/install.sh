@@ -88,16 +88,64 @@ fi
 # ── Step 3: download ─────────────────────────────────────────────────────────
 
 download_url="https://github.com/${REPO}/releases/download/${tag}/${asset}"
+sums_url="https://github.com/${REPO}/releases/download/${tag}/SHA256SUMS.txt"
 echo "Downloading $download_url ..."
 
 mkdir -p "$INSTALL_DIR"
 tmp_file="$(mktemp)"
-trap 'rm -f "$tmp_file"' EXIT
+sums_file="$(mktemp)"
+trap 'rm -f "$tmp_file" "$sums_file"' EXIT
 
 if ! curl -fL --progress-bar -o "$tmp_file" "$download_url"; then
   echo "Error: failed to download $asset from $tag." >&2
   echo "The release might not have a binary for ${os}-${arch}." >&2
   exit 1
+fi
+
+# ── Step 3b: verify SHA256 checksum ──────────────────────────────────────────
+# octp-release.yml generates SHA256SUMS.txt and attaches it to every release.
+# Verifying the binary against the published sum protects against:
+#   - In-flight tampering on a compromised mirror (GitHub itself signs the
+#     download but the asset chain is still worth re-checking).
+#   - Truncated downloads (curl exit code is the only signal otherwise).
+# If sums file is missing on a release (older builds), we abort with a clear
+# message — passing OCTOPUS_INSTALL_SKIP_VERIFY=1 documents the trade-off
+# explicitly when the user knowingly accepts the risk (e.g. CI pinning a tag
+# pre-dating the sums-generation workflow).
+
+if [ "${OCTOPUS_INSTALL_SKIP_VERIFY:-0}" = "1" ]; then
+  echo "SKIPPING SHA256 verification (OCTOPUS_INSTALL_SKIP_VERIFY=1)."
+else
+  if curl -fsSL -o "$sums_file" "$sums_url"; then
+    expected=$(grep -F "  $asset" "$sums_file" | awk '{print $1}')
+    if [ -z "$expected" ]; then
+      echo "Error: no SHA256SUMS.txt entry for $asset on $tag." >&2
+      echo "Run with OCTOPUS_INSTALL_SKIP_VERIFY=1 to bypass (NOT recommended)." >&2
+      exit 1
+    fi
+    if command -v sha256sum >/dev/null 2>&1; then
+      actual=$(sha256sum "$tmp_file" | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+      actual=$(shasum -a 256 "$tmp_file" | awk '{print $1}')
+    else
+      echo "Error: neither sha256sum nor shasum found; cannot verify the download." >&2
+      echo "Run with OCTOPUS_INSTALL_SKIP_VERIFY=1 to bypass (NOT recommended)." >&2
+      exit 1
+    fi
+    if [ "$expected" != "$actual" ]; then
+      echo "Error: SHA256 mismatch for $asset." >&2
+      echo "  expected: $expected" >&2
+      echo "  actual:   $actual" >&2
+      echo "The download may be corrupt or tampered. Aborting." >&2
+      exit 1
+    fi
+    echo "✓ Verified SHA256 ($expected)"
+  else
+    echo "Error: could not download SHA256SUMS.txt from $tag." >&2
+    echo "Older releases pre-date the sums workflow — re-run with" >&2
+    echo "OCTOPUS_INSTALL_SKIP_VERIFY=1 if you accept that risk." >&2
+    exit 1
+  fi
 fi
 
 # ── Step 4: install ──────────────────────────────────────────────────────────

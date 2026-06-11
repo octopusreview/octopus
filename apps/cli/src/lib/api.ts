@@ -137,6 +137,13 @@ export function isTransportSafe(baseUrl: string): boolean {
     if (a === 192 && b === 168) return true;
     if (a === 172 && b >= 16 && b <= 31) return true;
   }
-  if (host.startsWith("fe80:") || /^f[cd]/.test(host)) return true;
+  // IPv6 link-local (fe80::/10) and ULA (fc00::/7) — must be IPv6 literals,
+  // not just any hostname starting with "fc"/"fd" (the old `/^f[cd]/` test
+  // matched public hostnames like "fc-host.example.com"). All IPv6 literals
+  // contain a colon by definition, so requiring one rules out the false
+  // positive without complicating the rest of the check.
+  if (host.includes(":") && (host.startsWith("fe80:") || /^f[cd][0-9a-f]{2}:/.test(host))) {
+    return true;
+  }
   return false;
 }

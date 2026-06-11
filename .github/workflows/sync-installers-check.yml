@@ -1,0 +1,19 @@
+name: sync-installers-check
+
+on:
+  pull_request:
+    paths:
+      - "apps/cli/install/install.sh"
+      - "apps/cli/install/install.ps1"
+      - "apps/web/public/install.sh"
+      - "apps/web/public/install.ps1"
+      - "scripts/sync-installers.sh"
+      - ".github/workflows/sync-installers-check.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify installer sync
+        run: scripts/sync-installers.sh --check

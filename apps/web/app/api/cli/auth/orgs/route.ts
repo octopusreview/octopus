@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
-import { createOrgForUser } from "@/app/(app)/complete-profile/actions";
+import { createOrgForUser } from "@/lib/org-create";
 
 export async function GET() {
   const session = await auth.api.getSession({ headers: await headers() });

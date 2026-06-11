@@ -29,6 +29,8 @@ const publicPrefixes = [
   "/api/blog",
   "/api/ask-octopus",
   "/api/status",
+  "/api/health",
+  "/api/ready",
 ];
 const publicExact = ["/"];
 

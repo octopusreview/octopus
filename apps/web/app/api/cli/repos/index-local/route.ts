@@ -170,16 +170,18 @@ export async function POST(request: Request) {
   }
 
   // Spend-limit gate — same invariant the sibling CLI review endpoints enforce.
-  // Run AFTER repo resolution so that, if the org crosses its cap between
-  // batch N and N+1, we can mark the repo failed instead of stranding it in
-  // indexStatus="indexing" forever (the CLI's retry loop would otherwise be
-  // stuck waiting for a final-batch state flip that never happens).
+  // Run AFTER repo resolution so that we have a repoId in hand. ALWAYS mark
+  // the repo failed before returning, including on the first batch: by this
+  // point `prepareRepoForLocalIndex` has already created / wiped the row at
+  // indexStatus="indexing" (it runs above as part of the first-batch path),
+  // so a 402 without cleanup would strand the row in the same way a
+  // mid-upload 402 strands it. The CLI's retry loop and the dashboard's
+  // re-index UI both rely on indexStatus="failed" to allow user-driven
+  // recovery; "indexing" is treated as "in flight, do not touch."
   if (await isOrgOverSpendLimit(auth.org.id)) {
-    if (!isFirstBatch) {
-      await markLocalIndexFailed(repoId).catch((e) =>
-        console.error("[cli.index-local] failed to mark repo failed on 402:", e),
-      );
-    }
+    await markLocalIndexFailed(repoId).catch((e) =>
+      console.error("[cli.index-local] failed to mark repo failed on 402:", e),
+    );
     return NextResponse.json({ error: "Monthly spend limit reached" }, { status: 402 });
   }
 

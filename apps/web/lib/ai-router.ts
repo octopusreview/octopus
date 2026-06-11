@@ -170,7 +170,20 @@ async function callAnthropic(
     })),
   });
 
-  const text = response.content[0].type === "text" ? response.content[0].text : "";
+  // Models with extended thinking (e.g. claude-fable-5) prepend a thinking
+  // block, so the text block is not necessarily content[0] — collect every
+  // text block instead of only the first.
+  const text = response.content
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("");
+  // Surface empty responses as errors instead of silently returning an empty
+  // review that downstream code would PATCH to GitHub as a blank comment (422).
+  if (!text) {
+    throw new Error(
+      `Anthropic returned no text (stop_reason: ${response.stop_reason}, blocks: ${response.content.map((b) => b.type).join(",") || "none"})`,
+    );
+  }
 
   return {
     text,

@@ -1,0 +1,58 @@
+name: baseline-schema-check
+
+# CHANGELOG note (#135) promises that `00000000000000_baseline_schema`
+# exactly equals what `prisma migrate diff --from-empty --to-schema`
+# would produce against the current `schema.prisma`. That promise is
+# load-bearing: if drift creeps in, a fresh `prisma migrate deploy` on
+# a self-hosted install ends up with a DB that doesn't match the running
+# code, with no warning. This workflow re-runs the diff and fails on
+# any difference so the promise stays true.
+
+on:
+  pull_request:
+    paths:
+      - "packages/db/prisma/schema.prisma"
+      - "packages/db/prisma/migrations/00000000000000_baseline_schema/migration.sql"
+      - ".github/workflows/baseline-schema-check.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: octopus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+      - name: Install Prisma CLI
+        run: bun install --filter @octopus/db
+      - name: Regenerate baseline via prisma migrate diff
+        run: |
+          cd packages/db
+          bunx prisma migrate diff \
+            --from-empty \
+            --to-schema-datamodel prisma/schema.prisma \
+            --script \
+            > /tmp/regenerated-baseline.sql
+      - name: Compare against committed baseline
+        run: |
+          # `prisma migrate diff` is order-deterministic given the same
+          # schema, so a byte-level diff is the strictest check we can run.
+          # If a legitimate change makes the regenerated file diverge in
+          # cosmetics only (whitespace, comment ordering), normalise both
+          # sides before diffing — but only after confirming the change
+          # is actually equivalent.
+          diff -u /tmp/regenerated-baseline.sql \
+            packages/db/prisma/migrations/00000000000000_baseline_schema/migration.sql \
+            && echo "Baseline matches schema.prisma."

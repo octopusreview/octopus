@@ -120,37 +120,42 @@ export default function DataRetentionPage() {
         </div>
       </Section>
 
-      <Section title="Account deletion">
+      <Section title="Account / organisation deletion">
         <P>
-          You can delete your account from <code>/settings/danger-zone</code>.
-          Deletion is processed within 24 hours and removes:
+          Org owners can delete their organisation from the <em>Danger Zone</em>{" "}
+          card on <code>/settings</code>. Deletion is processed within 24 hours
+          and removes:
         </P>
         <UL>
-          <li>Your user record and all sessions</li>
-          <li>Your membership in any organisation you do not solely own</li>
-          <li>Any organisation you solely own (including its repos, reviews, embeddings, audit log, and integration tokens)</li>
-          <li>Any knowledge documents you uploaded</li>
+          <li>The organisation record, all repos, reviews, embeddings, audit log, and integration tokens</li>
+          <li>Memberships for every member of that organisation</li>
         </UL>
         <P>
-          Backups containing the deleted data roll off per the backup
-          retention window (30 days). Anonymised aggregate metrics may
-          persist indefinitely.
+          To delete your <em>user</em> record (and memberships in orgs you do
+          not solely own), email{" "}
+          <a href="mailto:privacy@octopus-review.ai" className="text-cyan-400 underline">
+            privacy@octopus-review.ai
+          </a>{" "}
+          from the address on the account — the in-app flow only covers org
+          deletion today.
+        </P>
+        <P>
+          Backups containing deleted data roll off per the backup retention
+          window (30 days). Anonymised aggregate metrics may persist indefinitely.
         </P>
       </Section>
 
-      <Section title="Data export">
+      <Section title="Data export (right to portability)">
         <P>
-          You can export everything Octopus has about your organisation from{" "}
-          <code>/settings/danger-zone</code> as a JSON archive. The export
-          includes:
+          Audit-log export is available to org admins at{" "}
+          <code>/settings/audit-log</code> (CSV and JSON). For broader
+          org-wide data export (repositories, reviews, findings, knowledge
+          documents, AI usage records), email{" "}
+          <a href="mailto:privacy@octopus-review.ai" className="text-cyan-400 underline">
+            privacy@octopus-review.ai
+          </a>{" "}
+          from the account address — we respond within 30 days.
         </P>
-        <UL>
-          <li>Repositories and their settings</li>
-          <li>Reviews and findings</li>
-          <li>Knowledge documents</li>
-          <li>Audit log</li>
-          <li>AI usage records</li>
-        </UL>
       </Section>
 
       <Section title="GDPR / CCPA requests">

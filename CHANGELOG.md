@@ -17,6 +17,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`POSTGRES_PASSWORD` is now read from `.env`** (was hardcoded to
   `octopus`). The web service's `DATABASE_URL` uses the same vars, so
   rotating the password in one place flows through to both.
+- **Prisma migration history consolidated into a single baseline.** The
+  seven incremental migrations from 2026-04 / 2026-05 have been folded
+  into `00000000000000_baseline_schema`. Fresh self-hosted installs now
+  work end-to-end via `npx prisma migrate deploy`. **Existing self-hosters
+  whose DB was provisioned by the older migrations must follow these
+  steps in order, ONCE, when upgrading to this release:**
+  ```bash
+  # 1. PULL the new image first — `migrate resolve` requires the baseline
+  #    migration directory to be present inside the running container, and
+  #    the old image doesn't have it.
+  docker compose pull
+
+  # 2. Start the new container WITHOUT running migrations yet — the new
+  #    image's startup will try `migrate deploy` and bail because the row
+  #    isn't marked applied.
+  docker compose up -d --no-deps web
+
+  # 3. Mark the baseline as already applied (the existing DB is at that
+  #    schema; we're just telling Prisma so).
+  docker compose exec web npx prisma migrate resolve --schema packages/db/prisma/schema.prisma --applied 00000000000000_baseline_schema
+
+  # 4. Now run migrate deploy normally — any post-baseline migrations
+  #    apply on top.
+  docker compose exec web npx prisma migrate deploy --schema packages/db/prisma/schema.prisma
+  ```
+  Self-hosters who provisioned via `prisma db push` (no migration tracking)
+  need the same steps — the baseline state matches the current schema
+  either way.
 
 ### Fixed
 - Self-hosted upgrade command in README / release notes / Updates page
@@ -24,6 +52,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the runner image had no bun, no Prisma CLI, no schema, no migrations.
   Image now ships the Prisma schema, migrations, and CLI; docs updated
   to use `npx prisma migrate deploy --schema packages/db/prisma/schema.prisma`.
+- **`docker compose up` no longer drops the user's `.env`.** The web
+  service had no `env_file:` block, so Compose only read `.env` for
+  variable substitution inside the compose file itself — never injected
+  it into the container. `BETTER_AUTH_SECRET`, OAuth secrets, AI provider
+  keys, and integration credentials all silently went missing. Added
+  `env_file: .env` (required:false so empty-config local smoke tests
+  still start).
+- **`bun run db:migrate` mapped to `prisma migrate dev` (a dev-only
+  command that can prompt to reset the DB).** Added `db:deploy` script
+  (root + `@octopus/db`) that runs `prisma migrate deploy`. All
+  self-hosting docs now use the production-safe command.
+- **Self-hosting docs page port mismatch** — quickstart said
+  `http://localhost:3000` but the compose `web` service publishes on
+  `43300`. Fixed.
+- **`bun run start` in the alternative-path docs doesn't exist** at the
+  repo root. Changed to `cd apps/web && bun start`.
+- **GitHub App docs walked users into a broken install.** The Setup URL
+  step was missing, so installs completed on github.com but the OAuth
+  callback never fired and the org was never linked.
+- **GDPR data-retention page promised a `/settings/danger-zone` route
+  and a JSON data-export feature that don't exist.** The page now
+  points to the actual Danger Zone card on `/settings`, surfaces audit-
+  log export (which does exist), and routes broader org-export
+  requests to `privacy@octopus-review.ai` until a true export feature
+  ships.
 
 ## [1.0.16] - 2026-05-11
 

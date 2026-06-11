@@ -9,10 +9,24 @@ services:
       dockerfile: apps/web/Dockerfile
     ports:
       - "43300:3000"
+    # Mount the root .env into the container so BETTER_AUTH_SECRET, OAuth
+    # secrets, AI provider keys, and integration credentials reach the app.
+    # Without env_file, Compose only uses .env for variable substitution
+    # *inside this compose file* and the running container would start with
+    # an empty env, breaking auth at first request.
+    # required:false lets `docker compose up` succeed before the user has
+    # created .env from .env.example (e.g. a no-config local smoke test
+    # with hardcoded service vars still works).
+    env_file:
+      - path: .env
+        required: false
     environment:
       # Compose interpolates ${VAR:-default} from .env (or shell); the
       # postgres service below uses the same vars, so changing the password
       # in one place flows through to both. Keep these in sync.
+      # These `environment:` entries are last-wins — they override any
+      # values of the same name in .env, which is what we want for the
+      # in-cluster service hostnames and the SELF_HOSTED flag.
       - DATABASE_URL=postgresql://${POSTGRES_USER:-octopus}:${POSTGRES_PASSWORD:-octopus}@postgres:5432/${POSTGRES_DB:-octopus}
       - QDRANT_URL=http://qdrant:6333
       - ENABLE_REVIEW_WORKERS=true

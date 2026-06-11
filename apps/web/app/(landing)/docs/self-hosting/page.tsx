@@ -40,13 +40,17 @@ export default function SelfHostingPage() {
         </div>
         <CodeBlock>{`git clone https://github.com/octopusreview/octopus.git
 cd octopus
+cp .env.example .env  # then edit with your secrets and API keys
 docker compose up -d
-docker compose exec web bun run db:migrate`}</CodeBlock>
+docker compose exec web npx prisma migrate deploy --schema packages/db/prisma/schema.prisma`}</CodeBlock>
         <Paragraph>
           The first run pulls images and starts Postgres, Qdrant, and the web
-          app. <Mono>bun run db:migrate</Mono> applies the Prisma schema —
-          re-run after every upgrade. Visit{" "}
-          <Mono>http://localhost:3000</Mono> when the containers report healthy.
+          app. <Mono>prisma migrate deploy</Mono> applies the schema (and is
+          safe to re-run on every upgrade — it only applies pending migrations).
+          The compose web service ships the Prisma CLI + schema + migrations
+          for exactly this command. Visit{" "}
+          <Mono>http://localhost:43300</Mono> when the containers report healthy
+          — that&apos;s the host port published in <Mono>docker-compose.yml</Mono>.
         </Paragraph>
         <Paragraph>
           You&apos;ll still need to drop a <Mono>.env</Mono> in the repo root
@@ -75,9 +79,11 @@ docker compose exec web bun run db:migrate`}</CodeBlock>
         >
           <Paragraph>
             Drop your key in <Mono>.env</Mono>, pick a model in{" "}
-            <Mono>Settings → Models</Mono>. Embeddings still need OpenAI
-            (<Mono>OPENAI_API_KEY</Mono>) regardless of the review model
-            you choose — that&apos;s the only hard external dependency.
+            <Mono>Settings → Models</Mono>. By default embeddings go to
+            OpenAI (<Mono>OPENAI_API_KEY</Mono>), but you can flip
+            <Mono>OCTOPUS_EMBED_PROVIDER=ollama</Mono> + a local embed
+            model (eg. <Mono>nomic-embed-text</Mono>) for a fully
+            no-external-keys setup — see <a href="#ai-provider" className="text-cyan-400 underline">Local — Ollama</a> below.
           </Paragraph>
         </ProviderCard>
 
@@ -223,7 +229,7 @@ docker compose exec web bun run db:migrate`}</CodeBlock>
         </Paragraph>
         <CodeBlock>{`docker compose pull
 docker compose up -d
-docker compose exec web bun run db:migrate`}</CodeBlock>
+docker compose exec web npx prisma migrate deploy --schema packages/db/prisma/schema.prisma`}</CodeBlock>
       </Section>
 
       {/* Production tips */}
@@ -270,9 +276,10 @@ cd octopus
 bun install
 # Point DATABASE_URL / QDRANT_URL in .env at your own instances
 bun run db:generate
-bun run db:migrate
+bun run db:deploy       # production-safe — never resets the DB
 bun run build
-bun run start`}</CodeBlock>
+# next start is in apps/web; either run from there or use the standalone bundle
+cd apps/web && bun start`}</CodeBlock>
         <Paragraph>
           The Next.js standalone output is at{" "}
           <Mono>apps/web/.next/standalone</Mono>. You can copy that directory to

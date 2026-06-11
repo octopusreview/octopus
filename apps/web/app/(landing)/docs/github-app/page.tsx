@@ -86,6 +86,15 @@ export default function GithubAppPage() {
             <strong>Callback URL</strong> — leave blank.
           </li>
           <li>
+            <strong>Setup URL</strong> (under <em>Post installation</em>) — set
+            to <Mono>https://your-domain/api/github/callback</Mono>, and check
+            <em> Redirect on update</em>. GitHub redirects users here after
+            install, carrying the <Mono>installation_id</Mono> and signed{" "}
+            <Mono>state</Mono> the callback needs to link the installation back
+            to the org. Without it the install completes on github.com, the
+            callback never fires, and reviews never start.
+          </li>
+          <li>
             <strong>Webhook</strong> — check <em>Active</em>. URL:
             <CodeBlock>{`https://your-domain/api/github/webhook`}</CodeBlock>
             Generate a random <strong>webhook secret</strong> (any high-entropy

@@ -72,8 +72,29 @@ export async function agentServeCommand(argv: string[]): Promise<number> {
   }
 
   // Parse optional flags
-  const agentName = flagValue(argv, "--name") ?? defaultAgentName();
+  const explicitName = flagValue(argv, "--name");
+  const agentName = explicitName ?? defaultAgentName();
   const verbose = argv.includes("--verbose") || argv.includes("-v");
+
+  // Warn (don't fail) when default name + a generic-looking hostname mean
+  // the agent will be hard to tell apart on the server. Generic hostnames
+  // are common in container / VM defaults and almost guarantee a collision
+  // if more than one host is involved.
+  if (!explicitName) {
+    const h = agentName.toLowerCase();
+    const looksGeneric =
+      h === "agent" ||
+      h === "localhost" ||
+      h === "ubuntu" ||
+      h === "debian" ||
+      /^[a-f0-9-]{8,}$/.test(h);
+    if (looksGeneric) {
+      console.warn(
+        `! Default agent name is "${agentName}" — generic hostname likely to collide ` +
+          `with other agents. Pass --name <distinguishing-suffix> if running multiple.`,
+      );
+    }
+  }
 
   // Resolve Ollama URL: env wins, then wizard-saved config, then default.
   const config = await loadConfig();
@@ -243,7 +264,10 @@ async function fetchTasks(creds: Credentials, agentId: string): Promise<LlmTask[
     if (res.status === 404) {
       throw new AuthError(
         res.status,
-        "This agent was revoked from the dashboard. Restart `octp agent serve` to re-register.",
+        "This agent was revoked from the dashboard. Re-running `octp agent serve` " +
+          "creates a fresh registration (it is not retrying the failed call) — confirm in the " +
+          "dashboard's Local Agents page that the revocation was intentional first; otherwise " +
+          "the new registration will be revoked again.",
       );
     }
     throw new Error(res.error);
@@ -349,6 +373,12 @@ function defaultAgentName(): string {
   // hostname) keeps the same machine's agent row stable across restarts —
   // matches the file's own "reuse existing by name" lifecycle comment.
   // Drop the pid suffix for the same reason.
+  //
+  // Trade-off: two agents on the SAME host will collide on this default
+  // (each one's heartbeat overwrites the other's row, and dispatch routes
+  // to whichever heartbeated last). Operators running multi-agent setups
+  // on one host must pass `--name <distinguishing-suffix>` — the startup
+  // banner below logs the chosen name so the collision is visible.
   return os.hostname() || "agent";
 }
 

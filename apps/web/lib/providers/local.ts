@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@octopus/db";
 import type { Provider, AiCreateParams, AiResponse } from "./index";
+import { AGENT_STALE_THRESHOLD_MS } from "@/lib/agent-constants";
 
 /**
  * Local-agent bridge provider. Dispatches the LLM call to a developer's
@@ -21,12 +22,11 @@ import type { Provider, AiCreateParams, AiResponse } from "./index";
 const POLL_INTERVAL_MS = 2000;
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
-// Agents that haven't heartbeated within this window are treated as offline
-// — matches the staleness threshold /api/agent/status and the settings page
-// use. Without this check, a crashed agent stays status="online" in the DB
-// (the heartbeat endpoint is the only writer) and the fail-fast count below
-// keeps dispatching to it until the per-task timeout fires.
-const AGENT_STALE_THRESHOLD_MS = 90_000;
+// Staleness threshold lives in @/lib/agent-constants so this fail-fast
+// check, /api/agent/status, the settings page, and agent-search.ts all
+// agree on the same window. Without the shared constant, a drift in any
+// one of them would have a crashed agent considered online on one
+// surface but offline on another.
 
 export const localProvider: Provider = {
   name: "local" as never,

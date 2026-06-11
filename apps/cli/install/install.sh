@@ -70,15 +70,24 @@ else
   # Find the most recent NON-DRAFT, NON-PRERELEASE octp-v* tag.
   # `jq` is not assumed (some minimal install targets — alpine, distroless,
   # CI runners — don't have it), so parse with sed/grep. GitHub returns
-  # `/releases` as a JSON ARRAY where each release is one object; the
-  # response is compact JSON (no inner newlines) so a sed split on `},{`
-  # gives us one object per line, which lets line-oriented grep filter
-  # by draft/prerelease siblings without false-matching across objects.
+  # `/releases` as a JSON ARRAY where each release is one object on the
+  # same line. We split objects by inserting a real newline at every
+  # `},{` boundary so line-oriented grep can filter by draft/prerelease
+  # siblings without false-matching across objects.
+  #
+  # macOS portability: BSD sed treats `\n` in the REPLACEMENT as a
+  # literal `n` (only the recognise-`\n`-in-pattern semantics is shared
+  # with GNU sed). Use the portable form — a backslash immediately
+  # followed by a real newline character inside the s/// replacement,
+  # which both GNU and BSD sed interpret as a newline. The `[[:space:]]`
+  # POSIX class is used everywhere else for the same portability reason
+  # (GNU `\s` would silently match "s" on busybox grep / BSD sed).
   # Users testing prerelease tags can still override via OCTOPUS_INSTALL_TAG.
   api_url="https://api.github.com/repos/${REPO}/releases?per_page=30"
   tag=$(
     curl -fsSL "$api_url" \
-      | sed 's/},{/}\n{/g' \
+      | sed 's/},{/}\
+{/g' \
       | grep -v '"draft"[[:space:]]*:[[:space:]]*true' \
       | grep -v '"prerelease"[[:space:]]*:[[:space:]]*true' \
       | grep -E '"tag_name"[[:space:]]*:[[:space:]]*"octp-v' \

@@ -72,6 +72,15 @@ describe("extractJson — tier 3 (balanced scan)", () => {
   it("returns null when no candidate parses", () => {
     expect(extractJson("definitely not json {nope nope}")).toBeNull();
   });
+
+  it("recovers a valid candidate after an unterminated string desyncs an earlier one", () => {
+    // A lone `"` inside the first candidate flips inString=true and is never
+    // toggled back, so the matching close-brace is treated as in-string and
+    // the candidate never balances. Scanner must advance to a later open
+    // delimiter rather than bailing entirely.
+    const input = 'first {"a": "unterminated string here ok ok ok    later {"b":1}';
+    expect(extractJson(input)).toEqual({ b: 1 });
+  });
 });
 
 describe("extractJsonObject", () => {

@@ -88,8 +88,19 @@ function scanForRoot(text: string, open: string, close: string): unknown | null 
       }
     }
 
-    if (consumedTo === -1) return null;
-    firstOpen = text.indexOf(open, consumedTo);
+    // Three exit paths from the for-loop above:
+    //   (a) parse succeeded → early-returned the candidate
+    //   (b) parse failed at depth=0 → break with consumedTo set, advance past it
+    //   (c) loop exited via i === text.length without depth reaching 0 again
+    //       — happens on an unterminated string literal inside the candidate
+    //       (the toggling `"` count desyncs and the close delimiter is then
+    //       treated as in-string and ignored). Advance firstOpen by ONE so a
+    //       later valid candidate elsewhere in the text still has a chance.
+    if (consumedTo === -1) {
+      firstOpen = text.indexOf(open, firstOpen + 1);
+    } else {
+      firstOpen = text.indexOf(open, consumedTo);
+    }
   }
 
   return null;
@@ -101,7 +112,12 @@ function scanForRoot(text: string, open: string, close: string): unknown | null 
  */
 export function extractJsonObject(text: string): Record<string, unknown> | null {
   const parsed = extractJson(text);
-  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+  // `typeof null === "object"` and `Array.isArray(null) === false`, so without
+  // the explicit `!== null` check, a null root would slip through and get
+  // cast to Record. The `!== null` form is also clearer about intent than
+  // the previous truthy-check (`parsed &&`), since in JS every non-null
+  // object is truthy by definition.
+  if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
     return parsed as Record<string, unknown>;
   }
   return null;

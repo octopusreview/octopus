@@ -3,6 +3,7 @@ import { logAiUsage } from "@/lib/ai-usage";
 import { getReviewModel } from "@/lib/ai-client";
 import { createAiMessage } from "@/lib/ai-router";
 import { isOrgOverSpendLimit } from "@/lib/cost";
+import { extractJsonObject } from "@/lib/extract-json";
 
 export async function summarizeRepository(
   repoId: string,
@@ -64,26 +65,23 @@ ${codeContext}`,
     });
   }
 
-  let text = response.text;
-
-  // Strip markdown code fences if present (e.g. ```json ... ```)
-  const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
-  if (fenceMatch) {
-    text = fenceMatch[1].trim();
-  }
-
-  try {
-    const parsed = JSON.parse(text);
+  const text = response.text;
+  // extractJsonObject handles strict-parse, code-fenced, AND balanced-scan
+  // recovery in one call. The old inline implementation only handled the
+  // first two; an LLM that wrapped its JSON in any prose ("Here's the
+  // summary:") would silently fall through to the text.slice(0, 500)
+  // fallback even though the JSON itself was perfectly valid.
+  const parsed = extractJsonObject(text);
+  if (parsed) {
     return {
-      purpose: parsed.purpose ?? "Unknown",
-      summary: parsed.summary ?? "No summary available.",
-    };
-  } catch {
-    return {
-      purpose: "Unknown",
-      summary: text.slice(0, 500),
+      purpose: (parsed.purpose as string | undefined) ?? "Unknown",
+      summary: (parsed.summary as string | undefined) ?? "No summary available.",
     };
   }
+  return {
+    purpose: "Unknown",
+    summary: text.slice(0, 500),
+  };
 }
 
 export async function summarizeDailyReviews(

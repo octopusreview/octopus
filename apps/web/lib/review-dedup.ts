@@ -3,6 +3,8 @@
  * (reviewer.ts) and the review lifecycle simulator.
  */
 
+import { extractJson } from "./extract-json";
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type InlineFinding = {
@@ -57,71 +59,70 @@ export function parseFindingsFromJson(reviewBody: string): InlineFinding[] | nul
   const endIdx = reviewBody.indexOf(FINDINGS_END_MARKER);
   if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) return null;
 
-  let block = reviewBody.slice(startIdx + FINDINGS_START_MARKER.length, endIdx).trim();
-
-  // Strip markdown code fences if present
-  const fenceMatch = block.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
-  if (fenceMatch) {
-    block = fenceMatch[1].trim();
-  }
-
-  try {
-    const parsed = JSON.parse(block);
-    if (!Array.isArray(parsed)) return null;
-
-    const findings: InlineFinding[] = [];
-    for (const item of parsed) {
-      // The model occasionally emits `null` (or a non-object literal) in the
-      // findings array — often as the last element when its output ran past
-      // the schema. Without this guard `typeof item.severity` reads through
-      // `null` and throws, dropping EVERY finding in the block, not just
-      // the bad item.
-      if (item === null || typeof item !== "object") continue;
-      if (
-        typeof item.severity !== "string" ||
-        typeof item.title !== "string" ||
-        typeof item.filePath !== "string" ||
-        typeof item.startLine !== "number" ||
-        typeof item.description !== "string"
-      ) {
-        continue;
-      }
-
-      findings.push({
-        severity: item.severity,
-        title: item.title,
-        filePath: item.filePath.replace(/^`|`$/g, "").replace(/:L\d+.*$/, ""),
-        startLine: item.startLine,
-        endLine: typeof item.endLine === "number" ? item.endLine : item.startLine,
-        category: item.category ?? "",
-        description: item.description,
-        suggestion: item.suggestion ?? "",
-        confidence:
-          typeof item.confidence === "number"
-            ? item.confidence
-            : item.confidence === "HIGH"
-              ? 90
-              : 70,
-        // Anti-hallucination fields — typed only when the model emitted a
-        // string. Absent fields stay undefined so the existing UI surfaces
-        // continue to render exactly as before for older reviews.
-        ...(typeof item.whyTestsDoNotAlreadyCoverThis === "string"
-          ? { whyTestsDoNotAlreadyCoverThis: item.whyTestsDoNotAlreadyCoverThis }
-          : {}),
-        ...(typeof item.suggestedRegressionTest === "string"
-          ? { suggestedRegressionTest: item.suggestedRegressionTest }
-          : {}),
-        ...(typeof item.minimumFixScope === "string"
-          ? { minimumFixScope: item.minimumFixScope }
-          : {}),
-      });
+  // Delegate to extractJson — handles strict, code-fenced, and balanced-scan
+  // recovery in one call. The previous inline implementation only handled
+  // strict + code-fenced; if the model emitted prose around the JSON (a
+  // surprisingly common failure mode under output-token pressure), the
+  // parse silently returned null and every finding dropped. The
+  // balanced-scan path recovers those cases.
+  const block = reviewBody.slice(startIdx + FINDINGS_START_MARKER.length, endIdx);
+  const parsed = extractJson(block);
+  if (!Array.isArray(parsed)) {
+    if (parsed === null && block.trim().length > 0) {
+      console.warn("[review-dedup] JSON findings block found but failed to parse");
     }
-
-    return findings.length > 0 ? findings : null;
-  } catch {
-    console.warn("[review-dedup] JSON findings block found but failed to parse");
     return null;
   }
+
+  const findings: InlineFinding[] = [];
+  for (const item of parsed) {
+    // The model occasionally emits `null` (or a non-object literal) in the
+    // findings array — often as the last element when its output ran past
+    // the schema. Without this guard `typeof item.severity` reads through
+    // `null` and throws, dropping EVERY finding in the block, not just
+    // the bad item.
+    if (item === null || typeof item !== "object") continue;
+    if (
+      typeof item.severity !== "string" ||
+      typeof item.title !== "string" ||
+      typeof item.filePath !== "string" ||
+      typeof item.startLine !== "number" ||
+      typeof item.description !== "string"
+    ) {
+      continue;
+    }
+
+    findings.push({
+      severity: item.severity,
+      title: item.title,
+      filePath: item.filePath.replace(/^`|`$/g, "").replace(/:L\d+.*$/, ""),
+      startLine: item.startLine,
+      endLine: typeof item.endLine === "number" ? item.endLine : item.startLine,
+      category: item.category ?? "",
+      description: item.description,
+      suggestion: item.suggestion ?? "",
+      confidence:
+        typeof item.confidence === "number"
+          ? item.confidence
+          : item.confidence === "HIGH"
+            ? 90
+            : 70,
+      // Anti-hallucination fields — typed only when the model emitted a
+      // string. Absent fields stay undefined so the existing UI surfaces
+      // continue to render exactly as before for older reviews.
+      ...(typeof item.whyTestsDoNotAlreadyCoverThis === "string"
+        ? { whyTestsDoNotAlreadyCoverThis: item.whyTestsDoNotAlreadyCoverThis }
+        : {}),
+      ...(typeof item.suggestedRegressionTest === "string"
+        ? { suggestedRegressionTest: item.suggestedRegressionTest }
+        : {}),
+      ...(typeof item.minimumFixScope === "string"
+        ? { minimumFixScope: item.minimumFixScope }
+        : {}),
+    });
+  }
+
+  return findings.length > 0 ? findings : null;
 }
 
 /** Parse findings from legacy markdown format (#### emoji headings). */

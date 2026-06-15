@@ -423,6 +423,23 @@ export function buildInlineComments(
       body += `\n\n${suggestionBlock}`;
     }
 
+    // Surface the model's grounding work to the reader. These come from
+    // the anti-hallucination fields in the JSON schema (see SYSTEM_PROMPT.md):
+    //   - minimumFixScope keeps the suggested fix small and reviewable
+    //   - suggestedRegressionTest gives the dev a concrete test to add
+    // Without this block the fields only survived in the DB row — the
+    // tokens spent on them never reached the user.
+    if (f.minimumFixScope || f.suggestedRegressionTest) {
+      const groundingParts: string[] = [];
+      if (f.minimumFixScope) {
+        groundingParts.push(`**Minimum fix scope:** ${f.minimumFixScope}`);
+      }
+      if (f.suggestedRegressionTest) {
+        groundingParts.push(`**Suggested regression test:**\n\`\`\`\n${f.suggestedRegressionTest}\n\`\`\``);
+      }
+      body += `\n\n<details><summary>📌 Grounding</summary>\n\n${groundingParts.join("\n\n")}\n\n</details>`;
+    }
+
     // AI Fix Prompt — collapsible section with copy-pasteable prompt
     const severityLabel = f.severity === "🔴" ? "Critical" : f.severity === "🟠" ? "High" : f.severity === "🟡" ? "Medium" : f.severity === "🔵" ? "Low" : "Nit";
     const categoryNote = f.category ? ` (${f.category})` : "";
@@ -431,6 +448,12 @@ export function buildInlineComments(
     aiPrompt += `Problem: ${f.description}`;
     if (f.suggestion) {
       aiPrompt += `\n\nSuggested fix:\n${f.suggestion}`;
+    }
+    // Fold minimumFixScope into the AI fix prompt too — an assistant
+    // running this prompt should respect the bounded change scope, not
+    // expand it into a cross-cutting refactor.
+    if (f.minimumFixScope) {
+      aiPrompt += `\n\nScope: ${f.minimumFixScope}`;
     }
     body += `\n\n<details><summary>🤖 AI Fix Prompt</summary>\n\n\`\`\`\n${aiPrompt}\n\`\`\`\n\n</details>`;
 

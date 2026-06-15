@@ -231,7 +231,10 @@ Format — wrap ALL findings in this exact structure:
     "category": "Security",
     "description": "User input is concatenated directly into the SQL query without parameterization.",
     "suggestion": "db.query('SELECT * FROM users WHERE id = $1', [userId])",
-    "confidence": 92
+    "confidence": 92,
+    "whyTestsDoNotAlreadyCoverThis": "The existing tests in src/db/__tests__/queries.test.ts only exercise integer IDs from a fixed enum; they never pass a string that could carry SQL.",
+    "suggestedRegressionTest": "it(\"rejects SQL metacharacters in id\", async () => { await expect(getUser(\"1 OR 1=1\")).rejects.toThrow(); });",
+    "minimumFixScope": "Replace the single concatenation at line 42. No callers change."
   }
 ]
 ```
@@ -250,6 +253,9 @@ Field rules:
   - 70-89: Issue is clearly supported by the diff and context (clear pattern violation, obvious missing handling)
   - 50-69: Issue is inferred from patterns, likely but not certain (common pitfall, convention-based inference)
   - Below 50: Do not include — these are filtered automatically
+- **whyTestsDoNotAlreadyCoverThis**: Always include. One or two sentences naming the specific tests you inspected and why they fail to exercise this case. If you cannot point at a concrete test gap, the finding is likely speculative — downgrade confidence or skip. (Parser tolerates absence; the prompt requirement is what grounds the model's reasoning.)
+- **suggestedRegressionTest**: Always include. A concrete test (code or pseudocode) that would fail today and pass once the suggestion is applied. Empty string only if the finding is a style/nit where a regression test is meaningless.
+- **minimumFixScope**: Always include. The smallest change that resolves the issue, e.g. "Add a null check in this function" or "Replace this single concatenation; no callers change." Avoid cross-cutting refactors unless the finding is specifically about architecture.
 
 Output valid JSON. No trailing commas. No comments inside the JSON. Properly escape special characters in strings.
 
@@ -335,7 +341,11 @@ SCORING RULES:
 9. Flag missing or insufficient input validation
 10. Check for proper logging and observability
 11. If tests are included, verify they test meaningful behavior, not just implementation
-12. If tests are missing for new logic, recommend specific test cases
+12. If tests are missing for new logic, recommend specific test cases. Treat included
+    tests as first-class evidence of intended behavior — if existing tests contradict
+    a suspected bug, either skip the finding or downgrade its confidence. The
+    `whyTestsDoNotAlreadyCoverThis` field on every finding forces this check: if you
+    cannot name a concrete test gap, the finding is speculative.
 13. Check for proper error messages that aid debugging
 14. Identify dead code, unreachable branches, and redundant conditions
 15. Flag any changes that could affect backward compatibility

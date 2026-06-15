@@ -15,6 +15,15 @@ export type InlineFinding = {
   description: string;
   suggestion: string;
   confidence: number;
+  // Anti-hallucination fields — see apps/web/prompts/SYSTEM_PROMPT.md.
+  // Optional in the type because (a) older review bodies don't contain
+  // them and the parser is intentionally permissive about that, and
+  // (b) the prompt instructs the model to always include them, so when
+  // present they're reflected here for downstream surfaces (UI, audit
+  // export) without re-parsing the raw JSON block.
+  whyTestsDoNotAlreadyCoverThis?: string;
+  suggestedRegressionTest?: string;
+  minimumFixScope?: string;
 };
 
 export type PriorFinding = {
@@ -93,6 +102,18 @@ export function parseFindingsFromJson(reviewBody: string): InlineFinding[] | nul
             : item.confidence === "HIGH"
               ? 90
               : 70,
+        // Anti-hallucination fields — typed only when the model emitted a
+        // string. Absent fields stay undefined so the existing UI surfaces
+        // continue to render exactly as before for older reviews.
+        ...(typeof item.whyTestsDoNotAlreadyCoverThis === "string"
+          ? { whyTestsDoNotAlreadyCoverThis: item.whyTestsDoNotAlreadyCoverThis }
+          : {}),
+        ...(typeof item.suggestedRegressionTest === "string"
+          ? { suggestedRegressionTest: item.suggestedRegressionTest }
+          : {}),
+        ...(typeof item.minimumFixScope === "string"
+          ? { minimumFixScope: item.minimumFixScope }
+          : {}),
       });
     }
 

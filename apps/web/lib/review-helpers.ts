@@ -212,8 +212,15 @@ export function buildLowSeveritySummary(findings: InlineFinding[]): string {
     ...rows,
   ].join("\n");
 
+  // Escape a value so it is safe inside a Markdown table cell: literal pipes
+  // would otherwise close the cell, and newlines would break the row. We keep
+  // the FULL text — truncating here (issue #515) leaves no way to read the
+  // complete finding, since these findings have no inline comment to expand.
+  const tableCell = (text: string) =>
+    text.replace(/\|/g, "\\|").replace(/\r?\n+/g, "<br>").trim();
+
   const toRow = (f: InlineFinding) =>
-    `| ${f.severity} | \`${f.filePath}:L${f.startLine}\` | ${f.title} | ${f.description.slice(0, 120)}${f.description.length > 120 ? "…" : ""} |`;
+    `| ${f.severity} | \`${f.filePath}:L${f.startLine}\` | ${tableCell(f.title)} | ${tableCell(f.description)} |`;
 
   const parts: string[] = [];
 

@@ -340,6 +340,21 @@ describe("buildLowSeveritySummary", () => {
     expect(result).toContain("Findings that could not be mapped");
     expect(result).toContain("<details>");
   });
+
+  it("keeps the full description (no 120-char truncation) — issue #515", () => {
+    const longDescription = "x".repeat(400);
+    const result = buildLowSeveritySummary([makeFinding({ description: longDescription })]);
+    expect(result).toContain(longDescription);
+    expect(result).not.toContain("…");
+  });
+
+  it("escapes pipes and newlines so long text cannot break the table row", () => {
+    const result = buildLowSeveritySummary([
+      makeFinding({ description: "line one | with pipe\nline two" }),
+    ]);
+    expect(result).toContain("line one \\| with pipe<br>line two");
+    expect(result).not.toMatch(/\| with pipe\n/);
+  });
 });
 
 // ─── stripDetailedFindings ──────────────────────────────────────────────────

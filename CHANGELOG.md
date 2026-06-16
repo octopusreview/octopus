@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.19] - 2026-06-16
+
+### Added
+- Robust JSON extraction with three-tier recovery for more reliable review parsing (#526)
+- Anti-hallucination fields on every finding to reduce false positives (#525)
+- Public roadmap, governance, contributor, and SOC 2 readiness docs (#524)
+
+### Fixed
+- Finding descriptions in the review summary table are no longer truncated (#515)
+- Embedding vector dimension is now validated against the Qdrant collection (#521)
+- Raised max_tokens floor and enabled streaming for always-thinking models (#523)
+- Detailed findings are now stripped correctly across more comment shapes (#512)
+- Self-hosted web container now receives the user .env via env_file (#520)
+- All Anthropic text blocks are collected; empty responses now fail loudly (#522)
+- Health and readiness probes are allowed through the auth middleware (#518)
+- Prompt variable substitution now handles special characters safely (#517)
+- Review dedup no longer crashes on null items and preserves non-Latin keywords (#516)
+
+### Security
+- Moved createOrgForUser out of a "use server" module so it is not exposed as a server action (#519)
+
 ## [1.0.18] - 2026-06-11
 
 ### Added
@@ -345,6 +366,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Suppress dismissed findings in Additional findings summary (#25)
 - CI lint failures across all packages (#36)
 
+[1.0.19]: https://github.com/octopusreview/octopus/compare/v1.0.18...v1.0.19
 [1.0.18]: https://github.com/octopusreview/octopus/compare/v1.0.17...v1.0.18
 [1.0.17]: https://github.com/octopusreview/octopus/compare/v1.0.16...v1.0.17
 [1.0.16]: https://github.com/octopusreview/octopus/compare/v1.0.15...v1.0.16

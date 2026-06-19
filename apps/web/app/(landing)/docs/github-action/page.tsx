@@ -8,6 +8,7 @@ import {
   IconAdjustmentsAlt,
   IconHistory,
   IconArrowRight,
+  IconAlertTriangle,
 } from "@tabler/icons-react";
 import { CodeBlock } from "../self-hosting/code-block";
 
@@ -379,6 +380,24 @@ export default function GitHubActionPage() {
           step that builds the fork head.
         </Paragraph>
         <CodeBlock title=".github/workflows/octopus.yml">{forkYaml}</CodeBlock>
+        <div className="my-4 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-4">
+          <div className="flex items-start gap-3">
+            <IconAlertTriangle className="size-5 shrink-0 text-amber-400" />
+            <p className="text-sm leading-relaxed text-[#ccc]">
+              <strong className="font-semibold text-amber-300">
+                Security:
+              </strong>{" "}
+              In a <Mono>pull_request_target</Mono> workflow, never add a step
+              that checks out the fork&apos;s head commit (for example{" "}
+              <Mono>actions/checkout</Mono> with the PR <Mono>ref</Mono>/
+              <Mono>sha</Mono>) and then builds or runs it. That would execute
+              untrusted fork code with a writable token and your repository
+              secrets, a well-known remote code execution vector. The recipe
+              above is safe because the Octopus action only reads the diff
+              through the API and never checks out PR code.
+            </p>
+          </div>
+        </div>
         <Paragraph>
           For larger repositories that prefer not to grant a writable token in
           CI at all, install the{" "}

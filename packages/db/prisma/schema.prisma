@@ -1181,6 +1181,14 @@ model CommunityReviewJob {
   id                   String   @id @default(uuid())
   status               String   // "indexing" | "reviewing" | "completed" | "failed"
 
+  // Where the review gets posted:
+  //  - "action_client" (default): findings are returned to the GitHub Action, which posts them
+  //    client-side with the repo's GITHUB_TOKEN. (existing behavior)
+  //  - "bot_account": the server posts the review itself as a shared GitHub bot user account
+  //    (OCTOPUS_BOT_GITHUB_TOKEN). No write token in the repo's CI; reviewer is comment-only by
+  //    GitHub's permission model. Consent is gated on the repo's .github/octopus.yml file.
+  postMode             String   @default("action_client")
+
   // Auth: poll endpoint requires (jobId, repoFullName) tuple to match.
   repoFullName         String
   repositoryId         String

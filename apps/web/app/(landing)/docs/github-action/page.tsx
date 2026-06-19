@@ -73,6 +73,23 @@ const pathsYaml = `on:
       - "lib/**"
 `;
 
+const forkYaml = `# .github/workflows/octopus.yml
+name: Octopus Review
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: octopusreview/action@v1
+`;
+
 export default function GitHubActionPage() {
   return (
     <article className="max-w-3xl">
@@ -345,6 +362,37 @@ export default function GitHubActionPage() {
         </Paragraph>
       </Section>
 
+      {/* Fork pull requests */}
+      <Section title="Fork Pull Requests" id="fork-pull-requests">
+        <Paragraph>
+          GitHub makes <Mono>GITHUB_TOKEN</Mono> read-only for pull requests
+          opened from forks when using the <Mono>pull_request</Mono> event. This
+          is a deliberate GitHub security measure against untrusted forks, and
+          it means Octopus cannot post its review on those PRs. Reviews on
+          branches within the same repository are unaffected.
+        </Paragraph>
+        <Paragraph>
+          To enable reviews on fork pull requests, switch the trigger to{" "}
+          <Mono>pull_request_target</Mono>. The Octopus action only reads the PR
+          diff through the GitHub API; it never checks out or runs the fork&apos;s
+          code, so this is safe as long as your workflow does not add a checkout
+          step that builds the fork head.
+        </Paragraph>
+        <CodeBlock title=".github/workflows/octopus.yml">{forkYaml}</CodeBlock>
+        <Paragraph>
+          For larger repositories that prefer not to grant a writable token in
+          CI at all, install the{" "}
+          <a
+            href="https://octopus-review.ai/open-source"
+            className="text-[#10D8BE] hover:underline"
+          >
+            Octopus GitHub App
+          </a>{" "}
+          instead. The App posts reviews with its own installation permissions,
+          so fork token restrictions never apply and no workflow file is needed.
+        </Paragraph>
+      </Section>
+
       {/* Examples */}
       <Section title="Examples">
         <h3 className="mb-2 mt-2 text-sm font-semibold text-[#ccc]">
@@ -389,6 +437,20 @@ export default function GitHubActionPage() {
           Public repositories can use Octopus with no signup. A community
           organization is created automatically per GitHub owner (user or
           org). The default daily limit is 5 reviews per repository.
+        </Faq>
+        <Faq question="Why are reviews not posted on pull requests from forks?">
+          GitHub makes <Mono>GITHUB_TOKEN</Mono> read-only for fork pull
+          requests on the <Mono>pull_request</Mono> event, so the action cannot
+          create review comments. Switch the trigger to{" "}
+          <Mono>pull_request_target</Mono>, or install the Octopus GitHub App.
+          See{" "}
+          <Link
+            href="/docs/github-action#fork-pull-requests"
+            className="text-white underline decoration-white/30 underline-offset-2 transition-colors hover:decoration-white"
+          >
+            Fork Pull Requests
+          </Link>{" "}
+          above.
         </Faq>
         <Faq question="What models does Octopus use?">
           Claude (Anthropic) for code review and OpenAI for embeddings by
@@ -456,12 +518,14 @@ export default function GitHubActionPage() {
 function Section({
   title,
   children,
+  id,
 }: {
   title: string;
   children: React.ReactNode;
+  id?: string;
 }) {
   return (
-    <section className="mb-10">
+    <section id={id} className="mb-10 scroll-mt-24">
       <h2 className="mb-4 text-xl font-semibold text-white">{title}</h2>
       {children}
     </section>

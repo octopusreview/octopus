@@ -2032,7 +2032,12 @@ Rules:
 
     console.log(`[reviewer] Parsed ${allParsedFindings.length} total, ${findings.length} after filters, ${inlineComments.length} inline comments`);
 
-    const hasCritical = findings.some((f) => f.severity === "🔴") || badFiles.length > 0;
+    // Build artifacts in the diff are surfaced as an advisory in the review body
+    // (see badFilesSection above), but they are NOT findings and must not gate the
+    // check run: counting them as critical produces a contradictory "0 findings" +
+    // "Critical issues found that must be fixed before merge" failure and blocks
+    // legitimate commits (e.g. a GitHub Action repo committing its dist/ bundle).
+    const hasCritical = findings.some((f) => f.severity === "🔴");
     const hasHigh = findings.some((f) => f.severity === "🟠");
     const hasMedium = findings.some((f) => f.severity === "🟡");
 

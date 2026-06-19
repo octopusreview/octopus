@@ -37,6 +37,8 @@ export async function hasConsentFile(
   defaultBranch: string,
   botToken: string,
 ): Promise<boolean> {
+  // installationId=0 is intentional and unused: botToken (providedToken) takes precedence
+  // in getFileContent, so getInstallationToken(0) is never called. Keep botToken passed.
   const content = await getFileContent(0, owner, repo, defaultBranch, CONSENT_FILE_PATH, botToken);
   return content !== null;
 }

@@ -78,7 +78,34 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Missing required fields: owner, repo, prNumber" }, { status: 400 });
   }
 
-  // ── Repo + consent gate ─────────────────────────────────────────────────────
+  const fullName = `${owner}/${repoName}`;
+
+  // ── Cheap guards first (no GitHub API): allowlist + rate limit ──────────────
+  // The endpoint is unauthenticated (fork PRs have no secret to sign with), so abuse is
+  // bounded here, before any GitHub API call: an unapproved repo is rejected on a single
+  // indexed DB lookup. A repo must be manually approved AND carry the consent file.
+  const approved = await prisma.ossReviewAllowlist.findUnique({
+    where: { repoFullName: fullName.toLowerCase() },
+  });
+  if (!approved) {
+    LOG(`${fullName} not on the OSS review allowlist — ignoring`);
+    return Response.json({ status: "skipped", reason: "not-approved" });
+  }
+
+  const org = await getOrCreateCommunityOrg(owner);
+
+  // Daily rate limit. Window is anchored to UTC midnight (not the server's local clock)
+  // so it aligns with the UTC createdAt timestamps and doesn't drift across instances.
+  const startOfDay = new Date();
+  startOfDay.setUTCHours(0, 0, 0, 0);
+  const todayCount = await prisma.aiUsage.count({
+    where: { organizationId: org.id, operation: "community-review", createdAt: { gte: startOfDay } },
+  });
+  if (todayCount >= org.communityDailyReviewLimit) {
+    return Response.json({ status: "skipped", reason: "daily-limit-reached" });
+  }
+
+  // ── GitHub-touching checks (approved repos only) ────────────────────────────
   const repoInfo = await getRepositoryDetails(0, owner, repoName, botToken);
   if (!repoInfo) {
     return Response.json({ error: "Repository not found" }, { status: 404 });
@@ -89,7 +116,7 @@ export async function POST(request: NextRequest) {
 
   const consented = await hasConsentFile(owner, repoName, repoInfo.default_branch, botToken);
   if (!consented) {
-    LOG(`no consent file (.github/octopus.yml) for ${owner}/${repoName} — ignoring`);
+    LOG(`no consent file (.github/octopus.yml) for ${fullName} — ignoring`);
     return Response.json({ status: "skipped", reason: "no-consent-file" });
   }
 
@@ -100,11 +127,8 @@ export async function POST(request: NextRequest) {
   }
   const headSha = pr.headSha;
 
-  // ── Org + repo records ──────────────────────────────────────────────────────
-  const org = await getOrCreateCommunityOrg(owner);
-  const fullName = `${owner}/${repoName}`;
+  // ── Repo record ─────────────────────────────────────────────────────────────
   const externalId = String(repoInfo.id);
-
   const repo = await prisma.repository.upsert({
     where: {
       provider_externalId_organizationId: { provider: "github", externalId, organizationId: org.id },
@@ -120,16 +144,6 @@ export async function POST(request: NextRequest) {
     },
     update: { defaultBranch: repoInfo.default_branch },
   });
-
-  // ── Rate limit (per community org / day) ────────────────────────────────────
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-  const todayCount = await prisma.aiUsage.count({
-    where: { organizationId: org.id, operation: "community-review", createdAt: { gte: startOfDay } },
-  });
-  if (todayCount >= org.communityDailyReviewLimit) {
-    return Response.json({ status: "skipped", reason: "daily-limit-reached" });
-  }
 
   // ── Dedup: same repo + PR + headSha already in flight or recently done ───────
   const existing = await prisma.communityReviewJob.findFirst({

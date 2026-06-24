@@ -1,7 +1,7 @@
 import { prisma } from "@octopus/db";
 import { buildRssFeed } from "@/lib/blog-rss";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 3600;
 
 const MAX_ITEMS = 20;
 
@@ -22,11 +22,15 @@ function fetchPublishedPosts() {
 }
 
 export async function GET() {
-  let posts: Awaited<ReturnType<typeof fetchPublishedPosts>> = [];
+  let posts: Awaited<ReturnType<typeof fetchPublishedPosts>>;
   try {
     posts = await fetchPublishedPosts();
-  } catch {
-    posts = [];
+  } catch (err) {
+    console.error("[feed.xml] Failed to fetch posts:", err);
+    return new Response("Service Unavailable", { 
+      status: 503, 
+      headers: { "Retry-After": "60" },
+    });
   }
 
   const xml = buildRssFeed(posts);

@@ -47,9 +47,17 @@ describe("buildRssFeed", () => {
     expect(xml).toContain("<pubDate>Wed, 10 Jun 2026 12:00:00 GMT</pubDate>");
   });
 
-  it("omits dc:creator when authorName is null", () => {
-    const xml = buildRssFeed([{ ...basePost, authorName: null }]);
-    expect(xml).not.toContain("<dc:creator>");
+  it("includes dc:creator with the author name", () => {
+    const xml = buildRssFeed([basePost]);
+    expect(xml).toContain("<dc:creator>Ada Lovelace</dc:creator>");
+  });
+
+  it("escapes special characters in the slug used for link and guid", () => {
+    const xml = buildRssFeed([{ ...basePost, slug: "a&b<c" }]);
+    expect(xml).toContain(
+      '<guid isPermaLink="true">https://octopus-review.ai/blog/a&amp;b&lt;c</guid>',
+    );
+    expect(/&(?!amp;|lt;|gt;|quot;|apos;)/.test(xml)).toBe(false);
   });
 
   it("falls back to updatedAt when publishedAt is null", () => {

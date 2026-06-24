@@ -1,13 +1,14 @@
 const SITE_URL = "https://octopus-review.ai";
 const FEED_TITLE = "Octopus Blog";
-const FEED_DESCRIPTION =
-  "Engineering insights, product updates, and lessons learned building AI-powered code review tools.";
+const FEED_DESCRIPTION = "Engineering insights, product updates, and lessons learned building AI-powered code review tools.";
+
+const BUILD_TIME = new Date();
 
 export type RssFeedPost = {
   title: string;
   slug: string;
   excerpt: string | null;
-  authorName: string | null;
+  authorName: string;
   publishedAt: Date | null;
   updatedAt: Date | null;
 };
@@ -22,21 +23,19 @@ export function escapeXml(value: string): string {
 }
 
 export function buildRssFeed(posts: RssFeedPost[]): string {
-  const lastBuildDate = (posts[0]?.publishedAt ?? new Date()).toUTCString();
+  const lastBuildDate = (posts[0]?.publishedAt ?? BUILD_TIME).toUTCString();
 
   const items = posts
     .map((post) => {
-      const link = `${SITE_URL}/blog/${post.slug}`;
+      const link = `${SITE_URL}/blog/${escapeXml(post.slug)}`;
       const pubDate = (
         post.publishedAt ??
         post.updatedAt ??
         new Date()
       ).toUTCString();
       const description = post.excerpt ? escapeXml(post.excerpt) : "";
-      const creator = post.authorName
-        ? `\n      <dc:creator>${escapeXml(post.authorName)}</dc:creator>`
-        : "";
-      return `    <item>
+      const creator = `\n      <dc:creator>${escapeXml(post.authorName)}</dc:creator>`;
+      return `<item>
       <title>${escapeXml(post.title)}</title>
       <link>${link}</link>
       <guid isPermaLink="true">${link}</guid>

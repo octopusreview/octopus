@@ -18,6 +18,14 @@ export const metadata: Metadata = {
     "Engineering insights, product updates, and lessons learned building AI-powered code review tools.",
   alternates: {
     canonical: "https://octopus-review.ai/blog",
+    types: {
+      "application/rss+xml": [
+        {
+          url: "https://octopus-review.ai/blog/feed.xml",
+          title: "Octopus Blog RSS Feed",
+        },
+      ],
+    },
   },
 };
 
@@ -30,7 +38,9 @@ export default async function BlogPage({
   const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
   const query = searchQuery?.trim() || "";
 
-  const session = await auth.api.getSession({ headers: await headers() }).catch(() => null);
+  const session = await auth.api
+    .getSession({ headers: await headers() })
+    .catch(() => null);
   const isLoggedIn = !!session;
 
   const where = {
@@ -85,12 +95,15 @@ export default async function BlogPage({
 
         {query && (
           <p className="mb-6 text-sm text-[#555]">
-            {totalCount} result{totalCount !== 1 ? "s" : ""} for &ldquo;{query}&rdquo;
+            {totalCount} result{totalCount !== 1 ? "s" : ""} for &ldquo;{query}
+            &rdquo;
           </p>
         )}
 
         {posts.length === 0 ? (
-          <p className="text-[#555]">{query ? "No posts found." : "No posts yet. Check back soon."}</p>
+          <p className="text-[#555]">
+            {query ? "No posts found." : "No posts yet. Check back soon."}
+          </p>
         ) : (
           <div>
             {/* Featured post (first one) */}
@@ -119,18 +132,23 @@ export default async function BlogPage({
                       {featured.title}
                     </h2>
                     {featured.excerpt && (
-                      <p className="mb-3 text-[#888] line-clamp-2">{featured.excerpt}</p>
+                      <p className="mb-3 text-[#888] line-clamp-2">
+                        {featured.excerpt}
+                      </p>
                     )}
                     <div className="flex items-center gap-3 text-sm text-[#555]">
                       <span>{featured.authorName}</span>
                       <span>·</span>
                       <time>
                         {featured.publishedAt
-                          ? new Date(featured.publishedAt).toLocaleDateString("en-US", {
-                              year: "numeric",
-                              month: "long",
-                              day: "numeric",
-                            })
+                          ? new Date(featured.publishedAt).toLocaleDateString(
+                              "en-US",
+                              {
+                                year: "numeric",
+                                month: "long",
+                                day: "numeric",
+                              },
+                            )
                           : ""}
                       </time>
                     </div>
@@ -161,17 +179,22 @@ export default async function BlogPage({
                               {post.title}
                             </h2>
                             {post.excerpt && (
-                              <p className="mt-1 text-sm text-[#888] line-clamp-1">{post.excerpt}</p>
+                              <p className="mt-1 text-sm text-[#888] line-clamp-1">
+                                {post.excerpt}
+                              </p>
                             )}
                           </div>
                           <div className="hidden shrink-0 text-right text-sm text-[#555] sm:block">
                             <div>{post.authorName}</div>
                             <time>
                               {post.publishedAt
-                                ? new Date(post.publishedAt).toLocaleDateString("en-US", {
-                                    month: "short",
-                                    day: "numeric",
-                                  })
+                                ? new Date(post.publishedAt).toLocaleDateString(
+                                    "en-US",
+                                    {
+                                      month: "short",
+                                      day: "numeric",
+                                    },
+                                  )
                                 : ""}
                             </time>
                           </div>
@@ -186,52 +209,53 @@ export default async function BlogPage({
         )}
 
         {/* Pagination */}
-        {totalPages > 1 && (() => {
-          const qs = (p: number) => {
-            const params = new URLSearchParams();
-            if (p > 1) params.set("page", String(p));
-            if (query) params.set("q", query);
-            const str = params.toString();
-            return str ? `/blog?${str}` : "/blog";
-          };
-          return (
-          <div className="mt-12 flex items-center justify-center gap-2">
-            {page > 1 ? (
-              <Link
-                href={qs(page - 1)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] px-4 py-2 text-sm text-[#888] transition-colors hover:border-white/[0.15] hover:text-white"
-              >
-                <IconChevronLeft className="size-4" />
-                Previous
-              </Link>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.04] px-4 py-2 text-sm text-[#333] cursor-not-allowed">
-                <IconChevronLeft className="size-4" />
-                Previous
-              </span>
-            )}
+        {totalPages > 1 &&
+          (() => {
+            const qs = (p: number) => {
+              const params = new URLSearchParams();
+              if (p > 1) params.set("page", String(p));
+              if (query) params.set("q", query);
+              const str = params.toString();
+              return str ? `/blog?${str}` : "/blog";
+            };
+            return (
+              <div className="mt-12 flex items-center justify-center gap-2">
+                {page > 1 ? (
+                  <Link
+                    href={qs(page - 1)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] px-4 py-2 text-sm text-[#888] transition-colors hover:border-white/[0.15] hover:text-white"
+                  >
+                    <IconChevronLeft className="size-4" />
+                    Previous
+                  </Link>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.04] px-4 py-2 text-sm text-[#333] cursor-not-allowed">
+                    <IconChevronLeft className="size-4" />
+                    Previous
+                  </span>
+                )}
 
-            <span className="px-4 py-2 text-sm text-[#555]">
-              {page} / {totalPages}
-            </span>
+                <span className="px-4 py-2 text-sm text-[#555]">
+                  {page} / {totalPages}
+                </span>
 
-            {page < totalPages ? (
-              <Link
-                href={qs(page + 1)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] px-4 py-2 text-sm text-[#888] transition-colors hover:border-white/[0.15] hover:text-white"
-              >
-                Next
-                <IconChevronRight className="size-4" />
-              </Link>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.04] px-4 py-2 text-sm text-[#333] cursor-not-allowed">
-                Next
-                <IconChevronRight className="size-4" />
-              </span>
-            )}
-          </div>
-          );
-        })()}
+                {page < totalPages ? (
+                  <Link
+                    href={qs(page + 1)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] px-4 py-2 text-sm text-[#888] transition-colors hover:border-white/[0.15] hover:text-white"
+                  >
+                    Next
+                    <IconChevronRight className="size-4" />
+                  </Link>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.04] px-4 py-2 text-sm text-[#333] cursor-not-allowed">
+                    Next
+                    <IconChevronRight className="size-4" />
+                  </span>
+                )}
+              </div>
+            );
+          })()}
       </main>
 
       <LandingFooter />

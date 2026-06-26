@@ -33,12 +33,26 @@ function normalizeGatewayUrl(raw: string, providerName: string): string {
   return parsed.origin;
 }
 
+// Cache one OpenAI client per provider. The gateway base URL + token come from
+// env (fixed for the process lifetime), so a single client per provider reuses
+// connections across calls instead of constructing a new one every request —
+// matching the singleton pattern in the other providers.
+const clientCache = new Map<AiProvider, OpenAI>();
+
+function getGatewayClient(opts: GatewayCallOptions): OpenAI {
+  const cached = clientCache.get(opts.name);
+  if (cached) return cached;
+  const baseURL = `${normalizeGatewayUrl(opts.baseUrl, opts.name)}/v1`;
+  const client = new OpenAI({ apiKey: opts.apiKey, baseURL });
+  clientCache.set(opts.name, client);
+  return client;
+}
+
 export async function callOpenAiGateway(
   params: AiCreateParams,
   opts: GatewayCallOptions,
 ): Promise<AiResponse> {
-  const baseURL = `${normalizeGatewayUrl(opts.baseUrl, opts.name)}/v1`;
-  const client = new OpenAI({ apiKey: opts.apiKey, baseURL });
+  const client = getGatewayClient(opts);
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
   if (params.system) messages.push({ role: "system", content: params.system });
@@ -67,6 +81,13 @@ export async function callOpenAiGateway(
   });
 
   const text = response.choices[0]?.message?.content ?? "";
+  // Surface an empty completion as an error instead of returning a blank review
+  // that downstream code would post as an empty PR comment.
+  if (!text) {
+    throw new Error(
+      `${opts.name} gateway returned no text (finish_reason: ${response.choices[0]?.finish_reason ?? "unknown"})`,
+    );
+  }
 
   return {
     text,

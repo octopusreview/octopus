@@ -35,7 +35,7 @@ The `@octp/cli` package referenced in the README lives in a separate repository;
 - Prisma schema changes require a SQL migration in `packages/db/prisma/migrations/<timestamp>_<slug>/migration.sql` in the same PR. The migrations directory is git-ignored by default; force-add new ones (`git add -f`) — that matches existing convention.
 
 ### AI provider calls
-- All chat/completion calls go through `apps/web/lib/ai-router.ts`'s `createAiMessage`. Do not import provider SDKs (`@anthropic-ai/sdk`, `openai`, `@google/generative-ai`) directly elsewhere.
+- All chat/completion calls go through `apps/web/lib/ai-router.ts`'s `createAiMessage`. Do not import provider SDKs (`@anthropic-ai/sdk`, `openai`, `@google/generative-ai`) directly outside `apps/web/lib/ai-router.ts` and its provider modules in `apps/web/lib/providers/`.
 - The router resolves the provider from the model ID (DB cache, prefix fallback) and selects per-org BYOK keys. Adding a new provider means extending the router; do not work around it.
 - Embeddings currently route through `apps/web/lib/embeddings.ts` (OpenAI-only at the moment). Pricing data lives in `apps/web/lib/cost.ts`; the `AvailableModel` Prisma table is the source of truth for provider mapping.
 

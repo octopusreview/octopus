@@ -17,7 +17,10 @@ const PROVIDER_FALLBACK: Record<string, AiProvider> = {
   codex: "openai",
   gemini: "google",
   "grok-": "grok",
-  "openrouter/": "openrouter", // OpenRouter uses vendor/model IDs (e.g. openai/gpt-4o)
+  // Explicit "openrouter/…"-namespaced model id forces OpenRouter routing.
+  // Native OpenRouter ids are vendor/model (e.g. "openai/gpt-4o") and resolve
+  // via the AvailableModel DB cache above, not this prefix.
+  "openrouter/": "openrouter",
 };
 
 let providerCache: Map<string, AiProvider> | null = null;

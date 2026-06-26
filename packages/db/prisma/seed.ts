@@ -720,7 +720,12 @@ async function main() {
     { modelId: "gemini-2.5-pro", displayName: "Gemini 2.5 Pro", provider: "google", category: "llm", inputPrice: 1.25, outputPrice: 10, sortOrder: 5 },
     { modelId: "gemini-2.5-flash", displayName: "Gemini 2.5 Flash", provider: "google", category: "llm", inputPrice: 0.15, outputPrice: 0.6, sortOrder: 6 },
     // OpenAI — Codex is the only OpenAI LLM we offer; served via the Responses API.
-    { modelId: "gpt-5.3-codex", displayName: "GPT-5.3 Codex", provider: "openai", category: "llm", inputPrice: 1.75, outputPrice: 14, sortOrder: 7 },
+    // Platform default review model: coding-focused and cheaper than Claude
+    // Sonnet ($1.75/$14 vs $3/$15 per 1M tokens). ai-client.ts resolves the
+    // default via getPlatformDefault("llm") (falling back to
+    // HARDCODED_REVIEW_MODEL); exactly one llm row may carry isPlatformDefault
+    // (asserted after the seed loop).
+    { modelId: "gpt-5.3-codex", displayName: "GPT-5.3 Codex", provider: "openai", category: "llm", inputPrice: 1.75, outputPrice: 14, sortOrder: 7, isPlatformDefault: true },
     // Embeddings
     { modelId: "text-embedding-3-large", displayName: "Embedding 3 Large", provider: "openai", category: "embedding", inputPrice: 0.13, outputPrice: 0, sortOrder: 0 },
     { modelId: "text-embedding-3-small", displayName: "Embedding 3 Small", provider: "openai", category: "embedding", inputPrice: 0.02, outputPrice: 0, sortOrder: 1 },
@@ -728,7 +733,19 @@ async function main() {
   for (const m of models) {
     await prisma.availableModel.create({ data: { id: cuid(), ...m } });
   }
-  console.log(`✅ ${models.length} available models seeded`);
+  // Determinism guard: getPlatformDefault("llm") relies on exactly one row
+  // carrying isPlatformDefault=true — multiple would make the lookup
+  // non-deterministic (whichever the query plan returns first wins). Catch it
+  // here instead of discovering it in production.
+  const llmPlatformDefaults = await prisma.availableModel.count({
+    where: { category: "llm", isPlatformDefault: true },
+  });
+  if (llmPlatformDefaults !== 1) {
+    throw new Error(
+      `Seed integrity: expected exactly one LLM platform default, found ${llmPlatformDefaults}.`,
+    );
+  }
+  console.log(`✅ ${models.length} available models seeded (1 platform default)`);
 
   console.log("\n🎉 Seed completed successfully!");
 }

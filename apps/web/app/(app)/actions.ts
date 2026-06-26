@@ -244,6 +244,8 @@ export async function updateApiKeys(
   const anthropicApiKey = (formData.get("anthropicApiKey") as string)?.trim() || null;
   const googleApiKey = (formData.get("googleApiKey") as string)?.trim() || null;
   const cohereApiKey = (formData.get("cohereApiKey") as string)?.trim() || null;
+  const grokApiKey = (formData.get("grokApiKey") as string)?.trim() || null;
+  const openrouterApiKey = (formData.get("openrouterApiKey") as string)?.trim() || null;
 
   if (openaiApiKey && !openaiApiKey.startsWith("sk-")) {
     return { error: "Invalid OpenAI API key format." };
@@ -257,6 +259,14 @@ export async function updateApiKeys(
     return { error: "Invalid Google AI API key format." };
   }
 
+  if (grokApiKey && !grokApiKey.startsWith("xai-")) {
+    return { error: "Invalid Grok (xAI) API key format." };
+  }
+
+  if (openrouterApiKey && !openrouterApiKey.startsWith("sk-or-")) {
+    return { error: "Invalid OpenRouter API key format." };
+  }
+
   // Only update keys that have new values — empty fields keep the existing key.
   // Keys are encrypted at rest with the same helper used for OAuth tokens.
   const data: Record<string, string | null> = {};
@@ -264,6 +274,8 @@ export async function updateApiKeys(
   if (anthropicApiKey) data.anthropicApiKey = encryptString(anthropicApiKey);
   if (googleApiKey) data.googleApiKey = encryptString(googleApiKey);
   if (cohereApiKey) data.cohereApiKey = encryptString(cohereApiKey);
+  if (grokApiKey) data.grokApiKey = encryptString(grokApiKey);
+  if (openrouterApiKey) data.openrouterApiKey = encryptString(openrouterApiKey);
 
   if (Object.keys(data).length === 0) {
     return { error: "Enter at least one API key to save." };
@@ -278,7 +290,7 @@ export async function updateApiKeys(
   return { success: true };
 }
 
-const VALID_KEY_FIELDS = ["openaiApiKey", "anthropicApiKey", "googleApiKey", "cohereApiKey"] as const;
+const VALID_KEY_FIELDS = ["openaiApiKey", "anthropicApiKey", "googleApiKey", "cohereApiKey", "grokApiKey", "openrouterApiKey"] as const;
 
 export async function removeApiKey(
   keyField: (typeof VALID_KEY_FIELDS)[number],

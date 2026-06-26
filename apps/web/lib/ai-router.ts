@@ -16,6 +16,11 @@ const PROVIDER_FALLBACK: Record<string, AiProvider> = {
   o4: "openai",
   codex: "openai",
   gemini: "google",
+  "grok-": "grok",
+  // Explicit "openrouter/…"-namespaced model id forces OpenRouter routing.
+  // Native OpenRouter ids are vendor/model (e.g. "openai/gpt-4o") and resolve
+  // via the AvailableModel DB cache above, not this prefix.
+  "openrouter/": "openrouter",
 };
 
 let providerCache: Map<string, AiProvider> | null = null;
@@ -62,17 +67,27 @@ type OrgKeys = {
   anthropicApiKey: string | null;
   openaiApiKey: string | null;
   googleApiKey: string | null;
+  grokApiKey: string | null;
+  openrouterApiKey: string | null;
 };
 
 async function getOrgKeys(orgId: string): Promise<OrgKeys> {
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
-    select: { anthropicApiKey: true, openaiApiKey: true, googleApiKey: true },
+    select: {
+      anthropicApiKey: true,
+      openaiApiKey: true,
+      googleApiKey: true,
+      grokApiKey: true,
+      openrouterApiKey: true,
+    },
   });
   return {
     anthropicApiKey: org?.anthropicApiKey ? decryptStringMaybeLegacy(org.anthropicApiKey) : null,
     openaiApiKey: org?.openaiApiKey ? decryptStringMaybeLegacy(org.openaiApiKey) : null,
     googleApiKey: org?.googleApiKey ? decryptStringMaybeLegacy(org.googleApiKey) : null,
+    grokApiKey: org?.grokApiKey ? decryptStringMaybeLegacy(org.grokApiKey) : null,
+    openrouterApiKey: org?.openrouterApiKey ? decryptStringMaybeLegacy(org.openrouterApiKey) : null,
   };
 }
 
@@ -81,6 +96,8 @@ function getOrgKeyForProvider(keys: OrgKeys, provider: AiProvider): string | nul
     case "anthropic": return keys.anthropicApiKey;
     case "openai": return keys.openaiApiKey;
     case "google": return keys.googleApiKey;
+    case "grok": return keys.grokApiKey;
+    case "openrouter": return keys.openrouterApiKey;
   }
 }
 

@@ -3,7 +3,7 @@ import { calcCost, getModelPricing } from "./cost";
 import { deductCredits } from "./credits";
 
 type LogAiUsageParams = {
-  provider: "anthropic" | "openai" | "google" | "cohere";
+  provider: "anthropic" | "openai" | "google" | "cohere" | "grok" | "openrouter";
   model: string;
   operation: string;
   inputTokens: number;
@@ -18,7 +18,14 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
     // Determine key ownership before recording usage
     const org = await prisma.organization.findUnique({
       where: { id: params.organizationId },
-      select: { anthropicApiKey: true, openaiApiKey: true, cohereApiKey: true, googleApiKey: true },
+      select: {
+        anthropicApiKey: true,
+        openaiApiKey: true,
+        cohereApiKey: true,
+        googleApiKey: true,
+        grokApiKey: true,
+        openrouterApiKey: true,
+      },
     });
 
     if (!org) {
@@ -30,7 +37,9 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
       (params.provider === "anthropic" && !!org.anthropicApiKey) ||
       (params.provider === "openai" && !!org.openaiApiKey) ||
       (params.provider === "google" && !!org.googleApiKey) ||
-      (params.provider === "cohere" && !!org.cohereApiKey);
+      (params.provider === "cohere" && !!org.cohereApiKey) ||
+      (params.provider === "grok" && !!org.grokApiKey) ||
+      (params.provider === "openrouter" && !!org.openrouterApiKey);
 
     await prisma.aiUsage.create({
       data: {

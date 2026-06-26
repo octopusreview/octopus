@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { headers, cookies } from "next/headers";
+import { randomBytes } from "node:crypto";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
+import { encryptJson } from "@/lib/crypto";
+import {
+  SLACK_OAUTH_STATE_COOKIE,
+  SLACK_OAUTH_STATE_TTL_MS,
+} from "@/lib/slack-oauth";
 
 export async function GET() {
   const session = await auth.api.getSession({
@@ -36,7 +42,20 @@ export async function GET() {
     );
   }
 
-  const state = Buffer.from(JSON.stringify({ orgId })).toString("base64url");
+  // High-entropy nonce that ties this OAuth transaction to the browser that
+  // started it. The nonce is both embedded in the (encrypted, tamper-proof)
+  // state and stored in an HttpOnly cookie; the callback only proceeds when the
+  // two match. An attacker cannot set this cookie in a victim's browser, so a
+  // crafted callback URL (forged state + attacker code) is rejected. The state
+  // also carries the initiating userId and orgId so the callback can re-check
+  // both against the live session instead of trusting attacker-controlled input.
+  const nonce = randomBytes(32).toString("base64url");
+  const state = encryptJson({
+    orgId,
+    userId: session.user.id,
+    nonce,
+    exp: Date.now() + SLACK_OAUTH_STATE_TTL_MS,
+  });
 
   const params = new URLSearchParams({
     client_id: clientId,
@@ -45,7 +64,15 @@ export async function GET() {
     state,
   });
 
-  return NextResponse.redirect(
+  const response = NextResponse.redirect(
     `https://slack.com/oauth/v2/authorize?${params.toString()}`,
   );
+  response.cookies.set(SLACK_OAUTH_STATE_COOKIE, nonce, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: Math.floor(SLACK_OAUTH_STATE_TTL_MS / 1000),
+  });
+  return response;
 }

@@ -720,34 +720,15 @@ async function main() {
     { modelId: "gemini-2.5-pro", displayName: "Gemini 2.5 Pro", provider: "google", category: "llm", inputPrice: 1.25, outputPrice: 10, sortOrder: 5 },
     { modelId: "gemini-2.5-flash", displayName: "Gemini 2.5 Flash", provider: "google", category: "llm", inputPrice: 0.15, outputPrice: 0.6, sortOrder: 6 },
     // OpenAI — Codex is the only OpenAI LLM we offer; served via the Responses API.
-    // Platform default review model: coding-focused and cheaper than Claude
-    // Sonnet ($1.75/$14 vs $3/$15 per 1M tokens). ai-client.ts resolves the
-    // default via getPlatformDefault("llm") (falling back to
-    // HARDCODED_REVIEW_MODEL); exactly one llm row may carry isPlatformDefault
-    // (asserted after the seed loop).
-    { modelId: "gpt-5.3-codex", displayName: "GPT-5.3 Codex", provider: "openai", category: "llm", inputPrice: 1.75, outputPrice: 14, sortOrder: 7, isPlatformDefault: true },
+    { modelId: "gpt-5.3-codex", displayName: "GPT-5.3 Codex", provider: "openai", category: "llm", inputPrice: 1.75, outputPrice: 14, sortOrder: 7 },
     // Embeddings
-    { modelId: "text-embedding-3-large", displayName: "Embedding 3 Large", provider: "openai", category: "embedding", inputPrice: 0.13, outputPrice: 0, sortOrder: 0, isPlatformDefault: true },
+    { modelId: "text-embedding-3-large", displayName: "Embedding 3 Large", provider: "openai", category: "embedding", inputPrice: 0.13, outputPrice: 0, sortOrder: 0 },
     { modelId: "text-embedding-3-small", displayName: "Embedding 3 Small", provider: "openai", category: "embedding", inputPrice: 0.02, outputPrice: 0, sortOrder: 1 },
   ];
   for (const m of models) {
     await prisma.availableModel.create({ data: { id: cuid(), ...m } });
   }
-  // Determinism guard: getPlatformDefault(category) relies on exactly one row
-  // per category carrying isPlatformDefault=true — multiple would make the
-  // lookup non-deterministic (whichever the query plan returns first wins).
-  // Catch it here instead of discovering it in production.
-  for (const category of ["llm", "embedding"] as const) {
-    const defaults = await prisma.availableModel.count({
-      where: { category, isPlatformDefault: true },
-    });
-    if (defaults !== 1) {
-      throw new Error(
-        `Seed integrity: expected exactly one ${category} platform default, found ${defaults}.`,
-      );
-    }
-  }
-  console.log(`✅ ${models.length} available models seeded (1 llm + 1 embedding platform default)`);
+  console.log(`✅ ${models.length} available models seeded`);
 
   console.log("\n🎉 Seed completed successfully!");
 }

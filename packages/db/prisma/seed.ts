@@ -727,25 +727,27 @@ async function main() {
     // (asserted after the seed loop).
     { modelId: "gpt-5.3-codex", displayName: "GPT-5.3 Codex", provider: "openai", category: "llm", inputPrice: 1.75, outputPrice: 14, sortOrder: 7, isPlatformDefault: true },
     // Embeddings
-    { modelId: "text-embedding-3-large", displayName: "Embedding 3 Large", provider: "openai", category: "embedding", inputPrice: 0.13, outputPrice: 0, sortOrder: 0 },
+    { modelId: "text-embedding-3-large", displayName: "Embedding 3 Large", provider: "openai", category: "embedding", inputPrice: 0.13, outputPrice: 0, sortOrder: 0, isPlatformDefault: true },
     { modelId: "text-embedding-3-small", displayName: "Embedding 3 Small", provider: "openai", category: "embedding", inputPrice: 0.02, outputPrice: 0, sortOrder: 1 },
   ];
   for (const m of models) {
     await prisma.availableModel.create({ data: { id: cuid(), ...m } });
   }
-  // Determinism guard: getPlatformDefault("llm") relies on exactly one row
-  // carrying isPlatformDefault=true — multiple would make the lookup
-  // non-deterministic (whichever the query plan returns first wins). Catch it
-  // here instead of discovering it in production.
-  const llmPlatformDefaults = await prisma.availableModel.count({
-    where: { category: "llm", isPlatformDefault: true },
-  });
-  if (llmPlatformDefaults !== 1) {
-    throw new Error(
-      `Seed integrity: expected exactly one LLM platform default, found ${llmPlatformDefaults}.`,
-    );
+  // Determinism guard: getPlatformDefault(category) relies on exactly one row
+  // per category carrying isPlatformDefault=true — multiple would make the
+  // lookup non-deterministic (whichever the query plan returns first wins).
+  // Catch it here instead of discovering it in production.
+  for (const category of ["llm", "embedding"] as const) {
+    const defaults = await prisma.availableModel.count({
+      where: { category, isPlatformDefault: true },
+    });
+    if (defaults !== 1) {
+      throw new Error(
+        `Seed integrity: expected exactly one ${category} platform default, found ${defaults}.`,
+      );
+    }
   }
-  console.log(`✅ ${models.length} available models seeded (1 platform default)`);
+  console.log(`✅ ${models.length} available models seeded (1 llm + 1 embedding platform default)`);
 
   console.log("\n🎉 Seed completed successfully!");
 }

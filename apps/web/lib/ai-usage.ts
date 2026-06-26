@@ -3,7 +3,7 @@ import { calcCost, getModelPricing } from "./cost";
 import { deductCredits } from "./credits";
 
 type LogAiUsageParams = {
-  provider: "anthropic" | "openai" | "google" | "cohere" | "grok" | "openrouter" | "ollama";
+  provider: "anthropic" | "openai" | "google" | "cohere" | "grok" | "openrouter" | "ollama" | "acp" | "opencode";
   model: string;
   operation: string;
   inputTokens: number;
@@ -40,8 +40,11 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
       (params.provider === "cohere" && !!org.cohereApiKey) ||
       (params.provider === "grok" && !!org.grokApiKey) ||
       (params.provider === "openrouter" && !!org.openrouterApiKey) ||
-      // Ollama runs on the org's own infra — never bills the platform.
-      params.provider === "ollama";
+      // Ollama / ACPX / OpenCode run on operator-configured infra/gateways —
+      // never bill the platform.
+      params.provider === "ollama" ||
+      params.provider === "acp" ||
+      params.provider === "opencode";
 
     await prisma.aiUsage.create({
       data: {

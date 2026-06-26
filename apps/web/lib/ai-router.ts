@@ -22,6 +22,8 @@ const PROVIDER_FALLBACK: Record<string, AiProvider> = {
   // via the AvailableModel DB cache above, not this prefix.
   "openrouter/": "openrouter",
   "ollama:": "ollama", // namespaced local models, e.g. "ollama:qwen2.5-coder:32b"
+  "acp:": "acp", // OpenAI-compatible gateway (Agent Communication Protocol)
+  "opencode:": "opencode", // OpenAI-compatible gateway
 };
 
 let providerCache: Map<string, AiProvider> | null = null;
@@ -101,6 +103,11 @@ function getOrgKeyForProvider(keys: OrgKeys, provider: AiProvider): string | nul
     case "openrouter": return keys.openrouterApiKey;
     // Ollama runs on the operator's own infra — env-configured, no per-org key.
     case "ollama": return null;
+    // ACPX / OpenCode are operator-configured gateways (env base URL + token,
+    // resolved inside the provider) — no per-org key here.
+    case "acp":
+    case "opencode":
+      return null;
   }
 }
 

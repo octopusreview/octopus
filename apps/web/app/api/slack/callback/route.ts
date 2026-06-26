@@ -3,14 +3,10 @@ import { headers, cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { encryptString, decryptJson } from "@/lib/crypto";
-import { SLACK_OAUTH_STATE_COOKIE } from "@/lib/slack-oauth";
-
-type SlackOAuthState = {
-  orgId: string;
-  userId: string;
-  nonce: string;
-  exp: number;
-};
+import {
+  SLACK_OAUTH_STATE_COOKIE,
+  type SlackOAuthState,
+} from "@/lib/slack-oauth";
 
 // The state cookie is single-use: clear it on every callback response so a
 // captured code+state pair cannot be replayed against a stale cookie.
@@ -60,6 +56,14 @@ export async function GET(request: NextRequest) {
   }
   const orgId = state.orgId;
 
+  // Expiry is the cheapest structural check, so reject stale/replayed-after-
+  // expiry state up front, before any I/O (cookie read, session fetch, DB).
+  if (typeof state.exp !== "number" || Date.now() > state.exp) {
+    return redirectClearingState(
+      new URL("/settings/integrations?error=state_expired", baseUrl),
+    );
+  }
+
   // CSRF binding: the nonce in the (server-issued) state must match the
   // HttpOnly cookie set in the browser that initiated this exact OAuth
   // transaction. An attacker cannot plant this cookie in a victim's browser,
@@ -70,11 +74,6 @@ export async function GET(request: NextRequest) {
   if (!cookieNonce || cookieNonce !== state.nonce) {
     return redirectClearingState(
       new URL("/settings/integrations?error=invalid_state", baseUrl),
-    );
-  }
-  if (typeof state.exp !== "number" || Date.now() > state.exp) {
-    return redirectClearingState(
-      new URL("/settings/integrations?error=state_expired", baseUrl),
     );
   }
 

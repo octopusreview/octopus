@@ -10,3 +10,13 @@ export const SLACK_OAUTH_STATE_COOKIE = "slack_oauth_state";
 // OAuth state lifetime: long enough to complete the Slack consent screen, short
 // enough to bound the window a leaked code+state pair can be replayed.
 export const SLACK_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+
+// Contract for the encrypted `state` blob issued by the OAuth start route and
+// validated by the callback. Co-located here so both routes (and tests) share
+// one definition.
+export type SlackOAuthState = {
+  orgId: string;
+  userId: string;
+  nonce: string;
+  exp: number;
+};

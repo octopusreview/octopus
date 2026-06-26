@@ -55,7 +55,7 @@ mock.module("@octopus/db", () => ({
   },
 }));
 
-// Token exchange with Slack — return an attacker-controlled team.
+// Token exchange with Slack — return a fixed mock workspace.
 const originalFetch = globalThis.fetch;
 
 const { GET: oauthStart } = await import("@/app/api/slack/oauth/route");
@@ -63,7 +63,11 @@ const { GET: oauthCallback } = await import("@/app/api/slack/callback/route");
 
 const VICTIM_ORG = "org_victim_owned_test";
 const VICTIM_ADMIN = "user_victim_admin";
-const ATTACKER_TEAM = "T_ATTACKER_OWNED_TEST";
+// The Slack workspace returned by the mocked token endpoint in every test.
+// Named neutrally because the happy-path test legitimately connects it; the
+// attack semantics in the other tests come from the cookie/state mismatch, not
+// from this id.
+const MOCK_SLACK_TEAM = "T_MOCK_SLACK_TEAM";
 
 function callbackRequest(params: Record<string, string>) {
   const url = new URL("https://app.test/api/slack/callback");
@@ -88,9 +92,9 @@ beforeEach(() => {
       new Response(
         JSON.stringify({
           ok: true,
-          team: { id: ATTACKER_TEAM, name: "Attacker Workspace" },
-          access_token: "xoxb-attacker",
-          bot_user_id: "B_ATTACKER",
+          team: { id: MOCK_SLACK_TEAM, name: "Mock Slack Workspace" },
+          access_token: "xoxb-mock-token",
+          bot_user_id: "B_MOCK",
         }),
       ),
     ),
@@ -149,7 +153,7 @@ describe("slack oauth state CSRF binding", () => {
 
     expect(locationOf(res).searchParams.get("success")).toBe("slack");
     expect(upsertedIntegration).toEqual({
-      teamId: ATTACKER_TEAM,
+      teamId: MOCK_SLACK_TEAM,
       organizationId: VICTIM_ORG,
     });
   });

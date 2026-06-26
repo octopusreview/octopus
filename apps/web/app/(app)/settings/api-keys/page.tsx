@@ -38,6 +38,8 @@ export default async function ApiKeysPage() {
           anthropicApiKey: true,
           googleApiKey: true,
           cohereApiKey: true,
+          grokApiKey: true,
+          openrouterApiKey: true,
         },
       },
     },
@@ -54,6 +56,8 @@ export default async function ApiKeysPage() {
       anthropicApiKey={maskStoredKey(member.organization.anthropicApiKey)}
       googleApiKey={maskStoredKey(member.organization.googleApiKey)}
       cohereApiKey={maskStoredKey(member.organization.cohereApiKey)}
+      grokApiKey={maskStoredKey(member.organization.grokApiKey)}
+      openrouterApiKey={maskStoredKey(member.organization.openrouterApiKey)}
       isOwner={canManage}
     />
   );

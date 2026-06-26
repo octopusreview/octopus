@@ -21,6 +21,8 @@ export function ApiKeysForm({
   anthropicApiKey,
   googleApiKey,
   cohereApiKey,
+  grokApiKey,
+  openrouterApiKey,
   isOwner,
 }: {
   // Masked previews (e.g. "sk-abc••••••••wxyz"), not full keys. The server masks
@@ -29,12 +31,14 @@ export function ApiKeysForm({
   anthropicApiKey: string | null;
   googleApiKey: string | null;
   cohereApiKey: string | null;
+  grokApiKey: string | null;
+  openrouterApiKey: string | null;
   isOwner: boolean;
 }) {
   const [state, formAction, pending] = useActionState(updateApiKeys, {});
   const [removing, startTransition] = useTransition();
 
-  function handleRemove(keyField: "openaiApiKey" | "anthropicApiKey" | "googleApiKey" | "cohereApiKey") {
+  function handleRemove(keyField: "openaiApiKey" | "anthropicApiKey" | "googleApiKey" | "cohereApiKey" | "grokApiKey" | "openrouterApiKey") {
     startTransition(async () => {
       try {
         await removeApiKey(keyField);
@@ -200,6 +204,79 @@ export function ApiKeysForm({
             />
             <p className="text-xs text-muted-foreground">
               Used to improve search relevance with Cohere Rerank.
+            </p>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="grokApiKey">Grok (xAI)</Label>
+              {grokApiKey ? (
+                <Badge variant="outline" className="gap-1 text-[10px] font-normal">
+                  {grokApiKey}
+                  {isOwner && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemove("grokApiKey")}
+                      disabled={removing}
+                      className="text-muted-foreground hover:text-destructive -mr-1 ml-0.5"
+                    >
+                      <IconX size={12} />
+                    </button>
+                  )}
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="text-[10px] font-normal">
+                  Not set
+                </Badge>
+              )}
+            </div>
+            <Input
+              id="grokApiKey"
+              name="grokApiKey"
+              type="password"
+              placeholder="xai-..."
+              disabled={!isOwner}
+              autoComplete="off"
+            />
+          </div>
+
+          <Separator />
+
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="openrouterApiKey">OpenRouter</Label>
+              {openrouterApiKey ? (
+                <Badge variant="outline" className="gap-1 text-[10px] font-normal">
+                  {openrouterApiKey}
+                  {isOwner && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemove("openrouterApiKey")}
+                      disabled={removing}
+                      className="text-muted-foreground hover:text-destructive -mr-1 ml-0.5"
+                    >
+                      <IconX size={12} />
+                    </button>
+                  )}
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="text-[10px] font-normal">
+                  Not set
+                </Badge>
+              )}
+            </div>
+            <Input
+              id="openrouterApiKey"
+              name="openrouterApiKey"
+              type="password"
+              placeholder="sk-or-..."
+              disabled={!isOwner}
+              autoComplete="off"
+            />
+            <p className="text-xs text-muted-foreground">
+              One key for many model vendors.
             </p>
           </div>
 

@@ -1,8 +1,6 @@
 import { prisma } from "@octopus/db";
 
-// Last-resort fallbacks when the DB has no platform default (e.g. an unseeded
-// instance). Kept in sync with the seed's isPlatformDefault rows.
-export const HARDCODED_REVIEW_MODEL = "gpt-5.3-codex";
+export const HARDCODED_REVIEW_MODEL = "claude-sonnet-4-6";
 export const HARDCODED_EMBED_MODEL = "text-embedding-3-large";
 
 async function getPlatformDefault(category: "llm" | "embedding"): Promise<string | null> {

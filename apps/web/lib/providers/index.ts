@@ -5,8 +5,18 @@ import { googleProvider } from "./google";
 import { grokProvider } from "./grok";
 import { openrouterProvider } from "./openrouter";
 import { ollamaProvider } from "./ollama";
+import { acpProvider } from "./acp";
+import { opencodeProvider } from "./opencode";
 
-export type AiProvider = "anthropic" | "openai" | "google" | "grok" | "openrouter" | "ollama";
+export type AiProvider =
+  | "anthropic"
+  | "openai"
+  | "google"
+  | "grok"
+  | "openrouter"
+  | "ollama"
+  | "acp"
+  | "opencode";
 
 export type AiMessage = {
   role: "user" | "assistant";
@@ -60,6 +70,8 @@ const PROVIDERS: Record<AiProvider, Provider> = {
   grok: grokProvider,
   openrouter: openrouterProvider,
   ollama: ollamaProvider,
+  acp: acpProvider,
+  opencode: opencodeProvider,
 };
 
 export function getProvider(name: AiProvider): Provider {

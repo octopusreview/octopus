@@ -7,6 +7,8 @@ import { openrouterProvider } from "./openrouter";
 import { ollamaProvider } from "./ollama";
 import { acpProvider } from "./acp";
 import { opencodeProvider } from "./opencode";
+import { mockProvider } from "./mock";
+import { mockFailProvider } from "./mock-fail";
 
 export type AiProvider =
   | "anthropic"
@@ -16,7 +18,9 @@ export type AiProvider =
   | "openrouter"
   | "ollama"
   | "acp"
-  | "opencode";
+  | "opencode"
+  | "mock"
+  | "mock-fail";
 
 export type AiMessage = {
   role: "user" | "assistant";
@@ -63,7 +67,19 @@ export type Provider = {
   create(params: AiCreateParams, apiKey?: string | null): Promise<AiResponse>;
 };
 
-const PROVIDERS: Record<AiProvider, Provider> = {
+/**
+ * Test doubles must NEVER be reachable in production — a canned all-clean
+ * response from `mock` would silently approve a PR with real vulnerabilities.
+ * Gate registration on env: only register in non-prod, or when an operator has
+ * explicitly opted in via ENABLE_MOCK_PROVIDERS=true (e.g. staging smoke tests).
+ * getProvider() throws for any unregistered name, so an unregistered mock can
+ * never be selected.
+ */
+const mockProvidersAllowed =
+  process.env.NODE_ENV !== "production" ||
+  process.env.ENABLE_MOCK_PROVIDERS === "true";
+
+const PROVIDERS: Partial<Record<AiProvider, Provider>> = {
   anthropic: anthropicProvider,
   openai: openaiProvider,
   google: googleProvider,
@@ -72,8 +88,18 @@ const PROVIDERS: Record<AiProvider, Provider> = {
   ollama: ollamaProvider,
   acp: acpProvider,
   opencode: opencodeProvider,
+  ...(mockProvidersAllowed
+    ? { mock: mockProvider, "mock-fail": mockFailProvider }
+    : {}),
 };
 
 export function getProvider(name: AiProvider): Provider {
-  return PROVIDERS[name];
+  const provider = PROVIDERS[name];
+  if (!provider) {
+    throw new Error(
+      `Provider "${name}" is not registered in this environment. ` +
+        `Mock providers require NODE_ENV!=="production" or ENABLE_MOCK_PROVIDERS="true".`,
+    );
+  }
+  return provider;
 }

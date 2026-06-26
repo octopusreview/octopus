@@ -24,6 +24,10 @@ const PROVIDER_FALLBACK: Record<string, AiProvider> = {
   "ollama:": "ollama", // namespaced local models, e.g. "ollama:qwen2.5-coder:32b"
   "acp:": "acp", // OpenAI-compatible gateway (Agent Communication Protocol)
   "opencode:": "opencode", // OpenAI-compatible gateway
+  // "mock-fail-" MUST precede "mock-" (both match a "mock-fail-…" id). Test
+  // doubles only — never registered in production (see providers/index.ts).
+  "mock-fail-": "mock-fail",
+  "mock-": "mock",
 };
 
 let providerCache: Map<string, AiProvider> | null = null;
@@ -107,6 +111,10 @@ function getOrgKeyForProvider(keys: OrgKeys, provider: AiProvider): string | nul
     // resolved inside the provider) — no per-org key here.
     case "acp":
     case "opencode":
+      return null;
+    // Test doubles take no key.
+    case "mock":
+    case "mock-fail":
       return null;
   }
 }

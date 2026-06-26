@@ -3,7 +3,7 @@ import { calcCost, getModelPricing } from "./cost";
 import { deductCredits } from "./credits";
 
 type LogAiUsageParams = {
-  provider: "anthropic" | "openai" | "google" | "cohere" | "grok" | "openrouter" | "ollama" | "acp" | "opencode";
+  provider: "anthropic" | "openai" | "google" | "cohere" | "grok" | "openrouter" | "ollama" | "acp" | "opencode" | "mock" | "mock-fail";
   model: string;
   operation: string;
   inputTokens: number;
@@ -44,7 +44,10 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
       // never bill the platform.
       params.provider === "ollama" ||
       params.provider === "acp" ||
-      params.provider === "opencode";
+      params.provider === "opencode" ||
+      // Test doubles — zero cost.
+      params.provider === "mock" ||
+      params.provider === "mock-fail";
 
     await prisma.aiUsage.create({
       data: {

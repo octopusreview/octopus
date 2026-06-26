@@ -4,8 +4,9 @@ import { openaiProvider } from "./openai";
 import { googleProvider } from "./google";
 import { grokProvider } from "./grok";
 import { openrouterProvider } from "./openrouter";
+import { ollamaProvider } from "./ollama";
 
-export type AiProvider = "anthropic" | "openai" | "google" | "grok" | "openrouter";
+export type AiProvider = "anthropic" | "openai" | "google" | "grok" | "openrouter" | "ollama";
 
 export type AiMessage = {
   role: "user" | "assistant";
@@ -58,6 +59,7 @@ const PROVIDERS: Record<AiProvider, Provider> = {
   google: googleProvider,
   grok: grokProvider,
   openrouter: openrouterProvider,
+  ollama: ollamaProvider,
 };
 
 export function getProvider(name: AiProvider): Provider {

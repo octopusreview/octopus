@@ -21,6 +21,7 @@ const PROVIDER_FALLBACK: Record<string, AiProvider> = {
   // Native OpenRouter ids are vendor/model (e.g. "openai/gpt-4o") and resolve
   // via the AvailableModel DB cache above, not this prefix.
   "openrouter/": "openrouter",
+  "ollama:": "ollama", // namespaced local models, e.g. "ollama:qwen2.5-coder:32b"
 };
 
 let providerCache: Map<string, AiProvider> | null = null;
@@ -98,6 +99,8 @@ function getOrgKeyForProvider(keys: OrgKeys, provider: AiProvider): string | nul
     case "google": return keys.googleApiKey;
     case "grok": return keys.grokApiKey;
     case "openrouter": return keys.openrouterApiKey;
+    // Ollama runs on the operator's own infra — env-configured, no per-org key.
+    case "ollama": return null;
   }
 }
 

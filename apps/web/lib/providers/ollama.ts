@@ -18,12 +18,37 @@ import type { Provider, AiCreateParams, AiResponse } from "./index";
 
 const DEFAULT_BASE_URL = "http://localhost:11434";
 
+/**
+ * Parse + sanitize the operator-supplied base URL: require http(s) and reduce
+ * to a clean origin (drops any path/query so the SDK doesn't build `/v1/v1`).
+ * Throws on a malformed value so a typo'd OLLAMA_SERVER_URL fails loudly at
+ * first use instead of producing confusing request errors. Private/loopback
+ * hosts are intentionally allowed — this is a deployment-operator env var and
+ * Ollama is normally reached at localhost or an internal host (no SSRF surface:
+ * the value is not user-supplied).
+ */
+function normalizeServerUrl(raw: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(`OLLAMA_SERVER_URL is not a valid URL: ${raw.slice(0, 80)}`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`OLLAMA_SERVER_URL must use http(s); got ${parsed.protocol}`);
+  }
+  return parsed.origin;
+}
+
+// Cached for the process lifetime: env vars are read once at first use, so a
+// changed OLLAMA_SERVER_URL / credentials take effect on restart — same as the
+// platform-key singletons in the other providers (anthropic/openai/grok/...).
 let platformClient: OpenAI | null = null;
 
 function getClient(): OpenAI {
   if (platformClient) return platformClient;
 
-  const base = (process.env.OLLAMA_SERVER_URL?.trim() || DEFAULT_BASE_URL).replace(/\/+$/, "");
+  const base = normalizeServerUrl(process.env.OLLAMA_SERVER_URL?.trim() || DEFAULT_BASE_URL);
   const username = process.env.OLLAMA_USERNAME;
   const password = process.env.OLLAMA_PASSWORD ?? "";
   const defaultHeaders = username

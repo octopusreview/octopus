@@ -9,6 +9,12 @@ export type { AiCreateParams, AiMessage, AiProvider, AiResponse } from "./provid
 // ── Provider resolution ──────────────────────────────────────────────────────
 
 const PROVIDER_FALLBACK: Record<string, AiProvider> = {
+  // "claude-code:" MUST precede "claude" — both match a "claude-code:…" model
+  // and "claude" would otherwise win, mis-routing it to the anthropic provider
+  // with a literal "claude-code:…" model string the Anthropic API rejects.
+  "claude-code:": "claude-code",
+  // Local-agent bridge: "local:<model>" dispatches to a developer laptop.
+  "local:": "local",
   claude: "anthropic",
   gpt: "openai",
   o1: "openai",
@@ -107,10 +113,15 @@ function getOrgKeyForProvider(keys: OrgKeys, provider: AiProvider): string | nul
     case "openrouter": return keys.openrouterApiKey;
     // Ollama runs on the operator's own infra — env-configured, no per-org key.
     case "ollama": return null;
+    // Local-agent bridge dispatches to a laptop; provider.create() reads org
+    // state from prisma directly, so no key here.
+    case "local": return null;
     // ACPX / OpenCode are operator-configured gateways (env base URL + token,
-    // resolved inside the provider) — no per-org key here.
+    // resolved inside the provider). Claude Code reads its config (mode + key)
+    // from prisma inside provider.create(). No per-org key here.
     case "acp":
     case "opencode":
+    case "claude-code":
       return null;
     // Test doubles take no key.
     case "mock":
@@ -134,7 +145,7 @@ export async function createAiMessage(
   const orgKey = getOrgKeyForProvider(keys, provider);
 
   try {
-    return await getProvider(provider).create(params, orgKey);
+    return await getProvider(provider).create(params, orgKey, orgId);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[ai-router] ${provider} API error for model ${params.model}:`, message);

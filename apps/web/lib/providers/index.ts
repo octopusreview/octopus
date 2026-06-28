@@ -2,11 +2,13 @@ import "server-only";
 import { anthropicProvider } from "./anthropic";
 import { openaiProvider } from "./openai";
 import { googleProvider } from "./google";
+import { ollamaProvider } from "./ollama";
+import { localProvider } from "./local";
 import { grokProvider } from "./grok";
 import { openrouterProvider } from "./openrouter";
-import { ollamaProvider } from "./ollama";
 import { acpProvider } from "./acp";
 import { opencodeProvider } from "./opencode";
+import { claudeCodeProvider } from "./claude-code";
 import { mockProvider } from "./mock";
 import { mockFailProvider } from "./mock-fail";
 
@@ -14,11 +16,13 @@ export type AiProvider =
   | "anthropic"
   | "openai"
   | "google"
+  | "ollama"
+  | "local"
   | "grok"
   | "openrouter"
-  | "ollama"
   | "acp"
   | "opencode"
+  | "claude-code"
   | "mock"
   | "mock-fail";
 
@@ -64,16 +68,26 @@ export type Provider = {
   name: AiProvider;
   /** Whether this provider's API can enforce a JSON schema natively. */
   supportsJsonSchema: boolean;
-  create(params: AiCreateParams, apiKey?: string | null): Promise<AiResponse>;
+  /**
+   * `apiKey` is the org's BYOK for providers that take one. `orgId` is the
+   * calling organisation — needed by providers that look up additional
+   * per-org config from prisma directly (ollama with org-level baseUrl
+   * override, local agent dispatch). Pure-HTTP providers can ignore both.
+   */
+  create(
+    params: AiCreateParams,
+    apiKey?: string | null,
+    orgId?: string | null,
+  ): Promise<AiResponse>;
 };
 
 /**
  * Test doubles must NEVER be reachable in production — a canned all-clean
  * response from `mock` would silently approve a PR with real vulnerabilities.
- * Gate registration on env: only register in non-prod, or when an operator has
- * explicitly opted in via ENABLE_MOCK_PROVIDERS=true (e.g. staging smoke tests).
- * getProvider() throws for any unregistered name, so an unregistered mock can
- * never be selected.
+ * Gate registration on env: only register in non-prod, or when an operator
+ * has explicitly opted in via ENABLE_MOCK_PROVIDERS=true (used for staging
+ * smoke tests). `resolveProvider()` already rejects unknown providers so
+ * unregistered names cannot be selected.
  */
 const mockProvidersAllowed =
   process.env.NODE_ENV !== "production" ||
@@ -83,11 +97,13 @@ const PROVIDERS: Partial<Record<AiProvider, Provider>> = {
   anthropic: anthropicProvider,
   openai: openaiProvider,
   google: googleProvider,
+  ollama: ollamaProvider,
+  local: localProvider,
   grok: grokProvider,
   openrouter: openrouterProvider,
-  ollama: ollamaProvider,
   acp: acpProvider,
   opencode: opencodeProvider,
+  "claude-code": claudeCodeProvider,
   ...(mockProvidersAllowed
     ? { mock: mockProvider, "mock-fail": mockFailProvider }
     : {}),

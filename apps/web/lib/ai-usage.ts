@@ -3,7 +3,7 @@ import { calcCost, getModelPricing } from "./cost";
 import { deductCredits } from "./credits";
 
 type LogAiUsageParams = {
-  provider: "anthropic" | "openai" | "google" | "cohere" | "grok" | "openrouter" | "ollama" | "acp" | "opencode" | "mock" | "mock-fail";
+  provider: "anthropic" | "openai" | "google" | "cohere" | "grok" | "openrouter" | "ollama" | "local" | "acp" | "opencode" | "claude-code" | "mock" | "mock-fail";
   model: string;
   operation: string;
   inputTokens: number;
@@ -25,6 +25,8 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
         googleApiKey: true,
         grokApiKey: true,
         openrouterApiKey: true,
+        claudeCodeApiKey: true,
+        claudeCodeAuthMode: true,
       },
     });
 
@@ -40,9 +42,14 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
       (params.provider === "cohere" && !!org.cohereApiKey) ||
       (params.provider === "grok" && !!org.grokApiKey) ||
       (params.provider === "openrouter" && !!org.openrouterApiKey) ||
-      // Ollama / ACPX / OpenCode run on operator-configured infra/gateways —
-      // never bill the platform.
+      // Claude Code: api-key mode bills against the org key; subscription mode
+      // shells out to the local `claude` CLI (the user's own auth) — own-key.
+      (params.provider === "claude-code" &&
+        (!!org.claudeCodeApiKey || org.claudeCodeAuthMode === "subscription")) ||
+      // Ollama / ACPX / OpenCode run on operator-configured infra/gateways and
+      // the local-agent bridge runs on the user's laptop — never bill platform.
       params.provider === "ollama" ||
+      params.provider === "local" ||
       params.provider === "acp" ||
       params.provider === "opencode" ||
       // Test doubles — zero cost.

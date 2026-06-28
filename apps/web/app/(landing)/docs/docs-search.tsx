@@ -49,6 +49,13 @@ const docsPages = [
     keywords: ["github action", "workflow", "yaml", "ci", "pr", "pull request", "octopus-api-key", "community", "free"],
   },
   {
+    href: "/docs/github-app",
+    label: "GitHub App Setup",
+    description: "Create and install the GitHub App that powers PR webhooks and review comments.",
+    icon: IconBrandGithub,
+    keywords: ["github app", "webhook", "app id", "private key", "self-host", "install", "review comments"],
+  },
+  {
     href: "/docs/integrations",
     label: "Integrations",
     description: "GitHub, Bitbucket, Slack, Linear connections and webhooks.",

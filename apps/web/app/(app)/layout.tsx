@@ -49,6 +49,7 @@ export default async function AppLayout({
       name: true,
       email: true,
       bannedAt: true,
+      mustChangePassword: true,
       onboardingCompleted: true,
       organizationMembers: {
         where: { deletedAt: null, organization: { deletedAt: null } },
@@ -70,6 +71,12 @@ export default async function AppLayout({
   });
 
   if (user.bannedAt) redirect("/blocked");
+
+  // Forced password change — seeded admin accounts (and any user an operator
+  // has flagged) cannot reach any app UI until they pick a new password.
+  // /change-password is in the (auth) route group, not (app), so this redirect
+  // doesn't loop. No-op on the SaaS (mustChangePassword is never set there).
+  if (user.mustChangePassword) redirect("/change-password");
 
   const hasOrg = user.organizationMembers.length > 0;
 

@@ -4,6 +4,14 @@ export async function register() {
     const { reconcileStaleRepoStates } = await import("./lib/boot-reconciler");
     await reconcileStaleRepoStates();
 
+    // Self-hosted only: seed a default admin if the user table is empty.
+    // The seeded account is forced to change its password on first sign-in.
+    // No-op on the hosted SaaS (flag unset).
+    if (process.env.NEXT_PUBLIC_OCTOPUS_SELF_HOSTED === "true") {
+      const { bootstrapDefaultAdmin } = await import("./lib/bootstrap-admin");
+      await bootstrapDefaultAdmin();
+    }
+
     const { startQueue } = await import("./lib/queue");
     const boss = await startQueue();
 

@@ -10,11 +10,57 @@ import { enqueueAfter } from "./queue";
 import { reasonToMessage, validateEmailForSignup } from "./email-validator";
 import { normalizeEmail } from "./email-normalize";
 
+// Email/password sign-in + sign-up (and the first-boot admin seed) are a
+// self-hosted opt-in. On the multi-tenant SaaS, sign-in is OAuth + magic-link.
+const IS_SELF_HOSTED = process.env.NEXT_PUBLIC_OCTOPUS_SELF_HOSTED === "true";
+
 export const auth = betterAuth({
   trustedOrigins: [process.env.BETTER_AUTH_URL!],
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
+  // The ENTIRE emailAndPassword block is omitted on the SaaS — not merely
+  // `enabled: false`. Better Auth gates request/reset-password on the presence
+  // of `sendResetPassword`, so leaving the block in (even disabled) would keep
+  // those endpoints live. Omitting it keeps all password endpoints fully off.
+  ...(IS_SELF_HOSTED
+    ? {
+        emailAndPassword: {
+          enabled: true,
+          // Auto-sign-in after sign-up — Better Auth creates the session in the
+          // same response, matching the magic-link UX.
+          autoSignIn: true,
+          // Default is 8; go to 10 so we're not the weakest link self-hosted.
+          minPasswordLength: 10,
+          sendResetPassword: async ({
+            user,
+            url,
+          }: {
+            user: { id: string; email: string };
+            url: string;
+          }) => {
+            const result = await renderEmailTemplate("magic-link", {
+              magicLinkUrl: url,
+            });
+            await sendEmail({
+              to: user.email,
+              subject: "Reset your Octopus password",
+              html:
+                result?.html ??
+                `<p>Click <a href="${url}">here</a> to reset your Octopus password. The link expires in 1 hour.</p>`,
+            });
+            await writeAuditLog({
+              action: "email.password_reset_sent",
+              category: "email",
+              actorEmail: user.email,
+              targetType: "user",
+              targetId: user.id,
+              metadata: { recipient: user.email },
+            });
+          },
+        },
+      }
+    : {}),
   databaseHooks: {
     session: {
       create: {

@@ -21,6 +21,11 @@ model User {
   bannedAt     DateTime?
   bannedReason String?
 
+  // Set true for seeded admin accounts (self-host first-boot) so the user is
+  // forced to change the password before any other UI renders. Cleared when
+  // they submit a new password via /change-password. Always false on the SaaS.
+  mustChangePassword Boolean @default(false)
+
   welcomeEmailSentAt    DateTime?
   marketingEmailsEnabled Boolean @default(true)
 

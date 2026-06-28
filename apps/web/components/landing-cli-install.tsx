@@ -7,28 +7,55 @@ import { TrackedLink } from "@/components/tracked-link";
 type Platform = "mac-linux" | "windows";
 type Method = "one-liner" | "npm";
 
-const installCommands: Record<Platform, Record<Method, { comment: string; command: string }>> = {
-  "mac-linux": {
-    "one-liner": {
-      comment: "# Works on macOS & Linux. Installs everything.",
-      command: "curl -fsSL https://octopus-review.ai/install.sh | bash",
+const DEFAULT_BASE_URL = "https://octopus-review.ai";
+
+// Reduce any URL to a clean scheme://host[:port] origin — no path, query, or
+// shell metacharacters — so it is safe to interpolate into the displayed
+// curl/irm install command. Rejects non-http(s) or unparseable values; callers
+// fall back to DEFAULT_BASE_URL. (window.location.origin is already clean, but
+// NEXT_PUBLIC_APP_URL is operator-supplied, so validate both.)
+function safeBaseUrl(raw: string | undefined | null): string | null {
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return u.origin;
+  } catch {
+    return null;
+  }
+}
+
+// Base URL for SSR / first paint: the configured app URL, else the canonical
+// hosted domain. Replaced with the (validated) window origin after mount so
+// self-hosted / reverse-proxied / custom-domain deployments show the right host.
+const STATIC_BASE_URL = safeBaseUrl(process.env.NEXT_PUBLIC_APP_URL) ?? DEFAULT_BASE_URL;
+
+function buildInstallCommands(
+  baseUrl: string,
+): Record<Platform, Record<Method, { comment: string; command: string }>> {
+  return {
+    "mac-linux": {
+      "one-liner": {
+        comment: "# Works on macOS & Linux. Installs everything.",
+        command: `curl -fsSL ${baseUrl}/install.sh | bash`,
+      },
+      npm: {
+        comment: "# Requires Node.js 18+",
+        command: "npm install -g @octp/cli",
+      },
     },
-    npm: {
-      comment: "# Requires Node.js 18+",
-      command: "npm install -g @octp/cli",
+    windows: {
+      "one-liner": {
+        comment: "# Works on Windows. If you use ARM Windows, use the npm installer.",
+        command: `powershell -c "irm ${baseUrl}/install.ps1 | iex"`,
+      },
+      npm: {
+        comment: "# Requires Node.js 18+",
+        command: "npm install -g @octp/cli",
+      },
     },
-  },
-  windows: {
-    "one-liner": {
-      comment: "# Works on Windows. If you use ARM Windows, use the npm installer.",
-      command: "powershell -c \"irm https://octopus-review.ai/install.ps1 | iex\"",
-    },
-    npm: {
-      comment: "# Requires Node.js 18+",
-      command: "npm install -g @octp/cli",
-    },
-  },
-};
+  };
+}
 
 const platformLabels: Record<Platform, string> = {
   "mac-linux": "macOS/Linux",
@@ -58,6 +85,7 @@ export function CliInstallSection({ embedded = false }: { embedded?: boolean } =
   const [platform, setPlatform] = useState<Platform>("mac-linux");
   const [method, setMethod] = useState<Method>("one-liner");
   const [copied, setCopied] = useState(false);
+  const [baseUrl, setBaseUrl] = useState<string>(STATIC_BASE_URL);
   const didDetect = useRef(false);
 
   useEffect(() => {
@@ -70,8 +98,12 @@ export function CliInstallSection({ embedded = false }: { embedded?: boolean } =
     if (detected === "windows" && detectWindowsArm()) {
       setMethod("npm");
     }
+
+    const origin = safeBaseUrl(window.location?.origin);
+    if (origin) setBaseUrl(origin);
   }, []);
 
+  const installCommands = buildInstallCommands(baseUrl);
   const current = installCommands[platform][method];
 
   async function handleCopy() {

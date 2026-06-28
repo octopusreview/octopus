@@ -105,9 +105,13 @@ export function normaliseRemoteUrl(
 }
 
 function providerFromHost(host: string): "github" | "gitlab" | "bitbucket" | null {
+  // Match the canonical cloud hosts exactly (or their subdomains), NOT a loose
+  // substring — so a spoofed host like `github.com.evil.com` can't resolve to
+  // "github". Custom self-hosted hosts (GHE etc.) intentionally return null;
+  // the CLI then falls back to bare-mode review rather than guessing a provider.
   const h = host.toLowerCase();
-  if (h.includes("github")) return "github";
-  if (h.includes("gitlab")) return "gitlab";
-  if (h.includes("bitbucket")) return "bitbucket";
+  if (h === "github.com" || h.endsWith(".github.com")) return "github";
+  if (h === "gitlab.com" || h.endsWith(".gitlab.com")) return "gitlab";
+  if (h === "bitbucket.org" || h.endsWith(".bitbucket.org")) return "bitbucket";
   return null;
 }

@@ -1,0 +1,67 @@
+name: Roadmap Proposal
+description: Propose a substantial new feature or initiative for the roadmap
+labels: ["roadmap"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for proposals that warrant a place on [ROADMAP.md](../blob/master/ROADMAP.md) — typically new features that touch multiple subsystems, change product direction, or take a week or more to build. For small enhancements or bug fixes, use the regular feature/bug templates instead.
+
+        See [GOVERNANCE.md](../blob/master/GOVERNANCE.md) for how proposals progress from **Proposed** to **Up Next**.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem are you solving? Who feels it today, and how often?
+      placeholder: Be concrete — concrete problems get prioritised faster than abstract ones.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How should this work from a user's perspective? Sketch the UX or the workflow.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else did you consider, and why does this approach win?
+    validations:
+      required: false
+  - type: textarea
+    id: beneficiaries
+    attributes:
+      label: Who benefits
+      description: Self-hosters, hosted users, contributors, enterprise buyers, open-source maintainers, …?
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Estimated scope
+      description: Rough order-of-magnitude estimate. Maintainers will refine.
+      options:
+        - S — a few days, single subsystem
+        - M — one to two weeks, touches a couple of subsystems
+        - L — a month or more, cross-cutting or architectural
+        - Don't know
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and open questions
+      description: What might go wrong? What do you need help deciding?
+    validations:
+      required: false
+  - type: checkboxes
+    id: prereqs
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I have searched existing [issues](https://github.com/octopusreview/octopus/issues?q=is%3Aissue) and [Discussions](https://github.com/octopusreview/octopus/discussions) for similar proposals
+          required: true
+        - label: I have read [ROADMAP.md](../blob/master/ROADMAP.md) and this is not already covered
+          required: true

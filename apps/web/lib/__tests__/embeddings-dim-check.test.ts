@@ -69,10 +69,10 @@ describe("createEmbeddings — Qdrant dim validation", () => {
     expect(out[1].length).toBe(QDRANT_DENSE_VECTOR_SIZE);
   });
 
-  it("throws an actionable error when returned dim is smaller than collection (e.g. text-embedding-3-small native)", async () => {
+  it("throws an actionable error when returned dim doesn't match the configured dim (e.g. text-embedding-3-small native)", async () => {
     mockReturnedDim = 1536; // text-embedding-3-small / ada-002 native
     await expect(createEmbeddings(["hello"], TRACKING)).rejects.toThrow(
-      /Embedding model "text-embedding-3-small" returned 1536-dim vectors but the Qdrant collection is configured for 3072/,
+      /OpenAI embeddings dim mismatch: model "text-embedding-3-small" returned 1536-dim vectors, but OCTOPUS_EMBED_DIM is 3072/,
     );
   });
 
@@ -87,7 +87,7 @@ describe("createEmbeddings — Qdrant dim validation", () => {
       expect(msg).toContain("1536");
       expect(msg).toContain(String(QDRANT_DENSE_VECTOR_SIZE));
       // Actionable remediation guidance must be in the message.
-      expect(msg).toMatch(/pick a model|re-create the Qdrant collection/);
+      expect(msg).toMatch(/Set OCTOPUS_EMBED_DIM|wipe Qdrant collections/);
     }
   });
 
@@ -99,6 +99,6 @@ describe("createEmbeddings — Qdrant dim validation", () => {
     mockReturnedDim = 1536;
     await expect(
       createEmbeddings(["a", "b", "c", "d"], TRACKING),
-    ).rejects.toThrow(/returned 1536-dim vectors but the Qdrant collection is configured for 3072/);
+    ).rejects.toThrow(/returned 1536-dim vectors, but OCTOPUS_EMBED_DIM is 3072/);
   });
 });

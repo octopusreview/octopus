@@ -14,8 +14,12 @@
 
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { generateSparseVector } from "@/lib/sparse-vector";
+import { getEmbedConfig } from "@/lib/embed-config";
 
-const VECTOR_SIZE = 3072;
+// Match the dim the app uses (env-resolved via getEmbedConfig, default 3072)
+// so a self-hoster on a non-default OCTOPUS_EMBED_DIM recreates collections
+// at the right size instead of a hardcoded 3072.
+const VECTOR_SIZE = getEmbedConfig().dim;
 const SPARSE_VECTOR_NAME = "sparse";
 const BATCH_SIZE = 100;
 

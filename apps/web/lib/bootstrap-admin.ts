@@ -1,38 +1,36 @@
 import "server-only";
+import { randomBytes } from "node:crypto";
 import { prisma } from "@octopus/db";
 import { auth } from "./auth";
 
 /**
- * Boot-time seed: if the database has no users at all, create a default
- * admin account with credentials `admin@example.com` / `change-me-now`. The
- * user is flagged `mustChangePassword=true` so the very first sign-in lands
- * on `/change-password` and they cannot reach any other page until they pick
- * a real password.
+ * Boot-time seed: if the database has no users at all, create a first admin
+ * account. The password is RANDOM per install (printed once to the boot log),
+ * or OCTOPUS_ADMIN_PASSWORD if the operator pins one — nothing is hardcoded.
+ * The account is flagged `mustChangePassword=true` so the very first sign-in
+ * lands on `/change-password` and can reach no other page until a real
+ * password is set.
  *
- * Self-hosted deployments only — gated on NEXT_PUBLIC_OCTOPUS_SELF_HOSTED so
- * a default credential can never be seeded on the multi-tenant SaaS (the
- * caller in instrumentation.ts gates this too).
+ * Self-hosted deployments only — gated on NEXT_PUBLIC_OCTOPUS_SELF_HOSTED so a
+ * seed admin can never be created on the multi-tenant SaaS (the caller in
+ * instrumentation.ts gates this too).
  *
- * Idempotent — runs on every server boot but is a no-op once at least
- * one user exists. Skipped entirely when `DISABLE_ADMIN_SEED=true` for
- * operators who provision users out-of-band.
+ * Idempotent — runs on every server boot but is a no-op once at least one
+ * user exists. Skipped entirely when `DISABLE_ADMIN_SEED=true` for operators
+ * who provision users out-of-band.
  *
- * Why this is safe despite shipping a default credential:
- *   1. Only seeded on a *truly empty* user table — never overwrites
- *      an existing account, never resets a real user's password.
- *   2. The mustChangePassword flag is enforced by the (app) layout for
- *      every authenticated request, so the default cred can only ever
- *      reach the change-password page.
- *   3. Wiped automatically by Better Auth when the user picks a new
- *      password (see /change-password page handler).
+ * Why this is safe:
+ *   1. Only seeded on a *truly empty* user table — never overwrites an
+ *      existing account, never resets a real user's password.
+ *   2. No shipped default password — random per install, surfaced only in the
+ *      operator's boot log (or supplied by them via OCTOPUS_ADMIN_PASSWORD).
+ *   3. mustChangePassword is enforced by the (app) layout on every request, so
+ *      the seed cred can only ever reach the change-password page.
+ *   4. Wiped by Better Auth once the user picks a new password.
  */
-// admin@example.com — example.com is a reserved domain (RFC 2606) that
-// always passes email validation and never collides with a real inbox.
-// The password is intentionally an obvious placeholder; the mustChangePassword
-// flag forces a real choice on first sign-in, so this string can never
-// actually be used to access any UI beyond /change-password.
-const DEFAULT_ADMIN_EMAIL = "admin@example.com";
-const DEFAULT_ADMIN_PASSWORD = "change-me-now";
+// example.com is a reserved domain (RFC 2606) — always passes email validation
+// and never collides with a real inbox. Override with OCTOPUS_ADMIN_EMAIL.
+const DEFAULT_ADMIN_EMAIL = process.env.OCTOPUS_ADMIN_EMAIL || "admin@example.com";
 const DEFAULT_ADMIN_NAME = "Admin";
 
 let bootstrapPromise: Promise<void> | null = null;
@@ -74,10 +72,21 @@ export async function bootstrapDefaultAdmin(): Promise<void> {
       // same algorithm the sign-in flow uses to verify. Going through the
       // server API instead of prisma directly also keeps the `accounts`
       // row (where Better Auth stores the credential hash) in sync.
+      // Random per-install password (printed once below), unless the operator
+      // pins one via OCTOPUS_ADMIN_PASSWORD. Nothing is hardcoded.
+      const envPassword = process.env.OCTOPUS_ADMIN_PASSWORD;
+      if (envPassword && envPassword.length < 10) {
+        console.error(
+          "[bootstrap-admin] OCTOPUS_ADMIN_PASSWORD must be 10+ characters; skipping admin seed.",
+        );
+        return;
+      }
+      const adminPassword = envPassword || randomBytes(18).toString("base64url");
+
       const result = await auth.api.signUpEmail({
         body: {
           email: DEFAULT_ADMIN_EMAIL,
-          password: DEFAULT_ADMIN_PASSWORD,
+          password: adminPassword,
           name: DEFAULT_ADMIN_NAME,
         },
       });
@@ -94,13 +103,13 @@ export async function bootstrapDefaultAdmin(): Promise<void> {
         "[bootstrap-admin] ╔════════════════════════════════════════════════════╗",
       );
       console.log(
-        `[bootstrap-admin] ║ First-boot admin account created:                  ║`,
+        "[bootstrap-admin] ║ First-boot admin account created:                  ║",
       );
       console.log(
         `[bootstrap-admin] ║   email:    ${DEFAULT_ADMIN_EMAIL.padEnd(38)} ║`,
       );
       console.log(
-        `[bootstrap-admin] ║   password: ${DEFAULT_ADMIN_PASSWORD.padEnd(38)} ║`,
+        `[bootstrap-admin] ║   password: ${(envPassword ? "(from OCTOPUS_ADMIN_PASSWORD)" : adminPassword).padEnd(38)} ║`,
       );
       console.log(
         "[bootstrap-admin] ║ You will be forced to change the password on the   ║",

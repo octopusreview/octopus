@@ -59,6 +59,17 @@ export const auth = betterAuth({
             });
           },
         },
+        // Default rate limiting is on in production; tighten the unauthenticated
+        // password endpoints (self-host only) to curb reset-email spam and
+        // credential stuffing. The SaaS is untouched (whole block omitted there).
+        rateLimit: {
+          customRules: {
+            "/request-password-reset": { window: 60, max: 3 },
+            "/reset-password": { window: 60, max: 5 },
+            "/sign-in/email": { window: 60, max: 10 },
+            "/sign-up/email": { window: 3600, max: 5 },
+          },
+        },
       }
     : {}),
   databaseHooks: {

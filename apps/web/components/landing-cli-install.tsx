@@ -7,28 +7,38 @@ import { TrackedLink } from "@/components/tracked-link";
 type Platform = "mac-linux" | "windows";
 type Method = "one-liner" | "npm";
 
-const installCommands: Record<Platform, Record<Method, { comment: string; command: string }>> = {
-  "mac-linux": {
-    "one-liner": {
-      comment: "# Works on macOS & Linux. Installs everything.",
-      command: "curl -fsSL https://octopus-review.ai/install.sh | bash",
+// Default base URL for SSR / first paint: the configured app URL, else the
+// canonical hosted domain. Replaced with window.location.origin after mount so
+// self-hosted / reverse-proxied / custom-domain deployments show the right host.
+const STATIC_BASE_URL =
+  process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "") || "https://octopus-review.ai";
+
+function buildInstallCommands(
+  baseUrl: string,
+): Record<Platform, Record<Method, { comment: string; command: string }>> {
+  return {
+    "mac-linux": {
+      "one-liner": {
+        comment: "# Works on macOS & Linux. Installs everything.",
+        command: `curl -fsSL ${baseUrl}/install.sh | bash`,
+      },
+      npm: {
+        comment: "# Requires Node.js 18+",
+        command: "npm install -g @octp/cli",
+      },
     },
-    npm: {
-      comment: "# Requires Node.js 18+",
-      command: "npm install -g @octp/cli",
+    windows: {
+      "one-liner": {
+        comment: "# Works on Windows. If you use ARM Windows, use the npm installer.",
+        command: `powershell -c "irm ${baseUrl}/install.ps1 | iex"`,
+      },
+      npm: {
+        comment: "# Requires Node.js 18+",
+        command: "npm install -g @octp/cli",
+      },
     },
-  },
-  windows: {
-    "one-liner": {
-      comment: "# Works on Windows. If you use ARM Windows, use the npm installer.",
-      command: "powershell -c \"irm https://octopus-review.ai/install.ps1 | iex\"",
-    },
-    npm: {
-      comment: "# Requires Node.js 18+",
-      command: "npm install -g @octp/cli",
-    },
-  },
-};
+  };
+}
 
 const platformLabels: Record<Platform, string> = {
   "mac-linux": "macOS/Linux",
@@ -58,6 +68,7 @@ export function CliInstallSection({ embedded = false }: { embedded?: boolean } =
   const [platform, setPlatform] = useState<Platform>("mac-linux");
   const [method, setMethod] = useState<Method>("one-liner");
   const [copied, setCopied] = useState(false);
+  const [baseUrl, setBaseUrl] = useState<string>(STATIC_BASE_URL);
   const didDetect = useRef(false);
 
   useEffect(() => {
@@ -70,8 +81,13 @@ export function CliInstallSection({ embedded = false }: { embedded?: boolean } =
     if (detected === "windows" && detectWindowsArm()) {
       setMethod("npm");
     }
+
+    if (typeof window !== "undefined" && window.location?.origin) {
+      setBaseUrl(window.location.origin);
+    }
   }, []);
 
+  const installCommands = buildInstallCommands(baseUrl);
   const current = installCommands[platform][method];
 
   async function handleCopy() {

@@ -56,6 +56,13 @@ const docsPages = [
     keywords: ["github app", "webhook", "app id", "private key", "self-host", "install", "review comments"],
   },
   {
+    href: "/docs/oauth-setup",
+    label: "Google & GitHub Login",
+    description: "Configure Google, GitHub, and Microsoft OAuth sign-in for self-hosted deployments.",
+    icon: IconShieldLock,
+    keywords: ["oauth", "login", "sso", "google", "github", "microsoft", "social", "sign in", "auth", "self-host"],
+  },
+  {
     href: "/docs/integrations",
     label: "Integrations",
     description: "GitHub, Bitbucket, Slack, Linear connections and webhooks.",

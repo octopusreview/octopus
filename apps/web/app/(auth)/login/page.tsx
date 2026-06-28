@@ -53,10 +53,26 @@ function LoginContent() {
     trackEvent("login_page_view");
   }, []);
 
+  React.useEffect(() => {
+    // Disable the social buttons the operator hasn't configured (self-host UX).
+    // On error, leave them enabled — Better Auth shows a clear error on click.
+    fetch("/api/auth/social-providers")
+      .then((r) => r.json())
+      .then(setSocialEnabled)
+      .catch(() => setSocialEnabled(null));
+  }, []);
+
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [sent, setSent] = React.useState(false);
   const [email, setEmail] = React.useState("");
+  // Which OAuth providers the deployment has configured; null = not yet loaded
+  // (treat as enabled so a slow/failed probe never blocks a working button).
+  const [socialEnabled, setSocialEnabled] = React.useState<{
+    google: boolean;
+    github: boolean;
+    microsoft: boolean;
+  } | null>(null);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -117,6 +133,8 @@ function LoginContent() {
       <div className="mt-8 flex flex-col gap-3">
         <Button
           type="button"
+          disabled={socialEnabled?.google === false}
+          title={socialEnabled?.google === false ? "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to enable" : undefined}
           className="w-full bg-white/[0.06] hover:bg-white/[0.12] text-white border border-white/[0.1] h-11 text-sm font-medium"
           onClick={() => {
             trackEvent("login_method_click", { method: "google" });
@@ -124,10 +142,12 @@ function LoginContent() {
           }}
         >
           <GoogleIcon className="size-5 shrink-0" />
-          Sign in with Google
+          Sign in with Google{socialEnabled?.google === false ? " (not configured)" : ""}
         </Button>
         <Button
           type="button"
+          disabled={socialEnabled?.github === false}
+          title={socialEnabled?.github === false ? "Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET to enable" : undefined}
           className="w-full bg-white/[0.06] hover:bg-white/[0.12] text-white border border-white/[0.1] h-11 text-sm font-medium"
           onClick={() => {
             trackEvent("login_method_click", { method: "github" });
@@ -135,10 +155,12 @@ function LoginContent() {
           }}
         >
           <IconBrandGithub data-icon="inline-start" className="size-5" />
-          Sign in with GitHub
+          Sign in with GitHub{socialEnabled?.github === false ? " (not configured)" : ""}
         </Button>
         <Button
           type="button"
+          disabled={socialEnabled?.microsoft === false}
+          title={socialEnabled?.microsoft === false ? "Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET to enable" : undefined}
           className="w-full bg-white/[0.06] hover:bg-white/[0.12] text-white border border-white/[0.1] h-11 text-sm font-medium"
           onClick={() => {
             trackEvent("login_method_click", { method: "microsoft" });
@@ -146,9 +168,22 @@ function LoginContent() {
           }}
         >
           <MicrosoftIcon className="size-5 shrink-0" />
-          Sign in with Microsoft
+          Sign in with Microsoft{socialEnabled?.microsoft === false ? " (not configured)" : ""}
         </Button>
       </div>
+
+      {socialEnabled &&
+        !socialEnabled.google &&
+        !socialEnabled.github &&
+        !socialEnabled.microsoft && (
+        <p className="mt-3 text-center text-xs text-[#555]">
+          No OAuth providers configured. Self-hosting? See{" "}
+          <Link href="/docs/oauth-setup" className="text-cyan-400 underline">
+            OAuth setup
+          </Link>{" "}
+          — or use the magic-link option below.
+        </p>
+      )}
 
       <div className="my-6">
         <FieldSeparator className="text-[#555]">or continue with email</FieldSeparator>

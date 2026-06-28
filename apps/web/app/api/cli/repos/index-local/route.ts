@@ -105,7 +105,7 @@ export async function POST(request: Request) {
   // Resolve / create repo row (first batch) or look up existing (later batches).
   let repoId: string;
   let fullName: string;
-  let startedAt: number;
+  let startedAt: number | null;
   if (isFirstBatch) {
     const first = body as FirstBatchBody;
     // Spend pre-check BEFORE prepareRepoForLocalIndex creates the row, so an
@@ -173,7 +173,9 @@ export async function POST(request: Request) {
     }
     repoId = repo.id;
     fullName = repo.fullName;
-    startedAt = repo.updatedAt.getTime();
+    // Multi-batch: no reliable whole-index start across stateless batch
+    // requests, so don't report a (misleading last-batch-only) duration.
+    startedAt = null;
   }
 
   // Spend-limit gate — same invariant the sibling CLI review endpoints enforce.

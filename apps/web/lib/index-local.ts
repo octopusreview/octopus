@@ -250,7 +250,7 @@ export async function prepareRepoForLocalIndex(
  */
 export async function recordLocalIndexProgress(
   repoId: string,
-  startedAt: number,
+  startedAt: number | null,
   delta: { indexedFiles: number; totalChunks: number; totalVectors: number; totalFiles?: number },
   commit: boolean,
 ): Promise<void> {
@@ -265,7 +265,12 @@ export async function recordLocalIndexProgress(
         ? {
             indexStatus: "indexed",
             indexedAt: new Date(),
-            indexDurationMs: Date.now() - startedAt,
+            // Only report a duration when the start time is reliable (a
+            // single-batch upload, where the finalizing request also began the
+            // index). Multi-batch uploads are stateless per request with no
+            // persisted whole-index start, so report null rather than a
+            // misleading last-batch-only duration.
+            indexDurationMs: startedAt != null ? Date.now() - startedAt : null,
           }
         : {}),
     },

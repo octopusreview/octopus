@@ -76,7 +76,7 @@ export default function IntegrationsPage() {
           vars={[
             { name: "GITHUB_APP_ID", description: "Your GitHub App ID" },
             { name: "GITHUB_APP_PRIVATE_KEY", description: "RSA private key (PEM or base64-encoded)" },
-            { name: "GITHUB_APP_WEBHOOK_SECRET", description: "Webhook secret for event verification" },
+            { name: "GITHUB_WEBHOOK_SECRET", description: "Webhook secret for event verification" },
           ]}
         />
       </IntegrationSection>

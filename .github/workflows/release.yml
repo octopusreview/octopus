@@ -1,0 +1,92 @@
+name: Release Docker image to GHCR
+
+# On every `v*` tag, build the apps/web Docker image and push it to GitHub
+# Container Registry with both a semver tag and the `latest` alias. The
+# self-hosted update page (apps/web/app/(app)/settings/updates) reads
+# `latestRelease` from SystemConfig, refreshed on demand (cached 1h) by
+# apps/web/lib/releases.ts when an admin opens the page.
+#
+# Maintainers cut a release by:
+#   1. Bump apps/web/package.json version
+#   2. git tag v0.X.Y && git push origin v0.X.Y
+#   3. This workflow builds, pushes, and creates a GitHub Release with
+#      auto-generated notes.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image tags
+        id: tags
+        run: |
+          # Strip the leading "v" from the tag — e.g. v0.2.0 → 0.2.0
+          REF_NAME=${GITHUB_REF#refs/tags/}
+          SEMVER=${REF_NAME#v}
+          echo "semver=$SEMVER" >> $GITHUB_OUTPUT
+          echo "image_name=ghcr.io/${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
+
+      - name: Build + push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          # ARM64 build is slow and the primary deployment target is x86_64;
+          # add linux/arm64 to platforms when there's demand.
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.tags.outputs.image_name }}:${{ steps.tags.outputs.semver }}
+            ${{ steps.tags.outputs.image_name }}:latest
+          build-args: |
+            NEXT_PUBLIC_BUILD_ID=${{ github.sha }}
+            NEXT_PUBLIC_APP_VERSION=${{ steps.tags.outputs.semver }}
+            # This GHCR image is the self-hosted distribution, so the Updates
+            # page + nav entry (gated on this build-time flag) ship enabled.
+            NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          name: ${{ steps.tags.outputs.semver }}
+          body: |
+            Docker image: `ghcr.io/${{ github.repository }}:${{ steps.tags.outputs.semver }}`
+
+            To upgrade a self-hosted instance, point your compose `web` service at
+            this image tag (or `:latest`), then:
+
+            ```bash
+            docker compose pull
+            docker compose up -d
+            docker compose exec web bunx prisma migrate deploy
+            ```
+
+            The in-app Updates page (Settings → System → Updates) shows when a new
+            release is available, along with this upgrade snippet.

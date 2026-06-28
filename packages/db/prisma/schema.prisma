@@ -748,6 +748,7 @@ model SystemConfig {
   blockedAuthors      Json @default("[]") // string[] of globally blocked PR author usernames
   queueConfig         Json @default("{}") // { reviewTimeoutSeconds, reviewConcurrency }
   announcements       Json @default("[]") // landing-page announcement bar entries (see lib/announcements types)
+  latestRelease       Json?    // cached latest GitHub release for the self-hosted Updates page (see lib/releases.ts)
   updatedAt DateTime @updatedAt
 
   @@map("system_config")

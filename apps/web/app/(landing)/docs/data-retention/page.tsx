@@ -39,7 +39,7 @@ const RETENTION: RetentionRow[] = [
     category: "Audit log",
     what: "AuditLog rows recording mutating actions",
     retention: "365 days (hosted default)",
-    notes: "Self-hosted: configurable. Export available from /settings/audit-log.",
+    notes: "Self-hosted: configurable retention window.",
   },
   {
     category: "AI usage",
@@ -147,10 +147,8 @@ export default function DataRetentionPage() {
 
       <Section title="Data export (right to portability)">
         <P>
-          Audit-log export is available to org admins at{" "}
-          <code>/settings/audit-log</code> (CSV and JSON). For broader
-          org-wide data export (repositories, reviews, findings, knowledge
-          documents, AI usage records), email{" "}
+          For org-wide data export (repositories, reviews, findings, knowledge
+          documents, audit logs, AI usage records), email{" "}
           <a href="mailto:privacy@octopus-review.ai" className="text-cyan-400 underline">
             privacy@octopus-review.ai
           </a>{" "}
@@ -173,10 +171,8 @@ export default function DataRetentionPage() {
         <P>
           Self-hosted Octopus stores everything in your PostgreSQL + Qdrant +
           object-storage. There is no automatic retention beyond the
-          90-day-post-close window for review findings. You should configure
-          the audit-log retention worker (see{" "}
-          <code>apps/web/lib/queue-workers.ts</code>) per your compliance
-          requirements.
+          90-day-post-close window for review findings. Configure retention for
+          your stored data per your own compliance requirements.
         </P>
       </Section>
     </article>

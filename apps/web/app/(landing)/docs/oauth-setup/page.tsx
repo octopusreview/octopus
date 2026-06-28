@@ -29,10 +29,10 @@ export default function OauthSetupPage() {
 
       <Section title="Why">
         <P>
-          The login page shows three options: Google, GitHub, and email magic link.
-          The two social buttons are only enabled when the relevant client ID /
-          client secret are set in your environment. If you launched the dev server
-          without them, those buttons surface a clear error pointing back here.
+          The login page offers Google, GitHub, Microsoft, and email magic link.
+          Each social button is only enabled when that provider&apos;s client ID
+          and client secret are set in your environment — if they aren&apos;t, the
+          button is shown disabled and labelled &quot;(not configured)&quot;.
         </P>
         <P>
           If you don&apos;t want to set up OAuth, just use the magic-link email
@@ -56,6 +56,7 @@ GITHUB_CLIENT_SECRET=…
 # Microsoft / Entra ID OAuth (optional)
 MICROSOFT_CLIENT_ID=…
 MICROSOFT_CLIENT_SECRET=…
+MICROSOFT_TENANT_ID=common   # default "common"; set your tenant id for single-tenant apps
 
 # Required for OAuth callback URLs to be computed correctly
 BETTER_AUTH_URL=http://localhost:3000   # or your real deployment URL`}</CodeBlock>

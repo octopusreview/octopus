@@ -55,11 +55,15 @@ function LoginContent() {
 
   React.useEffect(() => {
     // Disable the social buttons the operator hasn't configured (self-host UX).
-    // On error, leave them enabled — Better Auth shows a clear error on click.
-    fetch("/api/auth/social-providers")
-      .then((r) => r.json())
-      .then(setSocialEnabled)
-      .catch(() => setSocialEnabled(null));
+    // Fail open on any error — the magic-link path always works regardless.
+    const controller = new AbortController();
+    fetch("/api/auth/social-providers", { signal: controller.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => setSocialEnabled(data))
+      .catch(() => {
+        /* network error / aborted — leave buttons enabled (fail open) */
+      });
+    return () => controller.abort();
   }, []);
 
   const [error, setError] = React.useState<string | null>(null);

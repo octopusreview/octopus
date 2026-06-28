@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 
+// Reflects operator-set env at request time; never statically prerendered.
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/auth/social-providers
  *

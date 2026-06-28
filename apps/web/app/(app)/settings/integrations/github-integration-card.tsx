@@ -156,10 +156,29 @@ export function GitHubIntegrationCard({
                 </a>
               </Button>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                GitHub App is not configured. Please set the
-                NEXT_PUBLIC_GITHUB_APP_SLUG environment variable.
-              </p>
+              <div className="rounded-lg border border-amber-900/30 bg-amber-950/10 p-3 text-sm">
+                <p className="font-medium text-amber-200">
+                  GitHub App not configured
+                </p>
+                <p className="mt-1 text-xs text-[#888]">
+                  Octopus needs a GitHub App (separate from OAuth login) to
+                  receive PR webhooks and post review comments. Once you create
+                  the App and set <code className="rounded bg-[#1a1a1a] px-1 text-[11px]">GITHUB_APP_ID</code>,{" "}
+                  <code className="rounded bg-[#1a1a1a] px-1 text-[11px]">GITHUB_APP_PRIVATE_KEY</code>,{" "}
+                  <code className="rounded bg-[#1a1a1a] px-1 text-[11px]">GITHUB_WEBHOOK_SECRET</code>, and{" "}
+                  <code className="rounded bg-[#1a1a1a] px-1 text-[11px]">NEXT_PUBLIC_GITHUB_APP_SLUG</code>{" "}
+                  in <code className="rounded bg-[#1a1a1a] px-1 text-[11px]">.env</code> and restart the server,
+                  this button will turn into &quot;Install GitHub App&quot;.
+                </p>
+                <p className="mt-3 text-xs">
+                  <a
+                    href="/docs/github-app"
+                    className="text-cyan-400 underline decoration-cyan-400/30 underline-offset-2 hover:decoration-cyan-400"
+                  >
+                    Step-by-step setup guide →
+                  </a>
+                </p>
+              </div>
             )}
           </CardContent>
         </Card>

@@ -30,6 +30,7 @@ const sections: SidebarSection[] = [
     title: "Setup & Integrations",
     items: [
       { href: "/docs/github-action", label: "GitHub Action" },
+      { href: "/docs/github-app", label: "GitHub App Setup" },
       { href: "/docs/integrations", label: "Integrations" },
       { href: "/docs/self-hosting", label: "Self-Hosting" },
     ],

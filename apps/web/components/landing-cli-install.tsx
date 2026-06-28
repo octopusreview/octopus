@@ -7,11 +7,28 @@ import { TrackedLink } from "@/components/tracked-link";
 type Platform = "mac-linux" | "windows";
 type Method = "one-liner" | "npm";
 
-// Default base URL for SSR / first paint: the configured app URL, else the
-// canonical hosted domain. Replaced with window.location.origin after mount so
+const DEFAULT_BASE_URL = "https://octopus-review.ai";
+
+// Reduce any URL to a clean scheme://host[:port] origin — no path, query, or
+// shell metacharacters — so it is safe to interpolate into the displayed
+// curl/irm install command. Rejects non-http(s) or unparseable values; callers
+// fall back to DEFAULT_BASE_URL. (window.location.origin is already clean, but
+// NEXT_PUBLIC_APP_URL is operator-supplied, so validate both.)
+function safeBaseUrl(raw: string | undefined | null): string | null {
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return u.origin;
+  } catch {
+    return null;
+  }
+}
+
+// Base URL for SSR / first paint: the configured app URL, else the canonical
+// hosted domain. Replaced with the (validated) window origin after mount so
 // self-hosted / reverse-proxied / custom-domain deployments show the right host.
-const STATIC_BASE_URL =
-  process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "") || "https://octopus-review.ai";
+const STATIC_BASE_URL = safeBaseUrl(process.env.NEXT_PUBLIC_APP_URL) ?? DEFAULT_BASE_URL;
 
 function buildInstallCommands(
   baseUrl: string,
@@ -82,9 +99,8 @@ export function CliInstallSection({ embedded = false }: { embedded?: boolean } =
       setMethod("npm");
     }
 
-    if (typeof window !== "undefined" && window.location?.origin) {
-      setBaseUrl(window.location.origin);
-    }
+    const origin = safeBaseUrl(window.location?.origin);
+    if (origin) setBaseUrl(origin);
   }, []);
 
   const installCommands = buildInstallCommands(baseUrl);

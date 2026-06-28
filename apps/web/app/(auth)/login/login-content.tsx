@@ -4,8 +4,8 @@ import * as React from "react";
 import { Suspense, lazy } from "react";
 import Image from "next/image";
 import Link from "@/components/link";
-import { useSearchParams } from "next/navigation";
-import { signIn, magicLinkSignIn } from "@/lib/auth-client";
+import { useSearchParams, useRouter } from "next/navigation";
+import { signIn, signUp, magicLinkSignIn } from "@/lib/auth-client";
 import { normalizeEmail } from "@/lib/email-normalize";
 import { trackEvent } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ import {
   FieldSeparator,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { IconMail, IconBrandGithub } from "@tabler/icons-react";
+import { IconMail, IconBrandGithub, IconLock } from "@tabler/icons-react";
 
 /** Which OAuth providers the deployment has configured. Computed server-side
  * (see ./page.tsx) so the buttons render correctly on first paint. */
@@ -26,6 +26,10 @@ export type SocialEnabled = {
   github: boolean;
   microsoft: boolean;
 };
+
+// magic-link (default) | password sign-in | sign-up. The password modes only
+// render when the server reports password auth is enabled (self-hosted).
+type AuthMode = "magic-link" | "password" | "signup";
 
 function GoogleIcon({ className }: { className?: string }) {
   return (
@@ -53,8 +57,15 @@ const LoginOctopus = lazy(() =>
   import("@/components/login-octopus").then((m) => ({ default: m.LoginOctopus }))
 );
 
-export function LoginContent({ socialEnabled }: { socialEnabled: SocialEnabled }) {
+export function LoginContent({
+  socialEnabled,
+  passwordAuth,
+}: {
+  socialEnabled: SocialEnabled;
+  passwordAuth: boolean;
+}) {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
 
   React.useEffect(() => {
@@ -65,6 +76,7 @@ export function LoginContent({ socialEnabled }: { socialEnabled: SocialEnabled }
   const [loading, setLoading] = React.useState(false);
   const [sent, setSent] = React.useState(false);
   const [email, setEmail] = React.useState("");
+  const [authMode, setAuthMode] = React.useState<AuthMode>("magic-link");
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -74,11 +86,44 @@ export function LoginContent({ socialEnabled }: { socialEnabled: SocialEnabled }
     const formData = new FormData(e.currentTarget);
     const rawEmail = formData.get("email") as string;
     const emailValue = normalizeEmail(rawEmail);
+    const password = (formData.get("password") as string) || "";
+    const name = (formData.get("name") as string) || "";
 
+    // Password sign-in / sign-up — self-hosted only. When password auth is
+    // off (SaaS) authMode stays "magic-link" and we fall straight through.
+    if (passwordAuth && authMode === "password") {
+      trackEvent("login_method_click", { method: "password" });
+      const { error } = await signIn.email({ email: emailValue, password, callbackURL: callbackUrl });
+      if (error) {
+        setError(error.message ?? "Invalid email or password");
+        setLoading(false);
+        return;
+      }
+      router.push(callbackUrl);
+      return;
+    }
+
+    if (passwordAuth && authMode === "signup") {
+      trackEvent("login_method_click", { method: "signup" });
+      const { error } = await signUp.email({
+        email: emailValue,
+        password,
+        name: name || emailValue.split("@")[0],
+        callbackURL: callbackUrl,
+      });
+      if (error) {
+        setError(error.message ?? "Could not create account");
+        setLoading(false);
+        return;
+      }
+      // autoSignIn=true in auth.ts means the session already exists.
+      router.push(callbackUrl);
+      return;
+    }
+
+    // magic-link (default)
     trackEvent("login_method_click", { method: "magic_link" });
-
     const { error } = await magicLinkSignIn({ email: emailValue, callbackURL: callbackUrl });
-
     if (error) {
       trackEvent("login_magic_link_error", { error: error.message ?? "unknown" });
       setError(error.message ?? "Failed to send magic link");
@@ -180,9 +225,22 @@ export function LoginContent({ socialEnabled }: { socialEnabled: SocialEnabled }
         <FieldSeparator className="text-[#555]">or continue with email</FieldSeparator>
       </div>
 
-      {/* Magic link form */}
+      {/* Email form — magic-link by default; password / signup when enabled */}
       <form id="login-form" onSubmit={handleSubmit}>
         <FieldGroup>
+          {passwordAuth && authMode === "signup" && (
+            <Field>
+              <FieldLabel htmlFor="name" className="text-[#888]">Name</FieldLabel>
+              <Input
+                id="name"
+                name="name"
+                type="text"
+                placeholder="Ada Lovelace"
+                autoComplete="name"
+                className="border-white/[0.1] bg-white/[0.04] text-white placeholder:text-[#555] focus:border-white/[0.2]"
+              />
+            </Field>
+          )}
           <Field>
             <FieldLabel htmlFor="email" className="text-[#888]">Email</FieldLabel>
             <div className="relative">
@@ -193,10 +251,33 @@ export function LoginContent({ socialEnabled }: { socialEnabled: SocialEnabled }
                 type="email"
                 placeholder="you@example.com"
                 required
+                autoComplete="email"
                 className="border-white/[0.1] bg-white/[0.04] pl-8 text-white placeholder:text-[#555] focus:border-white/[0.2]"
               />
             </div>
           </Field>
+          {passwordAuth && (authMode === "password" || authMode === "signup") && (
+            <Field>
+              <FieldLabel htmlFor="password" className="text-[#888]">
+                Password
+                {authMode === "signup" && (
+                  <span className="ml-2 text-xs text-[#555]">(10+ characters)</span>
+                )}
+              </FieldLabel>
+              <div className="relative">
+                <IconLock className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-[#555]" />
+                <Input
+                  id="password"
+                  name="password"
+                  type="password"
+                  required
+                  minLength={authMode === "signup" ? 10 : undefined}
+                  autoComplete={authMode === "signup" ? "new-password" : "current-password"}
+                  className="border-white/[0.1] bg-white/[0.04] pl-8 text-white placeholder:text-[#555] focus:border-white/[0.2]"
+                />
+              </div>
+            </Field>
+          )}
           {error && <FieldError>{error}</FieldError>}
         </FieldGroup>
       </form>
@@ -207,9 +288,58 @@ export function LoginContent({ socialEnabled }: { socialEnabled: SocialEnabled }
         className="mt-4 w-full border border-white/[0.1] bg-white/[0.04] text-[#999] hover:bg-white/[0.08] hover:text-white h-11 text-sm font-medium"
         disabled={loading}
       >
-        <IconMail data-icon="inline-start" />
-        {loading ? "Sending..." : "Send magic link"}
+        {authMode === "magic-link" ? (
+          <IconMail data-icon="inline-start" />
+        ) : (
+          <IconLock data-icon="inline-start" />
+        )}
+        {loading
+          ? authMode === "magic-link"
+            ? "Sending..."
+            : "Working…"
+          : authMode === "magic-link"
+            ? "Send magic link"
+            : authMode === "password"
+              ? "Sign in"
+              : "Create account"}
       </Button>
+
+      {passwordAuth && (
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-[#666]">
+          {authMode !== "magic-link" && (
+            <button
+              type="button"
+              className="hover:text-white"
+              onClick={() => { setError(null); setAuthMode("magic-link"); }}
+            >
+              Use a magic link
+            </button>
+          )}
+          {authMode !== "password" && (
+            <button
+              type="button"
+              className="hover:text-white"
+              onClick={() => { setError(null); setAuthMode("password"); }}
+            >
+              Sign in with a password
+            </button>
+          )}
+          {authMode !== "signup" && (
+            <button
+              type="button"
+              className="hover:text-white"
+              onClick={() => { setError(null); setAuthMode("signup"); }}
+            >
+              Create an account
+            </button>
+          )}
+          {authMode === "password" && (
+            <Link href="/forgot-password" className="hover:text-white">
+              Forgot password?
+            </Link>
+          )}
+        </div>
+      )}
     </div>
   );
 

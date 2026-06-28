@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 const publicPrefixes = [
   "/login",
+  "/forgot-password",
+  "/reset-password",
   "/blocked",
   "/brand",
   "/blog",
@@ -36,6 +38,22 @@ const publicExact = ["/"];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Password-auth routes (forgot/reset/change) only exist on self-hosted
+  // builds. On the SaaS build (flag unset) send them to /login so password
+  // auth is a clean no-op rather than a half-working surface.
+  if (
+    process.env.NEXT_PUBLIC_OCTOPUS_SELF_HOSTED !== "true" &&
+    (pathname.startsWith("/forgot-password") ||
+      pathname.startsWith("/reset-password") ||
+      pathname.startsWith("/change-password"))
+  ) {
+    const appUrl =
+      process.env.BETTER_AUTH_URL ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      `http://${request.headers.get("host") || "localhost:3000"}`;
+    return NextResponse.redirect(new URL("/login", appUrl));
+  }
 
   if (
     publicExact.includes(pathname) ||

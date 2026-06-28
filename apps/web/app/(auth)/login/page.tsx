@@ -13,9 +13,12 @@ export default function LoginPage() {
     microsoft: Boolean(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET),
   };
 
+  // Email/password sign-in + signup is self-hosted only (see auth.ts gate).
+  const passwordAuth = process.env.NEXT_PUBLIC_OCTOPUS_SELF_HOSTED === "true";
+
   return (
     <Suspense>
-      <LoginContent socialEnabled={socialEnabled} />
+      <LoginContent socialEnabled={socialEnabled} passwordAuth={passwordAuth} />
     </Suspense>
   );
 }

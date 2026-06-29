@@ -72,7 +72,10 @@ export async function POST(request: Request) {
     create: { model, status: "queued", progress: 0 },
     update: { status: "queued", statusText: null, progress: 0, error: null },
   });
-  await enqueue("pull-ollama-model", { model });
+  // singletonKey collapses concurrent enqueues for the same model into one
+  // job (the TTL check above handles the common case; this closes the
+  // double-click / double-submit race so two workers can't pull in parallel).
+  await enqueue("pull-ollama-model", { model }, { singletonKey: model });
 
   return Response.json({ model: row.model, status: row.status, progress: row.progress });
 }

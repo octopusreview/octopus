@@ -1,197 +1,205 @@
 #!/usr/bin/env bash
-# Octopus CLI installer
-# Usage: curl -fsSL https://octopus-review.ai/install.sh | bash
+# AUTO-SYNCED COPY — DO NOT EDIT DIRECTLY.
+# Canonical source: apps/cli/install/install.sh. To update this file, edit
+# the canonical source and run `scripts/sync-installers.sh` (or copy by
+# hand). A diff against the canonical version fails the CI check in
+# .github/workflows/sync-installers-check.yml.
+#
+#
+# Octopus CLI installer (Linux / macOS).
+#
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/octopusreview/octopus/master/apps/cli/install/install.sh | bash
+#
+# The script's shebang is /usr/bin/env bash and it uses bash-isms
+# (set -o pipefail, `[[...]]` would-be patterns) — piping into `sh`
+# can break on dash/ash. Documented `| bash` accordingly.
+#
+# What it does:
+#   1. Detects your OS + CPU architecture
+#   2. Fetches the latest `octp-v*` release from GitHub
+#   3. Downloads the matching native binary
+#   4. Installs it to ~/.octopus/bin/octp (or $OCTOPUS_INSTALL_DIR)
+#   5. Prints a one-line instruction to add ~/.octopus/bin to your PATH (if not already there)
+#
+# After install, run `octp` to launch the first-run onboarding wizard.
+#
+# Environment variables:
+#   OCTOPUS_INSTALL_DIR  Override install directory (default: $HOME/.octopus/bin)
+#   OCTOPUS_INSTALL_REPO Override the GitHub repo (default: octopusreview/octopus)
+#   OCTOPUS_INSTALL_TAG  Install a specific tag instead of latest (e.g. octp-v0.2.0)
+#
+# Exit codes:
+#   0 success
+#   1 unsupported OS/arch, network failure, or write failure
+
 set -euo pipefail
 
-GITHUB_REPO="octopusreview/octopus-cli"
-BINARY_NAME="octopus"
-INSTALL_DIR="$HOME/.local/bin"
-FALLBACK_DIR="/usr/local/bin"
-TMPDIR_CLEANUP=""
+REPO="${OCTOPUS_INSTALL_REPO:-octopusreview/octopus}"
+INSTALL_DIR="${OCTOPUS_INSTALL_DIR:-$HOME/.octopus/bin}"
+BINARY_NAME="octp"
 
-# ─── Helpers ────────────────────────────────────────────────────────────────
+# ── Step 1: detect platform ──────────────────────────────────────────────────
 
-info()    { printf '\033[1;34m%s\033[0m\n' "$*"; }
-success() { printf '\033[1;32m%s\033[0m\n' "$*"; }
-warn()    { printf '\033[1;33m%s\033[0m\n' "$*"; }
-error()   { printf '\033[1;31merror: %s\033[0m\n' "$*" >&2; exit 1; }
+uname_s=$(uname -s 2>/dev/null || echo "")
+uname_m=$(uname -m 2>/dev/null || echo "")
 
-need_cmd() {
-  command -v "$1" > /dev/null 2>&1 || error "Required command '$1' not found. Please install it and retry."
-}
+case "$uname_s" in
+  Linux)  os="linux"  ;;
+  Darwin) os="darwin" ;;
+  *)
+    echo "Error: unsupported OS: $uname_s" >&2
+    echo "Supported: Linux, macOS. On Windows, use install.ps1 (PowerShell)." >&2
+    exit 1
+    ;;
+esac
 
-# ─── Detect OS & Arch ──────────────────────────────────────────────────────
+case "$uname_m" in
+  x86_64|amd64) arch="x64"   ;;
+  arm64|aarch64) arch="arm64" ;;
+  *)
+    echo "Error: unsupported CPU architecture: $uname_m" >&2
+    echo "Supported: x86_64, arm64." >&2
+    exit 1
+    ;;
+esac
 
-detect_platform() {
-  local os arch
+asset="${BINARY_NAME}-${os}-${arch}"
 
-  case "$(uname -s)" in
-    Linux*)  os="linux" ;;
-    Darwin*) os="darwin" ;;
-    MINGW*|MSYS*|CYGWIN*) os="windows" ;;
-    *) error "Unsupported operating system: $(uname -s)" ;;
-  esac
+# ── Step 2: resolve the release tag ──────────────────────────────────────────
 
-  case "$(uname -m)" in
-    x86_64|amd64)  arch="x64" ;;
-    arm64|aarch64) arch="arm64" ;;
-    *) error "Unsupported architecture: $(uname -m)" ;;
-  esac
-
-  PLATFORM="${os}"
-  ARCH="${arch}"
-}
-
-# ─── Fetch latest release tag from GitHub ───────────────────────────────────
-
-get_latest_version() {
-  need_cmd curl
-
-  local url="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
-  local response
-  response=$(curl -fsSL "$url") || error "Failed to fetch release info from GitHub. You may be rate-limited."
-
-  if command -v jq > /dev/null 2>&1; then
-    VERSION=$(echo "$response" | jq -r '.tag_name // empty')
-  else
-    VERSION=$(echo "$response" | grep '"tag_name"' | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')
+if [ -n "${OCTOPUS_INSTALL_TAG:-}" ]; then
+  tag="$OCTOPUS_INSTALL_TAG"
+  echo "Installing pinned version: $tag"
+else
+  echo "Looking up latest octp release on $REPO ..."
+  # Find the most recent NON-DRAFT, NON-PRERELEASE octp-v* tag.
+  # `jq` is not assumed (some minimal install targets — alpine, distroless,
+  # CI runners — don't have it), so parse with sed/grep. GitHub returns
+  # `/releases` as a JSON ARRAY where each release is one object on the
+  # same line. We split objects by inserting a real newline at every
+  # `},{` boundary so line-oriented grep can filter by draft/prerelease
+  # siblings without false-matching across objects.
+  #
+  # macOS portability: BSD sed treats `\n` in the REPLACEMENT as a
+  # literal `n` (only the recognise-`\n`-in-pattern semantics is shared
+  # with GNU sed). Use the portable form — a backslash immediately
+  # followed by a real newline character inside the s/// replacement,
+  # which both GNU and BSD sed interpret as a newline. The `[[:space:]]`
+  # POSIX class is used everywhere else for the same portability reason
+  # (GNU `\s` would silently match "s" on busybox grep / BSD sed).
+  # Users testing prerelease tags can still override via OCTOPUS_INSTALL_TAG.
+  api_url="https://api.github.com/repos/${REPO}/releases?per_page=30"
+  tag=$(
+    curl -fsSL "$api_url" \
+      | sed 's/},{/}\
+{/g' \
+      | grep -v '"draft"[[:space:]]*:[[:space:]]*true' \
+      | grep -v '"prerelease"[[:space:]]*:[[:space:]]*true' \
+      | grep -E '"tag_name"[[:space:]]*:[[:space:]]*"octp-v' \
+      | head -1 \
+      | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'
+  )
+  if [ -z "$tag" ]; then
+    echo "Error: could not find any non-prerelease octp-v* on $REPO." >&2
+    echo "If you are testing a prerelease, pin a tag with OCTOPUS_INSTALL_TAG=octp-v0.X.Y" >&2
+    exit 1
   fi
+  echo "Latest release: $tag"
+fi
 
-  if [ -z "$VERSION" ]; then
-    error "Could not determine the latest release version. You may be rate-limited by GitHub API."
-  fi
+# ── Step 3: download ─────────────────────────────────────────────────────────
 
-  info "Latest version: ${VERSION}"
-}
+download_url="https://github.com/${REPO}/releases/download/${tag}/${asset}"
+sums_url="https://github.com/${REPO}/releases/download/${tag}/SHA256SUMS.txt"
+echo "Downloading $download_url ..."
 
-# ─── Download & Install ────────────────────────────────────────────────────
+mkdir -p "$INSTALL_DIR"
+tmp_file="$(mktemp)"
+sums_file="$(mktemp)"
+trap 'rm -f "$tmp_file" "$sums_file"' EXIT
 
-download_and_install() {
-  local bin_ext=""
-  if [ "$PLATFORM" = "windows" ]; then
-    bin_ext=".exe"
-  fi
+if ! curl -fL --progress-bar -o "$tmp_file" "$download_url"; then
+  echo "Error: failed to download $asset from $tag." >&2
+  echo "The release might not have a binary for ${os}-${arch}." >&2
+  exit 1
+fi
 
-  local artifact="${BINARY_NAME}-${PLATFORM}-${ARCH}"
-  local archive="${artifact}.tar.gz"
-  local download_url="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/${archive}"
+# ── Step 3b: verify SHA256 checksum ──────────────────────────────────────────
+# octp-release.yml generates SHA256SUMS.txt and attaches it to every release.
+# Verifying the binary against the published sum protects against:
+#   - In-flight tampering on a compromised mirror (GitHub itself signs the
+#     download but the asset chain is still worth re-checking).
+#   - Truncated downloads (curl exit code is the only signal otherwise).
+# If sums file is missing on a release (older builds), we abort with a clear
+# message — passing OCTOPUS_INSTALL_SKIP_VERIFY=1 documents the trade-off
+# explicitly when the user knowingly accepts the risk (e.g. CI pinning a tag
+# pre-dating the sums-generation workflow).
 
-  info "Downloading ${archive}..."
-  local tmpdir
-  tmpdir=$(mktemp -d)
-  TMPDIR_CLEANUP="$tmpdir"
-  trap 'rm -rf "$TMPDIR_CLEANUP"' EXIT
-
-  local tmparchive="${tmpdir}/${archive}"
-  curl -fsSL -o "$tmparchive" "$download_url" || error "Download failed. Check if a release exists for your platform: ${PLATFORM}-${ARCH}"
-
-  # Verify SHA256 checksum if checksums.txt is available
-  local checksums_url="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/checksums.txt"
-  local expected_sha
-  expected_sha=$(curl -fsSL "$checksums_url" 2>/dev/null | grep "${archive}" | awk '{print $1}') || true
-  if [ -n "$expected_sha" ]; then
-    local actual_sha
-    if command -v sha256sum > /dev/null 2>&1; then
-      actual_sha=$(sha256sum "$tmparchive" | awk '{print $1}')
-    elif command -v shasum > /dev/null 2>&1; then
-      actual_sha=$(shasum -a 256 "$tmparchive" | awk '{print $1}')
+if [ "${OCTOPUS_INSTALL_SKIP_VERIFY:-0}" = "1" ]; then
+  echo "SKIPPING SHA256 verification (OCTOPUS_INSTALL_SKIP_VERIFY=1)."
+else
+  if curl -fsSL -o "$sums_file" "$sums_url"; then
+    expected=$(grep -F "  $asset" "$sums_file" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')
+    if [ -z "$expected" ]; then
+      echo "Error: no SHA256SUMS.txt entry for $asset on $tag." >&2
+      echo "Run with OCTOPUS_INSTALL_SKIP_VERIFY=1 to bypass (NOT recommended)." >&2
+      exit 1
     fi
-    if [ -n "$actual_sha" ] && [ "$expected_sha" != "$actual_sha" ]; then
-      error "Checksum mismatch! Expected ${expected_sha}, got ${actual_sha}. Aborting."
+    if command -v sha256sum >/dev/null 2>&1; then
+      actual=$(sha256sum "$tmp_file" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')
+    elif command -v shasum >/dev/null 2>&1; then
+      actual=$(shasum -a 256 "$tmp_file" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')
+    else
+      echo "Error: neither sha256sum nor shasum found; cannot verify the download." >&2
+      echo "Run with OCTOPUS_INSTALL_SKIP_VERIFY=1 to bypass (NOT recommended)." >&2
+      exit 1
     fi
-    info "Checksum verified."
+    if [ "$expected" != "$actual" ]; then
+      echo "Error: SHA256 mismatch for $asset." >&2
+      echo "  expected: $expected" >&2
+      echo "  actual:   $actual" >&2
+      echo "The download may be corrupt or tampered. Aborting." >&2
+      exit 1
+    fi
+    echo "✓ Verified SHA256 ($expected)"
   else
-    warn "No checksums.txt found for this release -- skipping integrity check."
+    echo "Error: could not download SHA256SUMS.txt from $tag." >&2
+    echo "Older releases pre-date the sums workflow — re-run with" >&2
+    echo "OCTOPUS_INSTALL_SKIP_VERIFY=1 if you accept that risk." >&2
+    exit 1
   fi
+fi
 
-  # Extract binary from archive
-  tar -xzf "$tmparchive" -C "$tmpdir"
-  local tmpfile="${tmpdir}/${BINARY_NAME}${bin_ext}"
-  [ -f "$tmpfile" ] || error "Expected binary '${BINARY_NAME}${bin_ext}' not found in archive."
-  chmod +x "$tmpfile"
+# ── Step 4: install ──────────────────────────────────────────────────────────
 
-  # Try user-local dir first (no sudo needed), fall back to system dir
-  local target_dir="$INSTALL_DIR"
-  mkdir -p "$target_dir"
-  if ! install_binary "$tmpfile" "$target_dir" 2>/dev/null; then
-    target_dir="$FALLBACK_DIR"
-    install_binary "$tmpfile" "$target_dir"
-  fi
-  ensure_in_path "$target_dir"
+target="${INSTALL_DIR}/${BINARY_NAME}"
+# Keep the EXIT trap active across the move so a failed mv (bad perms / missing
+# INSTALL_DIR) still cleans up $tmp_file instead of leaking it.
+if ! mv "$tmp_file" "$target"; then
+  echo "Error: failed to install to $target (check permissions / INSTALL_DIR)." >&2
+  exit 1
+fi
+chmod +x "$target"
+trap - EXIT
 
-  INSTALLED_DIR="$target_dir"
-  success "Installed ${BINARY_NAME} to ${target_dir}/${BINARY_NAME}${bin_ext}"
-}
+echo ""
+echo "Installed $BINARY_NAME → $target"
 
-install_binary() {
-  local src="$1" dir="$2"
-  local ext=""
-  if [ "$PLATFORM" = "windows" ]; then ext=".exe"; fi
+# ── Step 5: PATH hint ────────────────────────────────────────────────────────
 
-  if [ -w "$dir" ]; then
-    cp "$src" "${dir}/${BINARY_NAME}${ext}"
-  else
-    info "Writing to ${dir} requires elevated permissions..."
-    sudo cp "$src" "${dir}/${BINARY_NAME}${ext}"
-  fi
-}
-
-ensure_in_path() {
-  local dir="$1"
-  case ":$PATH:" in
-    *":${dir}:"*) ;;
-    *)
-      warn "${dir} is not in your PATH."
-      warn "Add this to your shell profile:"
-      warn "  export PATH=\"${dir}:\$PATH\""
-      ;;
-  esac
-}
-
-# ─── Skills prompt ──────────────────────────────────────────────────────────
-
-prompt_install_skills() {
-  # If no terminal available at all, skip prompt
-  if [ ! -e /dev/tty ]; then
-    info ""
-    info "To install skills later, run: octopus skills install --all"
-    return
-  fi
-
-  echo ""
-  printf 'Would you like to install Octopus skills for Claude Code? (y/N) '
-  read -r answer < /dev/tty
-  case "$answer" in
-    [yY]|[yY][eE][sS])
-      info "Installing skills..."
-      "${INSTALLED_DIR}/${BINARY_NAME}" skills install --all \
-        || warn "Could not install skills automatically. Run 'octopus skills install --all' after logging in."
-      ;;
-    *)
-      info "Skipped. You can install skills later with: octopus skills install --all"
-      ;;
-  esac
-}
-
-# ─── Main ───────────────────────────────────────────────────────────────────
-
-main() {
-  echo ""
-  info "  Octopus CLI Installer"
-  info "  ====================="
-  echo ""
-
-  detect_platform
-  info "Detected platform: ${PLATFORM}-${ARCH}"
-
-  get_latest_version
-  download_and_install
-  prompt_install_skills
-
-  echo ""
-  success "Done! Get started with:"
-  success "  octopus login"
-  echo ""
-}
-
-main
+case ":$PATH:" in
+  *":$INSTALL_DIR:"*)
+    echo "$INSTALL_DIR is already on your PATH."
+    echo ""
+    echo "Get started: $BINARY_NAME"
+    ;;
+  *)
+    echo ""
+    echo "Add this line to your shell rc (~/.zshrc, ~/.bashrc, etc.):"
+    echo ""
+    echo "  export PATH=\"$INSTALL_DIR:\$PATH\""
+    echo ""
+    echo "Then restart your shell and run: $BINARY_NAME"
+    ;;
+esac

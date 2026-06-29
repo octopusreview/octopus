@@ -1,0 +1,66 @@
+# Optional Ollama overlay — run Octopus fully local (review LLM + embeddings)
+# with no cloud API keys. Compose it ON TOP of the base file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d
+#
+# This adds an `ollama` service and points the web app at it over the compose
+# network. Pull at least one chat model and the embedding model before
+# reviewing — from the UI (Settings -> Models -> Local models) or the shell:
+#
+#   docker compose exec ollama ollama pull qwen2.5-coder:7b
+#   docker compose exec ollama ollama pull nomic-embed-text
+#
+# To use Ollama for embeddings too (not just the review LLM), also set in .env
+# BEFORE first indexing — switching providers later needs a re-index because
+# different models produce non-comparable vectors:
+#   OCTOPUS_EMBED_PROVIDER=ollama
+#   OCTOPUS_EMBED_MODEL=nomic-embed-text
+#   OCTOPUS_EMBED_DIM=768
+services:
+  ollama:
+    image: ollama/ollama:latest
+    # Same loopback-by-default rationale as postgres/qdrant in the base file:
+    # Ollama ships with no authentication, so publishing it on 0.0.0.0 exposes
+    # model inference (and the prompt/response data flowing through it) to
+    # anyone who can reach the host. The web service reaches Ollama over the
+    # compose network regardless of this mapping — the host port is only for
+    # direct access (e.g. `ollama pull` from the host). Override with
+    # OCTOPUS_OLLAMA_BIND=0.0.0.0 in `.env` only if you genuinely need remote
+    # access AND have auth / a proxy in front.
+    ports:
+      - "${OCTOPUS_OLLAMA_BIND:-127.0.0.1}:43311:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      # `ollama list` talks to the local server; it exits non-zero until
+      # `ollama serve` is accepting connections, which is what `web` waits on.
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    # NVIDIA GPU acceleration (optional). Ollama runs CPU-only by default;
+    # uncomment after installing the nvidia-container-toolkit on the host.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  web:
+    # Point the app at the in-cluster Ollama. These override .env so the
+    # service hostname resolves on the compose network. OLLAMA_SERVER_URL is
+    # the review-LLM provider base; OCTOPUS_OLLAMA_BASE_URL is the embeddings
+    # base — set both so either use works without further config.
+    environment:
+      - OLLAMA_SERVER_URL=http://ollama:11434
+      - OCTOPUS_OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+volumes:
+  ollama_data:

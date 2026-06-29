@@ -128,6 +128,32 @@ volumes:
         </Step>
       </Section>
 
+      <Section title="All-local with Ollama (optional)">
+        <Paragraph>
+          To run Octopus with no cloud API keys — both the review LLM and code
+          embeddings served on your own hardware — start the optional Ollama
+          overlay alongside the base compose file. It adds an{" "}
+          <Mono>ollama</Mono> service and points the app at it.
+        </Paragraph>
+        <CodeBlock>{`docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d`}</CodeBlock>
+        <Paragraph>
+          Then pull at least one chat model and the embedding model — from the
+          UI (Settings → Models → Local models) or the shell:
+        </Paragraph>
+        <CodeBlock>{`docker compose exec ollama ollama pull qwen2.5-coder:7b
+docker compose exec ollama ollama pull nomic-embed-text`}</CodeBlock>
+        <Paragraph>
+          To also use Ollama for embeddings, set{" "}
+          <Mono>OCTOPUS_EMBED_PROVIDER=ollama</Mono>,{" "}
+          <Mono>OCTOPUS_EMBED_MODEL=nomic-embed-text</Mono>, and{" "}
+          <Mono>OCTOPUS_EMBED_DIM=768</Mono> in your <Mono>.env</Mono> before
+          first indexing — switching providers afterward requires a re-index
+          since different models produce non-comparable vectors. Ollama runs
+          CPU-only by default; see the overlay file for enabling NVIDIA GPU
+          acceleration.
+        </Paragraph>
+      </Section>
+
       {/* Environment variables */}
       <Section id="environment-variables" title="Environment Variables">
         <Paragraph>

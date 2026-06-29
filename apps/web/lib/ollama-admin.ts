@@ -148,6 +148,13 @@ export async function runOllamaPull(model: string): Promise<void> {
 async function registerPulledModel(model: string): Promise<void> {
   const entry = findCatalogEntry(model);
   if (!entry) return; // only curated models are registered — stay defensive
+  // Only register chat/LLM models in AvailableModel. Those route through
+  // ai-router via the "ollama:" prefix and belong in the review-model picker.
+  // Embedding models are configured exclusively via OCTOPUS_EMBED_* env, never
+  // the picker — registering one would add a dropdown entry that's silently
+  // ignored in Ollama-embed mode and fails if picked while on OpenAI
+  // embeddings. The pulled model still shows as "Installed" via /api/tags.
+  if (entry.category !== "llm") return;
   const modelId = `ollama:${entry.name}`;
   await prisma.availableModel.upsert({
     where: { modelId },

@@ -107,6 +107,14 @@ export async function startQueue(): Promise<PgBoss> {
     expireInSeconds: 600, // 10 min — a deleteMany shouldn't take long
   }).catch(() => {});
 
+  // Admin-triggered Ollama model downloads (self-hosted). Long expiry — a
+  // large model is many GB. No auto-retry: runOllamaPull records failures in
+  // the OllamaModelPull row itself and re-pulls are admin-driven from the UI.
+  await boss.createQueue("pull-ollama-model", {
+    retryLimit: 0,
+    expireInSeconds: 7200, // 2 h hard cap per attempt
+  }).catch(() => {});
+
   // Only review-engine containers should register workers. Web containers
   // still need pg-boss started so they can enqueue jobs, but must not consume.
   // The flag must be set explicitly: a missing value is a misconfiguration,

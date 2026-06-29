@@ -754,6 +754,23 @@ model AvailableModel {
   @@map("available_models")
 }
 
+/// Tracks `ollama pull` model downloads triggered from Settings → Models.
+/// Instance-level: Ollama is one server per deployment, shared across all
+/// orgs, so this is intentionally NOT org-scoped. `model` is unique — a
+/// re-pull updates the same row rather than creating a duplicate.
+model OllamaModelPull {
+  id         String   @id @default(cuid())
+  model      String   @unique // ollama tag, e.g. "qwen2.5-coder:7b"
+  status     String   @default("queued") // queued | pulling | completed | failed
+  statusText String? // latest ollama status line, e.g. "pulling manifest"
+  progress   Int      @default(0) // 0-100, current layer
+  error      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("ollama_model_pulls")
+}
+
 model SystemConfig {
   id        String   @id @default("singleton")
   defaultReviewConfig Json @default("{}")

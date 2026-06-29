@@ -27,7 +27,7 @@ const DEFAULT_BASE_URL = "http://localhost:11434";
  * Ollama is normally reached at localhost or an internal host (no SSRF surface:
  * the value is not user-supplied).
  */
-function normalizeServerUrl(raw: string): string {
+export function normalizeServerUrl(raw: string): string {
   let parsed: URL;
   try {
     parsed = new URL(raw);

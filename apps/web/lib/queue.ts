@@ -99,6 +99,14 @@ export async function startQueue(): Promise<PgBoss> {
     expireInSeconds: 1800, // 30 min hard cap per attempt
   }).catch(() => {});
 
+  // Daily audit-log retention (scheduled in instrumentation.ts, worked in
+  // queue-workers.ts). pg-boss v12 requires the queue to exist before
+  // schedule()/work() — without this the cron silently no-ops.
+  await boss.createQueue("enforce-audit-retention", {
+    retryLimit: 1,
+    expireInSeconds: 600, // 10 min — a deleteMany shouldn't take long
+  }).catch(() => {});
+
   // Only review-engine containers should register workers. Web containers
   // still need pg-boss started so they can enqueue jobs, but must not consume.
   // The flag must be set explicitly: a missing value is a misconfiguration,

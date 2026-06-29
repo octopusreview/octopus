@@ -6,6 +6,7 @@ import {
   type LargeReviewResultJob,
 } from "./large-review-result";
 import { processCommunityReview, type CommunityReviewJobData } from "./community-review";
+import { enforceAuditLogRetention } from "./audit";
 import type { QueueConfig } from "./queue";
 
 export interface WelcomeEmailJob {
@@ -75,5 +76,20 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
     },
   );
 
-  console.log("[queue] Workers registered: welcome-email, process-review, post-large-review-result, community-review");
+  // Daily audit-log retention job — scheduled in instrumentation.ts via
+  // boss.schedule(); the worker registered here executes a triggered run.
+  // Idempotent: deleteMany's WHERE clause makes concurrent instances harmless.
+  await boss.work("enforce-audit-retention", async (jobs) => {
+    for (const job of jobs) {
+      try {
+        const deleted = await enforceAuditLogRetention();
+        console.log(`[queue] enforce-audit-retention ${job.id}: deleted ${deleted} rows`);
+      } catch (err) {
+        console.error(`[queue] enforce-audit-retention failed (job ${job.id}):`, err);
+        throw err;
+      }
+    }
+  });
+
+  console.log("[queue] Workers registered: welcome-email, process-review, post-large-review-result, community-review, enforce-audit-retention");
 }

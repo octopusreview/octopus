@@ -1,5 +1,67 @@
 import { prisma, type Prisma } from "@octopus/db";
 
+/**
+ * Canonical list of audit-log categories. Any API endpoint accepting a
+ * `category` query string MUST validate against this set before passing to
+ * the Prisma `where` — otherwise the caller can enumerate / pollute audit
+ * metadata with attacker-controlled values.
+ */
+export const AUDIT_CATEGORIES = [
+  "auth",
+  "email",
+  "review",
+  "repo",
+  "knowledge",
+  "billing",
+  "admin",
+  "system",
+] as const;
+
+const AUDIT_CATEGORY_SET = new Set<string>(AUDIT_CATEGORIES);
+
+/**
+ * Returns the category string if it's a known audit category, otherwise undefined.
+ * Use in route handlers that accept a `category` query param.
+ */
+export function validateAuditCategory(value: string | null | undefined): string | undefined {
+  return value && AUDIT_CATEGORY_SET.has(value) ? value : undefined;
+}
+
+/**
+ * Default retention window for AuditLog rows on hosted Octopus.
+ * Overridable via AUDIT_LOG_RETENTION_DAYS env var. Self-hosters who need
+ * a different retention (e.g. SOC2 requires 365+, HIPAA needs 6 years)
+ * can set this in their environment.
+ */
+export const AUDIT_LOG_DEFAULT_RETENTION_DAYS = 365;
+
+/**
+ * Delete AuditLog rows older than the configured retention window.
+ * Idempotent and safe to run repeatedly — only rows past the cutoff are
+ * removed. Returns the number of deleted rows so the calling pg-boss job
+ * can log the result.
+ *
+ * The retention enforcement runs on a daily schedule (see queue-workers.ts
+ * and the boss.schedule call in instrumentation.ts). Self-hosters can
+ * disable it by leaving the schedule unset.
+ */
+export async function enforceAuditLogRetention(retentionDays?: number): Promise<number> {
+  const envOverride = process.env.AUDIT_LOG_RETENTION_DAYS;
+  const days = retentionDays ?? (envOverride ? parseInt(envOverride, 10) : AUDIT_LOG_DEFAULT_RETENTION_DAYS);
+  if (!Number.isFinite(days) || days <= 0) {
+    console.warn(`[audit] enforceAuditLogRetention: invalid days=${days}, skipping`);
+    return 0;
+  }
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const { count } = await prisma.auditLog.deleteMany({
+    where: { createdAt: { lt: cutoff } },
+  });
+  if (count > 0) {
+    console.log(`[audit] enforceAuditLogRetention: deleted ${count} rows older than ${days} days`);
+  }
+  return count;
+}
+
 export type AuditCategory =
   | "auth"
   | "email"

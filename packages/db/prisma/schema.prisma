@@ -1185,9 +1185,31 @@ model CouponRedemption {
 // yet. Endpoint queues a job, action polls /api/github-action/review/:id.
 // Lifecycle is bounded by expiresAt (default 25h after creation).
 
+// Manually-approved public repos eligible for bot-account (OSS) reviews. A repo must be
+// on this allowlist before /api/oss-review will do any work for it — this is the primary
+// abuse guard: an unapproved repo is rejected with a cheap DB lookup, before any GitHub
+// API call. A maintainer's .github/octopus.yml consent file is still required on top.
+model OssReviewAllowlist {
+  id           String   @id @default(cuid())
+  repoFullName String   @unique // "owner/repo", lower-cased
+  note         String?
+  approvedBy   String?  // admin user id / email, for audit
+  createdAt    DateTime @default(now())
+
+  @@map("oss_review_allowlist")
+}
+
 model CommunityReviewJob {
   id                   String   @id @default(uuid())
   status               String   // "indexing" | "reviewing" | "completed" | "failed"
+
+  // Where the review gets posted:
+  //  - "action_client" (default): findings are returned to the GitHub Action, which posts them
+  //    client-side with the repo's GITHUB_TOKEN. (existing behavior)
+  //  - "bot_account": the server posts the review itself as a shared GitHub bot user account
+  //    (OCTOPUS_BOT_GITHUB_TOKEN). No write token in the repo's CI; reviewer is comment-only by
+  //    GitHub's permission model. Consent is gated on the repo's .github/octopus.yml file.
+  postMode             String   @default("action_client")
 
   // Auth: poll endpoint requires (jobId, repoFullName) tuple to match.
   repoFullName         String

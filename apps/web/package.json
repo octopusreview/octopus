@@ -43,7 +43,7 @@
     "pg-boss": "^12.15.0",
     "radix-ui": "^1.4.3",
     "react": "19.2.5",
-    "react-dom": "19.2.5",
+    "react-dom": "19.2.7",
     "react-email": "^5.2.10",
     "react-force-graph-2d": "^1.29.1",
     "react-markdown": "^10.1.0",

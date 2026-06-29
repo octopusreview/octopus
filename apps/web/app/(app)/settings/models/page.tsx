@@ -73,6 +73,10 @@ export default async function ModelsPage() {
 
   const canManage = member.role === "owner" || member.role === "admin";
 
+  // Local-model panel only appears when Ollama is actually configured — on the
+  // hosted SaaS OLLAMA_SERVER_URL is unset, so the panel stays hidden.
+  const ollamaEnabled = !!process.env.OLLAMA_SERVER_URL?.trim();
+
   const platformDefaults = await prisma.availableModel.findMany({
     where: { isPlatformDefault: true, isActive: true },
     select: { modelId: true, displayName: true, category: true },
@@ -97,6 +101,7 @@ export default async function ModelsPage() {
       platformDefaultEmbedName={platformDefaultEmbed?.displayName ?? null}
       initialRepos={repos}
       totalRepoCount={totalCount}
+      ollamaEnabled={ollamaEnabled}
     />
   );
 }

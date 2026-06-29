@@ -17,6 +17,7 @@ import { IconPencil, IconCheck, IconX, IconSearch, IconLoader2 } from "@tabler/i
 import { updateDefaultModels } from "../../actions";
 import { updateRepoModels } from "../../repositories/actions";
 import { searchRepoModels, type RepoModelItem } from "./actions";
+import { OllamaModels } from "./ollama-models";
 
 type AvailableModel = {
   modelId: string;
@@ -336,6 +337,7 @@ export function ModelsSettings({
   platformDefaultEmbedName,
   initialRepos,
   totalRepoCount,
+  ollamaEnabled,
 }: {
   isOwner: boolean;
   availableModels: AvailableModel[];
@@ -345,6 +347,7 @@ export function ModelsSettings({
   platformDefaultEmbedName: string | null;
   initialRepos: RepoModelItem[];
   totalRepoCount: number;
+  ollamaEnabled: boolean;
 }) {
   const [selectedModelId, setSelectedModelId] = useState(currentModelId ?? "");
   const [selectedEmbedModelId, setSelectedEmbedModelId] = useState(currentEmbedModelId ?? "");
@@ -472,6 +475,9 @@ export function ModelsSettings({
         orgDefaultLlmName={orgDefaultLlmName}
         orgDefaultEmbedName={orgDefaultEmbedName}
       />
+
+      {/* Local Models (Ollama) — only when a self-hosted Ollama is configured */}
+      {ollamaEnabled && <OllamaModels isOwner={isOwner} />}
     </div>
   );
 }

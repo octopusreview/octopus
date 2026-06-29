@@ -7,6 +7,7 @@ import {
 } from "./large-review-result";
 import { processCommunityReview, type CommunityReviewJobData } from "./community-review";
 import { enforceAuditLogRetention } from "./audit";
+import { runOllamaPull } from "./ollama-admin";
 import type { QueueConfig } from "./queue";
 
 export interface WelcomeEmailJob {
@@ -91,5 +92,15 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
     }
   });
 
-  console.log("[queue] Workers registered: welcome-email, process-review, post-large-review-result, community-review, enforce-audit-retention");
+  // Admin-triggered Ollama model download (self-hosted). runOllamaPull is
+  // self-contained: it records progress/failure in the OllamaModelPull row and
+  // never throws, so a failed download doesn't trip pg-boss retries.
+  await boss.work<{ model: string }>("pull-ollama-model", async (jobs) => {
+    for (const job of jobs) {
+      console.log(`[queue] pull-ollama-model ${job.id}: ${job.data.model}`);
+      await runOllamaPull(job.data.model);
+    }
+  });
+
+  console.log("[queue] Workers registered: welcome-email, process-review, post-large-review-result, community-review, enforce-audit-retention, pull-ollama-model");
 }

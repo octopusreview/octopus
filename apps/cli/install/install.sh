@@ -134,16 +134,16 @@ if [ "${OCTOPUS_INSTALL_SKIP_VERIFY:-0}" = "1" ]; then
   echo "SKIPPING SHA256 verification (OCTOPUS_INSTALL_SKIP_VERIFY=1)."
 else
   if curl -fsSL -o "$sums_file" "$sums_url"; then
-    expected=$(grep -F "  $asset" "$sums_file" | awk '{print $1}')
+    expected=$(grep -F "  $asset" "$sums_file" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')
     if [ -z "$expected" ]; then
       echo "Error: no SHA256SUMS.txt entry for $asset on $tag." >&2
       echo "Run with OCTOPUS_INSTALL_SKIP_VERIFY=1 to bypass (NOT recommended)." >&2
       exit 1
     fi
     if command -v sha256sum >/dev/null 2>&1; then
-      actual=$(sha256sum "$tmp_file" | awk '{print $1}')
+      actual=$(sha256sum "$tmp_file" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')
     elif command -v shasum >/dev/null 2>&1; then
-      actual=$(shasum -a 256 "$tmp_file" | awk '{print $1}')
+      actual=$(shasum -a 256 "$tmp_file" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')
     else
       echo "Error: neither sha256sum nor shasum found; cannot verify the download." >&2
       echo "Run with OCTOPUS_INSTALL_SKIP_VERIFY=1 to bypass (NOT recommended)." >&2
@@ -168,7 +168,12 @@ fi
 # ── Step 4: install ──────────────────────────────────────────────────────────
 
 target="${INSTALL_DIR}/${BINARY_NAME}"
-mv "$tmp_file" "$target"
+# Keep the EXIT trap active across the move so a failed mv (bad perms / missing
+# INSTALL_DIR) still cleans up $tmp_file instead of leaking it.
+if ! mv "$tmp_file" "$target"; then
+  echo "Error: failed to install to $target (check permissions / INSTALL_DIR)." >&2
+  exit 1
+fi
 chmod +x "$target"
 trap - EXIT
 

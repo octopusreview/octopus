@@ -107,6 +107,12 @@ model Organization {
   googleApiKey         String?
   grokApiKey           String?
   openrouterApiKey     String?
+  // Claude Code provider config (self-host / per-org). authMode is
+  // "subscription" (local `claude` CLI via the agent bridge) or "api-key"
+  // (Anthropic SDK with claudeCodeApiKey, falling back to anthropicApiKey).
+  // The key is encrypted at rest like the other BYOK keys when set.
+  claudeCodeAuthMode   String?  // "subscription" | "api-key"
+  claudeCodeApiKey     String?
   defaultModelId       String?
   defaultEmbedModelId  String?
   monthlySpendLimitUsd    Float?
@@ -152,6 +158,7 @@ model Organization {
   apiTokens          OrgApiToken[]
   localAgents        LocalAgent[]
   agentSearchTasks   AgentSearchTask[]
+  agentLlmTasks      AgentLlmTask[]
   packageAnalyses       PackageAnalysis[]
   safePackageRequests   SafePackageRequest[]
   packageDeepDives      PackageDeepDive[]
@@ -918,10 +925,37 @@ model LocalAgent {
   apiToken       OrgApiToken @relation(fields: [apiTokenId], references: [id], onDelete: Cascade)
 
   agentSearchTasks AgentSearchTask[]
+  agentLlmTasks    AgentLlmTask[]
 
   @@unique([organizationId, name])
   @@index([organizationId, status])
   @@map("local_agents")
+}
+
+model AgentLlmTask {
+  id             String    @id @default(cuid())
+  status         String    @default("pending") // "pending" | "claimed" | "completed" | "failed" | "timeout"
+  modelId        String
+  system         String?   @db.Text
+  messages       Json      // { role, content }[]
+  maxTokens      Int
+  resultText     String?   @db.Text
+  resultUsage    Json?     // { inputTokens, outputTokens, ... }
+  errorMessage   String?
+  timeoutMs      Int       @default(300000) // 5 minutes
+  claimedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  agentId        String?
+  agent          LocalAgent? @relation(fields: [agentId], references: [id], onDelete: SetNull)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([agentId, status])
+  @@map("agent_llm_tasks")
 }
 
 model AgentSearchTask {

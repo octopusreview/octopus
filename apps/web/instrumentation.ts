@@ -31,6 +31,11 @@ export async function register() {
         );
       }, 60 * 60 * 1000);
       cleanupTimer.unref?.();
+
+      // Daily audit-log retention enforcement (03:00 UTC). pg-boss dedups the
+      // schedule across instances; the worker in queue-workers.ts runs the
+      // deletion. Self-hosters tune the window via AUDIT_LOG_RETENTION_DAYS.
+      await boss.schedule("enforce-audit-retention", "0 3 * * *");
     }
 
     // Graceful shutdown: wait for active jobs (e.g. in-progress reviews) to finish

@@ -16,6 +16,7 @@ import {
   IconBell,
   IconDevices,
   IconArrowUp,
+  IconHistory,
 } from "@tabler/icons-react";
 
 // Self-hosted-only nav items are filtered out at render time when
@@ -31,6 +32,7 @@ const sections = [
       { href: "/settings/team", label: "Team", icon: IconUsers },
       { href: "/settings/billing", label: "Billing", icon: IconCreditCard },
       { href: "/settings/notifications", label: "Notifications", icon: IconBell },
+      { href: "/settings/audit-log", label: "Audit Log", icon: IconHistory },
     ],
   },
   {

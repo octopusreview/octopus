@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSuperAdmin } from "@/lib/superadmin";
-import { getVendorTelemetry } from "@/lib/vendor-telemetry";
-import { writeAuditLog } from "@/lib/audit";
+import { getVendorTelemetry, recordVendorAccess } from "@/lib/vendor-telemetry";
 import { getClientIp } from "@/lib/request-ip";
 
 /** Machine auth: the shared ADMIN_API_SECRET bearer (matches the other
@@ -23,29 +22,27 @@ function hasAdminSecret(request: NextRequest): boolean {
  */
 export async function GET(request: NextRequest) {
   const viaSecret = hasAdminSecret(request);
-  if (!viaSecret) {
+  let actor: { id: string | null; email: string };
+  if (viaSecret) {
+    actor = { id: null, email: "admin-api-secret" };
+  } else {
     const sa = await getSuperAdmin();
     if (!sa) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    actor = { id: sa.id, email: sa.email };
   }
 
-  // Programmatic (machine) access is otherwise an un-audited cross-org data
-  // egress — log it. Human/session access is audited at the page render (once
-  // per console open); the page's 10s polls are that same session and aren't
-  // re-logged, to avoid flooding the audit log.
-  if (viaSecret) {
-    await writeAuditLog({
-      action: "vendor-telemetry.api_access",
-      category: "system",
-      actorId: null,
-      actorEmail: "admin-api-secret",
-      targetType: "platform",
-      metadata: {},
-      ipAddress: getClientIp(request.headers),
-      userAgent: request.headers.get("user-agent") ?? null,
-    });
-  }
+  // Audit the actual data egress — for BOTH machine and session access. The
+  // helper throttles per actor, so the page's 10s polls log ~once per window
+  // rather than every request, while still recording that this actor pulled
+  // cross-org data.
+  await recordVendorAccess({
+    actorId: actor.id,
+    actorEmail: actor.email,
+    ipAddress: getClientIp(request.headers),
+    userAgent: request.headers.get("user-agent") ?? null,
+  });
 
   const data = await getVendorTelemetry();
   return NextResponse.json(data);

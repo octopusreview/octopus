@@ -1,6 +1,45 @@
 import { prisma } from "@octopus/db";
 import { getOnlinePresence } from "@/lib/presence";
 import { AGENT_STALE_THRESHOLD_MS } from "@/lib/agent-constants";
+import { writeAuditLog } from "@/lib/audit";
+
+const VENDOR_ACCESS_AUDIT_WINDOW_MS = 5 * 60 * 1000; // 5 min
+
+/**
+ * Audit a vendor-console access, throttled per actor so a refresh-happy page or
+ * the 10s client poll doesn't flood the audit log: we skip if a
+ * `vendor-telemetry.viewed` entry already exists for this actor within the
+ * window. DB-based (no module-level state) so it dedupes across instances and
+ * survives restarts — and holds no cross-tenant data, unlike the cache we
+ * deliberately removed.
+ */
+export async function recordVendorAccess(opts: {
+  actorId: string | null;
+  actorEmail: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+}): Promise<void> {
+  const recent = await prisma.auditLog.findFirst({
+    where: {
+      action: "vendor-telemetry.viewed",
+      actorEmail: opts.actorEmail,
+      createdAt: { gte: new Date(Date.now() - VENDOR_ACCESS_AUDIT_WINDOW_MS) },
+    },
+    select: { id: true },
+  });
+  if (recent) return;
+
+  await writeAuditLog({
+    action: "vendor-telemetry.viewed",
+    category: "system",
+    actorId: opts.actorId,
+    actorEmail: opts.actorEmail,
+    targetType: "platform",
+    metadata: {},
+    ipAddress: opts.ipAddress,
+    userAgent: opts.userAgent,
+  });
+}
 
 /**
  * Cross-org telemetry aggregation for the vendor (Octopus staff) console.

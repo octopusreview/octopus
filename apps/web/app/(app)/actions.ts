@@ -16,6 +16,8 @@ import { toBaseSlug, randomSlugSuffix } from "@/lib/slug";
 import { canUserCreateOrg } from "@/lib/org-limits";
 import { MAX_OWNED_ORGS_PER_USER } from "@/lib/constants";
 import { encryptString } from "@/lib/crypto";
+import { writeAuditLog } from "@/lib/audit";
+import { canUseLiveTelemetry } from "@/lib/entitlements";
 
 export async function clearOrgCookie() {
   const cookieStore = await cookies();
@@ -857,6 +859,74 @@ export async function toggleReviewsPaused(
   });
 
   revalidatePath("/settings/reviews");
+  return { success: true };
+}
+
+/**
+ * Enable/disable live telemetry (real-time presence + activity) for the org.
+ * Owner/admin only. Paid-only: a free org cannot enable it (entitlement is
+ * re-checked server-side, never trusting the client). Audited under the
+ * "admin" category since it controls member-activity monitoring.
+ */
+export async function toggleLiveTelemetry(
+  _prevState: { error?: string; success?: boolean },
+  formData: FormData,
+): Promise<{ error?: string; success?: boolean }> {
+  const user = await getUser();
+  const reqHeaders = await headers();
+  const cookieStore = await cookies();
+  const orgId = cookieStore.get("current_org_id")?.value;
+
+  if (!orgId) return { error: "No organization selected." };
+
+  const member = await prisma.organizationMember.findFirst({
+    where: { organizationId: orgId, userId: user.id, deletedAt: null },
+    select: { role: true },
+  });
+
+  if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    return { error: "Only organization owners and admins can change live telemetry." };
+  }
+
+  const enabled = formData.get("enabled") === "true";
+
+  // Force-off for unpaid orgs: a free org may never enable telemetry, even if a
+  // crafted form tries to. (Disabling is always allowed.)
+  if (enabled && !(await canUseLiveTelemetry(orgId))) {
+    return { error: "Live telemetry is a paid feature. Upgrade your plan to enable it." };
+  }
+
+  const orgBefore = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { liveTelemetryEnabled: true },
+  });
+
+  // No-op if unchanged — don't write a misleading audit entry.
+  if (orgBefore && orgBefore.liveTelemetryEnabled === enabled) {
+    return { success: true };
+  }
+
+  await prisma.organization.update({
+    where: { id: orgId },
+    data: { liveTelemetryEnabled: enabled },
+  });
+
+  await writeAuditLog({
+    action: enabled ? "telemetry.enabled" : "telemetry.disabled",
+    category: "admin",
+    actorId: user.id,
+    actorEmail: user.email,
+    targetType: "organization",
+    targetId: orgId,
+    organizationId: orgId,
+    metadata: {
+      liveTelemetryEnabled: { old: orgBefore?.liveTelemetryEnabled ?? false, new: enabled },
+    },
+    ipAddress: reqHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    userAgent: reqHeaders.get("user-agent") ?? null,
+  });
+
+  revalidatePath("/settings/telemetry");
   return { success: true };
 }
 

@@ -45,6 +45,7 @@ model User {
   packageAnalyses       PackageAnalysis[]
   safePackageRequests   SafePackageRequest[]
   packageDeepDives      PackageDeepDive[]
+  presences             UserPresence[]
 
   @@map("users")
 }
@@ -118,6 +119,13 @@ model Organization {
   monthlySpendLimitUsd    Float?
   checkFailureThreshold   String   @default("critical") // "critical" | "high" | "medium" | "none"
   reviewsPaused           Boolean  @default(false)
+  // Live telemetry (real-time presence + activity). Opt-in, paid-only.
+  // liveTelemetryEnabled: org owner surfaces members'/agents' live presence +
+  // activity to the org's own admins. allowVendorMemberVisibility: a SEPARATE
+  // opt-in letting Octopus staff see member-level detail in the vendor console
+  // (otherwise that console sees org-level aggregates only).
+  liveTelemetryEnabled        Boolean  @default(false)
+  allowVendorMemberVisibility Boolean  @default(false)
   blockedAuthors          Json     @default("[]") // string[] of PR author usernames to skip review
   defaultReviewConfig     Json     @default("{}")
   reviewLanguage          String   @default("en") // BCP-47 code; review prose output language
@@ -163,6 +171,8 @@ model Organization {
   safePackageRequests   SafePackageRequest[]
   packageDeepDives      PackageDeepDive[]
   couponRedemptions     CouponRedemption[]
+  userPresences         UserPresence[]
+  activityEvents        ActivityEvent[]
 
   @@map("organizations")
 }
@@ -1126,6 +1136,49 @@ model AuditLog {
   @@index([action, createdAt])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ── Live Telemetry (real-time presence + activity) ───────────────────────────
+// Powers the per-org live-activity dashboard and the vendor cross-org console.
+// Collection is gated on a paid org with liveTelemetryEnabled (+ per-user
+// opt-out); see lib/entitlements.ts. Both tables cascade-delete with the org
+// (hard delete); soft-delete + member-removal purge is handled explicitly in
+// the deletion flows.
+
+model UserPresence {
+  id              String   @id @default(cuid())
+  lastSeenAt      DateTime // last heartbeat; "online" := lastSeenAt >= now - PRESENCE_STALE_MS
+  currentActivity String?  // COARSE route category only (e.g. "Repositories") — never URLs/content
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  userId         String
+  user           User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId, lastSeenAt])
+  @@map("user_presences")
+}
+
+model ActivityEvent {
+  id         String   @id @default(cuid())
+  actorType  String   // "user" | "agent" | "system"
+  actorId    String?  // userId or agentId (null for system); denormalized like AuditLog.actorId
+  actorLabel String?  // denormalized display name (coarse)
+  action     String   // e.g. "review.completed", "repo.indexed", "chat.message"
+  target     String?  // COARSE target label only (repo display name) — never PR titles/URLs/file names
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([createdAt])
+  @@map("activity_events")
 }
 
 // ── Organization Type History ────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { authenticateApiToken } from "@/lib/api-auth";
 import { prisma } from "@octopus/db";
-import { indexRepository } from "@/lib/indexer";
+import { runIndexingInBackground } from "@/lib/indexing-runner";
 import { NextRequest } from "next/server";
 
 export async function POST(
@@ -30,19 +30,30 @@ export async function POST(
     return Response.json({ error: "Repository has no installation ID" }, { status: 400 });
   }
 
-  // Start indexing in the background
-  indexRepository(
+  // Mark indexing in-progress synchronously so the CLI's status poll observes
+  // the transition, then hand off to the SAME canonical background runner the
+  // web path uses. It persists the terminal status plus all stats (counts,
+  // contributors, duration, resolved default branch) and generates the repo
+  // summary/purpose — so a CLI-triggered index leaves the repo in the exact
+  // same shape as a web-triggered one. A fresh AbortController + a no-op log
+  // sink are fine here: the CLI polls status rather than subscribing to the
+  // pubby channel (its events simply have no listener).
+  await prisma.repository.update({
+    where: { id: repo.id },
+    data: { indexStatus: "indexing" },
+  });
+
+  runIndexingInBackground(
     repo.id,
     repo.fullName,
     repo.defaultBranch,
-    repo.installationId,
-    () => {},
-    undefined,
-    repo.provider,
     result.org.id,
-  ).catch((err) => {
-    console.error(`[cli] Index failed for ${repo.fullName}:`, err);
-  });
+    repo.installationId,
+    `repo-index-${repo.id}`,
+    () => {},
+    new AbortController(),
+    repo.provider,
+  );
 
   return Response.json({ message: "Indexing started", repoId: repo.id });
 }

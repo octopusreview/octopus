@@ -34,17 +34,32 @@ export async function POST(
     return Response.json({ error: "Analysis already in progress" }, { status: 409 });
   }
 
-  // Start analysis in the background
+  // Mark analyzing synchronously so the CLI's status poll observes the
+  // transition, then persist the result. analyzeRepository only RETURNS the
+  // analysis text (the status writes live in reviewer.ts) — persist it here so
+  // this CLI route is self-contained.
+  await prisma.repository.update({
+    where: { id: repo.id },
+    data: { analysisStatus: "analyzing" },
+  });
+
   analyzeRepository(repo.id, repo.fullName, result.org.id)
-    .then(() => {
+    .then(async (analysis) => {
+      await prisma.repository.update({
+        where: { id: repo.id },
+        data: { analysis, analysisStatus: "analyzed", analyzedAt: new Date() },
+      });
       eventBus.emit({
         type: "repo-analyzed",
         orgId: result.org.id,
         repoFullName: repo.fullName,
       });
     })
-    .catch((err) => {
+    .catch(async (err) => {
       console.error(`[cli] Analysis failed for ${repo.fullName}:`, err);
+      await prisma.repository
+        .update({ where: { id: repo.id }, data: { analysisStatus: "failed" } })
+        .catch(() => {});
     });
 
   return Response.json({ message: "Analysis started", repoId: repo.id });

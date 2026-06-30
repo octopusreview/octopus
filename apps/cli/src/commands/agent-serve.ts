@@ -2,6 +2,7 @@ import os from "node:os";
 import { loadCredentials, type Credentials } from "../lib/credentials.js";
 import { loadConfig, DEFAULT_OLLAMA_BASE_URL } from "../lib/config.js";
 import { getJson, postJson } from "../lib/api.js";
+import { sanitizeTerminal } from "../lib/output.js";
 
 /**
  * `octp agent serve` — register this machine as a local agent for the
@@ -109,7 +110,9 @@ export async function agentServeCommand(argv: string[]): Promise<number> {
   const ollamaBaseUrl =
     process.env.OLLAMA_BASE_URL ?? config.ollamaBaseUrl ?? DEFAULT_OLLAMA_BASE_URL;
 
-  console.log(`octp agent serve — connecting to ${creds.baseUrl} as ${creds.orgName} / ${agentName}`);
+  console.log(
+    `octp agent serve — connecting to ${sanitizeTerminal(creds.baseUrl)} as ${sanitizeTerminal(creds.orgName)} / ${sanitizeTerminal(agentName)}`,
+  );
 
   // Quick Ollama health-check so the user finds out about a stopped daemon
   // before tasks start landing.

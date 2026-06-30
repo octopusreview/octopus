@@ -3,6 +3,7 @@ import { loadCredentials } from "../lib/credentials.js";
 import { loadByok } from "../lib/byok.js";
 import { getJson } from "../lib/api.js";
 import { getOctopusHome } from "../lib/paths.js";
+import { sanitizeTerminal } from "../lib/output.js";
 
 /**
  * `octp doctor` — environment + auth health check. Prints one line per
@@ -46,7 +47,11 @@ export async function doctorCommand(_argv: string[]): Promise<number> {
   if (!creds) {
     line("warn", "credentials", "no ~/.octopus/credentials — run `octp` to sign in");
   } else {
-    line("ok", "credentials", `${creds.orgName} (${creds.orgSlug}) on ${creds.baseUrl}`);
+    line(
+      "ok",
+      "credentials",
+      `${sanitizeTerminal(creds.orgName)} (${sanitizeTerminal(creds.orgSlug)}) on ${sanitizeTerminal(creds.baseUrl)}`,
+    );
 
     // Live token check — hits /api/cli/me with the saved bearer.
     const res = await getJson(`${creds.baseUrl}/api/cli/me`, {

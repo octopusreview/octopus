@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { containedPath, extractKeywords, fileReadSearch } from "../lib/code-search";
+import { containedPath, extractKeywords, fileReadSearch, grepSearch } from "../lib/code-search";
 
 describe("containedPath (path-traversal guard, lexical)", () => {
   const root = "/tmp/repo";
@@ -33,6 +33,9 @@ describe("containedPath (symlink-escape guard)", () => {
     const secret = join(base, "secret");
     mkdirSync(secret);
     writeFileSync(join(secret, "id_rsa"), "TOPSECRET-KEY-MATERIAL");
+    // A searchable-extension file outside the repo, so grepSearch WOULD match it
+    // if a symlink were followed — gives the --no-follow / lstat-skip test teeth.
+    writeFileSync(join(secret, "out.ts"), "const x = 'LEAKTOKEN_8123';\n");
     writeFileSync(join(repo, "real.ts"), "const ok = true;\n");
     // An in-repo file symlink and dir symlink that point OUTSIDE the repo.
     symlinkSync(join(secret, "id_rsa"), join(repo, "leak")); // repo/leak -> ../secret/id_rsa
@@ -56,6 +59,16 @@ describe("containedPath (symlink-escape guard)", () => {
     const res = await fileReadSearch(["leak", "dirlink/id_rsa"], repo);
     expect(res.results).toHaveLength(0);
     expect(res.summary).not.toContain("TOPSECRET");
+  });
+
+  it("grepSearch does not match through an escaping symlink (rg --no-follow / node lstat-skip)", async () => {
+    // The out-of-repo file contains a unique token; a grep for it from inside the
+    // repo must NOT find it via the dirlink symlink, whether the backend is
+    // ripgrep (invoked with --no-follow) or the pure-Node walker (lstat-skip).
+    // A leak would surface as a hit + an "out.ts" header in the summary.
+    const res = await grepSearch("LEAKTOKEN_8123", repo);
+    expect(res.results).toHaveLength(0);
+    expect(res.summary).not.toContain("out.ts");
   });
 });
 

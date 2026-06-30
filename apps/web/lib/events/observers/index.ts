@@ -2,6 +2,7 @@ import { registerSlackObserver } from "./slack.observer";
 import { registerEmailObserver } from "./email.observer";
 import { registerAuditObserver } from "./audit.observer";
 import { registerStatsObserver } from "./stats.observer";
+import { registerActivityObserver } from "./activity.observer";
 
 // Use globalThis so the flag survives Next.js HMR (module re-evaluation resets module-level vars,
 // but globalThis persists — same as the EventBus instance in bus.ts).
@@ -16,4 +17,5 @@ export function initializeObservers(): void {
   registerEmailObserver();
   registerAuditObserver();
   registerStatsObserver();
+  registerActivityObserver();
 }

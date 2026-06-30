@@ -3,6 +3,7 @@ import { pubby } from "@/lib/pubby";
 import { authenticateApiToken } from "@/lib/api-auth";
 import { prisma } from "@octopus/db";
 import { headers } from "next/headers";
+import { liveTelemetryActive } from "@/lib/entitlements";
 
 export async function POST(req: Request) {
   // Clone request body since we may need to read it in both auth paths
@@ -98,6 +99,28 @@ export async function POST(req: Request) {
 
     // Deny unrecognized presence channel patterns
     return new Response("Channel not allowed", { status: 403 });
+  }
+
+  // private-telemetry-org-{orgId}: the owner/admin-only live-activity channel.
+  // This is a PRIVATE (not presence) channel so member identities aren't
+  // broadcast in a roster. Owner/admin-only AND only when live telemetry is
+  // actually active for the org (entitled + enabled) — a free org can't even
+  // subscribe.
+  const telemetryMatch = channel_name.match(/^private-telemetry-org-(.+)$/);
+  if (telemetryMatch) {
+    const orgId = telemetryMatch[1];
+    const membership = await prisma.organizationMember.findFirst({
+      where: { organizationId: orgId, userId: session.user.id, deletedAt: null },
+      select: { role: true },
+    });
+    if (!membership || (membership.role !== "owner" && membership.role !== "admin")) {
+      return new Response("Channel not allowed", { status: 403 });
+    }
+    if (!(await liveTelemetryActive(orgId))) {
+      return new Response("Live telemetry not active", { status: 403 });
+    }
+    const authResponse = pubby.authenticatePrivateChannel(socket_id, channel_name);
+    return Response.json(authResponse);
   }
 
   // Deny all other channels for session users

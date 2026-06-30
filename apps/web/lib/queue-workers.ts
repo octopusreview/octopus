@@ -6,7 +6,7 @@ import {
   type LargeReviewResultJob,
 } from "./large-review-result";
 import { processCommunityReview, type CommunityReviewJobData } from "./community-review";
-import { enforceAuditLogRetention } from "./audit";
+import { enforceAuditLogRetention, enforceActivityEventRetention } from "./audit";
 import { runOllamaPull } from "./ollama-admin";
 import type { QueueConfig } from "./queue";
 
@@ -92,6 +92,20 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
     }
   });
 
+  // Daily ActivityEvent retention job — scheduled in instrumentation.ts via
+  // boss.schedule(); idempotent deleteMany makes concurrent instances harmless.
+  await boss.work("enforce-activity-retention", async (jobs) => {
+    for (const job of jobs) {
+      try {
+        const deleted = await enforceActivityEventRetention();
+        console.log(`[queue] enforce-activity-retention ${job.id}: deleted ${deleted} rows`);
+      } catch (err) {
+        console.error(`[queue] enforce-activity-retention failed (job ${job.id}):`, err);
+        throw err;
+      }
+    }
+  });
+
   // Admin-triggered Ollama model download (self-hosted). runOllamaPull is
   // self-contained: it records progress/failure in the OllamaModelPull row and
   // never throws, so a failed download doesn't trip pg-boss retries.
@@ -102,5 +116,5 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
     }
   });
 
-  console.log("[queue] Workers registered: welcome-email, process-review, post-large-review-result, community-review, enforce-audit-retention, pull-ollama-model");
+  console.log("[queue] Workers registered: welcome-email, process-review, post-large-review-result, community-review, enforce-audit-retention, enforce-activity-retention, pull-ollama-model");
 }

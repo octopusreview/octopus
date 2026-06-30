@@ -36,6 +36,11 @@ export async function register() {
       // schedule across instances; the worker in queue-workers.ts runs the
       // deletion. Self-hosters tune the window via AUDIT_LOG_RETENTION_DAYS.
       await boss.schedule("enforce-audit-retention", "0 3 * * *");
+
+      // Daily ActivityEvent (live-telemetry) retention (04:00 UTC — offset from
+      // the audit job to avoid simultaneous deleteMany load). Window tunable via
+      // ACTIVITY_RETENTION_DAYS (default 30).
+      await boss.schedule("enforce-activity-retention", "0 4 * * *");
     }
 
     // Graceful shutdown: wait for active jobs (e.g. in-progress reviews) to finish

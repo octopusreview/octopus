@@ -18,6 +18,7 @@ import { MAX_OWNED_ORGS_PER_USER } from "@/lib/constants";
 import { encryptString } from "@/lib/crypto";
 import { writeAuditLog } from "@/lib/audit";
 import { canUseLiveTelemetry } from "@/lib/entitlements";
+import { getClientIp } from "@/lib/request-ip";
 
 export async function clearOrgCookie() {
   const cookieStore = await cookies();
@@ -922,7 +923,7 @@ export async function toggleLiveTelemetry(
     metadata: {
       liveTelemetryEnabled: { old: orgBefore?.liveTelemetryEnabled ?? false, new: enabled },
     },
-    ipAddress: reqHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    ipAddress: getClientIp(reqHeaders),
     userAgent: reqHeaders.get("user-agent") ?? null,
   });
 

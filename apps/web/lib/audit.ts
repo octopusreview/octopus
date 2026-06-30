@@ -62,6 +62,37 @@ export async function enforceAuditLogRetention(retentionDays?: number): Promise<
   return count;
 }
 
+/**
+ * Default retention window for ActivityEvent rows (the live-telemetry feed).
+ * Much shorter than the audit log (365d) — this is high-volume, identified
+ * member activity, kept only long enough to back the live feed. Overridable
+ * via ACTIVITY_RETENTION_DAYS.
+ */
+export const ACTIVITY_EVENT_DEFAULT_RETENTION_DAYS = 30;
+
+/**
+ * Delete ActivityEvent rows older than the configured retention window.
+ * Idempotent — only rows past the cutoff are removed. Returns the deleted count.
+ * Scheduled daily (see queue-workers.ts + the boss.schedule in instrumentation.ts).
+ */
+export async function enforceActivityEventRetention(retentionDays?: number): Promise<number> {
+  const envOverride = process.env.ACTIVITY_RETENTION_DAYS;
+  const days =
+    retentionDays ?? (envOverride ? parseInt(envOverride, 10) : ACTIVITY_EVENT_DEFAULT_RETENTION_DAYS);
+  if (!Number.isFinite(days) || days <= 0) {
+    console.warn(`[activity] enforceActivityEventRetention: invalid days=${days}, skipping`);
+    return 0;
+  }
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const { count } = await prisma.activityEvent.deleteMany({
+    where: { createdAt: { lt: cutoff } },
+  });
+  if (count > 0) {
+    console.log(`[activity] enforceActivityEventRetention: deleted ${count} rows older than ${days} days`);
+  }
+  return count;
+}
+
 export type AuditCategory =
   | "auth"
   | "email"

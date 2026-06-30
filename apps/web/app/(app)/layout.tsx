@@ -11,6 +11,7 @@ import { getOrgSpendLimitStatus } from "@/lib/cost";
 import { canUserCreateOrg } from "@/lib/org-limits";
 import { OrgCookieSync } from "@/components/org-cookie-sync";
 import { DeviceReporter } from "@/components/device-reporter";
+import { PresenceReporter } from "@/components/presence-reporter";
 import { createOrgForUser } from "@/lib/org-create";
 
 /**
@@ -185,6 +186,7 @@ export default async function AppLayout({
     <ChatWrapper orgId={currentOrg.id} userId={session.user.id} userName={session.user.name}>
       <OrgCookieSync orgId={currentOrg.id} />
       <DeviceReporter />
+      <PresenceReporter orgId={currentOrg.id} />
       <div className="flex h-screen flex-col">
         {orgsNeedingPermission.length > 0 && (
           <PermissionBanner

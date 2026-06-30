@@ -37,10 +37,11 @@ describe("getOctopusHome", () => {
 });
 
 describe("path helpers", () => {
-  it("places config, byok, and credentials inside OCTOPUS_HOME", () => {
+  it("keeps config global; puts byok + credentials under the active profile dir", () => {
+    // No profiles.json yet → active profile resolves to "default".
     expect(getConfigPath()).toBe(join(tmpHome, "config.json"));
-    expect(getByokPath()).toBe(join(tmpHome, "byok.json"));
-    expect(getCredentialsPath()).toBe(join(tmpHome, "credentials"));
+    expect(getByokPath()).toBe(join(tmpHome, "profiles", "default", "byok.json"));
+    expect(getCredentialsPath()).toBe(join(tmpHome, "profiles", "default", "credentials"));
   });
 });
 

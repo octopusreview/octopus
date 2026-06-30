@@ -18,8 +18,26 @@ import { analyzeDepsCommand } from "./commands/analyze-deps.js";
 import { skillsCommand } from "./commands/skills.js";
 import { updateCommand } from "./commands/update.js";
 import { chatCommand } from "./commands/chat.js";
+import { accountCommand } from "./commands/account.js";
+import { ensureProfilesMigrated, isValidProfileName, ensureProfile, setActiveProfile } from "./lib/profile.js";
+import { setActiveProfileOverride } from "./lib/paths.js";
+import { flagValue } from "./lib/args.js";
 
 const VERSION = "0.1.0";
+
+/** Remove a `--flag <value>` pair from argv (the value is dropped only when the
+ *  next token isn't itself a flag). Used to peel the global --account/--profile
+ *  flag off before a command parses its own positionals. */
+function stripValueFlag(argv: string[], flag: string): string[] {
+  const out = argv.slice();
+  let i = out.indexOf(flag);
+  while (i !== -1) {
+    const hasValue = out[i + 1] !== undefined && !out[i + 1].startsWith("-");
+    out.splice(i, hasValue ? 2 : 1);
+    i = out.indexOf(flag);
+  }
+  return out;
+}
 
 /**
  * Top-level CLI entry. Parses the first arg as a subcommand and dispatches.
@@ -46,11 +64,12 @@ Usage:
   octp                       Onboarding wizard (first run) or status hint
   octp onboard [--reset]     Run the onboarding wizard
 
-Auth:
+Auth & accounts:
   octp login [--token ...]   Sign in (browser device-flow or --token)
-  octp logout                Remove saved credentials
+  octp logout                Remove the active account's credentials
   octp whoami                Show the signed-in user + org
   octp setup-token           Print a token to stdout (for CI/CD)
+  octp account <list|set|show|remove>   Manage signed-in accounts (profiles)
 
 Reviews:
   octp review [--staged|--since <ref>]   Review local changes pre-PR
@@ -71,6 +90,7 @@ Agent & ops:
   octp update [--check]      Update the CLI
 
 Flags:
+  --account <name>           Use a specific account for one command (e.g. --account work)
   --version, -v              Print version
   --help, -h                 Print this help
   (run \`octp <command> --help\` for command-specific flags)
@@ -83,7 +103,26 @@ Docs:  https://github.com/octopusreview/octopus
 `);
 }
 
-async function main(argv: string[]): Promise<number> {
+async function main(rawArgv: string[]): Promise<number> {
+  // Global --account / --profile: select the active profile for this run, then
+  // strip the flag so it doesn't leak into a command's positional parsing.
+  const acctFlag = flagValue(rawArgv, "--account") ?? flagValue(rawArgv, "--profile");
+  if ((rawArgv.includes("--account") || rawArgv.includes("--profile")) && acctFlag === undefined) {
+    console.error("--account requires an account name (e.g. --account work).");
+    return 2;
+  }
+  let argv = rawArgv;
+  if (acctFlag !== undefined) {
+    if (!isValidProfileName(acctFlag)) {
+      console.error(
+        `Invalid account name "${acctFlag}". Use letters, digits, dot, dash, or underscore.`,
+      );
+      return 2;
+    }
+    setActiveProfileOverride(acctFlag);
+    argv = stripValueFlag(stripValueFlag(rawArgv, "--account"), "--profile");
+  }
+
   const first = argv[0];
 
   if (first === "--version" || first === "-v") {
@@ -94,6 +133,10 @@ async function main(argv: string[]): Promise<number> {
     printHelp();
     return 0;
   }
+
+  // Migrate the legacy single-context layout to per-profile dirs (idempotent;
+  // a no-op after the first run). Must precede any credential read/write.
+  await ensureProfilesMigrated();
 
   // No subcommand: gate on first-run + TTY, then render the wizard (or exit cleanly).
   if (first === undefined || first.startsWith("-")) {
@@ -108,11 +151,29 @@ async function main(argv: string[]): Promise<number> {
       console.log("You're set. Try `octp --help` for available commands.");
       return 0;
     }
-    return await renderWizard(argv.includes("--reset"));
+    {
+      const code = await renderWizard(argv.includes("--reset"));
+      // If signing in under a named account (--account), register + activate it
+      // so the wizard's credentials land in a tracked profile (parity with login).
+      if (acctFlag) {
+        await ensureProfile(acctFlag);
+        await setActiveProfile(acctFlag);
+      }
+      return code;
+    }
   }
 
   if (first === "onboard") {
-    return await renderWizard(argv.includes("--reset"));
+    {
+      const code = await renderWizard(argv.includes("--reset"));
+      // If signing in under a named account (--account), register + activate it
+      // so the wizard's credentials land in a tracked profile (parity with login).
+      if (acctFlag) {
+        await ensureProfile(acctFlag);
+        await setActiveProfile(acctFlag);
+      }
+      return code;
+    }
   }
 
   const rest = argv.slice(1);
@@ -145,6 +206,9 @@ async function main(argv: string[]): Promise<number> {
       return await updateCommand(rest);
     case "doctor":
       return await doctorCommand(rest);
+    case "account":
+    case "profile":
+      return await accountCommand(rest);
     case "agent": {
       const sub = argv[1];
       if (sub === "serve") return await agentServeCommand(argv.slice(2));
@@ -172,6 +236,9 @@ export async function ensureOnboardCompleted(argv: string[] = process.argv.slice
   if (argv.includes("--skip-onboard")) return;
   if (process.env.OCTOPUS_NO_ONBOARD === "1") return;
   if (!process.stdin.isTTY) return;
+
+  // Keep the profile layout migrated for embedders that bypass main().
+  await ensureProfilesMigrated();
 
   const config = await loadConfig();
   const reset = argv.includes("--reset") || argv.includes("--reset-onboard");

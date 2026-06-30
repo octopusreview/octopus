@@ -3,6 +3,7 @@ import { loadCredentials } from "../lib/credentials.js";
 import { loadByok } from "../lib/byok.js";
 import { getJson } from "../lib/api.js";
 import { getOctopusHome } from "../lib/paths.js";
+import { loadProfilesIndex } from "../lib/profile.js";
 import { sanitizeTerminal } from "../lib/output.js";
 
 /**
@@ -43,6 +44,17 @@ export async function doctorCommand(_argv: string[]): Promise<number> {
 
   // ── Credentials ────────────────────────────────────────────────────────────
   console.log("\nAuth:");
+  const profilesIndex = await loadProfilesIndex();
+  const profileCount = Object.keys(profilesIndex.profiles).length;
+  if (profilesIndex.active) {
+    line(
+      "ok",
+      "active account",
+      `${sanitizeTerminal(profilesIndex.active)} (${profileCount} account${profileCount === 1 ? "" : "s"} total)`,
+    );
+  } else {
+    line("warn", "active account", "none — run `octp login`");
+  }
   const creds = await loadCredentials();
   if (!creds) {
     line("warn", "credentials", "no ~/.octopus/credentials — run `octp` to sign in");

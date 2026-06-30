@@ -58,4 +58,11 @@ USER nextjs
 EXPOSE 3000
 ENV HOSTNAME=0.0.0.0
 ENV NODE_OPTIONS="--max-old-space-size=4096"
+
+# Container-level readiness for orchestrators / compose. Hits the same
+# /api/health probe the Cloudflare LB monitors. Node 22 ships a global fetch, so
+# no curl is needed in the alpine runner. start-period covers app boot.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 CMD ["node", "apps/web/server.js"]

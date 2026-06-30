@@ -320,6 +320,45 @@ docker compose up -d`}</CodeBlock>
           database during cutover.
         </Paragraph>
       </Section>
+
+      {/* Blue-green with a Cloudflare load balancer */}
+      <Section title="Zero-downtime cutover (Cloudflare LB)">
+        <Paragraph>
+          For zero-downtime deploys, front two legs (e.g. your datacenter and a
+          cloud VM) with a Cloudflare Load Balancer. Both legs are{" "}
+          <strong>stateless app containers</strong> pulling the same image and
+          pointing at <strong>one shared database</strong> (and Qdrant/Redis) —
+          Octopus is safe to run as multiple app instances on one DB, since
+          pg-boss coordinates workers and dedupes the scheduled jobs across them.
+        </Paragraph>
+        <ul className="mb-3 list-inside list-disc space-y-1.5 text-sm text-[#888]">
+          <li>
+            Create a Cloudflare LB with one <Mono>pool</Mono> per leg and a{" "}
+            <Mono>monitor</Mono> that probes <Mono>/api/health</Mono> (it returns{" "}
+            <Mono>200</Mono> only when the leg can reach the database, else{" "}
+            <Mono>503</Mono>). Cloudflare drops an unhealthy leg from rotation
+            automatically.
+          </li>
+          <li>
+            Deploy the new tag to the <strong>idle</strong> leg, let its{" "}
+            <Mono>/api/health</Mono> go green, then point the LB&apos;s default
+            pool at it. Keep the previous leg running — rollback is an instant
+            flip back.
+          </li>
+          <li>
+            The included <Mono>deploy</Mono> workflow automates this
+            (deploy &rarr; health-gate &rarr; Cloudflare cutover &rarr; verify);
+            set the documented Cloudflare token / LB &amp; pool IDs as repo
+            secrets and variables.
+          </li>
+        </ul>
+        <Paragraph>
+          Note: this is zero-downtime <em>deploys</em> against one shared DB. True
+          survive-a-whole-site-outage HA additionally needs that database
+          (and Qdrant) replicated across both legs with failover — a separate,
+          larger piece of work.
+        </Paragraph>
+      </Section>
     </article>
   );
 }

@@ -1,0 +1,191 @@
+name: deploy (blue-green cutover)
+
+# Manual, automated blue-green cutover for a Cloudflare Load Balancer fronting
+# two legs (e.g. datacenter + AWS), both stateless app containers pulling the
+# same GHCR image and sharing ONE database. Flow:
+#   1. (optional) deploy the chosen image tag to the TARGET leg over SSH
+#   2. health-gate: poll the target leg's /api/health directly until ready
+#   3. cutover: point the Cloudflare LB's default pool at the target leg
+#   4. verify the public hostname, then print rollback instructions
+#
+# The previous leg is left running, so rollback = re-run this with the other
+# target (instant traffic flip back). This assumes additive (expand-only)
+# migrations so both legs can serve one shared DB during cutover — enforced by
+# the migrate-check workflow.
+#
+# ── Required configuration (set in repo Settings) ───────────────────────────
+#   Secrets:
+#     CLOUDFLARE_API_TOKEN   - token with "Load Balancers: Edit" on the zone
+#     DEPLOY_SSH_KEY         - (optional) private key for the SSH deploy step
+#   Variables:
+#     CLOUDFLARE_ZONE_ID, CLOUDFLARE_LB_ID
+#     CF_POOL_DATACENTER, CF_POOL_AWS          - Cloudflare LB pool IDs per leg
+#     HEALTH_URL_DATACENTER, HEALTH_URL_AWS    - each leg's DIRECT origin /api/health (bypassing the LB)
+#     PUBLIC_HEALTH_URL                        - the LB hostname's /api/health (post-cutover verify)
+#     SSH_HOST_DATACENTER, SSH_HOST_AWS, DEPLOY_SSH_USER, DEPLOY_DIR  - (optional) SSH deploy (DEPLOY_DIR = compose dir, default /opt/octopus)
+# If the SSH_* vars / DEPLOY_SSH_KEY are unset, the deploy step is skipped and
+# the workflow assumes the target leg already runs the desired tag (e.g. it
+# auto-pulls), doing only the health-gate + cutover.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Leg to deploy to and cut traffic over to"
+        type: choice
+        options: [datacenter, aws]
+        required: true
+      tag:
+        description: "Image tag to deploy (e.g. 0.3.0). Used by the optional SSH deploy step."
+        type: string
+        required: true
+
+concurrency:
+  group: deploy-cutover
+  cancel-in-progress: false
+
+jobs:
+  cutover:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve target leg
+        id: t
+        # Pass config via env (not inline ${{ }} into the script) so a malformed
+        # repo Variable can't break out of / corrupt the shell.
+        env:
+          TARGET: ${{ inputs.target }}
+          POOL_DC: ${{ vars.CF_POOL_DATACENTER }}
+          POOL_AWS: ${{ vars.CF_POOL_AWS }}
+          HEALTH_DC: ${{ vars.HEALTH_URL_DATACENTER }}
+          HEALTH_AWS: ${{ vars.HEALTH_URL_AWS }}
+          SSH_DC: ${{ vars.SSH_HOST_DATACENTER }}
+          SSH_AWS: ${{ vars.SSH_HOST_AWS }}
+        run: |
+          set -euo pipefail
+          if [ "$TARGET" = "datacenter" ]; then
+            pool="$POOL_DC"; health="$HEALTH_DC"; ssh_host="$SSH_DC"
+          else
+            pool="$POOL_AWS"; health="$HEALTH_AWS"; ssh_host="$SSH_AWS"
+          fi
+          printf '%s\n' "pool=$pool" "health=$health" "ssh_host=$ssh_host" >> "$GITHUB_OUTPUT"
+
+      - name: Preflight — validate inputs + required configuration
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          TARGET: ${{ inputs.target }}
+          ZONE: ${{ vars.CLOUDFLARE_ZONE_ID }}
+          LB: ${{ vars.CLOUDFLARE_LB_ID }}
+          POOL: ${{ steps.t.outputs.pool }}
+          HEALTH: ${{ steps.t.outputs.health }}
+        run: |
+          set -uo pipefail
+          # The tag flows into the SSH deploy command — constrain it to a safe
+          # image-tag charset so it can't smuggle shell metacharacters.
+          if ! printf '%s' "$TAG" | grep -qE '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'; then
+            echo "::error::Invalid tag '$TAG' — allowed: letters, digits, dot, dash, underscore."
+            exit 1
+          fi
+          missing=""
+          [ -n "$CF_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN(secret)"
+          [ -n "$ZONE" ]   || missing="$missing CLOUDFLARE_ZONE_ID"
+          [ -n "$LB" ]     || missing="$missing CLOUDFLARE_LB_ID"
+          [ -n "$POOL" ]   || missing="$missing CF_POOL_$TARGET"
+          [ -n "$HEALTH" ] || missing="$missing HEALTH_URL_$TARGET"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required config:$missing — see the header of this workflow."
+            exit 1
+          fi
+
+      - name: Deploy image to target leg (optional SSH)
+        if: ${{ vars.DEPLOY_SSH_USER != '' && steps.t.outputs.ssh_host != '' }}
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_USER: ${{ vars.DEPLOY_SSH_USER }}
+          SSH_HOST: ${{ steps.t.outputs.ssh_host }}
+          # The compose directory on the leg (default /opt/octopus). A PATH, not
+          # an arbitrary command — the deploy command itself is fixed below.
+          DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SSH_KEY" ]; then
+            echo "::error::DEPLOY_SSH_USER is set but DEPLOY_SSH_KEY secret is missing."; exit 1
+          fi
+          dir="${DEPLOY_DIR:-/opt/octopus}"
+          # Validate the dir as a plain path so it can't smuggle shell into the
+          # remote command (the deploy command is otherwise fixed — no free-form
+          # remote command is accepted).
+          if ! printf '%s' "$dir" | grep -qE '^/[A-Za-z0-9._/-]*$'; then
+            echo "::error::Invalid DEPLOY_DIR '$dir' — must be an absolute path of [A-Za-z0-9._/-]."; exit 1
+          fi
+          key=$(mktemp); trap 'rm -f "$key"' EXIT  # remove the key on any exit path
+          printf '%s' "$SSH_KEY" > "$key"; chmod 600 "$key"
+          echo "Deploying tag '$TAG' to $SSH_HOST ($dir)"
+          # Fixed remote command; $TAG (charset-validated in preflight) and $dir
+          # (validated above) are the only interpolated values.
+          IMAGE_TAG="$TAG" ssh -i "$key" -o StrictHostKeyChecking=accept-new \
+            "$SSH_USER@$SSH_HOST" \
+            "export IMAGE_TAG='$TAG'; cd '$dir' && docker compose pull && docker compose up -d"
+
+      - name: Health-gate the target leg
+        env:
+          HEALTH: ${{ steps.t.outputs.health }}
+        run: |
+          set -uo pipefail
+          echo "Waiting for $HEALTH to report ready..."
+          for i in $(seq 1 30); do
+            code=$(curl -fsS -o /dev/null -w '%{http_code}' --max-time 5 "$HEALTH" || echo 000)
+            if [ "$code" = "200" ]; then echo "✓ target healthy"; exit 0; fi
+            echo "  attempt $i: HTTP $code — retrying"; sleep 5
+          done
+          echo "::error::Target leg never became healthy — NOT cutting over."
+          exit 1
+
+      - name: Cut traffic over to target (Cloudflare LB)
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ZONE: ${{ vars.CLOUDFLARE_ZONE_ID }}
+          LB: ${{ vars.CLOUDFLARE_LB_ID }}
+          POOL: ${{ steps.t.outputs.pool }}
+        run: |
+          set -euo pipefail
+          # Make the target pool the LB's sole default pool — all traffic routes
+          # to it. The other leg stays up for an instant rollback (re-run with
+          # the other target).
+          resp=$(curl -fsS -X PATCH \
+            "https://api.cloudflare.com/client/v4/zones/$ZONE/load_balancers/$LB" \
+            -H "Authorization: Bearer $CF_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data "{\"default_pools\":[\"$POOL\"]}")
+          ok=$(echo "$resp" | jq -r '.success')
+          if [ "$ok" != "true" ]; then
+            echo "::error::Cloudflare cutover failed: $(echo "$resp" | jq -c '.errors')"; exit 1
+          fi
+          echo "✓ traffic now routes to ${{ inputs.target }} (pool $POOL)"
+
+      - name: Verify public hostname
+        if: ${{ vars.PUBLIC_HEALTH_URL != '' }}
+        env:
+          PUB: ${{ vars.PUBLIC_HEALTH_URL }}
+        run: |
+          set -uo pipefail
+          ok=0
+          for i in $(seq 1 12); do
+            code=$(curl -fsS -o /dev/null -w '%{http_code}' --max-time 5 "$PUB" || echo 000)
+            [ "$code" = "200" ] && { echo "✓ public hostname healthy"; ok=1; break; }
+            echo "  attempt $i: HTTP $code"; sleep 5
+          done
+          # Post-cutover: don't hard-fail (traffic is already switched and we
+          # don't auto-rollback), but make an unconfirmed cutover visible.
+          [ "$ok" = 1 ] || echo "::warning::public hostname never returned 200 after cutover — verify manually (rollback = re-run with the other target)."
+
+      - name: Summary
+        run: |
+          {
+            echo "### Blue-green cutover → ${{ inputs.target }}"
+            echo ""
+            echo "- Image tag: \`${{ inputs.tag }}\`"
+            echo "- Traffic now on pool: \`${{ steps.t.outputs.pool }}\`"
+            echo "- **Rollback:** re-run this workflow with the *other* target — the previous leg is still running, so it's an instant flip back."
+          } >> "$GITHUB_STEP_SUMMARY"

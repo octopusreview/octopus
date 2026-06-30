@@ -143,6 +143,17 @@ export async function chatCommand(argv: string[]): Promise<number> {
             }
             process.stdout.write("\n\n");
             if (!closed) ask();
+          })
+          .catch((err) => {
+            // streamData is designed to resolve (never reject), but guard the
+            // REPL regardless: surface the error and keep the prompt alive
+            // rather than leaving an unhandled rejection that silently kills
+            // the loop.
+            process.stdout.write(
+              c.red(`\nChat error: ${sanitizeTerminal(err instanceof Error ? err.message : String(err))}`),
+            );
+            process.stdout.write("\n\n");
+            if (!closed) ask();
           });
       });
     };

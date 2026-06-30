@@ -267,6 +267,59 @@ bun run start`}</CodeBlock>
           directly.
         </Paragraph>
       </Section>
+
+      {/* Upgrading & rolling back */}
+      <Section title="Upgrading & rolling back">
+        <Paragraph>
+          Pin a specific image tag in production rather than{" "}
+          <Mono>latest</Mono> — that is what turns a rollback into a one-line
+          change. Each release is published to GHCR as{" "}
+          <Mono>ghcr.io/octopusreview/octopus:X.Y.Z</Mono>.
+        </Paragraph>
+
+        <Step number={1} title="Upgrade">
+          <Paragraph>
+            Pull the new tag, apply migrations, then restart. Octopus migrations
+            are <strong>additive (expand-only)</strong> and therefore
+            backward-compatible — the previous image keeps working against the
+            new schema, which is exactly what makes the rollback below safe.
+          </Paragraph>
+          <CodeBlock>{`# pin the new X.Y.Z tag in your compose/env first, then:
+docker compose pull
+docker compose exec octopus bun run db:migrate   # prisma migrate deploy
+docker compose up -d`}</CodeBlock>
+        </Step>
+
+        <Step number={2} title="Verify before sending traffic">
+          <Paragraph>
+            Confirm the app is healthy — hit <Mono>/api/status</Mono> and check
+            that a login and a review still work — before pointing users at the
+            new version.
+          </Paragraph>
+        </Step>
+
+        <Step number={3} title="Roll back (if needed)">
+          <Paragraph>
+            Re-pin the <strong>previous</strong> image tag and restart.{" "}
+            <strong>Do not roll back the database.</strong> Because every
+            migration is additive, the older image runs fine against the newer
+            schema, so you keep all data and avoid a risky down-migration.
+          </Paragraph>
+          <CodeBlock>{`# set the previous X.Y.Z tag in your compose/env, then:
+docker compose pull
+docker compose up -d`}</CodeBlock>
+        </Step>
+
+        <Paragraph>
+          This expand-only discipline is enforced in CI: the{" "}
+          <Mono>migrate-check</Mono> workflow fails any change whose migration
+          drops or rewrites a table/column (without an explicit override), so the
+          &quot;roll back the code, keep the database&quot; path stays safe from
+          one release to the next. The same property is what lets a hosted,
+          blue-green / rolling deploy run both versions against a single shared
+          database during cutover.
+        </Paragraph>
+      </Section>
     </article>
   );
 }

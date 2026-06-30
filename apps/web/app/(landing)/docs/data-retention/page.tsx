@@ -74,6 +74,18 @@ const RETENTION: RetentionRow[] = [
     what: "Encrypted DB snapshots",
     retention: "30 days for hosted; self-hosters control their own",
   },
+  {
+    category: "Activity events",
+    what: "Live team-telemetry feed rows (coarse actions only — no content)",
+    retention: "30 days (hosted default)",
+    notes: "Only when an org enables Live Activity. Tunable via ACTIVITY_RETENTION_DAYS; pruned daily.",
+  },
+  {
+    category: "Presence",
+    what: "Whether a member/agent is currently online + coarse current area",
+    retention: "Ephemeral — expires ~60s after going offline",
+    notes: "Held in Redis with a TTL (or a short-lived DB row); never archived.",
+  },
 ];
 
 export default function DataRetentionPage() {

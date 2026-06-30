@@ -20,7 +20,7 @@ export default function PrivacyPage() {
         <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
           Privacy Policy
         </h1>
-        <p className="mt-3 text-sm text-[#555]">Last updated: March 2026</p>
+        <p className="mt-3 text-sm text-[#555]">Last updated: June 2026</p>
       </div>
 
       <Section title="1. Introduction">
@@ -143,6 +143,7 @@ export default function PrivacyPage() {
           <li>Request deletion of your account and associated data</li>
           <li>Disconnect repositories at any time</li>
           <li>Opt out of analytics tracking</li>
+          <li>Opt out of live team-telemetry visibility (from member settings)</li>
         </UL>
         <P>
           For any privacy-related requests, open an issue on our GitHub
@@ -150,7 +151,34 @@ export default function PrivacyPage() {
         </P>
       </Section>
 
-      <Section title="9. Self-Hosting">
+      <Section title="9. Live Telemetry (Team Monitoring)">
+        <P>
+          For organizations on a paid plan, owners and admins may enable a live
+          team-monitoring dashboard. When enabled, we collect coarse presence
+          (whether a member or agent is currently online) and high-level activity
+          events (e.g. &quot;a review completed&quot;, &quot;a repository was
+          indexed&quot;) — we do not collect the content of what you view, type,
+          or review.
+        </P>
+        <P>
+          The lawful basis for this processing is the organization&apos;s
+          legitimate interest in operational visibility into its own workspace;
+          it is not based on your consent. Activity events are retained for 30
+          days (see{" "}
+          <a href="/docs/data-retention" className="text-cyan-400 underline">
+            Data Retention
+          </a>
+          ); presence is ephemeral and expires within about 60 seconds of going
+          offline.
+        </P>
+        <P>
+          Any member can opt out at any time from their member settings; opting
+          out stops presence and activity from being collected for or attributed
+          to them.
+        </P>
+      </Section>
+
+      <Section title="10. Self-Hosting">
         <P>
           Octopus is fully open source. If you self-host Octopus on your own
           infrastructure, your code never touches our servers. You are
@@ -158,7 +186,7 @@ export default function PrivacyPage() {
         </P>
       </Section>
 
-      <Section title="10. Changes to This Policy">
+      <Section title="11. Changes to This Policy">
         <P>
           We may update this policy from time to time. Changes will be posted
           on this page with an updated revision date. Continued use of the

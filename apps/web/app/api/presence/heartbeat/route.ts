@@ -5,17 +5,27 @@ import { auth } from "@/lib/auth";
 import { liveTelemetryActive } from "@/lib/entitlements";
 import { recordPresence } from "@/lib/presence";
 import { isValidActivity } from "@/lib/activity-category";
+import { isSameOrigin } from "@/lib/same-origin";
 
 /**
  * POST /api/presence/heartbeat — the web client pings this every ~30s to record
  * the member's live presence + coarse current activity. Session-authenticated;
  * the org comes from the current_org_id cookie and is RE-VALIDATED against
  * membership (the cookie is never trusted as proof). Collection is gated on the
- * org being entitled + having live telemetry enabled — when it isn't, we return
- * { telemetry: false } so the client stops heartbeating.
+ * org being entitled + telemetry-enabled AND the member not having opted out —
+ * when inactive we return { telemetry: false } so the client stops heartbeating.
  */
 export async function POST(request: Request) {
-  const session = await auth.api.getSession({ headers: await headers() });
+  const reqHeaders = await headers();
+
+  // CSRF defence-in-depth: this is a state-changing POST driven by the browser.
+  // Use 400 (not 401/403) so the client's auth-terminal handling doesn't treat a
+  // cross-origin reject as "logged out" and stop heartbeating for the session.
+  if (!isSameOrigin(reqHeaders.get("host"), reqHeaders.get("origin"), reqHeaders.get("referer"))) {
+    return NextResponse.json({ error: "Cross-origin request rejected" }, { status: 400 });
+  }
+
+  const session = await auth.api.getSession({ headers: reqHeaders });
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -26,18 +36,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, telemetry: false });
   }
 
-  // Re-validate membership server-side — never trust the cookie alone.
+  // Re-validate membership server-side — never trust the cookie alone. Also read
+  // the per-member opt-out so an opted-out member is never recorded.
   const membership = await prisma.organizationMember.findFirst({
     where: { organizationId: orgId, userId: session.user.id, deletedAt: null },
-    select: { id: true },
+    select: { telemetryOptedOut: true },
   });
   if (!membership) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  // Gate collection on entitlement + the org toggle. Tell the client to stop
-  // when inactive so a free/disabled org doesn't keep heartbeating.
-  if (!(await liveTelemetryActive(orgId))) {
+  // Gate collection on entitlement + the org toggle + the member opt-out. Tell
+  // the client to stop when inactive so a free/disabled org — or an opted-out
+  // member — doesn't keep heartbeating.
+  if (membership.telemetryOptedOut || !(await liveTelemetryActive(orgId))) {
     return NextResponse.json({ ok: true, telemetry: false });
   }
 

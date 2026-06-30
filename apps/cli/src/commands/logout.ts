@@ -1,6 +1,6 @@
 import { loadCredentials, clearCredentials } from "../lib/credentials.js";
 import { hasFlag } from "../lib/args.js";
-import { success, error, info } from "../lib/output.js";
+import { success, error, info, sanitizeTerminal } from "../lib/output.js";
 
 /** `octp logout` — remove saved credentials (~/.octopus/credentials). */
 export async function logoutCommand(argv: string[]): Promise<number> {
@@ -15,7 +15,7 @@ export async function logoutCommand(argv: string[]): Promise<number> {
   }
   try {
     await clearCredentials();
-    success(`Signed out of ${creds.orgName}.`);
+    success(`Signed out of ${sanitizeTerminal(creds.orgName)}.`);
     return 0;
   } catch (e) {
     // clearCredentials re-throws non-ENOENT — the token is still on disk.

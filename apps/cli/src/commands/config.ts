@@ -2,7 +2,7 @@ import { loadConfig, saveConfig } from "../lib/config.js";
 import { loadCredentials } from "../lib/credentials.js";
 import { normalizeBaseUrl } from "../lib/api.js";
 import { positionals, hasFlag } from "../lib/args.js";
-import { success, error, info, heading, table, c } from "../lib/output.js";
+import { success, error, info, heading, table, c, sanitizeTerminal } from "../lib/output.js";
 
 /**
  * `octp config` — read/write ~/.octopus/config.json prefs non-interactively.
@@ -39,12 +39,12 @@ async function listConfig(): Promise<number> {
   if (creds) {
     heading("Session (~/.octopus/credentials)");
     table([
-      ["baseUrl", creds.baseUrl],
-      ["org", `${creds.orgName} (${creds.orgSlug})`],
+      ["baseUrl", sanitizeTerminal(creds.baseUrl)],
+      ["org", `${sanitizeTerminal(creds.orgName)} (${sanitizeTerminal(creds.orgSlug)})`],
       [
         "user",
         creds.userName
-          ? `${creds.userName}${creds.userEmail ? ` <${creds.userEmail}>` : ""}`
+          ? `${sanitizeTerminal(creds.userName)}${creds.userEmail ? ` <${sanitizeTerminal(creds.userEmail)}>` : ""}`
           : c.dim("(unknown)"),
       ],
     ]);
@@ -69,13 +69,13 @@ async function getConfig(key?: string): Promise<number> {
       console.log(cfg[key] ?? "not set");
       return 0;
     case "baseUrl":
-      console.log(creds?.baseUrl ?? "not set");
+      console.log(creds ? sanitizeTerminal(creds.baseUrl) : "not set");
       return 0;
     case "orgSlug":
-      console.log(creds?.orgSlug ?? "not set");
+      console.log(creds ? sanitizeTerminal(creds.orgSlug) : "not set");
       return 0;
     case "orgId":
-      console.log(creds?.orgId ?? "not set");
+      console.log(creds ? sanitizeTerminal(creds.orgId) : "not set");
       return 0;
     default:
       error(

@@ -9,7 +9,7 @@ import {
 } from "../lib/auth.js";
 import { normalizeBaseUrl, isTransportSafe } from "../lib/api.js";
 import { flagValue, hasFlag } from "../lib/args.js";
-import { success, error, info, c } from "../lib/output.js";
+import { success, error, info, c, sanitizeTerminal } from "../lib/output.js";
 
 const DEFAULT_BASE_URL = "https://octopus-review.ai";
 
@@ -62,8 +62,10 @@ export async function loginCommand(argv: string[]): Promise<number> {
       identity = await runDeviceFlow(baseUrl, { onAuthorizeUrl: (url) => info(c.dim(url)) });
     }
     await saveCredentials(buildCredentials(baseUrl, identity));
-    const email = identity.user.email ? ` (${identity.user.email})` : "";
-    success(`Logged in as ${identity.user.name}${email} — org: ${identity.organization.name}`);
+    const email = identity.user.email ? ` (${sanitizeTerminal(identity.user.email)})` : "";
+    success(
+      `Logged in as ${sanitizeTerminal(identity.user.name)}${email} — org: ${sanitizeTerminal(identity.organization.name)}`,
+    );
     return 0;
   } catch (err) {
     error(err instanceof Error ? err.message : "Login failed");

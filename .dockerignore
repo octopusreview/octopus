@@ -7,3 +7,6 @@ node_modules
 !.env.example
 docs
 *.md
+# CHANGELOG.md is COPYed by apps/web/Dockerfile (the in-app Updates page reads it),
+# so it must stay in the build context despite the *.md exclusion above.
+!CHANGELOG.md

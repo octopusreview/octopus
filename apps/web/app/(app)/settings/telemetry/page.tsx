@@ -5,6 +5,7 @@ import { prisma } from "@octopus/db";
 import { getOrgEntitlements } from "@/lib/entitlements";
 import { LiveTelemetrySwitch } from "./live-telemetry-switch";
 import { TelemetryOptOutSwitch } from "./telemetry-opt-out-switch";
+import { VendorVisibilitySwitch } from "./vendor-visibility-switch";
 
 export default async function TelemetrySettingsPage() {
   const session = await auth.api.getSession({
@@ -28,6 +29,7 @@ export default async function TelemetrySettingsPage() {
         select: {
           id: true,
           liveTelemetryEnabled: true,
+          allowVendorMemberVisibility: true,
         },
       },
     },
@@ -35,11 +37,13 @@ export default async function TelemetrySettingsPage() {
 
   if (!member) redirect("/dashboard");
 
-  const canManage = member.role === "owner" || member.role === "admin";
+  const isOwner = member.role === "owner";
+  const canManage = isOwner || member.role === "admin";
   const ent = await getOrgEntitlements(member.organization.id);
   const paid = ent.paid;
   // Show the per-member opt-out only when telemetry is actually collecting.
   const active = ent.liveTelemetryActive;
+  const isSelfHosted = process.env.NEXT_PUBLIC_OCTOPUS_SELF_HOSTED === "true";
 
   return (
     <div key={member.organization.id} className="space-y-6">
@@ -49,6 +53,13 @@ export default async function TelemetrySettingsPage() {
         paid={paid}
       />
       {active && <TelemetryOptOutSwitch optedOut={member.telemetryOptedOut} />}
+      {/* Vendor visibility is meaningless on self-host (no vendor console). */}
+      {active && !isSelfHosted && (
+        <VendorVisibilitySwitch
+          isOwner={isOwner}
+          allowed={member.organization.allowVendorMemberVisibility}
+        />
+      )}
     </div>
   );
 }

@@ -67,6 +67,7 @@ export default async function AppLayout({
               deletedAt: true,
               needsPermissionGrant: true,
               githubInstallationId: true,
+              liveTelemetryEnabled: true,
             },
           },
         },
@@ -157,8 +158,13 @@ export default async function AppLayout({
   const currentMember = user.organizationMembers.find(
     (m) => m.organization.id === currentOrg.id,
   );
+  // Cheap gate first: liveTelemetryEnabled is opt-in and rare, and is already
+  // loaded on the member — only pay for the entitlement lookup (which the
+  // settings page also uses) when the org actually has telemetry switched on.
   const telemetryActive =
-    !!currentMember && (await getOrgEntitlements(currentOrg.id)).liveTelemetryActive;
+    !!currentMember &&
+    currentMember.organization.liveTelemetryEnabled &&
+    (await getOrgEntitlements(currentOrg.id)).liveTelemetryActive;
   const showTelemetryNotice =
     !!currentMember && telemetryActive && !currentMember.telemetryOptedOut;
 

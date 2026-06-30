@@ -51,6 +51,8 @@ export async function GET(request: Request) {
   const nextCursor = hasMore ? page[page.length - 1].id : null;
 
   return NextResponse.json({
+    // metadata is intentionally NOT exposed — the dashboard renders only
+    // action/target/actor, so we don't ship fields the UI doesn't use.
     events: page.map((e) => ({
       id: e.id,
       action: e.action,
@@ -58,7 +60,6 @@ export async function GET(request: Request) {
       actorType: e.actorType,
       actorId: e.actorId,
       actorLabel: e.actorLabel,
-      metadata: e.metadata,
       createdAt: e.createdAt.toISOString(),
     })),
     nextCursor,

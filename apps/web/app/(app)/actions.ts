@@ -964,6 +964,61 @@ export async function toggleTelemetryOptOut(optedOut: boolean): Promise<{ error?
   return {};
 }
 
+/**
+ * Org opt-in to letting Octopus (vendor) staff see member-level detail in the
+ * cross-org console — SEPARATE from liveTelemetryEnabled (internal monitoring).
+ * Owner-only: authorizing a third party to see named members is a higher-trust
+ * consent than enabling internal monitoring. Audited under "admin".
+ */
+export async function toggleVendorMemberVisibility(
+  _prevState: { error?: string; success?: boolean },
+  formData: FormData,
+): Promise<{ error?: string; success?: boolean }> {
+  const user = await getUser();
+  const reqHeaders = await headers();
+  const cookieStore = await cookies();
+  const orgId = cookieStore.get("current_org_id")?.value;
+  if (!orgId) return { error: "No organization selected." };
+
+  const member = await prisma.organizationMember.findFirst({
+    where: { organizationId: orgId, userId: user.id, deletedAt: null },
+    select: { role: true },
+  });
+  if (!member || member.role !== "owner") {
+    return { error: "Only the organization owner can change vendor visibility." };
+  }
+
+  const allowed = formData.get("allowed") === "true";
+  const before = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { allowVendorMemberVisibility: true },
+  });
+  if (before && before.allowVendorMemberVisibility === allowed) return { success: true };
+
+  await prisma.organization.update({
+    where: { id: orgId },
+    data: { allowVendorMemberVisibility: allowed },
+  });
+
+  await writeAuditLog({
+    action: allowed ? "telemetry.vendor_visibility_enabled" : "telemetry.vendor_visibility_disabled",
+    category: "admin",
+    actorId: user.id,
+    actorEmail: user.email,
+    targetType: "organization",
+    targetId: orgId,
+    organizationId: orgId,
+    metadata: {
+      allowVendorMemberVisibility: { old: before?.allowVendorMemberVisibility ?? false, new: allowed },
+    },
+    ipAddress: getClientIp(reqHeaders),
+    userAgent: reqHeaders.get("user-agent") ?? null,
+  });
+
+  revalidatePath("/settings/telemetry");
+  return { success: true };
+}
+
 export async function updateOrgDefaultReviewConfig(
   config: Record<string, unknown>,
 ): Promise<{ error?: string; success?: boolean }> {

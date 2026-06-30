@@ -1,8 +1,7 @@
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { getSuperAdmin } from "@/lib/superadmin";
-import { getVendorTelemetry } from "@/lib/vendor-telemetry";
-import { writeAuditLog } from "@/lib/audit";
+import { getVendorTelemetry, recordVendorAccess } from "@/lib/vendor-telemetry";
 import { getClientIp } from "@/lib/request-ip";
 import { VendorClient } from "./vendor-client";
 
@@ -24,13 +23,10 @@ export default async function VendorTelemetryPage() {
   if (!sa) notFound();
 
   const reqHeaders = await headers();
-  await writeAuditLog({
-    action: "vendor-telemetry.viewed",
-    category: "system",
+  // Throttled per actor — a page refresh within the window won't re-log.
+  await recordVendorAccess({
     actorId: sa.id,
     actorEmail: sa.email,
-    targetType: "platform",
-    metadata: {},
     ipAddress: getClientIp(reqHeaders),
     userAgent: reqHeaders.get("user-agent") ?? null,
   });

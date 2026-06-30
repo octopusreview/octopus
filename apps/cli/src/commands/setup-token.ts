@@ -3,6 +3,8 @@ import { loadConfig } from "../lib/config.js";
 import { runDeviceFlow, buildCredentials } from "../lib/auth.js";
 import { normalizeBaseUrl, isTransportSafe } from "../lib/api.js";
 import { flagValue, hasFlag } from "../lib/args.js";
+import { getActiveProfileName } from "../lib/paths.js";
+import { ensureProfile, setActiveProfile } from "../lib/profile.js";
 import { error } from "../lib/output.js";
 
 const DEFAULT_BASE_URL = "https://octopus-review.ai";
@@ -45,7 +47,14 @@ export async function setupTokenCommand(argv: string[]): Promise<number> {
           noOpen ? `Open this URL to authorize:\n${url}\n` : `Opening browser to authorize: ${url}\n`,
         ),
     });
-    if (save) await saveCredentials(buildCredentials(baseUrl, identity));
+    if (save) {
+      // Persist into the active profile (reflects --account), registering +
+      // activating it so it shows up in `octp account list`.
+      const profileName = getActiveProfileName();
+      await ensureProfile(profileName);
+      await saveCredentials(buildCredentials(baseUrl, identity));
+      await setActiveProfile(profileName);
+    }
     // Token → stdout (the one capturable line). Everything else went to stderr.
     process.stdout.write(identity.token + "\n");
     return 0;

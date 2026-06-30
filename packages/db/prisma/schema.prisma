@@ -691,6 +691,7 @@ model CreditTransaction {
   type                  String   // "purchase" | "usage" | "free_credit" | "refund" | "auto_reload" | "coupon"
   description           String?
   stripeSessionId       String?  @unique
+  stripeRefundId        String?  @unique
   receiptUrl            String?
   balanceAfter          Decimal  @db.Decimal(12, 4)
   createdAt             DateTime @default(now())

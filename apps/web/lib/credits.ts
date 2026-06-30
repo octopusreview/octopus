@@ -73,6 +73,11 @@ export async function deductCredits(
   orgId: string,
   amount: number,
   description: string,
+  // When set (refund path), the ledger row carries this id under a UNIQUE
+  // column so a replayed/duplicate refund event hits a constraint violation and
+  // the whole transaction rolls back instead of debiting twice. Left undefined
+  // for ordinary usage deductions (which are intentionally non-unique).
+  stripeRefundId?: string,
 ): Promise<void> {
   if (amount <= 0) return;
 
@@ -116,6 +121,7 @@ export async function deductCredits(
         amount: -amount,
         type: "usage",
         description,
+        stripeRefundId,
         balanceAfter: totalAfter,
         organizationId: orgId,
       },

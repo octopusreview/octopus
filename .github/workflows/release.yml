@@ -39,7 +39,10 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          # The org enforces read-only GITHUB_TOKEN for workflows, so it can't
+          # push to GHCR. Use a dedicated PAT (repo secret GHCR_PAT) scoped to
+          # write:packages instead of broadening the org-wide token policy.
+          password: ${{ secrets.GHCR_PAT }}
 
       - name: Derive image tags
         id: tags

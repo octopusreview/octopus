@@ -14,21 +14,37 @@ export function getStripe(): Stripe {
   return _stripe;
 }
 
+// Customer IDs already confirmed to resolve in the current Stripe account, so
+// the verify below runs at most ONCE per customer per process (not on every
+// billing op). This holds only opaque, already-public customer IDs — no
+// cross-tenant data — and is correctness-neutral: a hit merely skips a
+// redundant retrieve; if a customer is deleted mid-process the downstream Stripe
+// call fails exactly as it would without the cache. Bounded by active billing
+// orgs per process; resets on deploy (re-verifies once per customer afterward).
+const _verifiedCustomers = new Set<string>();
+
 export async function getOrCreateStripeCustomer(orgId: string): Promise<string> {
   const org = await prisma.organization.findUniqueOrThrow({
     where: { id: orgId },
     select: { stripeCustomerId: true, name: true, billingEmail: true, slug: true },
   });
 
-  if (org.stripeCustomerId) {
+  const priorId = org.stripeCustomerId;
+  if (priorId) {
+    if (_verifiedCustomers.has(priorId)) return priorId;
     // Verify the stored customer still resolves in the CURRENT account. After a
     // Stripe account switch (or a deleted customer) the old `cus_` belongs to a
     // different account and won't resolve — recreate it instead of failing every
-    // checkout / portal / auto-reload call. This makes an account migration
-    // self-healing per org with no destructive prod data wipe.
+    // checkout / portal / auto-reload call. Self-heals an account migration per
+    // org with no destructive prod data wipe; the cache keeps it one-shot.
     try {
-      const existing = await getStripe().customers.retrieve(org.stripeCustomerId);
-      if (!("deleted" in existing && existing.deleted)) return org.stripeCustomerId;
+      const existing = await getStripe().customers.retrieve(priorId);
+      const isDeleted = "deleted" in existing && existing.deleted === true;
+      if (!isDeleted) {
+        _verifiedCustomers.add(priorId);
+        return priorId;
+      }
+      // Deleted in Stripe → fall through and create a fresh customer.
     } catch (err) {
       // Only "no such customer" justifies recreating; rethrow real errors
       // (auth/network) so they aren't masked as a missing customer.
@@ -46,11 +62,37 @@ export async function getOrCreateStripeCustomer(orgId: string): Promise<string> 
     metadata: { orgId, slug: org.slug },
   });
 
-  await prisma.organization.update({
-    where: { id: orgId },
+  // Claim the slot with a compare-and-swap: only the writer whose `priorId` still
+  // matches the column wins. Two concurrent recreations (e.g. checkout +
+  // auto-reload) thus can't both persist — the loser's update matches 0 rows.
+  // We do NOT hold the Stripe calls inside a DB transaction (that would pin a
+  // pooled connection across slow external I/O and trip Prisma's interactive-txn
+  // timeout); the CAS is a single atomic write instead.
+  const claimed = await prisma.organization.updateMany({
+    where: { id: orgId, stripeCustomerId: priorId },
     data: { stripeCustomerId: customer.id },
   });
 
+  if (claimed.count === 0) {
+    // Lost the race: another request already replaced stripeCustomerId. Delete
+    // our just-created duplicate so it doesn't orphan in Stripe, then use the
+    // winner's customer.
+    try {
+      await getStripe().customers.del(customer.id);
+    } catch {
+      // Best-effort cleanup; an undeleted spare customer is harmless.
+    }
+    const winner = await prisma.organization.findUniqueOrThrow({
+      where: { id: orgId },
+      select: { stripeCustomerId: true },
+    });
+    if (winner.stripeCustomerId) {
+      _verifiedCustomers.add(winner.stripeCustomerId);
+      return winner.stripeCustomerId;
+    }
+  }
+
+  _verifiedCustomers.add(customer.id);
   return customer.id;
 }
 

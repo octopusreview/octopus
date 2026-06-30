@@ -36,12 +36,14 @@ export type VendorTelemetry = {
   generatedAt: number;
 };
 
-let cache: { at: number; data: VendorTelemetry } | null = null;
-const CACHE_TTL_MS = 5_000;
-
+/**
+ * Computed fresh per call. We deliberately do NOT keep a module-level cache:
+ * this is cross-tenant data, and a process-global mutable cache that outlives a
+ * request is exactly the kind of thing that turns into a cross-request leak if a
+ * future caller ever reaches it without the super-admin gate. The queries are
+ * grouped + parallelized and the console is low-traffic, so recomputing is fine.
+ */
 export async function getVendorTelemetry(): Promise<VendorTelemetry> {
-  if (cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.data;
-
   // Orgs that have turned on live telemetry (the only orgs that collect).
   const orgs = await prisma.organization.findMany({
     where: { liveTelemetryEnabled: true, deletedAt: null },
@@ -73,6 +75,22 @@ export async function getVendorTelemetry(): Promise<VendorTelemetry> {
   const agentCount = new Map(agentGroups.map((g) => [g.organizationId, g._count._all]));
   const activityCount = new Map(activityGroups.map((g) => [g.organizationId, g._count._all]));
 
+  // Resolve display names for member-visible orgs in ONE query (not per-org).
+  const visibleUserIds = new Set<string>();
+  orgs.forEach((org, i) => {
+    if (org.allowVendorMemberVisibility) {
+      for (const p of presences[i]) visibleUserIds.add(p.userId);
+    }
+  });
+  const nameById = new Map<string, string>();
+  if (visibleUserIds.size > 0) {
+    const users = await prisma.user.findMany({
+      where: { id: { in: [...visibleUserIds] } },
+      select: { id: true, name: true },
+    });
+    for (const u of users) nameById.set(u.id, u.name);
+  }
+
   const rows: VendorOrgRow[] = [];
   let onlineMembersTotal = 0;
   for (let i = 0; i < orgs.length; i++) {
@@ -80,19 +98,13 @@ export async function getVendorTelemetry(): Promise<VendorTelemetry> {
     const presence = presences[i];
     onlineMembersTotal += presence.length;
 
-    let members: { name: string; currentActivity: string | null }[] = [];
-    if (org.allowVendorMemberVisibility && presence.length > 0) {
-      const userIds = [...new Set(presence.map((p) => p.userId))];
-      const users = await prisma.user.findMany({
-        where: { id: { in: userIds } },
-        select: { id: true, name: true },
-      });
-      const nameById = new Map(users.map((u) => [u.id, u.name]));
-      members = presence.map((p) => ({
-        name: nameById.get(p.userId) ?? "Unknown",
-        currentActivity: p.currentActivity,
-      }));
-    }
+    const members =
+      org.allowVendorMemberVisibility
+        ? presence.map((p) => ({
+            name: nameById.get(p.userId) ?? "Unknown",
+            currentActivity: p.currentActivity,
+          }))
+        : [];
 
     rows.push({
       orgId: org.id,
@@ -107,7 +119,7 @@ export async function getVendorTelemetry(): Promise<VendorTelemetry> {
 
   rows.sort((a, b) => b.onlineMembers + b.onlineAgents - (a.onlineMembers + a.onlineAgents));
 
-  const data: VendorTelemetry = {
+  return {
     totals: {
       orgsEnabled: orgs.length,
       onlineMembers: onlineMembersTotal,
@@ -117,7 +129,4 @@ export async function getVendorTelemetry(): Promise<VendorTelemetry> {
     orgs: rows,
     generatedAt: Date.now(),
   };
-
-  cache = { at: Date.now(), data };
-  return data;
 }

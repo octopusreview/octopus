@@ -72,6 +72,18 @@ let mockPaymentIntentsCreate = mock(() =>
 );
 let mockChargesRetrieve = mock(() => Promise.resolve({ receipt_url: null }));
 
+type StubRefund = { id: string; amount: number; status: string };
+// The route auto-paginates refunds via `for await (... of stripe.refunds.list())`,
+// so the stub must be async-iterable (mirrors the SDK's ApiListPromise).
+function asyncRefundList(items: StubRefund[]) {
+  return {
+    async *[Symbol.asyncIterator]() {
+      for (const item of items) yield item;
+    },
+  };
+}
+let mockRefundsList = mock(() => asyncRefundList([]));
+
 mock.module("@octopus/db", () => ({
   prisma: {
     organization: {
@@ -86,16 +98,25 @@ mock.module("@octopus/db", () => ({
     autoReloadConfig: {
       findUnique: (...args: unknown[]) => mockAutoReloadConfigFindUnique(...args),
     },
-    $transaction: (callback: (tx: unknown) => Promise<unknown>) =>
-      callback({
-        $queryRaw: (...args: unknown[]) => mockTxQueryRaw(...args),
-        organization: {
-          update: (...args: unknown[]) => mockTxOrganizationUpdate(...args),
-        },
-        creditTransaction: {
-          create: (...args: unknown[]) => mockTxCreditTransactionCreate(...args),
-        },
-      }),
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) => {
+      const snapshot = { ...orgState };
+      try {
+        return await callback({
+          $queryRaw: (...args: unknown[]) => mockTxQueryRaw(...args),
+          organization: {
+            update: (...args: unknown[]) => mockTxOrganizationUpdate(...args),
+          },
+          creditTransaction: {
+            create: (...args: unknown[]) => mockTxCreditTransactionCreate(...args),
+          },
+        });
+      } catch (err) {
+        // Simulate transactional rollback so idempotency tests can assert the
+        // balance is unchanged when the ledger insert hits a UNIQUE violation.
+        orgState = snapshot;
+        throw err;
+      }
+    },
   },
 }));
 
@@ -110,6 +131,9 @@ mock.module("@/lib/stripe", () => ({
       sessions: {
         list: (...args: unknown[]) => mockCheckoutSessionsList(...args),
       },
+    },
+    refunds: {
+      list: (...args: unknown[]) => mockRefundsList(...args),
     },
     paymentIntents: {
       create: (...args: unknown[]) => mockPaymentIntentsCreate(...args),
@@ -197,6 +221,7 @@ function resetBillingMocks() {
     Promise.resolve({ status: "succeeded", latest_charge: null }),
   );
   mockChargesRetrieve = mock(() => Promise.resolve({ receipt_url: null }));
+  mockRefundsList = mock(() => asyncRefundList([]));
 }
 
 function stripeRequest(body = "{}") {
@@ -369,11 +394,15 @@ describe("Stripe webhook route", () => {
       type: "charge.refunded",
       data: {
         object: {
+          id: "ch_refund",
           payment_intent: "pi_refund",
           amount_refunded: 1250,
         },
       },
     };
+    mockRefundsList = mock(() =>
+      asyncRefundList([{ id: "re_1", amount: 1250, status: "succeeded" }]),
+    );
 
     const response = await POST(stripeRequest() as never);
 
@@ -382,16 +411,110 @@ describe("Stripe webhook route", () => {
       payment_intent: "pi_refund",
       limit: 1,
     });
+    // Per-refund amount keyed on the refund id (idempotency), not the cumulative
+    // charge.amount_refunded.
+    expect(mockRefundsList).toHaveBeenCalledWith({ charge: "ch_refund" });
     expect(orgState).toEqual({ creditBalance: 15.5, freeCreditBalance: 0 });
     expect(createdTransactions).toEqual([
       {
         amount: -12.5,
         type: "usage",
         description: "Refund — $12.5",
+        stripeRefundId: "re_1",
         balanceAfter: 15.5,
         organizationId: "org_1",
       },
     ]);
+  });
+
+  it("deducts each partial refund by its own amount, not the cumulative charge total", async () => {
+    currentEvent = {
+      type: "charge.refunded",
+      data: {
+        object: { id: "ch_multi", payment_intent: "pi_multi", amount_refunded: 1000 },
+      },
+    };
+    // Two $5 partial refunds: charge.amount_refunded is the cumulative 1000, but
+    // the handler must deduct 5 + 5 keyed per refund id (not 10 + 10).
+    mockRefundsList = mock(() =>
+      asyncRefundList([
+        { id: "re_a", amount: 500, status: "succeeded" },
+        { id: "re_b", amount: 500, status: "succeeded" },
+      ]),
+    );
+
+    const response = await POST(stripeRequest() as never);
+
+    expect(response.status).toBe(200);
+    expect(createdTransactions.map((t) => (t as { amount: number }).amount)).toEqual([-5, -5]);
+    expect(
+      createdTransactions.map((t) => (t as { stripeRefundId: string }).stripeRefundId),
+    ).toEqual(["re_a", "re_b"]);
+  });
+
+  it("acknowledges a duplicate refund delivery (P2002) with 200 instead of erroring", async () => {
+    currentEvent = {
+      type: "charge.refunded",
+      data: {
+        object: { id: "ch_dup", payment_intent: "pi_dup", amount_refunded: 500 },
+      },
+    };
+    mockRefundsList = mock(() =>
+      asyncRefundList([{ id: "re_dup", amount: 500, status: "succeeded" }]),
+    );
+    // Redelivered refund hits the UNIQUE(stripeRefundId) constraint → P2002 →
+    // the transaction rolls back, so the balance must be left untouched.
+    mockTxCreditTransactionCreate = mock(() =>
+      Promise.reject(Object.assign(new Error("Unique constraint failed"), { code: "P2002" })),
+    );
+
+    const response = await POST(stripeRequest() as never);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ received: true });
+    expect(orgState).toEqual({ creditBalance: 20, freeCreditBalance: 8 });
+  });
+
+  it("skips refunds that did not actually move money (non-succeeded status)", async () => {
+    currentEvent = {
+      type: "charge.refunded",
+      data: {
+        object: { id: "ch_pending", payment_intent: "pi_pending", amount_refunded: 500 },
+      },
+    };
+    // A pending/failed refund still carries a nonzero amount but moved no money.
+    mockRefundsList = mock(() =>
+      asyncRefundList([{ id: "re_pending", amount: 500, status: "pending" }]),
+    );
+
+    const response = await POST(stripeRequest() as never);
+
+    expect(response.status).toBe(200);
+    expect(createdTransactions).toEqual([]);
+    expect(orgState).toEqual({ creditBalance: 20, freeCreditBalance: 8 });
+  });
+
+  it("returns 500 so Stripe retries when a credit grant fails transiently", async () => {
+    currentEvent = {
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_fail",
+          metadata: { orgId: "org_1", type: "credit_purchase", amountUsd: "25" },
+          payment_intent: "pi_fail",
+        },
+      },
+    };
+    // Non-duplicate (transient) DB error mid-grant must NOT be ACKed with 200,
+    // otherwise Stripe never retries and the paid customer loses the credits.
+    mockTxCreditTransactionCreate = mock(() =>
+      Promise.reject(new Error("connection terminated")),
+    );
+
+    const response = await POST(stripeRequest() as never);
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ error: "processing failed" });
   });
 
   it("acknowledges unknown event types without touching credits", async () => {

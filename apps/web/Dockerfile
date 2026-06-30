@@ -6,6 +6,11 @@ FROM base AS deps
 WORKDIR /app
 COPY package.json bun.lock ./
 COPY apps/web/package.json ./apps/web/
+# apps/cli is a workspace recorded in bun.lock; without its manifest the
+# in-container workspace set differs from the lockfile and `bun install
+# --frozen-lockfile` fails ("lockfile had changes"). The web image doesn't run
+# the CLI, but the manifest must be present for the frozen install to validate.
+COPY apps/cli/package.json ./apps/cli/
 COPY packages/db/package.json ./packages/db/
 COPY packages/package-analyzer/package.json ./packages/package-analyzer/
 COPY tools/tsconfig/package.json ./tools/tsconfig/

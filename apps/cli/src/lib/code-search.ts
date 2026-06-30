@@ -148,6 +148,13 @@ async function ripgrep(pattern: string, dir: string, maxResults = 20): Promise<S
     const args = [
       "--no-heading",
       "--line-number",
+      // Never follow symlinks — the security boundary is "read only files
+      // physically inside the watched repo". This is ripgrep's DEFAULT, but we
+      // pass it explicitly so a user's $RIPGREP_CONFIG_PATH that enables
+      // `--follow` can't silently turn the grep path into an out-of-repo read
+      // (a CLI flag overrides config-file flags). Mirrors the pure-Node walker,
+      // which lstat-skips symlinks for the same reason.
+      "--no-follow",
       // Match literally (not as a regex), so behaviour matches the pure-Node
       // fallback (which escapeRegex()es the pattern) and a cloud-supplied
       // keyword with regex metacharacters can't silently fail or mis-match.

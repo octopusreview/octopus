@@ -37,6 +37,7 @@ import {
   IconHelpCircle,
   IconExternalLink,
   IconSparkles,
+  IconBroadcast,
 } from "@tabler/icons-react";
 import {
   DropdownMenu,
@@ -59,6 +60,7 @@ const mainNavItems = [
 ];
 
 const bottomNavItems = [
+  { href: "/monitor", label: "Live Monitor", icon: IconBroadcast },
   { href: "/usage", label: "Usage", icon: IconChartBar },
 ];
 

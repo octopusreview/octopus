@@ -8,10 +8,12 @@ import { PermissionBanner } from "@/components/permission-banner";
 import { SpendLimitBanner } from "@/components/spend-limit-banner";
 import { getInstallationPermissions } from "@/lib/github";
 import { getOrgSpendLimitStatus } from "@/lib/cost";
+import { getOrgEntitlements } from "@/lib/entitlements";
 import { canUserCreateOrg } from "@/lib/org-limits";
 import { OrgCookieSync } from "@/components/org-cookie-sync";
 import { DeviceReporter } from "@/components/device-reporter";
 import { PresenceReporter } from "@/components/presence-reporter";
+import { TelemetryNotice } from "@/components/telemetry-notice";
 import { createOrgForUser } from "@/lib/org-create";
 
 /**
@@ -55,6 +57,7 @@ export default async function AppLayout({
       organizationMembers: {
         where: { deletedAt: null, organization: { deletedAt: null } },
         select: {
+          telemetryOptedOut: true,
           organization: {
             select: {
               id: true,
@@ -146,6 +149,19 @@ export default async function AppLayout({
   const currentOrg =
     orgs.find((o) => o.id === currentOrgId) ?? orgs[0] ?? { id: "", name: "Octopus", avatarUrl: null };
 
+  // Per-user telemetry notice: show when the active org is actually COLLECTING
+  // (entitled AND enabled — not just the raw liveTelemetryEnabled flag, which
+  // can linger true after an org loses paid status) and this member hasn't
+  // opted out. Gated on the same liveTelemetryActive signal as the settings
+  // opt-out control so the banner and that control never disagree.
+  const currentMember = user.organizationMembers.find(
+    (m) => m.organization.id === currentOrg.id,
+  );
+  const telemetryActive =
+    !!currentMember && (await getOrgEntitlements(currentOrg.id)).liveTelemetryActive;
+  const showTelemetryNotice =
+    !!currentMember && telemetryActive && !currentMember.telemetryOptedOut;
+
   const canCreateOrg = await canUserCreateOrg(session.user.id);
 
   const sidebarProps = {
@@ -194,6 +210,7 @@ export default async function AppLayout({
           />
         )}
         <SpendLimitBanner spendStatus={spendStatus} />
+        {showTelemetryNotice && <TelemetryNotice orgId={currentOrg.id} />}
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
           <AppSidebar {...sidebarProps} />
           <div className="flex min-h-0 flex-1 flex-col">

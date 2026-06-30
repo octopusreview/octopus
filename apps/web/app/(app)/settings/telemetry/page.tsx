@@ -2,8 +2,9 @@ import { headers, cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
-import { canUseLiveTelemetry } from "@/lib/entitlements";
+import { getOrgEntitlements } from "@/lib/entitlements";
 import { LiveTelemetrySwitch } from "./live-telemetry-switch";
+import { TelemetryOptOutSwitch } from "./telemetry-opt-out-switch";
 
 export default async function TelemetrySettingsPage() {
   const session = await auth.api.getSession({
@@ -22,6 +23,7 @@ export default async function TelemetrySettingsPage() {
     },
     select: {
       role: true,
+      telemetryOptedOut: true,
       organization: {
         select: {
           id: true,
@@ -34,7 +36,10 @@ export default async function TelemetrySettingsPage() {
   if (!member) redirect("/dashboard");
 
   const canManage = member.role === "owner" || member.role === "admin";
-  const paid = await canUseLiveTelemetry(member.organization.id);
+  const ent = await getOrgEntitlements(member.organization.id);
+  const paid = ent.paid;
+  // Show the per-member opt-out only when telemetry is actually collecting.
+  const active = ent.liveTelemetryActive;
 
   return (
     <div key={member.organization.id} className="space-y-6">
@@ -43,6 +48,7 @@ export default async function TelemetrySettingsPage() {
         enabled={member.organization.liveTelemetryEnabled}
         paid={paid}
       />
+      {active && <TelemetryOptOutSwitch optedOut={member.telemetryOptedOut} />}
     </div>
   );
 }

@@ -182,6 +182,11 @@ model OrganizationMember {
   role      String    @default("member")
   createdAt DateTime  @default(now())
   deletedAt DateTime?
+  // Per-member opt-out from live telemetry: when true, no presence/activity is
+  // collected for or attributed to this member (privacy surface for the
+  // live-monitoring feature). Default false = tracked-by-default, mirroring
+  // User.marketingEmailsEnabled.
+  telemetryOptedOut Boolean @default(false)
 
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)

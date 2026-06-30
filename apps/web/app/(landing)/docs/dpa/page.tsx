@@ -40,7 +40,7 @@ export default function DpaPage() {
       <Section title="What it covers">
         <UL>
           <li>Subject matter, duration, nature, and purpose of processing</li>
-          <li>The types of personal data processed (account identifiers, repository content references, audit metadata)</li>
+          <li>The types of personal data processed (account identifiers, repository content references, audit metadata, and — for orgs that enable Live Activity — coarse presence and activity telemetry, never content)</li>
           <li>Octopus&apos;s technical and organisational security measures (see <a href="/docs/security-overview" className="text-cyan-400 underline">Security Overview</a>)</li>
           <li>Sub-processor authorisation and notification of changes</li>
           <li>International transfer safeguards (Standard Contractual Clauses)</li>

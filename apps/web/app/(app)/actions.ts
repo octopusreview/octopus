@@ -19,6 +19,7 @@ import { encryptString } from "@/lib/crypto";
 import { writeAuditLog } from "@/lib/audit";
 import { canUseLiveTelemetry } from "@/lib/entitlements";
 import { getClientIp } from "@/lib/request-ip";
+import { clearPresence } from "@/lib/presence";
 
 export async function clearOrgCookie() {
   const cookieStore = await cookies();
@@ -929,6 +930,38 @@ export async function toggleLiveTelemetry(
 
   revalidatePath("/settings/telemetry");
   return { success: true };
+}
+
+/**
+ * Per-member opt-out from live telemetry. When opted out, no presence/activity
+ * is collected for this member in the current org. Any member may set their own
+ * preference (no role gate — it's the member's own privacy choice).
+ */
+export async function toggleTelemetryOptOut(optedOut: boolean): Promise<{ error?: string }> {
+  const user = await getUser();
+  const cookieStore = await cookies();
+  const orgId = cookieStore.get("current_org_id")?.value;
+  if (!orgId) return { error: "No organization selected." };
+
+  const member = await prisma.organizationMember.findFirst({
+    where: { organizationId: orgId, userId: user.id, deletedAt: null },
+    select: { id: true },
+  });
+  if (!member) return { error: "Not a member of this organization." };
+
+  await prisma.organizationMember.update({
+    where: { id: member.id },
+    data: { telemetryOptedOut: optedOut },
+  });
+
+  // Opting out should take effect immediately — drop any live presence so the
+  // member disappears from the roster at once (rather than after the TTL).
+  if (optedOut) {
+    await clearPresence(orgId, user.id);
+  }
+
+  revalidatePath("/settings/telemetry");
+  return {};
 }
 
 export async function updateOrgDefaultReviewConfig(

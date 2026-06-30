@@ -124,6 +124,14 @@ const SUBPROCESSORS: Subprocessor[] = [
     url: "https://linear.app/legal/privacy",
   },
   {
+    name: "Pubby",
+    purpose: "Real-time messaging (WebSocket pub/sub) for live chat streaming and the Live Activity dashboard",
+    dataAccessed: "Coarse real-time events only (e.g. \"a review completed\") for orgs that enable Live Activity — never file contents, PR titles, or message text; durable activity is stored in our own DB, not Pubby",
+    location: "United States",
+    required: "conditional",
+    url: "https://pubby.dev",
+  },
+  {
     name: "Atlassian (Jira)",
     purpose: "Create issues from review findings",
     dataAccessed: "Finding title + description + reference URL",

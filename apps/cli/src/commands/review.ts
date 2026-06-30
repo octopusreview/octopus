@@ -1,9 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline";
-import { loadCredentials } from "../lib/credentials.js";
+import { loadCredentials, type Credentials } from "../lib/credentials.js";
 import { loadConfig } from "../lib/config.js";
 import { getJson, postJson } from "../lib/api.js";
 import { ensureRepoIndexed } from "../lib/local-index.js";
+import { parsePrArg, prTerms, localizeMessage } from "../lib/pr-url.js";
+import { resolveRepo } from "../lib/repo-resolver.js";
+import { positionals } from "../lib/args.js";
+import { sanitizeTerminal } from "../lib/output.js";
 
 /**
  * `octp review` — pre-PR review of local changes.
@@ -80,6 +84,15 @@ export async function reviewCommand(argv: string[]): Promise<number> {
   if (argv.includes("--help") || argv.includes("-h")) {
     printHelp();
     return 0;
+  }
+
+  // PR-review path: `octp review --pr <n>` or `octp review <n|url>` triggers a
+  // server-side review of an existing PR (posted as comments) — distinct from
+  // the local working-tree diff review below. A positional arg (one that isn't
+  // a flag value) signals PR intent.
+  const prArg = flagValue(argv, "--pr") ?? positionals(argv, ["--since", "--format", "--pr"])[0];
+  if (prArg) {
+    return await reviewPr(creds, prArg);
   }
 
   const mode = parseMode(argv);
@@ -271,6 +284,48 @@ export async function reviewCommand(argv: string[]): Promise<number> {
     const criticalCount = data.findings.filter((f) => isCritical(f.severity)).length;
     if (criticalCount > 0) return 1;
   }
+  return 0;
+}
+
+// ── PR review (server-side, posts comments) ──────────────────────────────────
+
+/**
+ * Trigger a review of an existing PR/MR via the platform pipeline (the result
+ * is posted as comments on the PR, same as the cloud auto-review). Resolves the
+ * repo from the PR URL's owner/repo when present, otherwise the current git
+ * remote.
+ */
+async function reviewPr(creds: Credentials, prArg: string): Promise<number> {
+  const parsed = parsePrArg(prArg);
+  if (!parsed.ok) {
+    console.error(parsed.error);
+    return 2;
+  }
+  const resolved = await resolveRepo(creds, parsed.repoFullName);
+  if (!resolved.ok) {
+    console.error(resolved.error);
+    return 1;
+  }
+  const repo = resolved.repo;
+  const terms = prTerms(repo.provider);
+  const res = await postJson<{ ok?: boolean }>(
+    `${creds.baseUrl}/api/cli/repos/${encodeURIComponent(repo.id)}/review`,
+    { prNumber: parsed.prNumber },
+    creds.token,
+    { timeoutMs: 60_000 },
+  );
+  if (!res.ok) {
+    console.error(
+      localizeMessage(`Failed to trigger review (HTTP ${res.status}): ${res.error}`, repo.provider),
+    );
+    return 1;
+  }
+  console.log(
+    `${COLOR.green}✓${COLOR.reset} Review triggered for ${repo.fullName} ${terms.short} #${parsed.prNumber}`,
+  );
+  console.log(
+    `${COLOR.dim}The review will be posted as a comment on the ${terms.full} when complete.${COLOR.reset}`,
+  );
   return 0;
 }
 
@@ -523,7 +578,7 @@ type RenderedData = ReviewResponse & { truncated?: boolean };
 function renderHuman(data: RenderedData, repoFullName: string): void {
   const { findings, model, usage } = data;
   console.log(
-    `${COLOR.bold}🐙 octp review${COLOR.reset}  ${COLOR.dim}${repoFullName} · ${model} · ${usage.inputTokens}→${usage.outputTokens} tokens${COLOR.reset}`,
+    `${COLOR.bold}🐙 octp review${COLOR.reset}  ${COLOR.dim}${sanitizeTerminal(repoFullName)} · ${sanitizeTerminal(model)} · ${usage.inputTokens}→${usage.outputTokens} tokens${COLOR.reset}`,
   );
   if (data.bareMode) {
     console.log(
@@ -542,13 +597,16 @@ function renderHuman(data: RenderedData, repoFullName: string): void {
   console.log("");
   for (const f of findings) {
     console.log(
-      `${severityGlyph(f.severity)} ${COLOR.bold}${f.severity}${COLOR.reset}  ${COLOR.cyan}${f.filePath}:${f.startLine}${COLOR.reset}`,
+      `${severityGlyph(f.severity)} ${COLOR.bold}${sanitizeTerminal(f.severity)}${COLOR.reset}  ${COLOR.cyan}${sanitizeTerminal(f.filePath)}:${f.startLine}${COLOR.reset}`,
     );
-    console.log(`  ${COLOR.bold}${f.title}${COLOR.reset}`);
-    console.log(`  ${f.description}`);
-    if (f.suggestion) console.log(`  ${COLOR.dim}suggestion:${COLOR.reset} ${f.suggestion}`);
+    console.log(`  ${COLOR.bold}${sanitizeTerminal(f.title)}${COLOR.reset}`);
+    console.log(`  ${sanitizeTerminal(f.description)}`);
+    if (f.suggestion)
+      console.log(`  ${COLOR.dim}suggestion:${COLOR.reset} ${sanitizeTerminal(f.suggestion)}`);
     if (f.suggestedRegressionTest)
-      console.log(`  ${COLOR.dim}test:${COLOR.reset} ${f.suggestedRegressionTest}`);
+      console.log(
+        `  ${COLOR.dim}test:${COLOR.reset} ${sanitizeTerminal(f.suggestedRegressionTest)}`,
+      );
     console.log("");
   }
   const buckets: Record<string, number> = {};
@@ -568,11 +626,11 @@ function renderMarkdown(data: RenderedData): string {
   const lines: string[] = [];
   lines.push(`# octp review`);
   lines.push("");
-  lines.push(`Model: \`${data.model}\``);
+  lines.push(`Model: \`${sanitizeTerminal(data.model)}\``);
   if (data.truncated) lines.push(`> ⚠ diff was truncated — findings may be incomplete`);
   if (data.summary) {
     lines.push("");
-    lines.push(data.summary);
+    lines.push(sanitizeTerminal(data.summary));
   }
   lines.push("");
   if (data.findings.length === 0) {
@@ -580,20 +638,20 @@ function renderMarkdown(data: RenderedData): string {
     return lines.join("\n");
   }
   for (const f of data.findings) {
-    lines.push(`## ${severityGlyph(f.severity)} ${f.title}`);
+    lines.push(`## ${severityGlyph(f.severity)} ${sanitizeTerminal(f.title)}`);
     lines.push("");
-    lines.push(`**File:** \`${f.filePath}:${f.startLine}\`  `);
-    lines.push(`**Severity:** ${f.severity}  `);
-    if (f.category) lines.push(`**Category:** ${f.category}  `);
+    lines.push(`**File:** \`${sanitizeTerminal(f.filePath)}:${f.startLine}\`  `);
+    lines.push(`**Severity:** ${sanitizeTerminal(f.severity)}  `);
+    if (f.category) lines.push(`**Category:** ${sanitizeTerminal(f.category)}  `);
     lines.push("");
-    lines.push(f.description);
+    lines.push(sanitizeTerminal(f.description));
     if (f.suggestion) {
       lines.push("");
-      lines.push(`**Suggestion:** ${f.suggestion}`);
+      lines.push(`**Suggestion:** ${sanitizeTerminal(f.suggestion)}`);
     }
     if (f.suggestedRegressionTest) {
       lines.push("");
-      lines.push(`**Test idea:** ${f.suggestedRegressionTest}`);
+      lines.push(`**Test idea:** ${sanitizeTerminal(f.suggestedRegressionTest)}`);
     }
     lines.push("");
   }
@@ -609,6 +667,7 @@ Usage:
   octp review                        Review upstream..HEAD plus uncommitted changes
   octp review --staged               Review only \`git diff --staged\` output
   octp review --since <ref>          Review since a given ref (eg. HEAD~3, main)
+  octp review --pr <n|url>           Review an existing PR/MR — posts comments (123 or a GH/GL/BB URL)
 
 Flags:
   --strict                           Exit 1 if any critical (🔴) findings — for pre-commit hooks

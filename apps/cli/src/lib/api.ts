@@ -91,6 +91,171 @@ async function jsonRequest<T>(url: string, init: RequestInit): Promise<ApiResult
   return { ok: true, data: parsed as T };
 }
 
+export async function del<T>(url: string, bearerToken?: string): Promise<ApiResult<T>> {
+  const headers: Record<string, string> = { "user-agent": USER_AGENT };
+  if (bearerToken) headers.authorization = `Bearer ${bearerToken}`;
+  return await jsonRequest<T>(url, { method: "DELETE", headers });
+}
+
+export type StreamResult = { ok: true } | { ok: false; status: number; error: string };
+
+// Hard cap on the un-flushed stream buffer. A server that streams a large body
+// with no newline would otherwise grow `buffer` without bound (memory DoS).
+const MAX_STREAM_BUFFER = 5 * 1024 * 1024;
+
+function streamErr(e: unknown): string {
+  if (e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError")) {
+    return "Request timed out";
+  }
+  return e instanceof Error ? e.message : String(e);
+}
+
+/**
+ * Open a POST stream. Resolves the non-2xx path the same way jsonRequest does
+ * (parse {error} JSON, else raw text) so streaming callers get a usable error
+ * instead of a half-read body. On success hands back the reader.
+ */
+// Returns the Response on success; each streamer calls getReader() itself so
+// the (overloaded) reader type is inferred at the 0-arg call site — annotating
+// it here resolves to the wrong overload (BYOB) or the wrong DOM generic.
+async function openStream(
+  url: string,
+  body: unknown,
+  bearerToken?: string,
+  timeoutMs?: number,
+): Promise<{ ok: true; response: Response } | ApiErr> {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "user-agent": USER_AGENT,
+  };
+  if (bearerToken) headers.authorization = `Bearer ${bearerToken}`;
+
+  const init: RequestInit = { method: "POST", headers, body: JSON.stringify(body) };
+  // Overall per-call timeout — each chat answer / analyze-deps run is a single
+  // request, so an upper bound here keeps the CLI from hanging forever if the
+  // server accepts the connection then stalls mid-stream.
+  if (timeoutMs && timeoutMs > 0) init.signal = AbortSignal.timeout(timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(url, init);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError")) {
+      return { ok: false, status: 0, error: `Request timed out — ${msg}` };
+    }
+    return { ok: false, status: 0, error: msg };
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    let error = `HTTP ${res.status}`;
+    if (text) {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === "object" && "error" in parsed) {
+          error = String((parsed as { error: unknown }).error);
+        }
+      } catch {
+        error = text.slice(0, 200);
+      }
+    }
+    return { ok: false, status: res.status, error };
+  }
+  return { ok: true, response: res };
+}
+
+/**
+ * Consume a `data: {json}` line stream (NDJSON-style SSE). Ends on a
+ * `data: [DONE]` sentinel or when the stream closes. `onData` is invoked for
+ * each parsed JSON object; malformed lines are skipped.
+ */
+export async function streamData(
+  url: string,
+  body: unknown,
+  bearerToken: string | undefined,
+  onData: (data: Record<string, unknown>) => void,
+  timeoutMs?: number,
+): Promise<StreamResult> {
+  const opened = await openStream(url, body, bearerToken, timeoutMs);
+  if (!opened.ok) return opened;
+  const reader = opened.response.body?.getReader();
+  if (!reader) return { ok: false, status: 0, error: "No response body" };
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      if (buffer.length > MAX_STREAM_BUFFER) {
+        return { ok: false, status: 0, error: "stream exceeded buffer limit without a line break" };
+      }
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6).trim();
+        if (data === "[DONE]") return { ok: true };
+        try {
+          onData(JSON.parse(data) as Record<string, unknown>);
+        } catch {
+          // skip malformed chunk
+        }
+      }
+    }
+  } catch (e) {
+    return { ok: false, status: 0, error: streamErr(e) };
+  }
+  return { ok: true };
+}
+
+/**
+ * Consume an `event: X\ndata: {json}` SSE stream. `onEvent` receives the event
+ * name + parsed data object per record.
+ */
+export async function streamSse(
+  url: string,
+  body: unknown,
+  bearerToken: string | undefined,
+  onEvent: (event: string, data: Record<string, unknown>) => void,
+  timeoutMs?: number,
+): Promise<StreamResult> {
+  const opened = await openStream(url, body, bearerToken, timeoutMs);
+  if (!opened.ok) return opened;
+  const reader = opened.response.body?.getReader();
+  if (!reader) return { ok: false, status: 0, error: "No response body" };
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let currentEvent = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      if (buffer.length > MAX_STREAM_BUFFER) {
+        return { ok: false, status: 0, error: "stream exceeded buffer limit without a line break" };
+      }
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.startsWith("event: ")) {
+          currentEvent = line.slice(7).trim();
+        } else if (line.startsWith("data: ") && currentEvent) {
+          try {
+            onEvent(currentEvent, JSON.parse(line.slice(6)) as Record<string, unknown>);
+          } catch {
+            // skip malformed chunk
+          }
+          currentEvent = "";
+        }
+      }
+    }
+  } catch (e) {
+    return { ok: false, status: 0, error: streamErr(e) };
+  }
+  return { ok: true };
+}
+
 /**
  * Normalise a base URL — strip trailing slashes, ensure scheme. Returns null
  * if the input is not a parseable http/https URL.

@@ -6,6 +6,18 @@ import { isOnboarded, loadConfig } from "./lib/config.js";
 import { agentServeCommand } from "./commands/agent-serve.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { reviewCommand } from "./commands/review.js";
+import { loginCommand } from "./commands/login.js";
+import { logoutCommand } from "./commands/logout.js";
+import { whoamiCommand } from "./commands/whoami.js";
+import { setupTokenCommand } from "./commands/setup-token.js";
+import { configCommand } from "./commands/config.js";
+import { repoCommand } from "./commands/repo.js";
+import { knowledgeCommand } from "./commands/knowledge.js";
+import { usageCommand } from "./commands/usage.js";
+import { analyzeDepsCommand } from "./commands/analyze-deps.js";
+import { skillsCommand } from "./commands/skills.js";
+import { updateCommand } from "./commands/update.js";
+import { chatCommand } from "./commands/chat.js";
 
 const VERSION = "0.1.0";
 
@@ -27,34 +39,41 @@ const VERSION = "0.1.0";
  * Unknown subcommands and flags fail fast with a help hint — the WS6.6 pattern.
  */
 
-const KNOWN_SUBCOMMANDS = new Set([
-  "onboard",
-  "review",
-  "agent",
-  "config",
-  "doctor",
-]);
-
 function printHelp(): void {
   console.log(`octp ${VERSION} — Octopus CLI
 
 Usage:
-  octp                       Launch the onboarding wizard (first run) or dashboard
-  octp onboard [--reset]     Run the onboarding wizard explicitly
-  octp review [--staged]     Review local changes pre-PR (see \`octp review --help\`)
-  octp agent serve           Run as a local-agent bridge (poll for tasks, run via Ollama)
-  octp config <get|set>      Manage ~/.octopus/config.json               (coming soon)
-  octp doctor                Environment + auth health check
+  octp                       Onboarding wizard (first run) or status hint
+  octp onboard [--reset]     Run the onboarding wizard
 
-octp agent serve flags:
-  --name <name>              Agent name reported to the server (default: hostname-pid)
-  --verbose, -v              Log every task claim + completion
+Auth:
+  octp login [--token ...]   Sign in (browser device-flow or --token)
+  octp logout                Remove saved credentials
+  octp whoami                Show the signed-in user + org
+  octp setup-token           Print a token to stdout (for CI/CD)
+
+Reviews:
+  octp review [--staged|--since <ref>]   Review local changes pre-PR
+  octp review --pr <n|url>               Review an existing PR/MR (posts comments)
+  octp chat [repo] [-p <msg>] [-g]       Chat with your codebase
+
+Repositories & knowledge:
+  octp repo <list|status|index|analyze> [repo]   Manage connected repos
+  octp knowledge <list|add|remove>               Manage the knowledge base
+  octp analyze-deps <repo-url>                    Scan dependencies for advisories
+  octp usage                                     Show spend + token usage
+
+Agent & ops:
+  octp agent serve           Run as a local-agent bridge (Ollama-backed)
+  octp config <get|set|list> Manage ~/.octopus/config.json
+  octp skills <list|install|update|remove>       Manage AI-agent skills
+  octp doctor                Environment + auth health check
+  octp update [--check]      Update the CLI
 
 Flags:
-  --skip-onboard             Skip the first-run wizard
-  --reset                    Re-run the onboarding wizard, pre-seeding existing config
   --version, -v              Print version
   --help, -h                 Print this help
+  (run \`octp <command> --help\` for command-specific flags)
 
 Environment:
   OCTOPUS_HOME               Override the config/secrets directory (default ~/.octopus)
@@ -96,28 +115,43 @@ async function main(argv: string[]): Promise<number> {
     return await renderWizard(argv.includes("--reset"));
   }
 
-  if (first === "agent") {
-    const sub = argv[1];
-    if (sub === "serve") {
-      return await agentServeCommand(argv.slice(2));
+  const rest = argv.slice(1);
+  switch (first) {
+    case "login":
+      return await loginCommand(rest);
+    case "logout":
+      return await logoutCommand(rest);
+    case "whoami":
+      return await whoamiCommand(rest);
+    case "setup-token":
+      return await setupTokenCommand(rest);
+    case "config":
+      return await configCommand(rest);
+    case "review":
+      return await reviewCommand(rest);
+    case "chat":
+      return await chatCommand(rest);
+    case "repo":
+      return await repoCommand(rest);
+    case "knowledge":
+      return await knowledgeCommand(rest);
+    case "analyze-deps":
+      return await analyzeDepsCommand(rest);
+    case "usage":
+      return await usageCommand(rest);
+    case "skills":
+      return await skillsCommand(rest);
+    case "update":
+      return await updateCommand(rest);
+    case "doctor":
+      return await doctorCommand(rest);
+    case "agent": {
+      const sub = argv[1];
+      if (sub === "serve") return await agentServeCommand(argv.slice(2));
+      console.error(`Unknown agent subcommand: ${sub ?? "(none)"}`);
+      console.error("Try: octp agent serve");
+      return 2;
     }
-    console.error(`Unknown agent subcommand: ${sub ?? "(none)"}`);
-    console.error("Try: octp agent serve");
-    return 2;
-  }
-
-  if (first === "doctor") {
-    return await doctorCommand(argv.slice(1));
-  }
-
-  if (first === "review") {
-    return await reviewCommand(argv.slice(1));
-  }
-
-  if (KNOWN_SUBCOMMANDS.has(first)) {
-    console.error(`octp ${first}: not yet implemented in this build.`);
-    console.error("Tracking: https://github.com/cemoso/octopus/issues?q=workstream%3A");
-    return 2;
   }
 
   console.error(`Unknown command: ${first}`);

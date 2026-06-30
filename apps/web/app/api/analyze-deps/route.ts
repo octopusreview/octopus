@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
+import { authenticateApiToken } from "@/lib/api-auth";
 import { headers, cookies } from "next/headers";
 import { prisma } from "@octopus/db";
 import { analyzeRepositoryDependencies } from "@octopus/package-analyzer";
@@ -22,34 +23,47 @@ function parseGitHubUrl(url: string): { owner: string; repo: string; branch?: st
 }
 
 export async function POST(req: NextRequest) {
-  // Auth check
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) {
-    return Response.json({ error: "Authentication required" }, { status: 401 });
+  // Accept either a CLI API token (Authorization: Bearer oct_…) or a browser
+  // session. The token path is additive — `octp analyze-deps` works headlessly
+  // while the web UI keeps using the session path below, unchanged.
+  let orgId: string;
+  let userId: string;
+  let installationId: number | null;
+
+  const tokenAuth = await authenticateApiToken(req);
+  if (tokenAuth) {
+    orgId = tokenAuth.org.id;
+    userId = tokenAuth.user.id;
+    installationId = tokenAuth.org.githubInstallationId;
+  } else {
+    const session = await auth.api.getSession({ headers: await headers() });
+    if (!session) {
+      return Response.json({ error: "Authentication required" }, { status: 401 });
+    }
+
+    const cookieStore = await cookies();
+    const currentOrgId = cookieStore.get("current_org_id")?.value;
+
+    const member = await prisma.organizationMember.findFirst({
+      where: {
+        userId: session.user.id,
+        ...(currentOrgId ? { organizationId: currentOrgId } : {}),
+        deletedAt: null,
+      },
+      select: {
+        organizationId: true,
+        organization: { select: { githubInstallationId: true } },
+      },
+    });
+
+    if (!member) {
+      return Response.json({ error: "No organization found" }, { status: 403 });
+    }
+
+    orgId = member.organizationId;
+    userId = session.user.id;
+    installationId = member.organization.githubInstallationId;
   }
-
-  const cookieStore = await cookies();
-  const currentOrgId = cookieStore.get("current_org_id")?.value;
-
-  const member = await prisma.organizationMember.findFirst({
-    where: {
-      userId: session.user.id,
-      ...(currentOrgId ? { organizationId: currentOrgId } : {}),
-      deletedAt: null,
-    },
-    select: {
-      organizationId: true,
-      organization: { select: { githubInstallationId: true } },
-    },
-  });
-
-  if (!member) {
-    return Response.json({ error: "No organization found" }, { status: 403 });
-  }
-
-  const orgId = member.organizationId;
-  const userId = session.user.id;
-  const installationId = member.organization.githubInstallationId;
 
   // Build auth headers for GitHub API (uses installation token if available)
   async function githubHeaders(): Promise<Record<string, string>> {

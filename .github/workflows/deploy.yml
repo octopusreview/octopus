@@ -22,7 +22,7 @@ name: deploy (blue-green cutover)
 #     CF_POOL_DATACENTER, CF_POOL_AWS          - Cloudflare LB pool IDs per leg
 #     HEALTH_URL_DATACENTER, HEALTH_URL_AWS    - each leg's DIRECT origin /api/health (bypassing the LB)
 #     PUBLIC_HEALTH_URL                        - the LB hostname's /api/health (post-cutover verify)
-#     SSH_HOST_DATACENTER, SSH_HOST_AWS, DEPLOY_SSH_USER, DEPLOY_REMOTE_CMD  - (optional) SSH deploy
+#     SSH_HOST_DATACENTER, SSH_HOST_AWS, DEPLOY_SSH_USER, DEPLOY_DIR  - (optional) SSH deploy (DEPLOY_DIR = compose dir, default /opt/octopus)
 # If the SSH_* vars / DEPLOY_SSH_KEY are unset, the deploy step is skipped and
 # the workflow assumes the target leg already runs the desired tag (e.g. it
 # auto-pulls), doing only the health-gate + cutover.
@@ -103,20 +103,30 @@ jobs:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           SSH_USER: ${{ vars.DEPLOY_SSH_USER }}
           SSH_HOST: ${{ steps.t.outputs.ssh_host }}
-          # Customise per your compose layout; IMAGE_TAG is exported for it.
-          REMOTE_CMD: ${{ vars.DEPLOY_REMOTE_CMD }}
+          # The compose directory on the leg (default /opt/octopus). A PATH, not
+          # an arbitrary command — the deploy command itself is fixed below.
+          DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
           if [ -z "$SSH_KEY" ]; then
             echo "::error::DEPLOY_SSH_USER is set but DEPLOY_SSH_KEY secret is missing."; exit 1
           fi
+          dir="${DEPLOY_DIR:-/opt/octopus}"
+          # Validate the dir as a plain path so it can't smuggle shell into the
+          # remote command (the deploy command is otherwise fixed — no free-form
+          # remote command is accepted).
+          if ! printf '%s' "$dir" | grep -qE '^/[A-Za-z0-9._/-]*$'; then
+            echo "::error::Invalid DEPLOY_DIR '$dir' — must be an absolute path of [A-Za-z0-9._/-]."; exit 1
+          fi
           key=$(mktemp); trap 'rm -f "$key"' EXIT  # remove the key on any exit path
           printf '%s' "$SSH_KEY" > "$key"; chmod 600 "$key"
-          cmd="${REMOTE_CMD:-cd /opt/octopus && docker compose pull && docker compose up -d}"
-          echo "Deploying tag '$TAG' to $SSH_HOST"
+          echo "Deploying tag '$TAG' to $SSH_HOST ($dir)"
+          # Fixed remote command; $TAG (charset-validated in preflight) and $dir
+          # (validated above) are the only interpolated values.
           IMAGE_TAG="$TAG" ssh -i "$key" -o StrictHostKeyChecking=accept-new \
-            "$SSH_USER@$SSH_HOST" "export IMAGE_TAG='$TAG'; $cmd"
+            "$SSH_USER@$SSH_HOST" \
+            "export IMAGE_TAG='$TAG'; cd '$dir' && docker compose pull && docker compose up -d"
 
       - name: Health-gate the target leg
         env:

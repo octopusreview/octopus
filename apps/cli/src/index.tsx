@@ -4,6 +4,7 @@ import { render } from "ink";
 import { OnboardWizard } from "./OnboardWizard.js";
 import { isOnboarded, loadConfig } from "./lib/config.js";
 import { agentServeCommand } from "./commands/agent-serve.js";
+import { agentWatchCommand } from "./commands/agent-watch.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { reviewCommand } from "./commands/review.js";
 import { loginCommand } from "./commands/login.js";
@@ -83,7 +84,8 @@ Repositories & knowledge:
   octp usage                                     Show spend + token usage
 
 Agent & ops:
-  octp agent serve           Run as a local-agent bridge (Ollama-backed)
+  octp agent serve           Run the local agent (Ollama LLM tasks + code-search)
+  octp agent watch [path]    Watch a repo dir so cloud chat can search it locally
   octp config <get|set|list> Manage ~/.octopus/config.json
   octp skills <list|install|update|remove>       Manage AI-agent skills
   octp doctor                Environment + auth health check
@@ -212,8 +214,9 @@ async function main(rawArgv: string[]): Promise<number> {
     case "agent": {
       const sub = argv[1];
       if (sub === "serve") return await agentServeCommand(argv.slice(2));
+      if (sub === "watch") return await agentWatchCommand(argv.slice(2));
       console.error(`Unknown agent subcommand: ${sub ?? "(none)"}`);
-      console.error("Try: octp agent serve");
+      console.error("Try: octp agent serve | octp agent watch");
       return 2;
     }
   }

@@ -3,6 +3,8 @@ import { loadCredentials, type Credentials } from "../lib/credentials.js";
 import { loadConfig, DEFAULT_OLLAMA_BASE_URL } from "../lib/config.js";
 import { getJson, postJson } from "../lib/api.js";
 import { sanitizeTerminal } from "../lib/output.js";
+import { resolveWatchedRepos } from "../lib/agent-watch.js";
+import { runCodeSearch } from "../lib/code-search.js";
 
 /**
  * `octp agent serve` — register this machine as a local agent for the
@@ -29,6 +31,13 @@ import { sanitizeTerminal } from "../lib/output.js";
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const POLL_INTERVAL_MS = 2000;
+// Bound each task-poll request. Without it, getJson has no timeout, so a server
+// that accepts the connection but never responds parks the loop forever — and
+// because both loops must finish before `agent serve` returns, a stalled poll on
+// one loop would block the clean exit the OTHER loop wants after an auth error.
+// A timed-out poll surfaces as {ok:false,status:0} (retried) and lets the loop
+// re-check `shuttingDown` and exit.
+const POLL_TIMEOUT_MS = 15_000;
 // Bound Ollama calls — without this a stuck model load or hung GPU hangs the
 // agent indefinitely, which then misses heartbeats. Override via
 // OCTP_OLLAMA_TIMEOUT_MS for large models that legitimately need more time.
@@ -71,6 +80,15 @@ type OllamaResponse = {
   usage?: { prompt_tokens?: number; completion_tokens?: number };
 };
 
+type SearchTask = {
+  id: string;
+  query: string;
+  searchType: string;
+  params: Record<string, unknown> | null;
+  repoFullName: string;
+  timeoutMs: number;
+};
+
 export async function agentServeCommand(argv: string[]): Promise<number> {
   const creds = await loadCredentials();
   if (!creds) {
@@ -110,48 +128,66 @@ export async function agentServeCommand(argv: string[]): Promise<number> {
   const ollamaBaseUrl =
     process.env.OLLAMA_BASE_URL ?? config.ollamaBaseUrl ?? DEFAULT_OLLAMA_BASE_URL;
 
-  console.log(
-    `octp agent serve — connecting to ${sanitizeTerminal(creds.baseUrl)} as ${sanitizeTerminal(creds.orgName)} / ${sanitizeTerminal(agentName)}`,
-  );
-
-  // Quick Ollama health-check so the user finds out about a stopped daemon
-  // before tasks start landing.
+  // Decide what this daemon can serve and register the UNION of capabilities:
+  //  - LLM-completion tasks, when Ollama is reachable.
+  //  - Code-search tasks, when the active account watches one or more repos.
+  const { repos: watchedRepos, warnings } = await resolveWatchedRepos();
+  const repoFullNames = [...watchedRepos.keys()];
   const ollamaUp = await checkOllama(ollamaBaseUrl);
-  if (!ollamaUp) {
+  const doLlm = ollamaUp;
+  const doSearch = repoFullNames.length > 0;
+
+  if (!doLlm && !doSearch) {
     console.error(
-      `Could not reach Ollama at ${ollamaBaseUrl}. Start it with \`ollama serve\` and try again.`,
+      `Nothing to serve: Ollama is unreachable at ${ollamaBaseUrl} AND no repos are watched.\n` +
+        "Start Ollama (`ollama serve`) for LLM tasks, and/or `octp agent watch <dir>` for code-search.",
     );
     return 2;
   }
-  console.log(`✓ Ollama reachable at ${ollamaBaseUrl}`);
 
-  const reg = await registerAgent(creds, agentName);
+  const capabilities = [
+    ...(doLlm ? ["llm-completion", "ollama"] : []),
+    ...(doSearch ? ["code-search"] : []),
+  ];
+
+  console.log(
+    `octp agent serve — ${sanitizeTerminal(creds.orgName)} as ${sanitizeTerminal(agentName)} (${sanitizeTerminal(creds.baseUrl)})`,
+  );
+  console.log(`  capabilities: ${capabilities.join(", ")}`);
+  console.log(
+    doLlm
+      ? `✓ Ollama reachable at ${ollamaBaseUrl}`
+      : `· Ollama unreachable at ${ollamaBaseUrl} — LLM tasks disabled`,
+  );
+  console.log(
+    doSearch
+      ? `✓ watching ${repoFullNames.length} repo(s): ${repoFullNames.map((r) => sanitizeTerminal(r)).join(", ")}`
+      : "· no watched repos — code-search disabled (`octp agent watch <dir>`)",
+  );
+  for (const w of warnings) console.log(`  ! ${sanitizeTerminal(w)}`);
+
+  const reg = await registerAgent(creds, agentName, repoFullNames, capabilities);
   if (!reg.ok) {
-    console.error(`Register failed: ${reg.error}`);
+    console.error(`Register failed: ${sanitizeTerminal(reg.error)}`);
     return 1;
   }
   const { agentId } = reg.data;
   console.log(`✓ Registered as agent ${agentId}`);
 
-  // Shutdown: clear timers, wait briefly for in-flight tasks to post their
-  // results so the server doesn't see hung "claimed" tasks, then disconnect.
-  // The shuttingDown flag is checked inside the poll/heartbeat loops so they
-  // exit before this function calls process.exit().
+  // Shared daemon state across both poll loops + shutdown.
   let shuttingDown = false;
+  let exitCode = 0;
   const inFlight = new Set<Promise<void>>();
   const SHUTDOWN_GRACE_MS = 5000;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
+
   const shutdown = async () => {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log("\nShutting down — sending disconnect …");
     if (heartbeat) clearInterval(heartbeat);
-    // Give the in-flight task(s) up to SHUTDOWN_GRACE_MS to post their results.
     if (inFlight.size > 0) {
-      await Promise.race([
-        Promise.all(Array.from(inFlight)),
-        sleep(SHUTDOWN_GRACE_MS),
-      ]).catch(() => {});
+      await Promise.race([Promise.all(Array.from(inFlight)), sleep(SHUTDOWN_GRACE_MS)]).catch(() => {});
     }
     await postJson(`${creds.baseUrl}/api/agent/disconnect`, { agentId }, creds.token).catch(() => {});
     process.exit(0);
@@ -159,59 +195,77 @@ export async function agentServeCommand(argv: string[]): Promise<number> {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  // Heartbeat loop
   heartbeat = setInterval(async () => {
     if (shuttingDown) return;
-    await postJson(`${creds.baseUrl}/api/agent/heartbeat`, { agentId }, creds.token).catch((e) => {
+    await postJson(
+      `${creds.baseUrl}/api/agent/heartbeat`,
+      { agentId, repoFullNames },
+      creds.token,
+    ).catch((e) => {
       if (verbose) console.error("[heartbeat]", e instanceof Error ? e.message : String(e));
     });
   }, HEARTBEAT_INTERVAL_MS);
   heartbeat.unref();
 
-  // Polling loop. Tasks within a single poll run with up to CONCURRENCY
-  // parallelism — see RAW_CONCURRENCY at top-of-file for the env override.
-  // Default 1 (serial) matches the single-GPU-Ollama common case.
-  console.log(
-    `Polling for tasks every ${POLL_INTERVAL_MS / 1000}s (concurrency=${CONCURRENCY}). Ctrl+C to stop.`,
-  );
-  let exitCode = 0;
-  while (!shuttingDown) {
-    try {
-      const tasks = await fetchTasks(creds, agentId);
-      // Process tasks in chunks of CONCURRENCY so shutdown can break between
-      // chunks rather than waiting for every claimed task to finish.
-      for (let i = 0; i < tasks.length; i += CONCURRENCY) {
-        if (shuttingDown) break;
-        const chunk = tasks.slice(i, i + CONCURRENCY);
-        if (verbose) {
-          for (const task of chunk) console.log(`  task ${task.id} model=${task.modelId}`);
+  // Auth failure won't recover by retrying — stop BOTH loops and exit so a
+  // revoked/expired token doesn't spin forever.
+  const onAuthError = (e: AuthError) => {
+    console.error(`\nAuthentication rejected (HTTP ${e.status}): ${sanitizeTerminal(e.message)}`);
+    console.error("Run `octp` to re-authenticate, then start the agent again.");
+    exitCode = 2;
+    shuttingDown = true;
+  };
+  const track = (p: Promise<void>): Promise<void> => {
+    const q = p.finally(() => inFlight.delete(q));
+    inFlight.add(q);
+    return q;
+  };
+
+  const llmLoop = async (): Promise<void> => {
+    while (!shuttingDown) {
+      try {
+        const tasks = await fetchLlmTasks(creds, agentId);
+        for (let i = 0; i < tasks.length && !shuttingDown; i += CONCURRENCY) {
+          const chunk = tasks.slice(i, i + CONCURRENCY);
+          if (verbose) for (const t of chunk) console.log(`  ↳ llm ${sanitizeTerminal(t.id)} model=${sanitizeTerminal(t.modelId)}`);
+          await Promise.all(
+            chunk.map((t) => track(runOneTask(creds, agentId, t, ollamaBaseUrl, verbose))),
+          ).catch(() => {});
         }
-        const promises = chunk.map((task) => {
-          const p = runOneTask(creds, agentId, task, ollamaBaseUrl, verbose).finally(() => {
-            inFlight.delete(p);
-          });
-          inFlight.add(p);
-          return p;
-        });
-        await Promise.all(promises).catch(() => {
-          // runOneTask catches its own errors and reports failure via /complete;
-          // a rejection here would only come from an unexpected throw and is
-          // already logged by runOneTask.
-        });
+      } catch (e) {
+        if (e instanceof AuthError) {
+          onAuthError(e);
+          break;
+        }
+        if (verbose) console.error("[llm-poll]", e instanceof Error ? e.message : String(e));
       }
-    } catch (e) {
-      // Auth failure won't recover by retrying — surface and exit so a
-      // revoked or expired token doesn't generate an endless 401 stream.
-      if (e instanceof AuthError) {
-        console.error(`\nAuthentication rejected (HTTP ${e.status}): ${e.message}`);
-        console.error("Run `octp` to re-authenticate, then start the agent again.");
-        exitCode = 2;
-        break;
-      }
-      if (verbose) console.error("[poll]", e instanceof Error ? e.message : String(e));
+      if (!shuttingDown) await sleep(POLL_INTERVAL_MS);
     }
-    if (!shuttingDown) await sleep(POLL_INTERVAL_MS);
-  }
+  };
+
+  const searchLoop = async (): Promise<void> => {
+    while (!shuttingDown) {
+      try {
+        const tasks = await fetchSearchTasks(creds, agentId);
+        for (let i = 0; i < tasks.length && !shuttingDown; i += CONCURRENCY) {
+          const chunk = tasks.slice(i, i + CONCURRENCY);
+          await Promise.all(
+            chunk.map((t) => track(runSearchTask(creds, agentId, t, watchedRepos, verbose))),
+          ).catch(() => {});
+        }
+      } catch (e) {
+        if (e instanceof AuthError) {
+          onAuthError(e);
+          break;
+        }
+        if (verbose) console.error("[search-poll]", e instanceof Error ? e.message : String(e));
+      }
+      if (!shuttingDown) await sleep(POLL_INTERVAL_MS);
+    }
+  };
+
+  console.log(`Polling every ${POLL_INTERVAL_MS / 1000}s (concurrency=${CONCURRENCY}). Ctrl+C to stop.`);
+  await Promise.all([...(doLlm ? [llmLoop()] : []), ...(doSearch ? [searchLoop()] : [])]);
 
   if (heartbeat) clearInterval(heartbeat);
   await postJson(`${creds.baseUrl}/api/agent/disconnect`, { agentId }, creds.token).catch(() => {});
@@ -227,18 +281,20 @@ async function checkOllama(ollamaBaseUrl: string): Promise<boolean> {
   }
 }
 
-async function registerAgent(creds: Credentials, agentName: string) {
+async function registerAgent(
+  creds: Credentials,
+  agentName: string,
+  repoFullNames: string[],
+  capabilities: string[],
+) {
   return await postJson<AgentRegisterResponse>(
     `${creds.baseUrl}/api/agent/register`,
     {
       name: agentName,
-      // Server validation requires Array.isArray(repoFullNames); the agent
-      // serves any LLM task for the org regardless of source repo, so we
-      // send an empty array rather than enumerating. Without this, every
-      // registration was rejected with 400 "name and repoFullNames are
-      // required" — the bridge feature was dead on arrival.
-      repoFullNames: [],
-      capabilities: ["llm-completion", "ollama"],
+      // repoFullNames scopes which code-search tasks the server routes here
+      // (empty when serving LLM-only). The server requires an array either way.
+      repoFullNames,
+      capabilities,
       machineInfo: {
         os: process.platform,
         hostname: process.env.HOSTNAME ?? "",
@@ -249,19 +305,23 @@ async function registerAgent(creds: Credentials, agentName: string) {
   );
 }
 
-// Raised by fetchTasks on auth failure (401/403). The polling loop checks
-// for this and exits — retrying a revoked or expired token would never
-// recover and would spam the server indefinitely.
+// Raised by fetchLlmTasks / fetchSearchTasks on auth failure (401/403, plus 404
+// for a revoked agent). The polling loops check for this and exit — retrying a
+// revoked or expired token would never recover and would spam the server
+// indefinitely.
 class AuthError extends Error {
   constructor(public readonly status: number, message: string) {
     super(message);
   }
 }
 
-async function fetchTasks(creds: Credentials, agentId: string): Promise<LlmTask[]> {
+async function fetchLlmTasks(creds: Credentials, agentId: string): Promise<LlmTask[]> {
   const res = await getJson<{ tasks: LlmTask[] }>(
     `${creds.baseUrl}/api/agent/llm-tasks?agentId=${encodeURIComponent(agentId)}`,
-    { headers: { authorization: `Bearer ${creds.token}` } },
+    {
+      headers: { authorization: `Bearer ${creds.token}` },
+      signal: AbortSignal.timeout(POLL_TIMEOUT_MS),
+    },
   );
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) {
@@ -298,7 +358,7 @@ async function runOneTask(
     if (!task.modelId.startsWith("ollama:") && !task.modelId.includes(":")) {
       // Not an Ollama-prefixed model and not bare — assume Ollama anyway,
       // but log so the user knows what's happening.
-      if (verbose) console.log(`  (assuming Ollama for unprefixed model "${task.modelId}")`);
+      if (verbose) console.log(`  (assuming Ollama for unprefixed model "${sanitizeTerminal(task.modelId)}")`);
     }
     const model = task.modelId.startsWith("ollama:") ? task.modelId.slice(7) : task.modelId;
 
@@ -357,14 +417,90 @@ async function runOneTask(
         `failed to deliver result to /complete (HTTP ${deliver.status}: ${deliver.error})`,
       );
     }
-    if (verbose) console.log(`  ✓ completed ${task.id} (${text.length} chars)`);
+    if (verbose) console.log(`  ✓ completed ${sanitizeTerminal(task.id)} (${text.length} chars)`);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error(`  ✗ failed ${task.id}: ${msg}`);
+    console.error(`  ✗ failed ${sanitizeTerminal(task.id)}: ${sanitizeTerminal(msg)}`);
     // Best-effort error-side delivery. postJson resolves {ok:false} so the
     // catch is technically dead today, but harmless and defends against
     // a future change.
     await postJson(completeUrl, { agentId, error: msg }, creds.token).catch(() => {});
+  }
+}
+
+async function fetchSearchTasks(creds: Credentials, agentId: string): Promise<SearchTask[]> {
+  const res = await getJson<{ tasks: SearchTask[] }>(
+    `${creds.baseUrl}/api/agent/tasks?agentId=${encodeURIComponent(agentId)}`,
+    {
+      headers: { authorization: `Bearer ${creds.token}` },
+      signal: AbortSignal.timeout(POLL_TIMEOUT_MS),
+    },
+  );
+  if (!res.ok) {
+    // 401/403 = bad token; 404 = agent revoked. None recover by retrying — the
+    // poll loop converts AuthError into a clean exit (same as the LLM queue).
+    if (res.status === 401 || res.status === 403 || res.status === 404) {
+      throw new AuthError(res.status, res.error);
+    }
+    throw new Error(res.error);
+  }
+  return res.data.tasks ?? [];
+}
+
+async function runSearchTask(
+  creds: Credentials,
+  agentId: string,
+  task: SearchTask,
+  watchedRepos: Map<string, string>,
+  verbose: boolean,
+): Promise<void> {
+  const claimUrl = `${creds.baseUrl}/api/agent/tasks/${task.id}/claim`;
+  const resultUrl = `${creds.baseUrl}/api/agent/tasks/${task.id}/result`;
+
+  // Claim first — the server makes this atomic; 409 means another agent won.
+  const claim = await postJson(claimUrl, { agentId }, creds.token);
+  if (!claim.ok) {
+    if (claim.status === 409) return; // lost the race — normal, not an error
+    if (verbose)
+      console.error(
+        `  search claim failed ${sanitizeTerminal(task.id)}: HTTP ${claim.status} ${sanitizeTerminal(claim.error)}`,
+      );
+    return;
+  }
+
+  const repoDir = watchedRepos.get(task.repoFullName);
+  if (!repoDir) {
+    await postJson(
+      resultUrl,
+      { errorMessage: `agent no longer watches ${task.repoFullName}` },
+      creds.token,
+    ).catch(() => {});
+    return;
+  }
+
+  try {
+    if (verbose) {
+      console.log(
+        `  ↳ search ${sanitizeTerminal(task.id)} (${sanitizeTerminal(task.searchType)}) · ${sanitizeTerminal(task.repoFullName)}`,
+      );
+    }
+    const params = task.params && typeof task.params === "object" ? task.params : {};
+    const { results, summary } = await runCodeSearch(
+      task.searchType,
+      task.query,
+      params,
+      repoDir,
+      task.timeoutMs,
+    );
+    const deliver = await postJson(resultUrl, { results, resultSummary: summary }, creds.token);
+    if (!deliver.ok) {
+      throw new Error(`deliver failed (HTTP ${deliver.status}: ${deliver.error})`);
+    }
+    if (verbose) console.log(`  ✓ search ${sanitizeTerminal(task.id)}: ${results.length} hit(s)`);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (verbose) console.error(`  ✗ search ${sanitizeTerminal(task.id)}: ${sanitizeTerminal(msg)}`);
+    await postJson(resultUrl, { errorMessage: msg.slice(0, 500) }, creds.token).catch(() => {});
   }
 }
 

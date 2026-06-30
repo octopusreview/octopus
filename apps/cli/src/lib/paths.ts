@@ -97,6 +97,14 @@ export function getByokPath(): string {
 }
 
 /**
+ * Per-account watch-list for `octp agent serve` code-search (dir → repo). Lives
+ * under the active profile so a work repo is only ever served to the work org.
+ */
+export function getAgentWatchPath(): string {
+  return join(getProfileDir(getActiveProfileName()), "agent-watch.json");
+}
+
+/**
  * Ensure the Octopus home directory AND the active profile's directory exist
  * with restrictive permissions. Idempotent — safe to call on every launch.
  * saveCredentials/setByokKey call this before writing, so the active profile

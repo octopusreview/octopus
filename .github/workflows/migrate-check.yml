@@ -1,0 +1,90 @@
+name: migrate-check
+
+# Enforces that new Prisma migrations are BACKWARD-COMPATIBLE (expand-only), so a
+# code rollback never requires a database rollback: the previous app image must
+# be able to run against the newer schema. This is what keeps "roll back the
+# code, leave the DB" a safe one-step recovery (see the self-hosting "Upgrading &
+# rolling back" docs).
+#
+# Fails a PR whose ADDED migration.sql contains destructive / incompatible DDL
+# (drop/rename a table or column, retype or NOT-NULL an existing column, or add a
+# NOT NULL column with no DEFAULT). A deliberate contract-phase migration — one
+# that ships only AFTER the previous version is fully drained — can opt out with
+# an explicit `-- migrate-check: allow-destructive` line in the migration.
+#
+# Only files ADDED in the PR are scanned; historical migrations are exempt.
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - "packages/db/prisma/migrations/**/migration.sql"
+      - ".github/workflows/migrate-check.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need the base branch to diff added files
+
+      - name: Scan new migrations for backward-incompatible DDL
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The PR base commit is guaranteed present with fetch-depth: 0; using
+          # the SHA avoids relying on a local origin/<branch> ref. --diff-filter=A
+          # restricts to files ADDED by this PR (historical migrations are exempt).
+          base="${{ github.event.pull_request.base.sha }}"
+
+          files=$(git diff --name-only --diff-filter=A "$base" HEAD -- packages/db/prisma/migrations/ \
+                  | grep '/migration\.sql$' || true)
+          if [ -z "$files" ]; then
+            echo "No new migration files in this PR — nothing to check."
+            exit 0
+          fi
+
+          fail=0
+          while IFS= read -r f; do
+            [ -n "$f" ] && [ -f "$f" ] || continue
+            echo "── checking $f"
+
+            if grep -qiE '^[[:space:]]*--[[:space:]]*migrate-check:[[:space:]]*allow-destructive' "$f"; then
+              echo "  ↳ 'allow-destructive' marker present — exempt"
+              continue
+            fi
+
+            # Drop SQL comments, then neutralise FK referential actions so
+            # 'ON DELETE CASCADE' / 'ON UPDATE ...' aren't mistaken for drops.
+            scan=$(sed -E 's/--.*$//' "$f" \
+                   | sed -E 's/ON[[:space:]]+(DELETE|UPDATE)[[:space:]]+(CASCADE|SET[[:space:]]+NULL|SET[[:space:]]+DEFAULT|RESTRICT|NO[[:space:]]+ACTION)//gI')
+
+            hits=""
+            grep -qiE '\bDROP[[:space:]]+TABLE\b'   <<<"$scan" && hits="$hits DROP_TABLE"
+            grep -qiE '\bDROP[[:space:]]+COLUMN\b'  <<<"$scan" && hits="$hits DROP_COLUMN"
+            grep -qiE '\bRENAME\b'                  <<<"$scan" && hits="$hits RENAME"
+            # Only the dangerous ALTER COLUMN forms (retype / set-not-null);
+            # benign SET/DROP DEFAULT and DROP NOT NULL are backward-compatible.
+            if grep -iE '\bALTER[[:space:]]+COLUMN\b' <<<"$scan" \
+               | grep -qiE '\bSET[[:space:]]+NOT[[:space:]]+NULL\b|\bTYPE\b'; then
+              hits="$hits ALTER_COLUMN"
+            fi
+            # ADD COLUMN ... NOT NULL with no DEFAULT breaks old inserts and fails
+            # on existing rows. Collect the ADD COLUMN ... NOT NULL lines first,
+            # then flag only if a non-empty set of them lacks a DEFAULT (a bare
+            # `grep -v` on empty input must not be treated as a hit).
+            addnn=$(grep -iE '\bADD[[:space:]]+COLUMN\b' <<<"$scan" | grep -iE '\bNOT[[:space:]]+NULL\b' || true)
+            if [ -n "$addnn" ] && grep -viqE '\bDEFAULT\b' <<<"$addnn"; then
+              hits="$hits ADD_NOTNULL_NO_DEFAULT"
+            fi
+
+            if [ -n "$hits" ]; then
+              echo "::error file=$f::Backward-incompatible migration DDL:$hits. A code rollback would then require a DB rollback. Keep the migration expand-only, or add a line '-- migrate-check: allow-destructive' if this is a deliberate contract migration that ships only after the previous version is fully drained."
+              fail=1
+            else
+              echo "  ↳ ok (expand-only)"
+            fi
+          done <<< "$files"
+
+          exit $fail

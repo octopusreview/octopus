@@ -4,7 +4,12 @@ import { prisma } from "@octopus/db";
 let _stripe: Stripe | null = null;
 export function getStripe(): Stripe {
   if (!_stripe) {
-    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+      // Pin the API version so switching Stripe accounts can't silently change
+      // event/object shapes by inheriting a different account default. Matches
+      // the stripe@20.4.1 SDK's generated types.
+      apiVersion: "2026-02-25.clover",
+    });
   }
   return _stripe;
 }
@@ -15,7 +20,25 @@ export async function getOrCreateStripeCustomer(orgId: string): Promise<string> 
     select: { stripeCustomerId: true, name: true, billingEmail: true, slug: true },
   });
 
-  if (org.stripeCustomerId) return org.stripeCustomerId;
+  if (org.stripeCustomerId) {
+    // Verify the stored customer still resolves in the CURRENT account. After a
+    // Stripe account switch (or a deleted customer) the old `cus_` belongs to a
+    // different account and won't resolve — recreate it instead of failing every
+    // checkout / portal / auto-reload call. This makes an account migration
+    // self-healing per org with no destructive prod data wipe.
+    try {
+      const existing = await getStripe().customers.retrieve(org.stripeCustomerId);
+      if (!("deleted" in existing && existing.deleted)) return org.stripeCustomerId;
+    } catch (err) {
+      // Only "no such customer" justifies recreating; rethrow real errors
+      // (auth/network) so they aren't masked as a missing customer.
+      if (
+        !(err instanceof Stripe.errors.StripeInvalidRequestError && err.code === "resource_missing")
+      ) {
+        throw err;
+      }
+    }
+  }
 
   const customer = await getStripe().customers.create({
     name: org.name,

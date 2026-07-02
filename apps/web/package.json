@@ -52,7 +52,7 @@
     "resend": "^6.9.4",
     "server-only": "^0.0.1",
     "shadcn": "^4.4.0",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.2",
     "sonner": "^2.0.7",
     "stripe": "^20.4.0",
     "tailwind-merge": "^3.6.0",

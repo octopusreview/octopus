@@ -53,7 +53,7 @@ jobs:
           echo "semver=$SEMVER" >> $GITHUB_OUTPUT
           echo "image_name=ghcr.io/${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
 
-      - name: Build + push image
+      - name: Build + push image (self-host distribution)
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -65,12 +65,47 @@ jobs:
           tags: |
             ${{ steps.tags.outputs.image_name }}:${{ steps.tags.outputs.semver }}
             ${{ steps.tags.outputs.image_name }}:latest
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.tags.outputs.semver }}
           build-args: |
             NEXT_PUBLIC_BUILD_ID=${{ github.sha }}
             NEXT_PUBLIC_APP_VERSION=${{ steps.tags.outputs.semver }}
             # This GHCR image is the self-hosted distribution, so the Updates
             # page + nav entry (gated on this build-time flag) ship enabled.
             NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Hosted-deployment variant of the same commit. NEXT_PUBLIC_* values are
+      # inlined into the client bundle at build time, so the hosted instance
+      # needs its own build: selfHosted OFF, plus the instance's GitHub App
+      # slug + Pubby key (both are client-exposed identifiers, not secrets —
+      # they ship in every page's JS — hence repo *variables*, not secrets).
+      # Pushes an immutable `X.Y.Z-prod` plus the `latest-web`/`latest-engine`
+      # aliases the deployment stack pulls. Moving the aliases does NOT touch
+      # running services — they only change on an explicit service update.
+      # Skipped when the variables are unset (e.g. on forks).
+      - name: Build + push image (hosted deploy variant)
+        if: ${{ vars.NEXT_PUBLIC_PUBBY_KEY != '' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.tags.outputs.image_name }}:${{ steps.tags.outputs.semver }}-prod
+            ${{ steps.tags.outputs.image_name }}:latest-web
+            ${{ steps.tags.outputs.image_name }}:latest-engine
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.tags.outputs.semver }}
+          build-args: |
+            NEXT_PUBLIC_BUILD_ID=${{ github.sha }}
+            NEXT_PUBLIC_APP_VERSION=${{ steps.tags.outputs.semver }}
+            NEXT_PUBLIC_GITHUB_APP_SLUG=${{ vars.NEXT_PUBLIC_GITHUB_APP_SLUG }}
+            NEXT_PUBLIC_PUBBY_KEY=${{ vars.NEXT_PUBLIC_PUBBY_KEY }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

@@ -200,11 +200,11 @@ export default function GettingStartedPage() {
         </Paragraph>
         <div className="mb-4 space-y-2">
           <CommandRow
-            command="octopus repo chat"
+            command="octp chat"
             description="Start an interactive chat session about your codebase. Ask questions, explore architecture."
           />
           <CommandRow
-            command="octopus pr review 42"
+            command="octp review 42"
             description="Trigger an AI review on any pull request by number or URL."
           />
           <CommandRow
@@ -228,7 +228,7 @@ export default function GettingStartedPage() {
             description="Add the current repo to the agent's watch list. Detects the repo from the git remote URL."
           />
           <CommandRow
-            command="octopus agent start"
+            command="octp agent serve"
             description="Start the local agent. Listens for search requests from Octopus Chat and responds with real-time code results."
           />
         </div>

@@ -100,7 +100,7 @@ octopus setup-token --no-open`}</CodeBlock>
           description="Run AI analysis to generate a codebase summary and architecture overview."
         />
         <CommandCard
-          command="octopus repo chat [repo]"
+          command="octp chat [repo]"
           description="Start an interactive chat session about your codebase. Ask questions, explore architecture."
         />
       </Section>
@@ -108,12 +108,12 @@ octopus setup-token --no-open`}</CodeBlock>
       {/* PR commands */}
       <Section title="Pull Request Commands">
         <CommandCard
-          command="octopus pr review <pr>"
+          command="octp review <pr>"
           description="Trigger an AI review on a pull request. Accepts a PR number or full URL."
         />
         <Paragraph>Examples:</Paragraph>
-        <CodeBlock>{`octopus pr review 42
-octopus pr review https://github.com/owner/repo/pull/42`}</CodeBlock>
+        <CodeBlock>{`octp review 42
+octp review https://github.com/owner/repo/pull/42`}</CodeBlock>
       </Section>
 
       {/* Dependency Analysis */}
@@ -156,8 +156,9 @@ octopus pr review https://github.com/owner/repo/pull/42`}</CodeBlock>
         <Paragraph>
           Run a local agent on your machine to supercharge Octopus Chat with
           real-time code search. When someone asks a question in chat, the agent
-          searches your actual source code (via ripgrep or Claude CLI) and returns
-          precise results — much more accurate than embeddings alone.
+          searches your actual source code (via ripgrep, with a pure-Node
+          fallback) and returns precise results — much more accurate than
+          embeddings alone.
         </Paragraph>
 
         <CommandCard
@@ -177,17 +178,14 @@ octopus agent watch --list
 octopus agent watch --remove`}</CodeBlock>
 
         <CommandCard
-          command="octopus agent start"
+          command="octp agent serve"
           description="Start the local agent daemon. Registers with Octopus and listens for search requests from chat."
         />
-        <CodeBlock>{`# Start with ripgrep (fast, default)
-octopus agent start
-
-# Enable Claude CLI for deep semantic search
-octopus agent start --with-claude
+        <CodeBlock>{`# Start the agent (ripgrep-backed code search)
+octp agent serve
 
 # Verbose mode for debugging
-octopus agent start --verbose`}</CodeBlock>
+octp agent serve --verbose`}</CodeBlock>
 
         <Paragraph>
           The agent identifies repositories by their <Mono>git remote URL</Mono>,
@@ -200,12 +198,12 @@ octopus agent start --verbose`}</CodeBlock>
 
         <div className="mb-3 space-y-1.5">
           <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
-            <span className="text-sm text-[#888]">Ripgrep mode: </span>
-            <span className="text-sm text-[#ccc]">Fast keyword search, 8s timeout, no extra dependencies</span>
+            <span className="text-sm text-[#888]">Code search: </span>
+            <span className="text-sm text-[#ccc]">ripgrep-backed keyword search, with a pure-Node file-walker fallback when ripgrep isn&apos;t installed</span>
           </div>
           <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
-            <span className="text-sm text-[#888]">Claude CLI mode: </span>
-            <span className="text-sm text-[#ccc]">Semantic search with <Mono>--with-claude</Mono>, 30s timeout, requires Claude CLI</span>
+            <span className="text-sm text-[#888]">LLM tasks: </span>
+            <span className="text-sm text-[#ccc]">optional, served by a local Ollama instance — no cloud calls</span>
           </div>
         </div>
       </Section>

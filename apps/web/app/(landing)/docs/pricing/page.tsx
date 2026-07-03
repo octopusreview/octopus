@@ -47,7 +47,7 @@ export default function PricingPage() {
             highlight
             features={[
               "Free credits on sign-up",
-              "All features included",
+              "All review features included",
               "All integrations available",
               "Community support",
             ]}
@@ -62,6 +62,9 @@ export default function PricingPage() {
             ]}
           />
         </div>
+        <P>
+          Live team telemetry requires a paid org (any credit purchase or BYOK).
+        </P>
       </Section>
 
       {/* BYO Keys */}
@@ -112,12 +115,16 @@ export default function PricingPage() {
               </tr>
             </thead>
             <tbody className="text-[#888]">
+              <ModelRow model="Claude Opus 4.6" input="$15" output="$75" />
               <ModelRow model="Claude Sonnet 4.6" input="$3" output="$15" />
+              <ModelRow model="Claude Sonnet 4" input="$3" output="$15" />
+              <ModelRow model="Claude Opus 4" input="$15" output="$75" />
               <ModelRow model="Claude Haiku 4.5" input="$1" output="$5" />
-              <ModelRow model="GPT-4o" input="$2.50" output="$10" />
-              <ModelRow model="GPT-4o Mini" input="$0.15" output="$0.60" />
+              <ModelRow model="Gemini 2.5 Pro" input="$1.25" output="$10" />
+              <ModelRow model="Gemini 2.5 Flash" input="$0.15" output="$0.60" />
+              <ModelRow model="GPT-5.3 Codex" input="$1.75" output="$14" />
               <ModelRow model="Embeddings (text-embedding-3-large)" input="$0.13" output="—" />
-              <ModelRow model="Cohere Rerank" input="$2/1K queries" output="—" last />
+              <ModelRow model="Embeddings (text-embedding-3-small)" input="$0.02" output="—" last />
             </tbody>
           </table>
         </div>

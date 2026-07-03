@@ -10,9 +10,9 @@ function generateSecret(length = 64): string {
 }
 
 const DEFAULT_ENV = {
-  DATABASE_URL: "postgresql://octopus:octopus@localhost:5432/octopus",
-  QDRANT_URL: "http://localhost:6333",
-  BETTER_AUTH_URL: "http://localhost:3000",
+  DATABASE_URL: "postgresql://octopus:octopus@localhost:43332/octopus",
+  QDRANT_URL: "http://localhost:43333",
+  BETTER_AUTH_URL: "http://localhost:43300",
 };
 
 export function EnvGenerator() {

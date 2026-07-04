@@ -71,7 +71,7 @@ export default function SecurityOverviewPage() {
 
       <Section title="4. Access controls">
         <UL>
-          <li><strong>Authentication</strong> — Better Auth with GitHub OAuth, Google OAuth, and magic-link email. Passwords are not used; we have no password store.</li>
+          <li><strong>Authentication</strong> — Better Auth with GitHub OAuth, Google OAuth, Microsoft / Entra ID OAuth, and magic-link email. Passwords are not used; we have no password store.</li>
           <li><strong>Session management</strong> — short-lived bearer tokens with refresh; sessions revocable from <code>/settings/sessions</code>.</li>
           <li><strong>Role-based access</strong> — per-organisation roles (owner / admin / member); the audit log records role transitions.</li>
           <li><strong>CLI tokens</strong> — issued via the device-code flow, scoped to one organisation, revocable per-token.</li>
@@ -105,7 +105,7 @@ export default function SecurityOverviewPage() {
           <li>The git platform API (GitHub / GitLab / Bitbucket) for clone, comment, and webhook acknowledgement</li>
           <li>Integration webhooks if configured (Slack / Linear / Jira)</li>
           <li>Email provider (Resend) for notifications</li>
-          <li>OAuth providers during sign-in (GitHub / Google)</li>
+          <li>OAuth providers during sign-in (GitHub / Google / Microsoft) — Microsoft Graph is contacted during Microsoft sign-in when configured</li>
         </UL>
         <P>
           See the <a href="/docs/sub-processors" className="text-cyan-400 underline">sub-processors page</a> for the full vendor list.

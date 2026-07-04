@@ -71,8 +71,10 @@ jobs:
           build-args: |
             NEXT_PUBLIC_BUILD_ID=${{ github.sha }}
             NEXT_PUBLIC_APP_VERSION=${{ steps.tags.outputs.semver }}
-            # This GHCR image is the self-hosted distribution, so the Updates
-            # page + nav entry (gated on this build-time flag) ship enabled.
+            # Self-host build variant: ships the Updates page + nav entry (gated
+            # on this build-time flag). Note the GHCR package is currently
+            # PRIVATE, so self-hosters build from source; these tags serve
+            # org-internal use until/unless the package is made public.
             NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true
           # Distinct cache scope per variant — with the shared default scope the
           # two builds would overwrite each other's cache every release.
@@ -117,15 +119,23 @@ jobs:
           generate_release_notes: true
           name: ${{ steps.tags.outputs.semver }}
           body: |
-            Docker image: `ghcr.io/${{ github.repository }}:${{ steps.tags.outputs.semver }}`
-
-            To upgrade a self-hosted instance, point your compose `web` service at
-            this image tag (or `:latest`), then:
+            To upgrade a self-hosted instance, rebuild from the tagged source
+            (the GHCR image is private and the runtime image ships no migrations):
 
             ```bash
-            docker compose pull
+            git pull                       # or: git fetch --tags && git checkout vX.Y.Z
+            docker compose build --build-arg NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true
+            # migrate FIRST (expand-only, safe under the still-running old version) ...
+            cd packages/db && DATABASE_URL=postgresql://octopus:octopus@localhost:43332/octopus bunx prisma migrate deploy && cd ../..
+            # ... then start the new version
             docker compose up -d
-            docker compose exec web bunx prisma migrate deploy
+            ```
+
+            Then verify:
+
+            ```bash
+            curl -fsS http://localhost:43300/api/health    # expect {"status":"ok"}
+            curl -fsS http://localhost:43300/api/version   # confirm the new version
             ```
 
             The in-app Updates page (Settings → System → Updates) shows when a new

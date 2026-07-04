@@ -114,9 +114,12 @@ export default async function UpdatesSettingsPage() {
             {" "}<a className="text-cyan-400 underline" href={data.releaseUrl ?? "#"}>Release notes</a>.
           </p>
           <pre className="mt-3 overflow-x-auto rounded bg-[#0a0a0a] p-3 text-xs text-[#ccc]">
-{`docker compose pull
-docker compose up -d
-docker compose exec web bunx prisma migrate deploy`}
+{`git pull                       # or: git fetch --tags && git checkout vX.Y.Z
+docker compose build --build-arg NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true
+# migrate FIRST (expand-only, safe under the still-running old version) ...
+cd packages/db && DATABASE_URL=postgresql://octopus:octopus@localhost:43332/octopus bunx prisma migrate deploy && cd ../..
+# ... then start the new version
+docker compose up -d`}
           </pre>
         </Panel>
       )}

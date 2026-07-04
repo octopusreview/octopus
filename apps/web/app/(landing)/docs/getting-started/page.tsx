@@ -200,19 +200,19 @@ export default function GettingStartedPage() {
         </Paragraph>
         <div className="mb-4 space-y-2">
           <CommandRow
-            command="octopus repo chat"
+            command="octp chat"
             description="Start an interactive chat session about your codebase. Ask questions, explore architecture."
           />
           <CommandRow
-            command="octopus pr review 42"
+            command="octp review 42"
             description="Trigger an AI review on any pull request by number or URL."
           />
           <CommandRow
-            command="octopus repo index"
+            command="octp repo index"
             description="Index your repository for code search and review context."
           />
           <CommandRow
-            command="octopus knowledge add docs/api.md"
+            command="octp knowledge add docs/api.md"
             description="Add custom documents to your org's knowledge base for richer reviews."
           />
         </div>
@@ -224,18 +224,18 @@ export default function GettingStartedPage() {
         </Paragraph>
         <div className="mb-4 space-y-2">
           <CommandRow
-            command="octopus agent watch"
+            command="octp agent watch"
             description="Add the current repo to the agent's watch list. Detects the repo from the git remote URL."
           />
           <CommandRow
-            command="octopus agent start"
+            command="octp agent serve"
             description="Start the local agent. Listens for search requests from Octopus Chat and responds with real-time code results."
           />
         </div>
         <Paragraph>
           Install with{" "}
           <Code>npm install -g @octp/cli</Code> and run{" "}
-          <Code>octopus login</Code> to get started. See the full{" "}
+          <Code>octp login</Code> to get started. See the full{" "}
           <DocLink href="/docs/cli">CLI reference</DocLink> for all commands.
         </Paragraph>
       </Section>

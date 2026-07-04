@@ -122,11 +122,16 @@ cd octopus
 cp .env.example .env
 # Edit .env with your API keys and configuration
 
-# Start all services (PostgreSQL, Qdrant, Web)
+# Build (the build arg compiles in email/password login for self-hosted
+# instances) and start all services (PostgreSQL, Qdrant, Web)
+docker compose build --build-arg NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true
 docker compose up -d
 
-# Run database migrations
-docker compose exec web bunx prisma migrate deploy
+# Run database migrations — from the checkout, not inside the container
+# (the runtime image ships only the compiled app, no prisma/schema)
+cd packages/db
+DATABASE_URL=postgresql://octopus:octopus@localhost:43332/octopus bunx prisma migrate deploy
+cd ../..
 ```
 
 Octopus will be available at `http://localhost:43300`.

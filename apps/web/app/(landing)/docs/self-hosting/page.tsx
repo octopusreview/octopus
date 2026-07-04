@@ -34,7 +34,7 @@ export default function SelfHostingPage() {
           <RequirementCard title="PostgreSQL 15+" description="Primary database for all application data." />
           <RequirementCard title="Qdrant" description="Vector database for code embeddings and search." />
           <RequirementCard title="Node.js 20+ or Bun" description="Runtime for the Next.js application." />
-          <RequirementCard title="OpenAI API Key" description="For generating code embeddings (text-embedding-3-large)." />
+          <RequirementCard title="OpenAI API key (default embeddings)" description="Used for code embeddings (text-embedding-3-large) — or run fully local via Ollama (see the all-local section)." />
         </div>
         <Paragraph>
           You&apos;ll also need an AI provider key (Anthropic Claude or OpenAI)
@@ -58,70 +58,46 @@ cd octopus`}</CodeBlock>
           </Paragraph>
         </Step>
 
-        <Step number={3} title="Start with Docker Compose">
+        <Step number={3} title="Review the bundled docker-compose.yml">
           <Paragraph>
-            The project includes a <Mono>docker-compose.yml</Mono> that runs
-            Octopus, PostgreSQL, and Qdrant together. Database and Qdrant URLs
-            are automatically configured for Docker&apos;s internal network.
+            The repository&apos;s <Mono>docker-compose.yml</Mono> is the source of
+            truth — it runs the <Mono>web</Mono> service, PostgreSQL, and Qdrant
+            together and wires the database and Qdrant URLs for Docker&apos;s
+            internal network. It publishes the app on{" "}
+            <Mono>43300:3000</Mono>, uses <Mono>postgres:17-alpine</Mono> (host
+            port <Mono>43332</Mono>) and <Mono>qdrant/qdrant:v1.17.0</Mono> (host
+            port <Mono>43333</Mono>), and sets{" "}
+            <Mono>ENABLE_REVIEW_WORKERS=true</Mono>. There is nothing to copy or
+            edit here — use the file as-is.
           </Paragraph>
-          <CodeBlock title="docker-compose.yml">{`services:
-  octopus:
-    build:
-      context: .
-      dockerfile: apps/web/Dockerfile
-    ports:
-      - "3000:3000"
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql://octopus:octopus@postgres:5432/octopus
-      QDRANT_URL: http://qdrant:6333
-    depends_on:
-      postgres:
-        condition: service_healthy
-      qdrant:
-        condition: service_started
-    restart: unless-stopped
-
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: octopus
-      POSTGRES_USER: octopus
-      POSTGRES_PASSWORD: octopus
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U octopus"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  qdrant:
-    image: qdrant/qdrant:latest
-    volumes:
-      - qdrant_data:/qdrant/storage
-
-volumes:
-  pgdata:
-  qdrant_data:`}</CodeBlock>
         </Step>
 
         <Step number={4} title="Build and run">
-          <CodeBlock>{`docker compose up -d --build`}</CodeBlock>
+          <CodeBlock>{`docker compose build --build-arg NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true
+docker compose up -d`}</CodeBlock>
           <Paragraph>
             First run will build the Octopus image from source — this may take a
             few minutes. Subsequent starts use the cached image.
           </Paragraph>
+          <Paragraph>
+            Without <Mono>NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true</Mono> baked in at
+            build time, email/password sign-in is compiled out and the first-boot
+            admin cannot log in.
+          </Paragraph>
         </Step>
 
         <Step number={5} title="Run database migrations">
-          <CodeBlock>{`docker compose exec octopus bun run db:migrate`}</CodeBlock>
+          <Paragraph>
+            Migrations run from the repo checkout — the runtime image doesn&apos;t
+            ship the Prisma CLI or migration files.
+          </Paragraph>
+          <CodeBlock>{`cd packages/db
+DATABASE_URL=postgresql://octopus:octopus@localhost:43332/octopus bunx prisma migrate deploy`}</CodeBlock>
         </Step>
 
         <Step number={6} title="Open Octopus">
           <Paragraph>
-            Visit <Mono>http://localhost:3000</Mono> to access your self-hosted
+            Visit <Mono>http://localhost:43300</Mono> to access your self-hosted
             Octopus instance. Create your first account and connect a GitHub
             repository to get started.
           </Paragraph>
@@ -177,10 +153,10 @@ docker compose exec ollama ollama pull nomic-embed-text`}</CodeBlock>
         </EnvGroup>
 
         <EnvGroup title="Pre-filled defaults">
-          <EnvVar name="DATABASE_URL" example="postgresql://octopus:octopus@localhost:5432/octopus" required />
-          <EnvVar name="QDRANT_URL" example="http://localhost:6333" required />
+          <EnvVar name="DATABASE_URL" example="postgresql://octopus:octopus@localhost:43332/octopus" required />
+          <EnvVar name="QDRANT_URL" example="http://localhost:43333" required />
           <EnvVar name="BETTER_AUTH_SECRET" example="Auto-generated (64-char hex)" required />
-          <EnvVar name="BETTER_AUTH_URL" example="http://localhost:3000" required />
+          <EnvVar name="BETTER_AUTH_URL" example="http://localhost:43300" required />
         </EnvGroup>
 
         <EnvGroup title="Optional">
@@ -198,12 +174,13 @@ docker compose exec ollama ollama pull nomic-embed-text`}</CodeBlock>
 
       {/* Database setup */}
       <Section title="Database Setup">
-        <Paragraph>Run migrations to set up the database schema:</Paragraph>
-        <CodeBlock>{`# If running from source
-bun run db:migrate
-
-# If running with Docker
-docker exec -it octopus-web bun run db:migrate`}</CodeBlock>
+        <Paragraph>
+          Run migrations to set up the database schema. Migrations run from the
+          repo checkout — the runtime image doesn&apos;t ship the Prisma CLI or
+          migration files.
+        </Paragraph>
+        <CodeBlock>{`cd packages/db
+DATABASE_URL=postgresql://octopus:octopus@localhost:43332/octopus bunx prisma migrate deploy`}</CodeBlock>
       </Section>
 
       {/* GitHub App */}
@@ -271,42 +248,45 @@ bun run start`}</CodeBlock>
       {/* Upgrading & rolling back */}
       <Section title="Upgrading & rolling back">
         <Paragraph>
-          Pin a specific image tag in production rather than{" "}
-          <Mono>latest</Mono> — that is what turns a rollback into a one-line
-          change. Each release is published to GHCR as{" "}
-          <Mono>ghcr.io/octopusreview/octopus:X.Y.Z</Mono>.
+          Check out a specific release tag in production rather than tracking{" "}
+          <Mono>master</Mono> — that is what turns a rollback into re-checking-out
+          the previous tag. The published GHCR image is private, so self-hosters
+          build the image from source rather than pulling it.
         </Paragraph>
 
         <Step number={1} title="Upgrade">
           <Paragraph>
-            Pull the new tag, apply migrations, then restart. Octopus migrations
-            are <strong>additive (expand-only)</strong> and therefore
-            backward-compatible — the previous image keeps working against the
-            new schema, which is exactly what makes the rollback below safe.
+            Pull the new code, rebuild the image, restart, then apply migrations.
+            Octopus migrations are <strong>additive (expand-only)</strong> and
+            therefore backward-compatible — the previous image keeps working
+            against the new schema, which is exactly what makes the rollback
+            below safe.
           </Paragraph>
-          <CodeBlock>{`# pin the new X.Y.Z tag in your compose/env first, then:
-docker compose pull
-docker compose exec octopus bun run db:migrate   # prisma migrate deploy
+          <CodeBlock>{`git pull                       # or: git fetch --tags && git checkout vX.Y.Z
+docker compose build --build-arg NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true
+# migrate FIRST (expand-only, safe under the still-running old version) ...
+cd packages/db && DATABASE_URL=postgresql://octopus:octopus@localhost:43332/octopus bunx prisma migrate deploy && cd ../..
+# ... then start the new version
 docker compose up -d`}</CodeBlock>
         </Step>
 
         <Step number={2} title="Verify before sending traffic">
           <Paragraph>
-            Confirm the app is healthy — hit <Mono>/api/status</Mono> and check
-            that a login and a review still work — before pointing users at the
-            new version.
+            Confirm the app is healthy before pointing users at the new version:
           </Paragraph>
+          <CodeBlock>{`curl -fsS http://localhost:43300/api/health    # expect {"status":"ok"}
+curl -fsS http://localhost:43300/api/version   # confirm the new version`}</CodeBlock>
         </Step>
 
         <Step number={3} title="Roll back (if needed)">
           <Paragraph>
-            Re-pin the <strong>previous</strong> image tag and restart.{" "}
-            <strong>Do not roll back the database.</strong> Because every
+            Check out the <strong>previous</strong> release tag, rebuild, and
+            restart. <strong>Do not roll back the database.</strong> Because every
             migration is additive, the older image runs fine against the newer
             schema, so you keep all data and avoid a risky down-migration.
           </Paragraph>
-          <CodeBlock>{`# set the previous X.Y.Z tag in your compose/env, then:
-docker compose pull
+          <CodeBlock>{`git checkout vX.Y.Z            # the previous release tag
+docker compose build --build-arg NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true
 docker compose up -d`}</CodeBlock>
         </Step>
 

@@ -41,7 +41,7 @@ const securityFaqs = [
   },
   {
     q: "Can I self-host Octopus?",
-    a: "Absolutely. Octopus is open source (MIT license) and fully self-hostable. You can deploy it with Docker on your own infrastructure — your code never leaves your servers. See the Self-Hosting documentation for setup instructions.",
+    a: "Absolutely. Octopus is source-available under a Modified MIT License and fully self-hostable. You can deploy it with Docker on your own infrastructure — your code never leaves your servers. See the Self-Hosting documentation for setup instructions.",
   },
   {
     q: "Which AI models process my code?",

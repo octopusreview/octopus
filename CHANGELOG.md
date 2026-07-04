@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.26] - 2026-07-03
+
+### Changed
+- Login page now shows a product-highlights panel in place of the 3D scene, cutting time-to-first-paint on the login screen
+- Documentation accuracy overhaul: self-hosting build/upgrade/migration steps, CLI command names, and the pricing table now match the shipped platform
+
+### Fixed
+- OAuth provider gate is evaluated per-request, so correctly configured providers no longer show "(not configured)"
+
+## [1.0.25] - 2026-07-02
+
+### Fixed
+- OAuth provider gate was rendered at build time, which disabled all providers in production
+
+## [1.0.24] - 2026-07-02
+
+### Added
+- Release pipeline builds a hosted-deploy image variant alongside the self-host image
+- OCI `revision`/`version` image labels
+
+## [1.0.23] - 2026-06-30
+
+### Fixed
+- Stripe billing hardening: pinned API version, self-healing customer records, and a webhook retry contract with idempotent per-refund accounting
+- Release build fixes: build context, lockfile workspace, and registry auth
+
+_Versions 1.0.20–1.0.22 were tagged but not published (release-pipeline repairs); their fixes ship in 1.0.23._
+
 ## [1.0.19] - 2026-06-16
 
 ### Added
@@ -366,6 +394,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Suppress dismissed findings in Additional findings summary (#25)
 - CI lint failures across all packages (#36)
 
+[1.0.26]: https://github.com/octopusreview/octopus/compare/v1.0.25...v1.0.26
+[1.0.25]: https://github.com/octopusreview/octopus/compare/v1.0.24...v1.0.25
+[1.0.24]: https://github.com/octopusreview/octopus/compare/v1.0.23...v1.0.24
+[1.0.23]: https://github.com/octopusreview/octopus/compare/v1.0.19...v1.0.23
 [1.0.19]: https://github.com/octopusreview/octopus/compare/v1.0.18...v1.0.19
 [1.0.18]: https://github.com/octopusreview/octopus/compare/v1.0.17...v1.0.18
 [1.0.17]: https://github.com/octopusreview/octopus/compare/v1.0.16...v1.0.17

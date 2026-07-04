@@ -2,9 +2,9 @@ import Link from "@/components/link";
 import { IconShield, IconBrandGoogle, IconBrandGithub } from "@tabler/icons-react";
 
 export const metadata = {
-  title: "Google & GitHub login setup — Octopus Docs",
+  title: "Google, GitHub & Microsoft login setup — Octopus Docs",
   description:
-    "Configure Google and GitHub OAuth sign-in for a self-hosted Octopus instance. Step-by-step: create the OAuth app, copy the client ID/secret, drop them in .env.",
+    "Configure Google, GitHub, and Microsoft OAuth sign-in for a self-hosted Octopus instance. Step-by-step: create the OAuth app, copy the client ID/secret, drop them in .env.",
   alternates: {
     canonical: "https://octopus-review.ai/docs/oauth-setup",
   },
@@ -19,7 +19,7 @@ export default function OauthSetupPage() {
           Setup
         </div>
         <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-          Google &amp; GitHub login
+          Google, GitHub &amp; Microsoft login
         </h1>
         <p className="mt-3 text-sm text-[#888]">
           Octopus uses Better Auth for sign-in. Magic-link email works out of the box;
@@ -59,18 +59,19 @@ MICROSOFT_CLIENT_SECRET=…
 MICROSOFT_TENANT_ID=common   # default "common"; set your tenant id for single-tenant apps
 
 # Required for OAuth callback URLs to be computed correctly
-BETTER_AUTH_URL=http://localhost:3000   # or your real deployment URL`}</CodeBlock>
+BETTER_AUTH_URL=http://localhost:3000   # local dev; docker-compose self-host uses http://localhost:43300`}</CodeBlock>
         <P>
-          Restart the server after editing the file. Better Auth logs a warning on
-          boot if either provider is partially configured — check the server output
-          if the buttons stay disabled.
+          Each social button enables only when BOTH the client id and secret are
+          set — restart after editing env.
         </P>
         <P>
           Microsoft / Entra ID is also supported — register an app in the Azure
           portal and set the two <Mono>MICROSOFT_*</Mono> vars above. The flow
           mirrors GitHub: create the app, add the callback URL, then copy the
-          client id + secret.
+          client id + secret. Use this redirect URI:
         </P>
+        <CodeBlock>{`https://<your-host>/api/auth/callback/microsoft
+# replace <your-host> with your real domain; http://localhost:3000 for local dev, :43300 for docker-compose`}</CodeBlock>
       </Section>
 
       <Section title="Google OAuth — step by step">
@@ -97,7 +98,7 @@ BETTER_AUTH_URL=http://localhost:3000   # or your real deployment URL`}</CodeBlo
           <li>
             Add an <strong>Authorized redirect URI</strong>:
             <CodeBlock>{`http://localhost:3000/api/auth/callback/google
-# replace localhost:3000 with your real domain on a hosted deployment`}</CodeBlock>
+# replace localhost:3000 with your real domain (docker-compose self-host: localhost:43300)`}</CodeBlock>
           </li>
           <li>
             Click <strong>Create</strong>. Copy the <Mono>Client ID</Mono> and{" "}

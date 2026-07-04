@@ -90,3 +90,38 @@ export function mergeFindingsBySignature<T extends { signature?: string | null }
     obsoleted,
   };
 }
+
+/**
+ * The canonical triage-state inheritance used by every persistence path:
+ * a signature-matched finding keeps the user's acknowledgement, feedback,
+ * tracker links, posted-comment id, and original createdAt. Prior rows are
+ * full DB records at runtime; keys are copied only when present, so this
+ * satisfies the mergeFindingsBySignature contract ((next: T, prior: T) => T)
+ * for any row shape.
+ */
+const TRIAGE_KEYS = [
+  "acknowledgedAt",
+  "feedback",
+  "feedbackAt",
+  "feedbackBy",
+  "linearIssueId",
+  "linearIssueUrl",
+  "jiraIssueKey",
+  "jiraIssueUrl",
+  "githubIssueNumber",
+  "githubIssueUrl",
+  "githubCommentId",
+  "createdAt",
+] as const;
+
+export function inheritReviewIssueTriage<T extends { signature?: string | null }>(
+  next: T,
+  prior: T,
+): T {
+  const out: Record<string, unknown> = { ...(next as Record<string, unknown>) };
+  const p = prior as Record<string, unknown>;
+  for (const key of TRIAGE_KEYS) {
+    if (key in p) out[key] = p[key];
+  }
+  return out as T;
+}

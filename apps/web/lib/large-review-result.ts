@@ -1,4 +1,4 @@
-import { prisma } from "@octopus/db";
+import { prisma, type Prisma } from "@octopus/db";
 import { pubby } from "@/lib/pubby";
 import {
   createPullRequestComment as ghCreatePullRequestComment,
@@ -7,7 +7,7 @@ import {
   updateCheckRun as ghUpdateCheckRun,
 } from "@/lib/github";
 import { parseFindings } from "@/lib/review-dedup";
-import { findingSignature } from "@/lib/finding-merge";
+import { findingSignature, mergeFindingsBySignature, inheritReviewIssueTriage } from "@/lib/finding-merge";
 import {
   buildLowSeveritySummary,
   stripDetailedFindings,
@@ -218,24 +218,36 @@ export async function handleLargeReviewResult(
   }
 
   // 4. Persist findings to review_issues
-  await prisma.reviewIssue.deleteMany({ where: { pullRequestId: pr.id } });
-  if (findings.length > 0) {
-    await prisma.reviewIssue.createMany({
-      data: findings.map((f) => {
-        const title = f.title.replace(/^(CRITICAL|HIGH|MEDIUM|LOW|INFO)\s*—\s*/i, "").trim();
-        return {
-          title,
-          description: f.description || f.category,
-          severity: SEVERITY_TO_DB[f.severity] ?? "medium",
-          filePath: f.filePath || null,
-          lineNumber: f.startLine || null,
-          confidence: f.confidence ? String(f.confidence) : null,
-          pullRequestId: pr.id,
-          signature: findingSignature({ filePath: f.filePath || "", category: f.category, title }),
-        };
-      }),
-    });
-    console.log(`[large-review-result] Saved ${findings.length} review issues to DB`);
+  // Signature-matched findings inherit prior triage state; delete+create run
+  // atomically so a mid-way failure can never wipe triage without replacement.
+  const priorIssues = await prisma.reviewIssue.findMany({ where: { pullRequestId: pr.id } });
+  const current: Prisma.ReviewIssueCreateManyInput[] = findings.map((f) => {
+    const title = f.title.replace(/^(CRITICAL|HIGH|MEDIUM|LOW|INFO)\s*—\s*/i, "").trim();
+    return {
+      title,
+      description: f.description || f.category,
+      severity: SEVERITY_TO_DB[f.severity] ?? "medium",
+      filePath: f.filePath || null,
+      lineNumber: f.startLine || null,
+      confidence: f.confidence ? String(f.confidence) : null,
+      pullRequestId: pr.id,
+      signature: findingSignature({ filePath: f.filePath || "", category: f.category, title }),
+    };
+  });
+  const { merged, inherited } = mergeFindingsBySignature<Prisma.ReviewIssueCreateManyInput>({
+    prior: priorIssues,
+    current,
+    inherit: inheritReviewIssueTriage,
+  });
+  await prisma.$transaction([
+    prisma.reviewIssue.deleteMany({ where: { pullRequestId: pr.id } }),
+    ...(merged.length > 0 ? [prisma.reviewIssue.createMany({ data: merged })] : []),
+  ]);
+  if (merged.length > 0) {
+    console.log(
+      `[large-review-result] Saved ${merged.length} review issues to DB` +
+        (inherited > 0 ? ` (${inherited} inherited prior triage state)` : ""),
+    );
   }
 
   // 5. Mark PR completed

@@ -21,7 +21,7 @@ import { generateSparseVector } from "@/lib/sparse-vector";
 import { substitutePromptVars } from "@/lib/prompt-substitute";
 import { rerankDocuments } from "@/lib/reranker";
 import { resolveReviewLanguage } from "@/lib/review-language";
-import { findingSignature, mergeFindingsBySignature } from "@/lib/finding-merge";
+import { findingSignature, mergeFindingsBySignature, inheritReviewIssueTriage } from "@/lib/finding-merge";
 import { getAlwaysIncludeKnowledge, mergeKnowledgeChunks } from "@/lib/knowledge-context";
 import {
   fetchRepoConfigFile,
@@ -2238,12 +2238,12 @@ Rules:
       where: { pullRequestId: pr.id },
     });
 
-    // Clear previous findings first (re-review idempotency)
-    await prisma.reviewIssue.deleteMany({
-      where: { pullRequestId: pr.id },
-    });
-
-    // Persist all parsed findings (pre-filter) for dashboard/scoring
+    // Persist all parsed findings (pre-filter) for dashboard/scoring. The
+    // delete+create replacement happens in ONE transaction below so a failure
+    // mid-way can never wipe prior findings (and their triage state) without
+    // writing the replacements.
+    let mergedIssues: Prisma.ReviewIssueCreateManyInput[] = [];
+    let inheritedCount = 0;
     const allPersistFindings = allParsedFindings;
     if (allPersistFindings.length > 0) {
       const severityMap: Record<string, string> = {
@@ -2271,27 +2271,24 @@ Rules:
       const { merged, inherited } = mergeFindingsBySignature<Prisma.ReviewIssueCreateManyInput>({
         prior: priorIssues,
         current,
-        inherit: (next, prior) => ({
-          ...next,
-          acknowledgedAt: prior.acknowledgedAt,
-          feedback: prior.feedback,
-          feedbackAt: prior.feedbackAt,
-          feedbackBy: prior.feedbackBy,
-          linearIssueId: prior.linearIssueId,
-          linearIssueUrl: prior.linearIssueUrl,
-          jiraIssueKey: prior.jiraIssueKey,
-          jiraIssueUrl: prior.jiraIssueUrl,
-          githubIssueNumber: prior.githubIssueNumber,
-          githubIssueUrl: prior.githubIssueUrl,
-          githubCommentId: prior.githubCommentId,
-          createdAt: prior.createdAt,
-        }),
+        inherit: inheritReviewIssueTriage,
       });
+      mergedIssues = merged;
+      inheritedCount = inherited;
+    }
 
-      await prisma.reviewIssue.createMany({ data: merged });
+    // Atomic replace: clear + insert together (re-review idempotency without
+    // a window where triage-bearing rows are deleted but replacements unwritten).
+    await prisma.$transaction([
+      prisma.reviewIssue.deleteMany({ where: { pullRequestId: pr.id } }),
+      ...(mergedIssues.length > 0
+        ? [prisma.reviewIssue.createMany({ data: mergedIssues })]
+        : []),
+    ]);
+    if (mergedIssues.length > 0) {
       console.log(
-        `[reviewer] Saved ${merged.length} review issues to DB` +
-          (inherited > 0 ? ` (${inherited} inherited prior triage state)` : ""),
+        `[reviewer] Saved ${mergedIssues.length} review issues to DB` +
+          (inheritedCount > 0 ? ` (${inheritedCount} inherited prior triage state)` : ""),
       );
     }
 

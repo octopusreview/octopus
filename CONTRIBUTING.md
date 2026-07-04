@@ -21,6 +21,42 @@ Thank you for your interest in contributing to Octopus! We welcome contributions
 5. Commit your changes with a clear message
 6. Push to your fork and open a pull request
 
+## Picking up roadmap work
+
+The [ROADMAP.md](ROADMAP.md) **Up Next** section and the [Octopus Roadmap Project board](https://github.com/orgs/octopusreview/projects) list work that's committed but unclaimed.
+
+1. Find an **Up Next** item you'd like to take
+2. Comment on its tracking issue to claim it, so nobody duplicates effort
+3. Open your PR and link it to the issue (e.g. `Closes #123`) so the board tracks progress
+4. Maintainers aim to give an initial review within a few business days
+
+If you want to propose new work rather than pick up existing work, open a [roadmap proposal issue](.github/ISSUE_TEMPLATE/roadmap_proposal.yml).
+
+## Commit conventions
+
+We follow [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): summary`.
+
+Common types used in this repo:
+
+- `feat` — a new feature
+- `fix` — a bug fix
+- `docs` — documentation only
+- `ci` — CI/workflow changes
+- `chore` — tooling, deps, or other housekeeping
+
+Include a scope where it clarifies the area of change. Real examples from the history:
+
+```
+feat(login): replace 3D octopus with product-highlights panel
+fix(docs): address review — migrate-before-start, complete octp rename
+ci(release): push to GHCR with a scoped PAT, not GITHUB_TOKEN
+fix(docker): keep CHANGELOG.md in the build context
+```
+
+## Releases
+
+Maintainers cut a release by running `scripts/bump-version.sh X.Y.Z`, committing the version bump, then tagging `vX.Y.Z`. The script updates the `version` field in both `package.json` and `apps/web/package.json`.
+
 ## Pull Request Guidelines
 
 - Keep PRs focused on a single change

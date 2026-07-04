@@ -42,7 +42,7 @@ export interface DeviceFlowOptions {
  * command-injection vector. Best-effort: the URL is also printed for manual
  * open, so a spawn failure is non-fatal.
  */
-function openBrowser(url: string): void {
+export function openBrowser(url: string): void {
   try {
     new URL(url);
   } catch {

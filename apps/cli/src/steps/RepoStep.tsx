@@ -3,6 +3,7 @@ import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
 import { loadCredentials } from "../lib/credentials.js";
 import { getJson } from "../lib/api.js";
+import { openBrowser } from "../lib/auth.js";
 
 const GITHUB_APP_SLUG = process.env.OCTOPUS_GITHUB_APP_SLUG ?? "octopus-review";
 
@@ -38,10 +39,23 @@ export function RepoStep({ onNext }: RepoStepProps) {
   const [repos, setRepos] = useState<Repo[]>([]);
   const [error, setError] = useState<string>("");
   const [installUrl, setInstallUrl] = useState<string>("");
+  const [opened, setOpened] = useState(false);
 
   useInput((_input, key) => {
     if (key.escape && phase !== "loading") onNext();
   });
+
+  // Open the GitHub App install page in the system browser (reusing the same
+  // shell-free helper the PKCE auth step uses). The URL stays on screen as a
+  // fallback, so a spawn failure is non-fatal.
+  const handleSelect = (value: string) => {
+    if (value === "install") {
+      openBrowser(installUrl);
+      setOpened(true);
+      return;
+    }
+    onNext();
+  };
 
   useEffect(() => {
     (async () => {
@@ -107,12 +121,14 @@ export function RepoStep({ onNext }: RepoStepProps) {
         <Text> </Text>
         <Text dimColor>Open the URL in your browser, pick a repo, click Install.</Text>
         <Text dimColor>You can always do this later from the Octopus web UI.</Text>
+        {opened ? <Text color="green">Opened the install page in your browser.</Text> : null}
         <Text> </Text>
         <SelectInput
           items={[
+            { label: "Install the Octopus GitHub App (opens browser)", value: "install" },
             { label: "Continue (I'll install later)", value: "continue" },
           ]}
-          onSelect={() => onNext()}
+          onSelect={(item) => handleSelect(item.value)}
         />
       </Box>
     );
@@ -134,10 +150,14 @@ export function RepoStep({ onNext }: RepoStepProps) {
       <Text dimColor>
         Add more repos at <Text color="cyan">{installUrl}</Text>
       </Text>
+      {opened ? <Text color="green">Opened the install page in your browser.</Text> : null}
       <Text> </Text>
       <SelectInput
-        items={[{ label: "Continue", value: "continue" }]}
-        onSelect={() => onNext()}
+        items={[
+          { label: "Install on another repo (opens browser)", value: "install" },
+          { label: "Continue", value: "continue" },
+        ]}
+        onSelect={(item) => handleSelect(item.value)}
       />
     </Box>
   );

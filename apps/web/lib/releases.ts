@@ -97,6 +97,19 @@ export async function fetchLatestRelease(): Promise<CachedRelease | null> {
 }
 
 /**
+ * Force-refresh the release cache: fetch fresh from GitHub and persist,
+ * regardless of the current cache's staleness. Used by the daily
+ * 'refresh-release-cache' worker (see queue-workers.ts) to keep
+ * SystemConfig.latestRelease warm so read paths never pay a lazy miss.
+ * Returns the fetched release, or null if the fetch failed (cache untouched).
+ */
+export async function refreshReleaseCache(): Promise<CachedRelease | null> {
+  const fresh = await fetchLatestRelease();
+  if (fresh) await writeReleaseCache(fresh);
+  return fresh;
+}
+
+/**
  * Get-or-refresh wrapper. Reads cache; on miss or stale, fetches fresh and
  * persists. Used by the route handler so the user gets a useful answer even
  * if the daily worker hasn't run yet.

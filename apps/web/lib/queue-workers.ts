@@ -7,6 +7,7 @@ import {
 } from "./large-review-result";
 import { processCommunityReview, type CommunityReviewJobData } from "./community-review";
 import { enforceAuditLogRetention, enforceActivityEventRetention } from "./audit";
+import { refreshReleaseCache } from "./releases";
 import { runOllamaPull } from "./ollama-admin";
 import type { QueueConfig } from "./queue";
 
@@ -106,6 +107,24 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
     }
   });
 
+  // Daily release-cache refresh (self-hosted) — scheduled in instrumentation.ts
+  // via boss.schedule(). Keeps SystemConfig.latestRelease warm so the update
+  // panel/route serves a fresh answer without a lazy cache miss. Idempotent:
+  // a single upsert row, safe to run repeatedly.
+  await boss.work("refresh-release-cache", async (jobs) => {
+    for (const job of jobs) {
+      try {
+        const release = await refreshReleaseCache();
+        console.log(
+          `[queue] refresh-release-cache ${job.id}: ${release ? release.tagName : "fetch failed, cache unchanged"}`,
+        );
+      } catch (err) {
+        console.error(`[queue] refresh-release-cache failed (job ${job.id}):`, err);
+        throw err;
+      }
+    }
+  });
+
   // Admin-triggered Ollama model download (self-hosted). runOllamaPull is
   // self-contained: it records progress/failure in the OllamaModelPull row and
   // never throws, so a failed download doesn't trip pg-boss retries.
@@ -116,5 +135,5 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
     }
   });
 
-  console.log("[queue] Workers registered: welcome-email, process-review, post-large-review-result, community-review, enforce-audit-retention, enforce-activity-retention, pull-ollama-model");
+  console.log("[queue] Workers registered: welcome-email, process-review, post-large-review-result, community-review, enforce-audit-retention, enforce-activity-retention, refresh-release-cache, pull-ollama-model");
 }

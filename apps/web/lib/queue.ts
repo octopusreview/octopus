@@ -115,6 +115,14 @@ export async function startQueue(): Promise<PgBoss> {
     expireInSeconds: 600, // 10 min — a deleteMany shouldn't take long
   }).catch(() => {});
 
+  // Daily self-hosted release-cache refresh (scheduled in instrumentation.ts,
+  // worked in queue-workers.ts). Same pg-boss v12 requirement — the queue must
+  // exist before schedule()/work() or the cron silently no-ops.
+  await boss.createQueue("refresh-release-cache", {
+    retryLimit: 1,
+    expireInSeconds: 300, // 5 min — a single GitHub fetch + upsert
+  }).catch(() => {});
+
   // Admin-triggered Ollama model downloads (self-hosted). Long expiry — a
   // large model is many GB. No auto-retry: runOllamaPull records failures in
   // the OllamaModelPull row itself and re-pulls are admin-driven from the UI.

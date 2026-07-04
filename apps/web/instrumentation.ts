@@ -41,6 +41,14 @@ export async function register() {
       // the audit job to avoid simultaneous deleteMany load). Window tunable via
       // ACTIVITY_RETENTION_DAYS (default 30).
       await boss.schedule("enforce-activity-retention", "0 4 * * *");
+
+      // Daily release-cache refresh (05:00 UTC — offset from the retention jobs).
+      // Gated to self-hosted: the release-check/update panel only surfaces there
+      // (same server-side flag the admin bootstrap above uses). pg-boss dedups
+      // the cron across instances; the worker in queue-workers.ts does the fetch.
+      if (process.env.NEXT_PUBLIC_OCTOPUS_SELF_HOSTED === "true") {
+        await boss.schedule("refresh-release-cache", "0 5 * * *");
+      }
     }
 
     // Graceful shutdown: wait for active jobs (e.g. in-progress reviews) to finish

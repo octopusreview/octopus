@@ -721,6 +721,18 @@ async function main() {
     { modelId: "gemini-2.5-flash", displayName: "Gemini 2.5 Flash", provider: "google", category: "llm", inputPrice: 0.15, outputPrice: 0.6, sortOrder: 6 },
     // OpenAI — Codex is the only OpenAI LLM we offer; served via the Responses API.
     { modelId: "gpt-5.3-codex", displayName: "GPT-5.3 Codex", provider: "openai", category: "llm", inputPrice: 1.75, outputPrice: 14, sortOrder: 7 },
+    // Claude Code — routed via the "claude-code:" prefix (see ai-router.ts).
+    // Billed against the operator's Claude subscription/OAuth, not per token,
+    // so the platform price is 0 (metered spend is tracked out-of-band).
+    { modelId: "claude-code:sonnet", displayName: "Claude Code (Sonnet)", provider: "claude-code", category: "llm", inputPrice: 0, outputPrice: 0, sortOrder: 8 },
+    // OpenRouter — the "openrouter/…"-namespaced id forces OpenRouter routing.
+    // Price is an estimate (~$0.10/$0.15 per 1M in/out for Hermes 3 8B).
+    { modelId: "openrouter/nousresearch/hermes-3-llama-3.1-8b", displayName: "Nous Hermes 3 8B (OpenRouter)", provider: "openrouter", category: "llm", inputPrice: 0.1, outputPrice: 0.15, sortOrder: 9 },
+    // Ollama (local — runs on the operator's own machine, zero cost)
+    { modelId: "ollama:qwen2.5-coder:32b", displayName: "Qwen 2.5 Coder 32B (Ollama)", provider: "ollama", category: "llm", inputPrice: 0, outputPrice: 0, sortOrder: 20 },
+    { modelId: "ollama:llama3.3", displayName: "Llama 3.3 (Ollama)", provider: "ollama", category: "llm", inputPrice: 0, outputPrice: 0, sortOrder: 21 },
+    { modelId: "ollama:deepseek-coder-v2", displayName: "DeepSeek Coder v2 (Ollama)", provider: "ollama", category: "llm", inputPrice: 0, outputPrice: 0, sortOrder: 22 },
+    { modelId: "ollama:nousresearch/hermes-3-llama-3.1-8b", displayName: "Nous Hermes 3 8B (Ollama)", provider: "ollama", category: "llm", inputPrice: 0, outputPrice: 0, sortOrder: 23 },
     // Embeddings
     { modelId: "text-embedding-3-large", displayName: "Embedding 3 Large", provider: "openai", category: "embedding", inputPrice: 0.13, outputPrice: 0, sortOrder: 0 },
     { modelId: "text-embedding-3-small", displayName: "Embedding 3 Small", provider: "openai", category: "embedding", inputPrice: 0.02, outputPrice: 0, sortOrder: 1 },

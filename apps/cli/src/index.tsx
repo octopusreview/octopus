@@ -1,7 +1,5 @@
 #!/usr/bin/env node
-import React from "react";
-import { render } from "ink";
-import { OnboardWizard } from "./OnboardWizard.js";
+import { renderWizard } from "./OnboardWizard.js";
 import { isOnboarded, loadConfig } from "./lib/config.js";
 import { agentServeCommand } from "./commands/agent-serve.js";
 import { agentWatchCommand } from "./commands/agent-watch.js";
@@ -154,27 +152,27 @@ async function main(rawArgv: string[]): Promise<number> {
       return 0;
     }
     {
-      const code = await renderWizard(argv.includes("--reset"));
+      await renderWizard(argv.includes("--reset"));
       // If signing in under a named account (--account), register + activate it
       // so the wizard's credentials land in a tracked profile (parity with login).
       if (acctFlag) {
         await ensureProfile(acctFlag);
         await setActiveProfile(acctFlag);
       }
-      return code;
+      return 0;
     }
   }
 
   if (first === "onboard") {
     {
-      const code = await renderWizard(argv.includes("--reset"));
+      await renderWizard(argv.includes("--reset"));
       // If signing in under a named account (--account), register + activate it
       // so the wizard's credentials land in a tracked profile (parity with login).
       if (acctFlag) {
         await ensureProfile(acctFlag);
         await setActiveProfile(acctFlag);
       }
-      return code;
+      return 0;
     }
   }
 
@@ -224,14 +222,6 @@ async function main(rawArgv: string[]): Promise<number> {
   console.error(`Unknown command: ${first}`);
   console.error("Run `octp --help` for a list of commands.");
   return 2;
-}
-
-async function renderWizard(reset = false): Promise<number> {
-  await new Promise<void>((resolve) => {
-    const { waitUntilExit } = render(<OnboardWizard reset={reset} />);
-    waitUntilExit().then(() => resolve());
-  });
-  return 0;
 }
 
 // Reusable entry point for other packages that want to embed onboarding.

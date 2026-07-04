@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Box } from "ink";
+import { Box, render } from "ink";
 import { Header } from "./components/Header.js";
 import { WelcomeStep } from "./steps/WelcomeStep.js";
 import { AuthStep } from "./steps/AuthStep.js";
@@ -166,4 +166,15 @@ export function OnboardWizard({ reset = false }: OnboardWizardProps = {}) {
       {activeKey === "done" && <DoneStep answers={answers} />}
     </Box>
   );
+}
+
+/**
+ * Render the wizard and resolve once the user exits it. Shared by the
+ * `octp onboard` entry point and the chat `/onboard` slash command so both
+ * launch the exact same component. Pass `reset` to pre-seed answers from the
+ * saved config.
+ */
+export async function renderWizard(reset = false): Promise<void> {
+  const { waitUntilExit } = render(<OnboardWizard reset={reset} />);
+  await waitUntilExit();
 }

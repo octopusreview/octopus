@@ -4,6 +4,7 @@ import { streamData } from "../lib/api.js";
 import { hasFlag, flagValue, positionals } from "../lib/args.js";
 import { resolveRepo } from "../lib/repo-resolver.js";
 import { error, info, c, sanitizeTerminal } from "../lib/output.js";
+import { renderWizard } from "../OnboardWizard.js";
 
 const USAGE = `octp chat — chat with Octopus about a repository
 
@@ -96,13 +97,16 @@ export async function chatCommand(argv: string[]): Promise<number> {
   }
 
   // Interactive REPL.
-  info(`Chatting about ${c.bold(label)}. Type 'exit' or Ctrl+C to quit.\n`);
+  info(`Chatting about ${c.bold(label)}. Type 'exit' or Ctrl+C to quit, '/onboard' to re-run setup.\n`);
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   let conversationId: string | null = null;
   let exitCode = 0;
+  // Set when the user types '/onboard': close the REPL, then launch the
+  // onboarding wizard after readline has released stdin (Ink needs to own it).
+  let launchOnboard = false;
 
-  return await new Promise<number>((resolve) => {
+  const code = await new Promise<number>((resolve) => {
     let closed = false;
     const finish = (code: number) => {
       if (closed) return;
@@ -122,6 +126,14 @@ export async function chatCommand(argv: string[]): Promise<number> {
           return;
         }
         if (message.toLowerCase() === "exit") {
+          finish(0);
+          return;
+        }
+        // Slash-command dispatch. Currently just '/onboard': cleanly leave
+        // chat and hand off to the onboarding wizard (same component as
+        // `octp onboard`), pre-seeding existing config via the reset path.
+        if (message.toLowerCase() === "/onboard") {
+          launchOnboard = true;
           finish(0);
           return;
         }
@@ -160,4 +172,12 @@ export async function chatCommand(argv: string[]): Promise<number> {
 
     ask();
   });
+
+  // Deferred to here so readline has fully closed and released stdin before
+  // Ink's wizard takes it over. `reset` pre-seeds the saved config.
+  if (launchOnboard) {
+    await renderWizard(true);
+  }
+
+  return code;
 }

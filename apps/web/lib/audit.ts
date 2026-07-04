@@ -44,6 +44,11 @@ export const AUDIT_LOG_DEFAULT_RETENTION_DAYS = 365;
  * The retention enforcement runs on a daily schedule (see queue-workers.ts
  * and the boss.schedule call in instrumentation.ts). Self-hosters can
  * disable it by leaving the schedule unset.
+ *
+ * Legal hold: rows whose `category` is listed in AUDIT_LOG_LEGAL_HOLD_CATEGORIES
+ * (comma-separated) are excluded from deletion regardless of age, so a hold can
+ * be placed on e.g. "billing,admin" for litigation/compliance without disabling
+ * retention for everything else.
  */
 export async function enforceAuditLogRetention(retentionDays?: number): Promise<number> {
   const envOverride = process.env.AUDIT_LOG_RETENTION_DAYS;
@@ -53,9 +58,23 @@ export async function enforceAuditLogRetention(retentionDays?: number): Promise<
     return 0;
   }
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const { count } = await prisma.auditLog.deleteMany({
-    where: { createdAt: { lt: cutoff } },
-  });
+  const heldCategories = (process.env.AUDIT_LOG_LEGAL_HOLD_CATEGORIES ?? "")
+    .split(",")
+    .map((c) => c.trim())
+    .filter(Boolean);
+  const unknownHeld = heldCategories.filter((c) => !AUDIT_CATEGORY_SET.has(c));
+  if (unknownHeld.length > 0) {
+    console.warn(
+      `[audit] enforceAuditLogRetention: AUDIT_LOG_LEGAL_HOLD_CATEGORIES contains unknown categor${
+        unknownHeld.length === 1 ? "y" : "ies"
+      } ${JSON.stringify(unknownHeld)} — check for typos (known: ${AUDIT_CATEGORIES.join(", ")})`,
+    );
+  }
+  const where: Prisma.AuditLogWhereInput = { createdAt: { lt: cutoff } };
+  if (heldCategories.length > 0) {
+    where.category = { notIn: heldCategories };
+  }
+  const { count } = await prisma.auditLog.deleteMany({ where });
   if (count > 0) {
     console.log(`[audit] enforceAuditLogRetention: deleted ${count} rows older than ${days} days`);
   }

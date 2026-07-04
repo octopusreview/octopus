@@ -18,6 +18,10 @@ const FALLBACK_PRICING: Record<string, ModelPricing> = {
   "gemini-2.5-pro": { input: 1.25, output: 10 },
   "gemini-2.5-flash": { input: 0.15, output: 0.6 },
   "gpt-5.3-codex": { input: 1.75, output: 14 },
+  // Claude Code is subscription-billed (not per-token), so platform price is 0.
+  "claude-code:sonnet": { input: 0, output: 0 },
+  // OpenRouter Hermes 3 8B — estimate (~$0.10/$0.15 per 1M in/out).
+  "openrouter/nousresearch/hermes-3-llama-3.1-8b": { input: 0.1, output: 0.15 },
   "text-embedding-3-large": { input: 0.13, output: 0 },
   "rerank-v3.5": { input: 2000.0, output: 0 },
 };

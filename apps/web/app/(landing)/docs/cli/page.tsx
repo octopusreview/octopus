@@ -31,6 +31,11 @@ export default function CLIPage() {
       {/* Install */}
       <Section title="Installation">
         <CodeBlock>npm install -g @octp/cli</CodeBlock>
+        <Paragraph>
+          Note: the npm package installs the legacy <Mono>octopus</Mono> binary,
+          which has a different command set. These docs cover the{" "}
+          <Mono>octp</Mono> CLI installed by the script below.
+        </Paragraph>
         <Paragraph>Or with bun:</Paragraph>
         <CodeBlock>bun add -g @octp/cli</CodeBlock>
       </Section>
@@ -41,25 +46,25 @@ export default function CLIPage() {
           Log in to connect the CLI with your Octopus account. This opens a
           browser window for authentication.
         </Paragraph>
-        <CodeBlock>octopus login</CodeBlock>
+        <CodeBlock>octp login</CodeBlock>
         <Paragraph>You can also authenticate with an API token directly:</Paragraph>
-        <CodeBlock>octopus login --token oct_your_token_here</CodeBlock>
+        <CodeBlock>octp login --token oct_your_token_here</CodeBlock>
         <Paragraph>
           Need a token for CI/CD or a script? Use <Mono>setup-token</Mono>. It
           runs the same browser approval flow but prints the token to stdout
           (progress messages go to stderr) so it can be captured directly:
         </Paragraph>
         <CodeBlock>{`# Print token to stdout
-octopus setup-token
+octp setup-token
 
 # Capture into an environment variable
-export OCTOPUS_TOKEN=$(octopus setup-token)
+export OCTOPUS_TOKEN=$(octp setup-token)
 
 # Save into a local profile while also printing
-octopus setup-token --save --profile ci
+octp setup-token --save --profile ci
 
 # Headless box (no browser): URL is written to stderr so you can open it elsewhere
-octopus setup-token --no-open`}</CodeBlock>
+octp setup-token --no-open`}</CodeBlock>
         <Paragraph>
           Prefer a manually-managed, named token? Create one at{" "}
           <Link
@@ -68,12 +73,12 @@ octopus setup-token --no-open`}</CodeBlock>
           >
             Settings → API Tokens
           </Link>{" "}
-          and pass it with <Mono>octopus login --token oct_...</Mono>.
+          and pass it with <Mono>octp login --token oct_...</Mono>.
         </Paragraph>
         <Paragraph>
           Verify your session with <Mono>whoami</Mono>:
         </Paragraph>
-        <CodeBlock>octopus whoami</CodeBlock>
+        <CodeBlock>octp whoami</CodeBlock>
       </Section>
 
       {/* Repo commands */}
@@ -84,19 +89,19 @@ octopus setup-token --no-open`}</CodeBlock>
         </Paragraph>
 
         <CommandCard
-          command="octopus repo list"
+          command="octp repo list"
           description="List all repositories in your organization."
         />
         <CommandCard
-          command="octopus repo status [repo]"
+          command="octp repo status [repo]"
           description="Show detailed status — indexing progress, analysis results, PR count."
         />
         <CommandCard
-          command="octopus repo index [repo]"
+          command="octp repo index [repo]"
           description="Index a repository for code search and review context. Polls until complete."
         />
         <CommandCard
-          command="octopus repo analyze [repo]"
+          command="octp repo analyze [repo]"
           description="Run AI analysis to generate a codebase summary and architecture overview."
         />
         <CommandCard
@@ -123,11 +128,11 @@ octp review https://github.com/owner/repo/pull/42`}</CodeBlock>
           Results stream in real-time with risk categorization.
         </Paragraph>
         <CommandCard
-          command="octopus analyze-deps <repo-url>"
+          command="octp analyze-deps <repo-url>"
           description="Scan a repository's npm dependencies for known vulnerabilities, malicious packages, and supply chain risks."
         />
         <Paragraph>Example:</Paragraph>
-        <CodeBlock>octopus analyze-deps https://github.com/acme/backend</CodeBlock>
+        <CodeBlock>octp analyze-deps https://github.com/acme/backend</CodeBlock>
       </Section>
 
       {/* Knowledge commands */}
@@ -138,15 +143,15 @@ octp review https://github.com/owner/repo/pull/42`}</CodeBlock>
         </Paragraph>
 
         <CommandCard
-          command="octopus knowledge list"
+          command="octp knowledge list"
           description="List all knowledge documents."
         />
         <CommandCard
-          command='octopus knowledge add <file> [--title "Title"]'
+          command='octp knowledge add <file> [--title "Title"]'
           description="Upload a file to the knowledge base."
         />
         <CommandCard
-          command="octopus knowledge remove <id>"
+          command="octp knowledge remove <id>"
           description="Remove a knowledge document."
         />
       </Section>
@@ -162,20 +167,20 @@ octp review https://github.com/owner/repo/pull/42`}</CodeBlock>
         </Paragraph>
 
         <CommandCard
-          command="octopus agent watch [path]"
+          command="octp agent watch [path]"
           description="Add a directory to the agent's watch list. Detects the repository from the git remote URL."
         />
         <CodeBlock>{`# Watch current directory
-octopus agent watch
+octp agent watch
 
 # Watch a specific path
-octopus agent watch ~/Repos/api
+octp agent watch ~/Repos/api
 
 # List all watched directories
-octopus agent watch --list
+octp agent watch --list
 
 # Remove a directory from the watch list
-octopus agent watch --remove`}</CodeBlock>
+octp agent watch --remove`}</CodeBlock>
 
         <CommandCard
           command="octp agent serve"
@@ -277,19 +282,19 @@ octopus skills install --codex`}</CodeBlock>
       {/* Config & Usage */}
       <Section title="Configuration & Usage">
         <CommandCard
-          command="octopus config list"
+          command="octp config list"
           description="List all CLI profiles."
         />
         <CommandCard
-          command="octopus config set <key> <value>"
+          command="octp config set <key> <value>"
           description="Set a config value (apiUrl, activeProfile)."
         />
         <CommandCard
-          command="octopus usage"
+          command="octp usage"
           description="Show monthly token usage, spend limits, and credit balance."
         />
         <CommandCard
-          command="octopus logout"
+          command="octp logout"
           description="Remove saved credentials."
         />
       </Section>
@@ -299,9 +304,9 @@ octopus skills install --codex`}</CodeBlock>
         <Paragraph>
           Use profiles to switch between different accounts or organizations:
         </Paragraph>
-        <CodeBlock>{`octopus login --profile work
-octopus login --profile personal
-octopus config set activeProfile work`}</CodeBlock>
+        <CodeBlock>{`octp login --profile work
+octp login --profile personal
+octp config set activeProfile work`}</CodeBlock>
       </Section>
 
       {/* .octopusignore */}

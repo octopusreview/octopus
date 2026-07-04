@@ -59,7 +59,7 @@ MICROSOFT_CLIENT_SECRET=…
 MICROSOFT_TENANT_ID=common   # default "common"; set your tenant id for single-tenant apps
 
 # Required for OAuth callback URLs to be computed correctly
-BETTER_AUTH_URL=http://localhost:3000   # or your real deployment URL`}</CodeBlock>
+BETTER_AUTH_URL=http://localhost:3000   # local dev; docker-compose self-host uses http://localhost:43300`}</CodeBlock>
         <P>
           Each social button enables only when BOTH the client id and secret are
           set — restart after editing env.
@@ -71,7 +71,7 @@ BETTER_AUTH_URL=http://localhost:3000   # or your real deployment URL`}</CodeBlo
           client id + secret. Use this redirect URI:
         </P>
         <CodeBlock>{`https://<your-host>/api/auth/callback/microsoft
-# replace <your-host> with your real domain; use http://localhost:3000 for local dev`}</CodeBlock>
+# replace <your-host> with your real domain; http://localhost:3000 for local dev, :43300 for docker-compose`}</CodeBlock>
       </Section>
 
       <Section title="Google OAuth — step by step">
@@ -98,7 +98,7 @@ BETTER_AUTH_URL=http://localhost:3000   # or your real deployment URL`}</CodeBlo
           <li>
             Add an <strong>Authorized redirect URI</strong>:
             <CodeBlock>{`http://localhost:3000/api/auth/callback/google
-# replace localhost:3000 with your real domain on a hosted deployment`}</CodeBlock>
+# replace localhost:3000 with your real domain (docker-compose self-host: localhost:43300)`}</CodeBlock>
           </li>
           <li>
             Click <strong>Create</strong>. Copy the <Mono>Client ID</Mono> and{" "}

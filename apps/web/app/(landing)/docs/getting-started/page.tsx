@@ -208,11 +208,11 @@ export default function GettingStartedPage() {
             description="Trigger an AI review on any pull request by number or URL."
           />
           <CommandRow
-            command="octopus repo index"
+            command="octp repo index"
             description="Index your repository for code search and review context."
           />
           <CommandRow
-            command="octopus knowledge add docs/api.md"
+            command="octp knowledge add docs/api.md"
             description="Add custom documents to your org's knowledge base for richer reviews."
           />
         </div>
@@ -224,7 +224,7 @@ export default function GettingStartedPage() {
         </Paragraph>
         <div className="mb-4 space-y-2">
           <CommandRow
-            command="octopus agent watch"
+            command="octp agent watch"
             description="Add the current repo to the agent's watch list. Detects the repo from the git remote URL."
           />
           <CommandRow
@@ -235,7 +235,7 @@ export default function GettingStartedPage() {
         <Paragraph>
           Install with{" "}
           <Code>npm install -g @octp/cli</Code> and run{" "}
-          <Code>octopus login</Code> to get started. See the full{" "}
+          <Code>octp login</Code> to get started. See the full{" "}
           <DocLink href="/docs/cli">CLI reference</DocLink> for all commands.
         </Paragraph>
       </Section>

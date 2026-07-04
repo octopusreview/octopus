@@ -264,8 +264,10 @@ bun run start`}</CodeBlock>
           </Paragraph>
           <CodeBlock>{`git pull                       # or: git fetch --tags && git checkout vX.Y.Z
 docker compose build --build-arg NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true
-docker compose up -d
-cd packages/db && DATABASE_URL=postgresql://octopus:octopus@localhost:43332/octopus bunx prisma migrate deploy`}</CodeBlock>
+# migrate FIRST (expand-only, safe under the still-running old version) ...
+cd packages/db && DATABASE_URL=postgresql://octopus:octopus@localhost:43332/octopus bunx prisma migrate deploy && cd ../..
+# ... then start the new version
+docker compose up -d`}</CodeBlock>
         </Step>
 
         <Step number={2} title="Verify before sending traffic">

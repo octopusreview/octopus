@@ -2,10 +2,8 @@ import { headers, cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma, type Prisma } from "@octopus/db";
+import { AGENT_STALE_THRESHOLD_MS } from "@/lib/agent-constants";
 import { LocalAgentTable } from "./local-agent-table";
-
-// Heartbeat cadence is 30s; allow up to 3 missed beats before we surface as offline.
-const STALE_THRESHOLD_MS = 90 * 1000;
 
 /**
  * Local Agent settings.
@@ -24,25 +22,30 @@ export default async function LocalAgentSettingsPage() {
 
   const cookieStore = await cookies();
   const currentOrgId = cookieStore.get("current_org_id")?.value;
+  // Resolve the org strictly from the active-org cookie — the same way
+  // DELETE /api/agent/[id] does. If we fell back to the user's first
+  // membership when the cookie is absent, we could list one org's agents
+  // while the revoke endpoint (which requires the cookie) refused them.
+  if (!currentOrgId) redirect("/dashboard");
 
   const member = await prisma.organizationMember.findFirst({
     where: {
       userId: session.user.id,
-      ...(currentOrgId ? { organizationId: currentOrgId } : {}),
+      organizationId: currentOrgId,
       deletedAt: null,
     },
-    select: { organizationId: true, role: true },
+    select: { role: true },
   });
   if (!member) redirect("/dashboard");
 
-  const orgId = member.organizationId;
+  const orgId = currentOrgId;
 
   // Stale agents: rather than mutating the DB on every page render (writes on
   // GETs are a smell + cause contention under traffic), we just derive the
   // displayed status at render time. The agent process keeps its own status
   // pinned via heartbeats; this view is only filtering out the "online but
   // hasn't actually pinged in 90s" race.
-  const staleCutoff = Date.now() - STALE_THRESHOLD_MS;
+  const staleCutoff = Date.now() - AGENT_STALE_THRESHOLD_MS;
 
   const agents = await prisma.localAgent.findMany({
     where: { organizationId: orgId },
@@ -100,7 +103,7 @@ export default async function LocalAgentSettingsPage() {
         agents={agents.map((a) => ({
           id: a.id,
           name: a.name,
-          // Derive offline at render time — see STALE_THRESHOLD_MS note above.
+          // Derive offline at render time — see AGENT_STALE_THRESHOLD_MS note above.
           status:
             a.status === "online" &&
             (!a.lastSeenAt || a.lastSeenAt.getTime() < staleCutoff)

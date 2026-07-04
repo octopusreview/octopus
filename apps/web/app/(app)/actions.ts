@@ -250,6 +250,12 @@ export async function updateApiKeys(
   const cohereApiKey = (formData.get("cohereApiKey") as string)?.trim() || null;
   const grokApiKey = (formData.get("grokApiKey") as string)?.trim() || null;
   const openrouterApiKey = (formData.get("openrouterApiKey") as string)?.trim() || null;
+  // Per-org provider config: gateway/base-URL overrides + gateway API keys.
+  const ollamaBaseUrl = (formData.get("ollamaBaseUrl") as string)?.trim() || null;
+  const acpBaseUrl = (formData.get("acpBaseUrl") as string)?.trim() || null;
+  const acpApiKey = (formData.get("acpApiKey") as string)?.trim() || null;
+  const opencodeBaseUrl = (formData.get("opencodeBaseUrl") as string)?.trim() || null;
+  const opencodeApiKey = (formData.get("opencodeApiKey") as string)?.trim() || null;
 
   if (openaiApiKey && !openaiApiKey.startsWith("sk-")) {
     return { error: "Invalid OpenAI API key format." };
@@ -280,6 +286,13 @@ export async function updateApiKeys(
   if (cohereApiKey) data.cohereApiKey = encryptString(cohereApiKey);
   if (grokApiKey) data.grokApiKey = encryptString(grokApiKey);
   if (openrouterApiKey) data.openrouterApiKey = encryptString(openrouterApiKey);
+  // Base URLs are not secrets — stored as-is (SSRF-validated at use time by
+  // the provider). Gateway API keys are encrypted like the other BYOK keys.
+  if (ollamaBaseUrl) data.ollamaBaseUrl = ollamaBaseUrl;
+  if (acpBaseUrl) data.acpBaseUrl = acpBaseUrl;
+  if (acpApiKey) data.acpApiKey = encryptString(acpApiKey);
+  if (opencodeBaseUrl) data.opencodeBaseUrl = opencodeBaseUrl;
+  if (opencodeApiKey) data.opencodeApiKey = encryptString(opencodeApiKey);
 
   if (Object.keys(data).length === 0) {
     return { error: "Enter at least one API key to save." };

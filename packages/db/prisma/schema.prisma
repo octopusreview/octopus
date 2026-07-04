@@ -108,6 +108,18 @@ model Organization {
   googleApiKey         String?
   grokApiKey           String?
   openrouterApiKey     String?
+  // Custom Ollama base URL — overrides OLLAMA_SERVER_URL env when set. Used
+  // for self-hosted Octopus instances pointing at a non-default Ollama host
+  // (a different container, a different machine on the LAN, etc.).
+  ollamaBaseUrl        String?
+  // ACPX gateway — base URL + bearer token. SSRF-validated via
+  // url-validation.ts at use time. Both required to enable the provider;
+  // when null the provider raises a clear "not configured" error.
+  acpBaseUrl           String?
+  acpApiKey            String?
+  // OpenCode gateway — same shape as ACPX, separate config.
+  opencodeBaseUrl      String?
+  opencodeApiKey       String?
   // Claude Code provider config (self-host / per-org). authMode is
   // "subscription" (local `claude` CLI via the agent bridge) or "api-key"
   // (Anthropic SDK with claudeCodeApiKey, falling back to anthropicApiKey).

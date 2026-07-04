@@ -1,6 +1,8 @@
 import "server-only";
 import OpenAI from "openai";
+import { prisma } from "@octopus/db";
 import type { Provider, AiCreateParams, AiResponse } from "./index";
+import { validateProviderUrl } from "./url-validation";
 
 /**
  * Ollama exposes an OpenAI-compatible Chat Completions endpoint at
@@ -63,11 +65,39 @@ function getClient(): OpenAI {
   return platformClient;
 }
 
+/**
+ * Per-org override: an org admin can set `Organization.ollamaBaseUrl` to point
+ * at a non-default Ollama host, overriding the OLLAMA_SERVER_URL env default.
+ * The URL is org-admin-supplied, so it becomes the target of a server-side
+ * fetch — validate it (SSRF: blocks loopback/RFC1918/link-local in hosted mode)
+ * before building a client. Returns null when no per-org URL is set so the
+ * caller falls back to the env-configured platform client.
+ */
+async function resolveOrgClient(orgId: string | null): Promise<OpenAI | null> {
+  if (!orgId) return null;
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { ollamaBaseUrl: true },
+  });
+  if (!org?.ollamaBaseUrl) return null;
+  const base = validateProviderUrl(org.ollamaBaseUrl);
+  // Not cached: per-org base URLs vary, so the platformClient singleton can't
+  // serve them. The env-level basic-auth credentials are host-specific and
+  // intentionally not applied to a per-org host.
+  return new OpenAI({ apiKey: "ollama", baseURL: `${base}/v1` });
+}
+
 export const ollamaProvider: Provider = {
   name: "ollama",
   supportsJsonSchema: false, // Ollama can be asked for JSON but doesn't enforce a schema yet
-  async create(params: AiCreateParams): Promise<AiResponse> {
-    const client = getClient();
+  async create(
+    params: AiCreateParams,
+    _apiKey?: string | null,
+    orgId?: string | null,
+  ): Promise<AiResponse> {
+    // Per-org base URL overrides the env default; falls back to the cached
+    // env-configured platform client otherwise.
+    const client = (await resolveOrgClient(orgId ?? null)) ?? getClient();
 
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
     if (params.system) messages.push({ role: "system", content: params.system });

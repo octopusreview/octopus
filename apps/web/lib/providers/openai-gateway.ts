@@ -1,13 +1,16 @@
 import "server-only";
 import OpenAI from "openai";
 import type { AiCreateParams, AiResponse, AiProvider } from "./index";
+import { validateProviderUrl } from "./url-validation";
 
 /**
  * Shared implementation for OpenAI-compatible gateway providers (acp, opencode,
- * and future custom-endpoint providers). These point at an operator-supplied
- * gateway (base URL + bearer token from env), so the endpoint is
- * deployment-trusted — no SSRF attacker surface. We still parse the URL and
- * require http(s) so a typo'd env value fails loudly at first use.
+ * and future custom-endpoint providers). The base URL + bearer token can come
+ * from env (deployment-trusted) OR from per-org configuration (org-admin
+ * supplied), so the URL is SSRF-validated here — it rejects loopback / RFC1918
+ * / link-local hosts in hosted mode so a malicious org admin can't point this
+ * at cloud metadata or an internal VPC service. Self-hosted deployments opt in
+ * via SELF_HOSTED=true.
  *
  * Caller supplies the provider name, the model-id namespace prefix to strip
  * (e.g. "acp:"), the gateway base URL, and the bearer token.
@@ -19,40 +22,16 @@ export type GatewayCallOptions = {
   apiKey: string;
 };
 
-function normalizeGatewayUrl(raw: string, providerName: string): string {
-  let parsed: URL;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    throw new Error(`${providerName} base URL is not a valid URL: ${raw.slice(0, 80)}`);
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error(`${providerName} base URL must use http(s); got ${parsed.protocol}`);
-  }
-  // Reduce to origin so the SDK builds `<origin>/v1/chat/completions` cleanly.
-  return parsed.origin;
-}
-
-// Cache one OpenAI client per provider. The gateway base URL + token come from
-// env (fixed for the process lifetime), so a single client per provider reuses
-// connections across calls instead of constructing a new one every request —
-// matching the singleton pattern in the other providers.
-const clientCache = new Map<AiProvider, OpenAI>();
-
-function getGatewayClient(opts: GatewayCallOptions): OpenAI {
-  const cached = clientCache.get(opts.name);
-  if (cached) return cached;
-  const baseURL = `${normalizeGatewayUrl(opts.baseUrl, opts.name)}/v1`;
-  const client = new OpenAI({ apiKey: opts.apiKey, baseURL });
-  clientCache.set(opts.name, client);
-  return client;
-}
-
 export async function callOpenAiGateway(
   params: AiCreateParams,
   opts: GatewayCallOptions,
 ): Promise<AiResponse> {
-  const client = getGatewayClient(opts);
+  // Not cached across calls: with per-org config the base URL + token vary by
+  // org, so a per-provider client singleton would leak one org's gateway/token
+  // to another. validateProviderUrl also strips any path/query so the SDK
+  // builds `<origin>/v1/chat/completions` cleanly.
+  const baseURL = `${validateProviderUrl(opts.baseUrl)}/v1`;
+  const client = new OpenAI({ apiKey: opts.apiKey, baseURL });
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
   if (params.system) messages.push({ role: "system", content: params.system });

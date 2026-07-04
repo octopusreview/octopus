@@ -57,7 +57,11 @@ export default function DpaPage() {
           Terms accepts the DPA. No separate signature required.
         </P>
         <P>
-          <strong>Signed PDF copy for your records:</strong> email{" "}
+          <strong>PDF copy:</strong>{" "}
+          <a href="/dpa.pdf" className="text-cyan-400 underline" download>
+            download the DPA template (PDF)
+          </a>
+          . For a <strong>counter-signed</strong> copy for your records, email{" "}
           <a href="mailto:legal@octopus-review.ai" className="text-cyan-400 underline">
             legal@octopus-review.ai
           </a>{" "}

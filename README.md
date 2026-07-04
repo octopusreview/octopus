@@ -146,6 +146,12 @@ See [docker-compose.yml](docker-compose.yml) for service configuration.
 4. **Review** — The diff is reviewed by the LLM, generating findings with severity levels and category-based thresholds
 5. **Comment** — Findings are posted as inline comments on the PR/MR, with one-click Linear or Jira issue creation
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for what we're building and the [Octopus Roadmap Project board](https://github.com/orgs/octopusreview/projects) for the live, sortable view.
+
+Work flows through **Proposed → Up Next → In Progress → Shipped**. Anyone can propose an item by opening a [roadmap proposal issue](.github/ISSUE_TEMPLATE/roadmap_proposal.yml); maintainers promote it to **Up Next** once it has an owner. The [CHANGELOG](CHANGELOG.md) is the source of truth for what has actually shipped.
+
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.

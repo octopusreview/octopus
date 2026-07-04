@@ -2,7 +2,7 @@
 
 This is a living document. It captures what Octopus is working on, what is queued, and what the community is invited to discuss. It is **not a commitment** — priorities shift as the project learns.
 
-For the live, sortable view, see the [Octopus Roadmap Project board](https://github.com/orgs/octopusreview/projects).
+For the live, sortable view, see the [Octopus Roadmap Project board](https://github.com/orgs/octopusreview/projects/1).
 The [CHANGELOG](CHANGELOG.md) is the source of truth for what has actually shipped.
 
 ---

@@ -335,6 +335,13 @@ model ReviewIssue {
   feedbackBy     String?
   createdAt      DateTime  @default(now())
 
+  // Content-derived signature for cross-review merging. When a PR is re-reviewed,
+  // findings whose signatures match a prior finding inherit its user-triage state
+  // (acknowledgedAt, feedback*, *IssueId, *CommentId, createdAt) so the dev does
+  // not have to re-triage the same issue on every push. Nullable for legacy rows
+  // that predate the introduction of signatures.
+  signature String?
+
   linearIssueId  String?
   linearIssueUrl String?
   jiraIssueKey   String?
@@ -347,6 +354,7 @@ model ReviewIssue {
   pullRequest   PullRequest @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
 
   @@index([pullRequestId])
+  @@index([pullRequestId, signature])
   @@map("review_issues")
 }
 

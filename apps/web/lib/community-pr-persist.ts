@@ -1,5 +1,6 @@
-import { prisma } from "@octopus/db";
+import { prisma, type Prisma } from "@octopus/db";
 import type { InlineFinding } from "@/lib/review-dedup";
+import { findingSignature, mergeFindingsBySignature, inheritReviewIssueTriage } from "@/lib/finding-merge";
 
 const SEVERITY_MAP: Record<string, string> = {
   "🔴": "critical",
@@ -63,19 +64,29 @@ export async function persistCommunityReviewToPR(input: CommunityPRPersistInput)
     },
   });
 
-  await prisma.reviewIssue.deleteMany({ where: { pullRequestId: pr.id } });
-
-  if (findings.length > 0) {
-    await prisma.reviewIssue.createMany({
-      data: findings.map((f) => ({
-        pullRequestId: pr.id,
-        title: f.title.replace(/^(CRITICAL|HIGH|MEDIUM|LOW|INFO)\s*—\s*/i, "").trim(),
-        description: f.description || f.category,
-        severity: SEVERITY_MAP[f.severity] ?? "medium",
-        filePath: f.filePath || null,
-        lineNumber: f.startLine || null,
-        confidence: f.confidence ? String(f.confidence) : null,
-      })),
-    });
-  }
+  // Signature-matched findings inherit prior triage state; delete+create run
+  // atomically so a mid-way failure can never wipe triage without replacement.
+  const priorIssues = await prisma.reviewIssue.findMany({ where: { pullRequestId: pr.id } });
+  const current: Prisma.ReviewIssueCreateManyInput[] = findings.map((f) => {
+    const title = f.title.replace(/^(CRITICAL|HIGH|MEDIUM|LOW|INFO)\s*—\s*/i, "").trim();
+    return {
+      pullRequestId: pr.id,
+      title,
+      description: f.description || f.category,
+      severity: SEVERITY_MAP[f.severity] ?? "medium",
+      filePath: f.filePath || null,
+      lineNumber: f.startLine || null,
+      confidence: f.confidence ? String(f.confidence) : null,
+      signature: findingSignature({ filePath: f.filePath || "", category: f.category, title }),
+    };
+  });
+  const { merged } = mergeFindingsBySignature<Prisma.ReviewIssueCreateManyInput>({
+    prior: priorIssues,
+    current,
+    inherit: inheritReviewIssueTriage,
+  });
+  await prisma.$transaction([
+    prisma.reviewIssue.deleteMany({ where: { pullRequestId: pr.id } }),
+    ...(merged.length > 0 ? [prisma.reviewIssue.createMany({ data: merged })] : []),
+  ]);
 }

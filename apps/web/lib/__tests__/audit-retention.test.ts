@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, afterEach } from "bun:test";
+import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 
 // Capture the `where` passed to deleteMany so we can assert the legal-hold
 // clause. Bun's module mocks are file-scoped and auto-cleaned — no restore.
@@ -16,9 +16,22 @@ mock.module("@octopus/db", () => ({
 
 import { enforceAuditLogRetention } from "@/lib/audit";
 
+const KEYS = ["AUDIT_LOG_LEGAL_HOLD_CATEGORIES", "AUDIT_LOG_RETENTION_DAYS"] as const;
+
 describe("enforceAuditLogRetention — legal-hold category skip", () => {
+  let saved: Record<string, string | undefined>;
+  beforeEach(() => {
+    saved = {};
+    for (const k of KEYS) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+  });
   afterEach(() => {
-    delete process.env.AUDIT_LOG_LEGAL_HOLD_CATEGORIES;
+    for (const k of KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
     lastWhere = null;
   });
 

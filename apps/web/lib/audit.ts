@@ -62,6 +62,14 @@ export async function enforceAuditLogRetention(retentionDays?: number): Promise<
     .split(",")
     .map((c) => c.trim())
     .filter(Boolean);
+  const unknownHeld = heldCategories.filter((c) => !AUDIT_CATEGORY_SET.has(c));
+  if (unknownHeld.length > 0) {
+    console.warn(
+      `[audit] enforceAuditLogRetention: AUDIT_LOG_LEGAL_HOLD_CATEGORIES contains unknown categor${
+        unknownHeld.length === 1 ? "y" : "ies"
+      } ${JSON.stringify(unknownHeld)} — check for typos (known: ${AUDIT_CATEGORIES.join(", ")})`,
+    );
+  }
   const where: Prisma.AuditLogWhereInput = { createdAt: { lt: cutoff } };
   if (heldCategories.length > 0) {
     where.category = { notIn: heldCategories };

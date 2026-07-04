@@ -1,16 +1,15 @@
 import "server-only";
 import OpenAI from "openai";
 import type { AiCreateParams, AiResponse, AiProvider } from "./index";
-import { validateProviderUrl } from "./url-validation";
 
 /**
  * Shared implementation for OpenAI-compatible gateway providers (acp, opencode,
  * and future custom-endpoint providers). The base URL + bearer token can come
  * from env (deployment-trusted) OR from per-org configuration (org-admin
- * supplied), so the URL is SSRF-validated here — it rejects loopback / RFC1918
- * / link-local hosts in hosted mode so a malicious org admin can't point this
- * at cloud metadata or an internal VPC service. Self-hosted deployments opt in
- * via SELF_HOSTED=true.
+ * supplied). SSRF validation is applied by the caller's resolve path — only to
+ * the per-org (user-supplied) URL, since env-configured gateways are operator-
+ * controlled and may legitimately live on internal hosts. The baseUrl passed in
+ * here is therefore already a validated, path-stripped origin.
  *
  * Caller supplies the provider name, the model-id namespace prefix to strip
  * (e.g. "acp:"), the gateway base URL, and the bearer token.
@@ -28,9 +27,9 @@ export async function callOpenAiGateway(
 ): Promise<AiResponse> {
   // Not cached across calls: with per-org config the base URL + token vary by
   // org, so a per-provider client singleton would leak one org's gateway/token
-  // to another. validateProviderUrl also strips any path/query so the SDK
-  // builds `<origin>/v1/chat/completions` cleanly.
-  const baseURL = `${validateProviderUrl(opts.baseUrl)}/v1`;
+  // to another. opts.baseUrl is already a validated origin (path/query stripped
+  // by the resolve path), so the SDK builds `<origin>/v1/chat/completions`.
+  const baseURL = `${opts.baseUrl}/v1`;
   const client = new OpenAI({ apiKey: opts.apiKey, baseURL });
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];

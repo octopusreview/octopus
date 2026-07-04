@@ -3,6 +3,7 @@ import { prisma } from "@octopus/db";
 import { decryptStringMaybeLegacy } from "@/lib/crypto";
 import type { Provider, AiCreateParams, AiResponse } from "./index";
 import { callOpenAiGateway } from "./openai-gateway";
+import { validateProviderUrl } from "./url-validation";
 
 /**
  * OpenCode — an OpenAI-compatible gateway, same shape as ACPX with its own
@@ -13,8 +14,10 @@ import { callOpenAiGateway } from "./openai-gateway";
  * Model ids are namespaced "opencode:<model>".
  *
  * The per-org key is stored encrypted at rest like the other BYOK keys, so it
- * is decrypted here before use. The base URL is SSRF-validated inside
- * callOpenAiGateway before it becomes a fetch target.
+ * is decrypted here before use. SSRF validation is applied only to the per-org
+ * (org-admin supplied) base URL; the env-configured OPENCODE_BASE_URL is
+ * operator-controlled and may legitimately point at an internal host, so it is
+ * only normalized to an origin (private ranges allowed).
  */
 async function resolveConfig(orgId?: string | null): Promise<{ baseUrl: string; apiKey: string } | null> {
   // Per-org config overrides the deployment env default.
@@ -24,12 +27,12 @@ async function resolveConfig(orgId?: string | null): Promise<{ baseUrl: string; 
       select: { opencodeBaseUrl: true, opencodeApiKey: true },
     });
     if (org?.opencodeBaseUrl && org?.opencodeApiKey) {
-      return { baseUrl: org.opencodeBaseUrl, apiKey: decryptStringMaybeLegacy(org.opencodeApiKey) };
+      return { baseUrl: validateProviderUrl(org.opencodeBaseUrl), apiKey: decryptStringMaybeLegacy(org.opencodeApiKey) };
     }
   }
   const envBase = process.env.OPENCODE_BASE_URL;
   const envKey = process.env.OPENCODE_API_KEY;
-  if (envBase && envKey) return { baseUrl: envBase, apiKey: envKey };
+  if (envBase && envKey) return { baseUrl: validateProviderUrl(envBase, { hosted: false }), apiKey: envKey };
   return null;
 }
 

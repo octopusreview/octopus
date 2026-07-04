@@ -3,6 +3,7 @@ import { prisma } from "@octopus/db";
 import { decryptStringMaybeLegacy } from "@/lib/crypto";
 import type { Provider, AiCreateParams, AiResponse } from "./index";
 import { callOpenAiGateway } from "./openai-gateway";
+import { validateProviderUrl } from "./url-validation";
 
 /**
  * ACPX — an OpenAI-compatible multi-vendor gateway (Agent Communication
@@ -13,8 +14,10 @@ import { callOpenAiGateway } from "./openai-gateway";
  * Model ids are namespaced "acp:<model>".
  *
  * The per-org key is stored encrypted at rest like the other BYOK keys, so it
- * is decrypted here before use. The base URL is SSRF-validated inside
- * callOpenAiGateway before it becomes a fetch target.
+ * is decrypted here before use. SSRF validation is applied only to the per-org
+ * (org-admin supplied) base URL; the env-configured ACP_BASE_URL is operator-
+ * controlled and may legitimately point at an internal host, so it is only
+ * normalized to an origin (private ranges allowed).
  */
 async function resolveConfig(orgId?: string | null): Promise<{ baseUrl: string; apiKey: string } | null> {
   // Per-org config overrides the deployment env default.
@@ -24,12 +27,12 @@ async function resolveConfig(orgId?: string | null): Promise<{ baseUrl: string; 
       select: { acpBaseUrl: true, acpApiKey: true },
     });
     if (org?.acpBaseUrl && org?.acpApiKey) {
-      return { baseUrl: org.acpBaseUrl, apiKey: decryptStringMaybeLegacy(org.acpApiKey) };
+      return { baseUrl: validateProviderUrl(org.acpBaseUrl), apiKey: decryptStringMaybeLegacy(org.acpApiKey) };
     }
   }
   const envBase = process.env.ACP_BASE_URL;
   const envKey = process.env.ACP_API_KEY;
-  if (envBase && envKey) return { baseUrl: envBase, apiKey: envKey };
+  if (envBase && envKey) return { baseUrl: validateProviderUrl(envBase, { hosted: false }), apiKey: envKey };
   return null;
 }
 

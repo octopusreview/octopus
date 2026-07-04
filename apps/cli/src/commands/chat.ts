@@ -132,7 +132,7 @@ export async function chatCommand(argv: string[]): Promise<number> {
         // Slash-command dispatch. Currently just '/onboard': cleanly leave
         // chat and hand off to the onboarding wizard (same component as
         // `octp onboard`), pre-seeding existing config via the reset path.
-        if (message === "/onboard") {
+        if (message.toLowerCase() === "/onboard") {
           launchOnboard = true;
           finish(0);
           return;

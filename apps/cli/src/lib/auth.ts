@@ -41,12 +41,16 @@ export interface DeviceFlowOptions {
  * `exec("open \"" + url + "\"")` — string interpolation into a shell, a
  * command-injection vector. Best-effort: the URL is also printed for manual
  * open, so a spawn failure is non-fatal.
+ *
+ * Resolves `true` once the browser process spawns successfully and `false`
+ * if it never launches (bad URL, missing opener, spawn throw) so callers can
+ * distinguish "opened" from "here's the URL, open it yourself".
  */
-export function openBrowser(url: string): void {
+export function openBrowser(url: string): Promise<boolean> {
   try {
     new URL(url);
   } catch {
-    return;
+    return Promise.resolve(false);
   }
   let cmd: string;
   let args: string[];
@@ -62,13 +66,18 @@ export function openBrowser(url: string): void {
     cmd = "xdg-open";
     args = [url];
   }
-  try {
-    const child = spawn(cmd, args, { stdio: "ignore", detached: true });
-    child.on("error", () => {}); // ENOENT (no xdg-open) etc. — ignore, URL is printed
-    child.unref();
-  } catch {
-    // ignore — URL was surfaced for manual open
-  }
+  return new Promise<boolean>((resolve) => {
+    try {
+      const child = spawn(cmd, args, { stdio: "ignore", detached: true });
+      child.on("error", () => resolve(false)); // ENOENT (no xdg-open) etc. — URL is printed
+      child.on("spawn", () => {
+        child.unref();
+        resolve(true);
+      });
+    } catch {
+      resolve(false); // URL was surfaced for manual open
+    }
+  });
 }
 
 export async function runDeviceFlow(
@@ -105,7 +114,7 @@ export async function runDeviceFlow(
 
   const authorizeUrl = `${baseUrl}/cli/authorize?code=${encodeURIComponent(deviceCode)}`;
   onAuthorizeUrl?.(authorizeUrl);
-  if (!noOpen) openBrowser(authorizeUrl);
+  if (!noOpen) void openBrowser(authorizeUrl);
 
   const expiry = new Date(expiresAt).getTime();
   let attempts = 0;

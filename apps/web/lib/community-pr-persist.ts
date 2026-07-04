@@ -1,5 +1,6 @@
 import { prisma } from "@octopus/db";
 import type { InlineFinding } from "@/lib/review-dedup";
+import { findingSignature } from "@/lib/finding-merge";
 
 const SEVERITY_MAP: Record<string, string> = {
   "🔴": "critical",
@@ -67,15 +68,19 @@ export async function persistCommunityReviewToPR(input: CommunityPRPersistInput)
 
   if (findings.length > 0) {
     await prisma.reviewIssue.createMany({
-      data: findings.map((f) => ({
-        pullRequestId: pr.id,
-        title: f.title.replace(/^(CRITICAL|HIGH|MEDIUM|LOW|INFO)\s*—\s*/i, "").trim(),
-        description: f.description || f.category,
-        severity: SEVERITY_MAP[f.severity] ?? "medium",
-        filePath: f.filePath || null,
-        lineNumber: f.startLine || null,
-        confidence: f.confidence ? String(f.confidence) : null,
-      })),
+      data: findings.map((f) => {
+        const title = f.title.replace(/^(CRITICAL|HIGH|MEDIUM|LOW|INFO)\s*—\s*/i, "").trim();
+        return {
+          pullRequestId: pr.id,
+          title,
+          description: f.description || f.category,
+          severity: SEVERITY_MAP[f.severity] ?? "medium",
+          filePath: f.filePath || null,
+          lineNumber: f.startLine || null,
+          confidence: f.confidence ? String(f.confidence) : null,
+          signature: findingSignature({ filePath: f.filePath || "", category: f.category, title }),
+        };
+      }),
     });
   }
 }

@@ -7,6 +7,7 @@ import {
   updateCheckRun as ghUpdateCheckRun,
 } from "@/lib/github";
 import { parseFindings } from "@/lib/review-dedup";
+import { findingSignature } from "@/lib/finding-merge";
 import {
   buildLowSeveritySummary,
   stripDetailedFindings,
@@ -220,15 +221,19 @@ export async function handleLargeReviewResult(
   await prisma.reviewIssue.deleteMany({ where: { pullRequestId: pr.id } });
   if (findings.length > 0) {
     await prisma.reviewIssue.createMany({
-      data: findings.map((f) => ({
-        title: f.title.replace(/^(CRITICAL|HIGH|MEDIUM|LOW|INFO)\s*—\s*/i, "").trim(),
-        description: f.description || f.category,
-        severity: SEVERITY_TO_DB[f.severity] ?? "medium",
-        filePath: f.filePath || null,
-        lineNumber: f.startLine || null,
-        confidence: f.confidence ? String(f.confidence) : null,
-        pullRequestId: pr.id,
-      })),
+      data: findings.map((f) => {
+        const title = f.title.replace(/^(CRITICAL|HIGH|MEDIUM|LOW|INFO)\s*—\s*/i, "").trim();
+        return {
+          title,
+          description: f.description || f.category,
+          severity: SEVERITY_TO_DB[f.severity] ?? "medium",
+          filePath: f.filePath || null,
+          lineNumber: f.startLine || null,
+          confidence: f.confidence ? String(f.confidence) : null,
+          pullRequestId: pr.id,
+          signature: findingSignature({ filePath: f.filePath || "", category: f.category, title }),
+        };
+      }),
     });
     console.log(`[large-review-result] Saved ${findings.length} review issues to DB`);
   }

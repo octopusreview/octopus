@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { prisma } from "@octopus/db";
+import { prisma, type Prisma } from "@octopus/db";
 import { pubby } from "@/lib/pubby";
 import {
   searchSimilarChunks,
@@ -21,6 +21,7 @@ import { generateSparseVector } from "@/lib/sparse-vector";
 import { substitutePromptVars } from "@/lib/prompt-substitute";
 import { rerankDocuments } from "@/lib/reranker";
 import { resolveReviewLanguage } from "@/lib/review-language";
+import { findingSignature, mergeFindingsBySignature } from "@/lib/finding-merge";
 import { getAlwaysIncludeKnowledge, mergeKnowledgeChunks } from "@/lib/knowledge-context";
 import {
   fetchRepoConfigFile,
@@ -2228,6 +2229,15 @@ Rules:
     }
 
     // Step 6: Persist parsed findings as ReviewIssue records (ALL findings, not just capped/inline)
+    // Fetch prior findings BEFORE clearing so that on a re-review, a finding whose
+    // content signature is unchanged inherits its user-triage state (acknowledgement,
+    // feedback, tracker links, original createdAt) instead of resurfacing as brand-new.
+    // This exact-signature inheritance complements the earlier fuzzy (keyword +
+    // line-proximity) dedup rather than replacing it — see lib/finding-merge.ts.
+    const priorIssues = await prisma.reviewIssue.findMany({
+      where: { pullRequestId: pr.id },
+    });
+
     // Clear previous findings first (re-review idempotency)
     await prisma.reviewIssue.deleteMany({
       where: { pullRequestId: pr.id },
@@ -2244,18 +2254,45 @@ Rules:
         "💡": "low",
       };
 
-      await prisma.reviewIssue.createMany({
-        data: allPersistFindings.map((f) => ({
-          title: f.title.replace(/^(CRITICAL|HIGH|MEDIUM|LOW|INFO)\s*—\s*/i, "").trim(),
+      const current: Prisma.ReviewIssueCreateManyInput[] = allPersistFindings.map((f) => {
+        const title = f.title.replace(/^(CRITICAL|HIGH|MEDIUM|LOW|INFO)\s*—\s*/i, "").trim();
+        return {
+          title,
           description: f.description || f.category,
           severity: severityMap[f.severity] ?? "medium",
           filePath: f.filePath || null,
           lineNumber: f.startLine || null,
           confidence: f.confidence ? String(f.confidence) : null,
           pullRequestId: pr.id,
-        })),
+          signature: findingSignature({ filePath: f.filePath || "", category: f.category, title }),
+        };
       });
-      console.log(`[reviewer] Saved ${allPersistFindings.length} review issues to DB`);
+
+      const { merged, inherited } = mergeFindingsBySignature<Prisma.ReviewIssueCreateManyInput>({
+        prior: priorIssues,
+        current,
+        inherit: (next, prior) => ({
+          ...next,
+          acknowledgedAt: prior.acknowledgedAt,
+          feedback: prior.feedback,
+          feedbackAt: prior.feedbackAt,
+          feedbackBy: prior.feedbackBy,
+          linearIssueId: prior.linearIssueId,
+          linearIssueUrl: prior.linearIssueUrl,
+          jiraIssueKey: prior.jiraIssueKey,
+          jiraIssueUrl: prior.jiraIssueUrl,
+          githubIssueNumber: prior.githubIssueNumber,
+          githubIssueUrl: prior.githubIssueUrl,
+          githubCommentId: prior.githubCommentId,
+          createdAt: prior.createdAt,
+        }),
+      });
+
+      await prisma.reviewIssue.createMany({ data: merged });
+      console.log(
+        `[reviewer] Saved ${merged.length} review issues to DB` +
+          (inherited > 0 ? ` (${inherited} inherited prior triage state)` : ""),
+      );
     }
 
     // Step 7: Mark as completed + update check run

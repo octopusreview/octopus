@@ -21,7 +21,9 @@ export function Tabs({
     else if (e.key === "End") next = tabs.length - 1;
     else return;
     e.preventDefault();
-    setActive(tabs[next].id);
+    const nextTab = tabs[next];
+    if (!nextTab) return;
+    setActive(nextTab.id);
     btnRefs.current[next]?.focus();
   }
 

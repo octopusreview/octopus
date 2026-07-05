@@ -439,13 +439,13 @@ export function LoginContent({
           <p className="mt-10 text-xs leading-relaxed text-[#555]">
             Your code is never stored long-term or used to train models.
           </p>
-          <a
+          <Link
             href="/docs/self-hosting"
             className="mt-3 inline-flex items-center gap-1.5 text-xs text-[#10d8be]/70 transition-colors hover:text-[#10d8be]"
           >
             Prefer to run it yourself? Self-host Octopus
             <IconArrowRight className="size-3.5" />
-          </a>
+          </Link>
         </div>
       </div>
     </div>

@@ -9,7 +9,6 @@ import { LandingDesktopNav } from "@/components/landing-desktop-nav";
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import { BlogSearch } from "@/components/blog-search";
 import { ScrollToTop } from "@/components/scroll-to-top";
-import { readingTimeMinutes } from "@/lib/blog-reading";
 
 const POSTS_PER_PAGE = 10;
 
@@ -68,7 +67,6 @@ export default async function BlogPage({
         title: true,
         slug: true,
         excerpt: true,
-        content: true,
         coverImageUrl: true,
         publishedAt: true,
         authorName: true,
@@ -138,9 +136,9 @@ export default async function BlogPage({
                         {featured.excerpt}
                       </p>
                     )}
-                    <div className="flex flex-wrap items-center gap-3 text-sm text-[#555]">
+                    <div className="flex items-center gap-3 text-sm text-[#555]">
                       <span>{featured.authorName}</span>
-                      <span aria-hidden="true">·</span>
+                      <span>·</span>
                       <time>
                         {featured.publishedAt
                           ? new Date(featured.publishedAt).toLocaleDateString(
@@ -153,8 +151,6 @@ export default async function BlogPage({
                             )
                           : ""}
                       </time>
-                      <span aria-hidden="true">·</span>
-                      <span>{readingTimeMinutes(featured.content)} min read</span>
                     </div>
                   </Link>
 
@@ -201,9 +197,6 @@ export default async function BlogPage({
                                   )
                                 : ""}
                             </time>
-                            <div className="text-[#444]">
-                              {readingTimeMinutes(post.content)} min read
-                            </div>
                           </div>
                         </Link>
                       ))}

@@ -11,7 +11,7 @@ import { BlogContent } from "@/components/blog-content";
 import { BlogToc } from "@/components/blog-toc";
 import { ScrollToTop } from "@/components/scroll-to-top";
 import { IconArrowLeft } from "@tabler/icons-react";
-import { readingTimeMinutes, extractHeadings } from "@/lib/blog-reading";
+import { readingTimeMinutes, extractHeadings, proseWordCount } from "@/lib/blog-reading";
 
 const DEFAULT_OG_IMAGE = "https://octopus-review.ai/og-image.png";
 
@@ -73,7 +73,7 @@ export default async function BlogPostPage({
   const canonicalUrl = canonicalUrlFor(slug);
   const headings = extractHeadings(post.content);
   const minutes = readingTimeMinutes(post.content);
-  const wordCount = post.content.split(/\s+/).filter(Boolean).length;
+  const wordCount = proseWordCount(post.content);
 
   const blogPostingJsonLd = {
     "@context": "https://schema.org",

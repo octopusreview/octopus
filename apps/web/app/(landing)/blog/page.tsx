@@ -9,6 +9,7 @@ import { LandingDesktopNav } from "@/components/landing-desktop-nav";
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import { BlogSearch } from "@/components/blog-search";
 import { ScrollToTop } from "@/components/scroll-to-top";
+import { readingTimeMinutes } from "@/lib/blog-reading";
 
 const POSTS_PER_PAGE = 10;
 
@@ -67,6 +68,7 @@ export default async function BlogPage({
         title: true,
         slug: true,
         excerpt: true,
+        content: true,
         coverImageUrl: true,
         publishedAt: true,
         authorName: true,
@@ -82,7 +84,7 @@ export default async function BlogPage({
       <LandingDesktopNav isLoggedIn={isLoggedIn} />
       <LandingMobileNav isLoggedIn={isLoggedIn} />
 
-      <main className="mx-auto max-w-4xl px-6 pt-32 pb-20">
+      <main className="mx-auto max-w-5xl px-6 pt-32 pb-20">
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-4xl font-bold tracking-tight">Blog</h1>
@@ -136,9 +138,9 @@ export default async function BlogPage({
                         {featured.excerpt}
                       </p>
                     )}
-                    <div className="flex items-center gap-3 text-sm text-[#555]">
+                    <div className="flex flex-wrap items-center gap-3 text-sm text-[#555]">
                       <span>{featured.authorName}</span>
-                      <span>·</span>
+                      <span aria-hidden="true">·</span>
                       <time>
                         {featured.publishedAt
                           ? new Date(featured.publishedAt).toLocaleDateString(
@@ -151,6 +153,8 @@ export default async function BlogPage({
                             )
                           : ""}
                       </time>
+                      <span aria-hidden="true">·</span>
+                      <span>{readingTimeMinutes(featured.content)} min read</span>
                     </div>
                   </Link>
 
@@ -197,6 +201,9 @@ export default async function BlogPage({
                                   )
                                 : ""}
                             </time>
+                            <div className="text-[#444]">
+                              {readingTimeMinutes(post.content)} min read
+                            </div>
                           </div>
                         </Link>
                       ))}

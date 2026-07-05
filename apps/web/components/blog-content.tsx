@@ -2,20 +2,28 @@
 
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeSlug from "rehype-slug";
 
 export function BlogContent({ content }: { content: string }) {
   return (
     <Markdown
       remarkPlugins={[remarkGfm]}
+      rehypePlugins={[rehypeSlug]}
       components={{
-        h1: ({ children }) => (
-          <h1 className="mb-4 mt-8 text-3xl font-bold first:mt-0">{children}</h1>
+        h1: ({ id, children }) => (
+          <h1 id={id} className="mb-4 mt-8 scroll-mt-28 text-3xl font-bold first:mt-0">
+            {children}
+          </h1>
         ),
-        h2: ({ children }) => (
-          <h2 className="mb-3 mt-8 text-2xl font-semibold">{children}</h2>
+        h2: ({ id, children }) => (
+          <h2 id={id} className="mb-3 mt-8 scroll-mt-28 text-2xl font-semibold">
+            {children}
+          </h2>
         ),
-        h3: ({ children }) => (
-          <h3 className="mb-2 mt-6 text-xl font-semibold">{children}</h3>
+        h3: ({ id, children }) => (
+          <h3 id={id} className="mb-2 mt-6 scroll-mt-28 text-xl font-semibold">
+            {children}
+          </h3>
         ),
         p: ({ children }) => (
           <p className="mb-4 leading-relaxed">{children}</p>

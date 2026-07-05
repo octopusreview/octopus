@@ -8,8 +8,12 @@ import { LandingFooter } from "@/components/landing-footer";
 import { LandingMobileNav } from "@/components/landing-mobile-nav";
 import { LandingDesktopNav } from "@/components/landing-desktop-nav";
 import { BlogContent } from "@/components/blog-content";
+import { BlogToc } from "@/components/blog-toc";
 import { ScrollToTop } from "@/components/scroll-to-top";
 import { IconArrowLeft } from "@tabler/icons-react";
+import { readingTimeMinutes, extractHeadings } from "@/lib/blog-reading";
+
+const DEFAULT_OG_IMAGE = "https://octopus-review.ai/og-image.png";
 
 async function getPost(slug: string) {
   return prisma.blogPost.findFirst({
@@ -43,13 +47,13 @@ export async function generateMetadata({
       description: post.excerpt ?? undefined,
       type: "article",
       publishedTime: post.publishedAt?.toISOString(),
-      images: post.coverImageUrl ? [{ url: post.coverImageUrl }] : [],
+      images: [{ url: post.coverImageUrl ?? DEFAULT_OG_IMAGE }],
     },
     twitter: {
       card: "summary_large_image",
       title: post.title,
       description: post.excerpt ?? undefined,
-      images: post.coverImageUrl ? [post.coverImageUrl] : [],
+      images: [post.coverImageUrl ?? DEFAULT_OG_IMAGE],
     },
   };
 }
@@ -67,14 +71,19 @@ export default async function BlogPostPage({
   if (!post) notFound();
 
   const canonicalUrl = canonicalUrlFor(slug);
+  const headings = extractHeadings(post.content);
+  const minutes = readingTimeMinutes(post.content);
+  const wordCount = post.content.split(/\s+/).filter(Boolean).length;
+
   const blogPostingJsonLd = {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
     headline: post.title,
     description: post.excerpt ?? undefined,
-    image: post.coverImageUrl ? [post.coverImageUrl] : undefined,
+    image: [post.coverImageUrl ?? DEFAULT_OG_IMAGE],
     datePublished: post.publishedAt?.toISOString(),
     dateModified: (post.updatedAt ?? post.publishedAt)?.toISOString(),
+    wordCount,
     author: {
       "@type": "Person",
       name: post.authorName,
@@ -93,16 +102,39 @@ export default async function BlogPostPage({
     },
   };
 
+  const breadcrumbJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      {
+        "@type": "ListItem",
+        position: 1,
+        name: "Blog",
+        item: "https://octopus-review.ai/blog",
+      },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: post.title,
+        item: canonicalUrl,
+      },
+    ],
+  };
+
   return (
     <div className="min-h-screen bg-[#0c0c0c] text-white">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(blogPostingJsonLd) }}
       />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
       <LandingDesktopNav isLoggedIn={isLoggedIn} />
       <LandingMobileNav isLoggedIn={isLoggedIn} />
 
-      <article className="mx-auto max-w-3xl px-6 pt-32 pb-20">
+      <div className="mx-auto max-w-6xl px-6 pt-32 pb-20">
         <Link
           href="/blog"
           className="mb-8 inline-flex items-center gap-1.5 text-sm text-[#555] transition-colors hover:text-white"
@@ -111,39 +143,62 @@ export default async function BlogPostPage({
           Back to Blog
         </Link>
 
-        {post.coverImageUrl && (
-          <img
-            src={post.coverImageUrl}
-            alt={`Cover image for "${post.title}"`}
-            width={1200}
-            height={630}
-            loading="eager"
-            fetchPriority="high"
-            decoding="async"
-            className="mb-8 aspect-[1200/630] w-full rounded-xl object-cover"
-          />
-        )}
+        <div className="gap-12 lg:grid lg:grid-cols-[minmax(0,1fr)_15rem]">
+          <article className="min-w-0 max-w-3xl">
+            {post.coverImageUrl && (
+              <img
+                src={post.coverImageUrl}
+                alt={`Cover image for "${post.title}"`}
+                width={1200}
+                height={630}
+                loading="eager"
+                fetchPriority="high"
+                decoding="async"
+                className="mb-8 aspect-[1200/630] w-full rounded-xl object-cover"
+              />
+            )}
 
-        <h1 className="mb-4 text-4xl font-bold tracking-tight">{post.title}</h1>
+            <h1 className="mb-4 text-4xl font-bold tracking-tight">{post.title}</h1>
 
-        <div className="mb-10 flex items-center gap-3 text-sm text-[#555]">
-          <span>{post.authorName}</span>
-          <span>·</span>
-          <time>
-            {post.publishedAt
-              ? new Date(post.publishedAt).toLocaleDateString("en-US", {
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                })
-              : ""}
-          </time>
+            <div className="mb-10 flex flex-wrap items-center gap-3 text-sm text-[#555]">
+              <span>{post.authorName}</span>
+              <span aria-hidden="true">·</span>
+              <time>
+                {post.publishedAt
+                  ? new Date(post.publishedAt).toLocaleDateString("en-US", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    })
+                  : ""}
+              </time>
+              <span aria-hidden="true">·</span>
+              <span>{minutes} min read</span>
+            </div>
+
+            {headings.length >= 2 && (
+              <details className="mb-8 rounded-lg border border-white/[0.08] p-4 lg:hidden">
+                <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.2em] text-[#888]">
+                  On this page
+                </summary>
+                <div className="mt-4">
+                  <BlogToc headings={headings} />
+                </div>
+              </details>
+            )}
+
+            <div className="text-[#a0a0a0] [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_strong]:text-white [&_a]:text-[#10D8BE] [&_code]:bg-white/[0.06] [&_pre]:bg-white/[0.04] [&_pre]:border [&_pre]:border-white/[0.06] [&_blockquote]:border-[#333] [&_th]:border-[#333] [&_td]:border-[#333] [&_hr]:border-[#333] [&_table]:border-[#333]">
+              <BlogContent content={post.content} />
+            </div>
+          </article>
+
+          <aside className="hidden lg:block">
+            <div className="sticky top-28">
+              <BlogToc headings={headings} />
+            </div>
+          </aside>
         </div>
-
-        <div className="text-[#a0a0a0] [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_strong]:text-white [&_a]:text-[#10D8BE] [&_code]:bg-white/[0.06] [&_pre]:bg-white/[0.04] [&_pre]:border [&_pre]:border-white/[0.06] [&_blockquote]:border-[#333] [&_th]:border-[#333] [&_td]:border-[#333] [&_hr]:border-[#333] [&_table]:border-[#333]">
-          <BlogContent content={post.content} />
-        </div>
-      </article>
+      </div>
 
       <LandingFooter />
       <ScrollToTop />

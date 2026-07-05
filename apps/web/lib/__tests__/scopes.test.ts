@@ -39,6 +39,11 @@ describe("hasScopes (deny-by-default)", () => {
     expect(hasScopes(["blog"], "blog:read")).toBe(false);
     expect(hasScopes(["blog:*"], "blog:read")).toBe(false);
   });
+
+  it("does not vacuously pass when no scope is required", () => {
+    expect(hasScopes(["blog:read"])).toBe(false);
+    expect(hasScopes([])).toBe(false);
+  });
 });
 
 describe("ALL_SCOPES", () => {

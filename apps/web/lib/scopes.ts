@@ -41,6 +41,9 @@ export function hasScopes(
   tokenScopes: string[] | null | undefined,
   ...required: string[]
 ): boolean {
+  // Deny-by-default: an empty `required` list must NOT vacuously pass
+  // (`[].every()` is true) — a scope check with nothing to check is a bug.
+  if (required.length === 0) return false;
   if (!tokenScopes || tokenScopes.length === 0) return false;
   return required.every((r) => tokenScopes.includes(r));
 }

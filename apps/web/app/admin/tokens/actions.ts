@@ -27,7 +27,7 @@ export async function createServiceToken(
   }
 
   const token = generateServiceToken();
-  await prisma.serviceToken.create({
+  const created = await prisma.serviceToken.create({
     data: {
       name,
       tokenHash: hashToken(token),
@@ -38,6 +38,10 @@ export async function createServiceToken(
   });
 
   revalidatePath("/admin/tokens");
+  // Audit the mint (actor + prefix + scopes only — never the plaintext token).
+  console.log(
+    `[service-token] actor=${sa.id} action=create id=${created.id} prefix=${created.tokenPrefix} scopes=${scopes.join(",")}`,
+  );
   // The plaintext token is returned ONCE for display and never persisted/logged.
   return { ok: true, token };
 }
@@ -45,10 +49,14 @@ export async function createServiceToken(
 export async function revokeServiceToken(id: string): Promise<{ ok: boolean }> {
   const sa = await getSuperAdmin();
   if (!sa) return { ok: false };
-  await prisma.serviceToken.update({
-    where: { id },
+  // updateMany (not update) so a stale/already-revoked id is a no-op instead of
+  // throwing P2025; only flip tokens that are still active.
+  const { count } = await prisma.serviceToken.updateMany({
+    where: { id, deletedAt: null },
     data: { deletedAt: new Date() },
   });
+  if (count === 0) return { ok: false };
   revalidatePath("/admin/tokens");
+  console.log(`[service-token] actor=${sa.id} action=revoke id=${id}`);
   return { ok: true };
 }

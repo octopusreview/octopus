@@ -122,10 +122,11 @@ cd octopus
 cp .env.example .env
 # Edit .env with your API keys and configuration
 
-# Build (the build arg compiles in email/password login for self-hosted
-# instances) and start all services (PostgreSQL, Qdrant, Web)
-docker compose build --build-arg NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true
-docker compose up -d
+# Pull the prebuilt public image + start all services (PostgreSQL, Qdrant, Web).
+# The image bakes in email/password login for self-hosted instances — no build.
+export OCTOPUS_VERSION=latest   # or a pinned release, e.g. 1.0.27
+docker compose -f docker-compose.selfhost.yml pull
+docker compose -f docker-compose.selfhost.yml up -d
 
 # Run database migrations — from the checkout, not inside the container
 # (the runtime image ships only the compiled app, no prisma/schema)
@@ -136,7 +137,10 @@ cd ../..
 
 Octopus will be available at `http://localhost:43300`.
 
-See [docker-compose.yml](docker-compose.yml) for service configuration.
+Prefer to build from source? Use `docker-compose.yml` with
+`docker compose build --build-arg NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true`.
+See [docker-compose.selfhost.yml](docker-compose.selfhost.yml) (pull) and
+[docker-compose.yml](docker-compose.yml) (build) for service configuration.
 
 ## How It Works
 

@@ -58,31 +58,32 @@ cd octopus`}</CodeBlock>
           </Paragraph>
         </Step>
 
-        <Step number={3} title="Review the bundled docker-compose.yml">
+        <Step number={3} title="Review docker-compose.selfhost.yml">
           <Paragraph>
-            The repository&apos;s <Mono>docker-compose.yml</Mono> is the source of
-            truth — it runs the <Mono>web</Mono> service, PostgreSQL, and Qdrant
-            together and wires the database and Qdrant URLs for Docker&apos;s
-            internal network. It publishes the app on{" "}
-            <Mono>43300:3000</Mono>, uses <Mono>postgres:17-alpine</Mono> (host
-            port <Mono>43332</Mono>) and <Mono>qdrant/qdrant:v1.17.0</Mono> (host
-            port <Mono>43333</Mono>), and sets{" "}
-            <Mono>ENABLE_REVIEW_WORKERS=true</Mono>. There is nothing to copy or
-            edit here — use the file as-is.
+            Use the repository&apos;s <Mono>docker-compose.selfhost.yml</Mono> — it
+            pulls the prebuilt public image{" "}
+            <Mono>ghcr.io/octopusreview/octopus-selfhost</Mono> (no local build)
+            and runs the <Mono>web</Mono> service, PostgreSQL, and Qdrant together
+            with the database and Qdrant URLs wired for Docker&apos;s internal
+            network. It publishes the app on <Mono>43300:3000</Mono>, uses{" "}
+            <Mono>postgres:17-alpine</Mono> (host port <Mono>43332</Mono>) and{" "}
+            <Mono>qdrant/qdrant:v1.17.0</Mono> (host port <Mono>43333</Mono>).
+            Pin a release with <Mono>OCTOPUS_VERSION</Mono> (defaults to{" "}
+            <Mono>latest</Mono>). Use it as-is.
           </Paragraph>
         </Step>
 
-        <Step number={4} title="Build and run">
-          <CodeBlock>{`docker compose build --build-arg NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true
-docker compose up -d`}</CodeBlock>
+        <Step number={4} title="Pull and run">
+          <CodeBlock>{`export OCTOPUS_VERSION=latest   # or a pinned release, e.g. 1.0.27
+docker compose -f docker-compose.selfhost.yml pull
+docker compose -f docker-compose.selfhost.yml up -d`}</CodeBlock>
           <Paragraph>
-            First run will build the Octopus image from source — this may take a
-            few minutes. Subsequent starts use the cached image.
-          </Paragraph>
-          <Paragraph>
-            Without <Mono>NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true</Mono> baked in at
-            build time, email/password sign-in is compiled out and the first-boot
-            admin cannot log in.
+            The public image is built with{" "}
+            <Mono>NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true</Mono> already baked in, so
+            email/password sign-in and the first-boot admin work out of the box —
+            no build step and no build args needed. (To build from source instead,
+            use <Mono>docker-compose.yml</Mono> with{" "}
+            <Mono>docker compose build --build-arg NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true</Mono>.)
           </Paragraph>
         </Step>
 
@@ -256,18 +257,19 @@ bun run start`}</CodeBlock>
 
         <Step number={1} title="Upgrade">
           <Paragraph>
-            Pull the new code, rebuild the image, restart, then apply migrations.
-            Octopus migrations are <strong>additive (expand-only)</strong> and
-            therefore backward-compatible — the previous image keeps working
-            against the new schema, which is exactly what makes the rollback
-            below safe.
+            Check out the new tag (for the compose file + migration files), pull
+            the new image, apply migrations, then roll. Octopus migrations are{" "}
+            <strong>additive (expand-only)</strong> and therefore
+            backward-compatible — the previous image keeps working against the new
+            schema, which is exactly what makes the rollback below safe.
           </Paragraph>
-          <CodeBlock>{`git pull                       # or: git fetch --tags && git checkout vX.Y.Z
-docker compose build --build-arg NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true
+          <CodeBlock>{`git fetch --tags && git checkout vX.Y.Z
+export OCTOPUS_VERSION=X.Y.Z
+docker compose -f docker-compose.selfhost.yml pull
 # migrate FIRST (expand-only, safe under the still-running old version) ...
 cd packages/db && DATABASE_URL=postgresql://octopus:octopus@localhost:43332/octopus bunx prisma migrate deploy && cd ../..
-# ... then start the new version
-docker compose up -d`}</CodeBlock>
+# ... then roll to the new version
+docker compose -f docker-compose.selfhost.yml up -d`}</CodeBlock>
         </Step>
 
         <Step number={2} title="Verify before sending traffic">
@@ -280,14 +282,15 @@ curl -fsS http://localhost:43300/api/version   # confirm the new version`}</Code
 
         <Step number={3} title="Roll back (if needed)">
           <Paragraph>
-            Check out the <strong>previous</strong> release tag, rebuild, and
-            restart. <strong>Do not roll back the database.</strong> Because every
-            migration is additive, the older image runs fine against the newer
-            schema, so you keep all data and avoid a risky down-migration.
+            Point <Mono>OCTOPUS_VERSION</Mono> at the <strong>previous</strong>{" "}
+            release and roll. <strong>Do not roll back the database.</strong>{" "}
+            Because every migration is additive, the older image runs fine against
+            the newer schema, so you keep all data and avoid a risky
+            down-migration.
           </Paragraph>
-          <CodeBlock>{`git checkout vX.Y.Z            # the previous release tag
-docker compose build --build-arg NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true
-docker compose up -d`}</CodeBlock>
+          <CodeBlock>{`export OCTOPUS_VERSION=X.Y.Z    # the previous release
+docker compose -f docker-compose.selfhost.yml pull
+docker compose -f docker-compose.selfhost.yml up -d`}</CodeBlock>
         </Step>
 
         <Paragraph>

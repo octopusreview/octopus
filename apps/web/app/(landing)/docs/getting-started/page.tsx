@@ -236,7 +236,7 @@ export default function GettingStartedPage() {
             description="Start an interactive chat session about your codebase. Ask questions, explore architecture."
           />
           <CommandRow
-            command="octp review 42"
+            command="octp review --pr 42"
             description="Trigger an AI review on any pull request by number or URL."
           />
           <CommandRow
@@ -266,7 +266,7 @@ export default function GettingStartedPage() {
         </div>
         <Paragraph>
           Install with{" "}
-          <Code>npm install -g @octp/cli</Code> and run{" "}
+          <Code>curl -fsSL https://octopus-review.ai/install.sh | bash</Code> and run{" "}
           <Code>octp login</Code> to get started. See the full{" "}
           <DocLink href="/docs/cli">CLI reference</DocLink> for all commands.
         </Paragraph>

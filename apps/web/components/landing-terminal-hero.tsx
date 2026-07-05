@@ -112,7 +112,7 @@ export function LandingTerminalHero({ className = "" }: { className?: string }) 
   return (
     <div
       aria-hidden="true"
-      className={`overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0a0a0a] shadow-2xl shadow-black/40 ${className}`}
+      className={`min-w-0 overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0a0a0a] shadow-2xl shadow-black/40 ${className}`}
     >
       <style>{`@media (prefers-reduced-motion: no-preference){@keyframes octpBlink{0%,49%{opacity:1}50%,100%{opacity:0}}}`}</style>
       {/* window chrome */}
@@ -134,7 +134,7 @@ export function LandingTerminalHero({ className = "" }: { className?: string }) 
         className="h-[300px] overflow-hidden px-4 py-3.5 font-mono text-[12.5px] leading-[1.7] sm:h-[340px] sm:text-[13px]"
       >
         {lines.map((line, i) => (
-          <div key={i} className={`whitespace-pre-wrap ${TONE_CLASS[line.tone]}`}>
+          <div key={i} className={`whitespace-pre-wrap break-words ${TONE_CLASS[line.tone]}`}>
             {line.tone === "cmd" ? (
               <>
                 <span className="text-[#10d8be]/80">$</span> {line.text}
@@ -145,7 +145,7 @@ export function LandingTerminalHero({ className = "" }: { className?: string }) 
           </div>
         ))}
         {/* active prompt + caret */}
-        <div className="whitespace-pre-wrap text-white">
+        <div className="whitespace-pre-wrap break-words text-white">
           <span className="text-[#10d8be]/80">$</span> {active ?? ""}
           <span
             className="ml-px inline-block h-[1.05em] w-[7px] translate-y-[2px] bg-[#10d8be]"

@@ -72,7 +72,7 @@ const integrationFaqs = [
   },
   {
     q: "Is there a CLI?",
-    a: "Yes. The Octopus CLI lets you trigger reviews, index repositories, check usage, and chat with your codebase — all from the terminal. Install it with npm install -g @octp/cli.",
+    a: "Yes. The Octopus CLI lets you trigger reviews, index repositories, check usage, and chat with your codebase — all from the terminal. Install it with curl -fsSL https://octopus-review.ai/install.sh | bash.",
   },
 ];
 

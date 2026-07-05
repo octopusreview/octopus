@@ -5,7 +5,6 @@ import { IconCopy, IconCheck, IconTerminal2 } from "@tabler/icons-react";
 import { TrackedLink } from "@/components/tracked-link";
 
 type Platform = "mac-linux" | "windows";
-type Method = "one-liner" | "npm";
 
 const DEFAULT_BASE_URL = "https://octopus-review.ai";
 
@@ -32,27 +31,15 @@ const STATIC_BASE_URL = safeBaseUrl(process.env.NEXT_PUBLIC_APP_URL) ?? DEFAULT_
 
 function buildInstallCommands(
   baseUrl: string,
-): Record<Platform, Record<Method, { comment: string; command: string }>> {
+): Record<Platform, { comment: string; command: string }> {
   return {
     "mac-linux": {
-      "one-liner": {
-        comment: "# Works on macOS & Linux. Installs everything.",
-        command: `curl -fsSL ${baseUrl}/install.sh | bash`,
-      },
-      npm: {
-        comment: "# Requires Node.js 18+",
-        command: "npm install -g @octp/cli",
-      },
+      comment: "# Works on macOS & Linux. Installs everything — no Node.js needed.",
+      command: `curl -fsSL ${baseUrl}/install.sh | bash`,
     },
     windows: {
-      "one-liner": {
-        comment: "# Works on Windows. If you use ARM Windows, use the npm installer.",
-        command: `powershell -c "irm ${baseUrl}/install.ps1 | iex"`,
-      },
-      npm: {
-        comment: "# Requires Node.js 18+",
-        command: "npm install -g @octp/cli",
-      },
+      comment: "# Works on Windows (PowerShell). Installs everything for you.",
+      command: `powershell -c "irm ${baseUrl}/install.ps1 | iex"`,
     },
   };
 }
@@ -60,11 +47,6 @@ function buildInstallCommands(
 const platformLabels: Record<Platform, string> = {
   "mac-linux": "macOS/Linux",
   windows: "Windows",
-};
-
-const methodLabels: Record<Method, string> = {
-  "one-liner": "One-liner",
-  npm: "npm",
 };
 
 function detectPlatform(): Platform | null {
@@ -75,15 +57,8 @@ function detectPlatform(): Platform | null {
   return null;
 }
 
-function detectWindowsArm(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const ua = navigator.userAgent.toLowerCase();
-  return ua.includes("windows") && (ua.includes("arm") || ua.includes("aarch64"));
-}
-
 export function CliInstallSection({ embedded = false }: { embedded?: boolean } = {}) {
   const [platform, setPlatform] = useState<Platform>("mac-linux");
-  const [method, setMethod] = useState<Method>("one-liner");
   const [copied, setCopied] = useState(false);
   const [baseUrl, setBaseUrl] = useState<string>(STATIC_BASE_URL);
   const didDetect = useRef(false);
@@ -95,16 +70,12 @@ export function CliInstallSection({ embedded = false }: { embedded?: boolean } =
     const detected = detectPlatform();
     if (detected) setPlatform(detected);
 
-    if (detected === "windows" && detectWindowsArm()) {
-      setMethod("npm");
-    }
-
     const origin = safeBaseUrl(window.location?.origin);
     if (origin) setBaseUrl(origin);
   }, []);
 
   const installCommands = buildInstallCommands(baseUrl);
-  const current = installCommands[platform][method];
+  const current = installCommands[platform];
 
   async function handleCopy() {
     try {
@@ -118,7 +89,7 @@ export function CliInstallSection({ embedded = false }: { embedded?: boolean } =
 
   const content = (
     <>
-      <div className={embedded ? "mx-auto max-w-3xl" : "mx-auto max-w-3xl"}>
+      <div className="mx-auto max-w-3xl">
         {!embedded && (
           <div className="mx-auto max-w-2xl text-center">
             <span className="text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
@@ -144,74 +115,32 @@ export function CliInstallSection({ embedded = false }: { embedded?: boolean } =
 
         {/* Terminal card */}
         <div className={`${embedded ? "" : "mt-12 "}overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0c0c0c]`}>
-          {/* Top bar: platform tabs + method tabs */}
-          <div className="flex flex-col gap-0 border-b border-white/[0.06] sm:flex-row sm:items-center sm:justify-between">
-            {/* Platform tabs */}
-            <div className="flex items-center gap-0 border-b border-white/[0.06] sm:border-b-0">
-              {/* Traffic lights */}
-              <div className="flex items-center gap-1.5 px-4">
-                <span className="size-2.5 rounded-full bg-[#ff5f57]" />
-                <span className="size-2.5 rounded-full bg-[#febc2e]" />
-                <span className="size-2.5 rounded-full bg-[#28c840]" />
-              </div>
-              {(["mac-linux", "windows"] as Platform[]).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPlatform(p)}
-                  className={`px-4 py-3 text-xs font-medium transition-colors ${
-                    platform === p
-                      ? "bg-white/[0.06] text-white"
-                      : "text-[#555] hover:text-[#888]"
-                  }`}
-                >
-                  {platformLabels[p]}
-                </button>
-              ))}
+          {/* Top bar: platform tabs */}
+          <div className="flex items-center gap-0 border-b border-white/[0.06]">
+            {/* Traffic lights */}
+            <div className="flex items-center gap-1.5 px-4">
+              <span className="size-2.5 rounded-full bg-[#ff5f57]" />
+              <span className="size-2.5 rounded-full bg-[#febc2e]" />
+              <span className="size-2.5 rounded-full bg-[#28c840]" />
             </div>
-
-            {/* Method tabs */}
-            <div className="flex items-center gap-0">
-              {(["one-liner", "npm"] as Method[]).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMethod(m)}
-                  className={`px-4 py-3 text-xs font-medium transition-colors ${
-                    method === m
-                      ? "text-white"
-                      : "text-[#555] hover:text-[#888]"
-                  }`}
-                >
-                  <span
-                    className={`rounded-full px-3 py-1 ${
-                      method === m
-                        ? "bg-[#10D8BE]/20 text-[#10D8BE]"
-                        : ""
-                    }`}
-                  >
-                    {methodLabels[m]}
-                  </span>
-                </button>
-              ))}
-            </div>
+            {(["mac-linux", "windows"] as Platform[]).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPlatform(p)}
+                className={`px-4 py-3 text-xs font-medium transition-colors ${
+                  platform === p
+                    ? "bg-white/[0.06] text-white"
+                    : "text-[#555] hover:text-[#888]"
+                }`}
+              >
+                {platformLabels[p]}
+              </button>
+            ))}
           </div>
 
           {/* Code area */}
           <div className="relative px-6 py-6">
-            <p className="font-mono text-sm text-[#555]">
-              {platform === "windows" && method === "one-liner" ? (
-                <>
-                  # Works on Windows x86. ARM?{" "}
-                  <button
-                    onClick={() => setMethod("npm")}
-                    className="text-[#10D8BE] underline decoration-[#10D8BE]/30 underline-offset-2 transition-colors hover:decoration-[#10D8BE]"
-                  >
-                    Switch to npm
-                  </button>
-                </>
-              ) : (
-                current.comment
-              )}
-            </p>
+            <p className="font-mono text-sm text-[#555]">{current.comment}</p>
             <div className="mt-3 flex items-start gap-3">
               <span className="select-none font-mono text-sm text-[#10D8BE]">$</span>
               <code className="flex-1 break-all font-mono text-sm text-[#e0e0e0]">
@@ -234,10 +163,7 @@ export function CliInstallSection({ embedded = false }: { embedded?: boolean } =
 
         {/* Bottom note */}
         <p className="mt-4 text-center text-xs text-[#555]">
-          Works on macOS, Windows & Linux.{" "}
-          {method === "one-liner"
-            ? "The one-liner installs Node.js and everything else for you."
-            : "Requires Node.js 18+ installed."}
+          Works on macOS, Windows &amp; Linux. The installer sets up everything for you.
         </p>
 
         {/* Docs link */}

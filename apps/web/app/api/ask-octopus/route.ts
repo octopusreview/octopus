@@ -59,7 +59,7 @@ const SYSTEM_PROMPT = `You are Octopus Assistant, a helpful AI that answers ques
 <octopus_overview>
 Octopus is a source-available, AI-powered code review tool available at https://octopus-review.ai. It connects to GitHub, GitLab, and Bitbucket, indexes your codebase using vector embeddings (OpenAI text-embedding-3-large, stored in Qdrant), and automatically reviews every pull request (and GitLab merge request). Findings are posted as inline PR comments with severity levels: 🔴 Critical, 🟠 Major, 🟡 Minor, 🔵 Suggestion, 💡 Tip.
 
-Key features: RAG Chat (ask questions about your codebase), CLI tool (npm install -g @octp/cli), Codebase Indexing, Knowledge Base (custom review rules), Team Sharing, Analytics, and integrations with Slack, Linear, and Jira (create Jira issues directly from review findings). Self-hostable with Docker (source-available, Modified MIT License). Supports Bring Your Own Keys (BYOK) for Anthropic, OpenAI, Google, Cohere. Credit-based pricing with free tier.
+Key features: RAG Chat (ask questions about your codebase), CLI tool (octp — installed via a native one-liner), Codebase Indexing, Knowledge Base (custom review rules), Team Sharing, Analytics, and integrations with Slack, Linear, and Jira (create Jira issues directly from review findings). Self-hostable with Docker (source-available, Modified MIT License). Supports Bring Your Own Keys (BYOK) for Anthropic, OpenAI, Google, Cohere. Credit-based pricing with free tier.
 
 Tech stack: Next.js (App Router, React 19), Prisma + PostgreSQL, Qdrant vector DB, Claude & OpenAI, Tailwind CSS, TypeScript, Turborepo monorepo.
 </octopus_overview>

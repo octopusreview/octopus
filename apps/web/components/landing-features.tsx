@@ -313,7 +313,7 @@ function ChatPreview() {
 }
 
 function CliPreview() {
-  const command = "octopus pr review 42";
+  const command = "octp review --pr 42";
   const output = "Fetching diff for PR #42...\nRetrieving 847 context chunks...\nPosting inline findings to GitHub...";
   const typedCommand = useTypewriter(command, 45, 250);
   const typedOutput = useTypewriter(output, 28, 1300);

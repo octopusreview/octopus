@@ -90,7 +90,7 @@ function AuthorizeContent() {
           <CardHeader>
             <CardTitle>Invalid Request</CardTitle>
             <CardDescription>
-              Missing device code. Please run <code>octopus login</code> from your terminal.
+              Missing device code. Please run <code>octp login</code> from your terminal.
             </CardDescription>
           </CardHeader>
         </Card>

@@ -21,6 +21,16 @@ import { readingTimeMinutes } from "@/lib/blog-reading";
 
 const APPLY = process.argv.includes("--apply");
 
+// Keep in sync with the allowlist in app/api/blog/route.ts.
+const BLOG_CATEGORIES = ["Engineering", "Product", "Company", "Security", "Guides"] as const;
+function normalizeCategory(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const match = BLOG_CATEGORIES.find(
+    (c) => c.toLowerCase() === value.trim().toLowerCase(),
+  );
+  return match ?? null;
+}
+
 interface GeneratedSeo {
   category: string | null;
   tags: string[];
@@ -46,8 +56,7 @@ async function generateSeo(content: string): Promise<GeneratedSeo> {
     const text = response.content[0].type === "text" ? response.content[0].text.trim() : "";
     const cleaned = text.replace(/```(?:json)?/gi, "").trim();
     const parsed = JSON.parse(cleaned) as { category?: string; tags?: string[] };
-    const category =
-      typeof parsed.category === "string" && parsed.category.trim() ? parsed.category.trim() : null;
+    const category = normalizeCategory(parsed.category);
     const tags = Array.isArray(parsed.tags)
       ? [...new Set(parsed.tags.map((t) => String(t).trim().toLowerCase()).filter(Boolean))].slice(0, 6)
       : [];

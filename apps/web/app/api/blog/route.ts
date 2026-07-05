@@ -34,6 +34,18 @@ function slugify(text: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+// Canonical blog categories. Author- and LLM-supplied values are matched
+// case-insensitively against this allowlist; anything else becomes null so the
+// sidebar only ever shows known categories.
+const BLOG_CATEGORIES = ["Engineering", "Product", "Company", "Security", "Guides"] as const;
+function normalizeCategory(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const match = BLOG_CATEGORIES.find(
+    (c) => c.toLowerCase() === value.trim().toLowerCase(),
+  );
+  return match ?? null;
+}
+
 export async function GET(request: NextRequest) {
   const token = await authenticateBlogToken(request);
   if (!token) {
@@ -146,7 +158,7 @@ export async function POST(request: NextRequest) {
     let finalTags = Array.isArray(tags)
       ? [...new Set(tags.map((t) => String(t).trim().toLowerCase()).filter(Boolean))].slice(0, 6)
       : [];
-    let finalCategory = category?.trim() ? category.trim() : null;
+    let finalCategory = normalizeCategory(category);
 
     // Generate SEO metadata (excerpt / category / tags) if requested and any
     // piece is missing. One Anthropic call fills ONLY the gaps; generation
@@ -176,15 +188,15 @@ export async function POST(request: NextRequest) {
           if (!finalExcerpt && typeof parsed.excerpt === "string" && parsed.excerpt.trim()) {
             finalExcerpt = parsed.excerpt.trim();
           }
-          if (finalCategory === null && typeof parsed.category === "string" && parsed.category.trim()) {
-            finalCategory = parsed.category.trim();
+          if (finalCategory === null && typeof parsed.category === "string") {
+            finalCategory = normalizeCategory(parsed.category);
           }
           if (finalTags.length === 0 && Array.isArray(parsed.tags)) {
             finalTags = [...new Set(parsed.tags.map((t) => String(t).trim().toLowerCase()).filter(Boolean))].slice(0, 6);
           }
         } catch {
-          // Not valid JSON — fall back to the original excerpt-only behavior.
-          if (!finalExcerpt && text) finalExcerpt = text;
+          // Model didn't return valid JSON — skip generated metadata rather
+          // than storing raw model output as the excerpt.
         }
       } catch {
         // SEO generation failed, continue without generated metadata

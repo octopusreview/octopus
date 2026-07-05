@@ -9,8 +9,44 @@ import { LandingDesktopNav } from "@/components/landing-desktop-nav";
 import { IconChevronLeft, IconChevronRight, IconX } from "@tabler/icons-react";
 import { BlogSearch } from "@/components/blog-search";
 import { ScrollToTop } from "@/components/scroll-to-top";
+import { unstable_cache } from "next/cache";
 
 const POSTS_PER_PAGE = 10;
+
+// Sidebar taxonomy (categories + tag cloud) is identical across every /blog
+// request and changes only when posts change, so cache it (revalidated hourly)
+// instead of scanning every published post on each request. A short window is
+// fine for a blog sidebar; new posts show up within the hour.
+const getBlogTaxonomy = unstable_cache(
+  async () => {
+    const where = { status: "published" as const, deletedAt: null };
+    const [categoryGroups, tagRows] = await Promise.all([
+      prisma.blogPost.groupBy({
+        by: ["category"],
+        where,
+        _count: { _all: true },
+      }),
+      prisma.blogPost.findMany({ where, select: { tags: true } }),
+    ]);
+
+    const categories = categoryGroups
+      .map((g) => ({ name: g.category, count: g._count._all }))
+      .filter((c): c is { name: string; count: number } => c.name != null)
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
+    const tagFreq = new Map<string, number>();
+    for (const row of tagRows) {
+      for (const t of row.tags) tagFreq.set(t, (tagFreq.get(t) ?? 0) + 1);
+    }
+    const tagCloud = [...tagFreq.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
+    return { categories, tagCloud };
+  },
+  ["blog-taxonomy"],
+  { revalidate: 3600 },
+);
 
 export const metadata: Metadata = {
   title: "Blog — Octopus",
@@ -78,7 +114,7 @@ export default async function BlogPage({
     ...(tag ? { tags: { has: tag } } : {}),
   };
 
-  const [posts, totalCount, categoryGroups, tagRows] = await Promise.all([
+  const [posts, totalCount] = await Promise.all([
     prisma.blogPost.findMany({
       where,
       orderBy: { publishedAt: "desc" },
@@ -95,30 +131,11 @@ export default async function BlogPage({
       },
     }),
     prisma.blogPost.count({ where }),
-    prisma.blogPost.groupBy({
-      by: ["category"],
-      where: baseWhere,
-      _count: { _all: true },
-    }),
-    prisma.blogPost.findMany({ where: baseWhere, select: { tags: true } }),
   ]);
 
   const totalPages = Math.ceil(totalCount / POSTS_PER_PAGE);
 
-  // Distinct categories + counts across all published posts (null ignored).
-  const categories = categoryGroups
-    .map((g) => ({ name: g.category, count: g._count._all }))
-    .filter((c): c is { name: string; count: number } => c.name != null)
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-
-  // Tag frequency across all published posts, for the weighted tag cloud.
-  const tagFreq = new Map<string, number>();
-  for (const row of tagRows) {
-    for (const t of row.tags) tagFreq.set(t, (tagFreq.get(t) ?? 0) + 1);
-  }
-  const tagCloud = [...tagFreq.entries()]
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  const { categories, tagCloud } = await getBlogTaxonomy();
   const maxTagCount = tagCloud.length ? tagCloud[0].count : 0;
   const minTagCount = tagCloud.length ? tagCloud[tagCloud.length - 1].count : 0;
 

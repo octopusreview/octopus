@@ -927,11 +927,15 @@ model BlogPost {
   publishedAt   DateTime?
   authorId      String
   authorName    String
+  tags          String[]  @default([])
+  category      String?
+  readingTime   Int? // whole minutes, precomputed on write
   deletedAt     DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   @@index([status, publishedAt])
+  @@index([status, category])
   @@map("blog_posts")
 }
 

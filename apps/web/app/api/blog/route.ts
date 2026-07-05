@@ -3,6 +3,7 @@ import { prisma } from "@octopus/db";
 import { createHash } from "crypto";
 import { revalidatePath } from "next/cache";
 import Anthropic from "@anthropic-ai/sdk";
+import { readingTimeMinutes } from "@/lib/blog-reading";
 
 async function authenticateBlogToken(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -108,6 +109,8 @@ export async function POST(request: NextRequest) {
       authorName = "Octopus Team",
       status = "draft",
       generateSeo = false,
+      tags,
+      category,
     } = body as {
       title?: string;
       slug?: string;
@@ -117,6 +120,8 @@ export async function POST(request: NextRequest) {
       authorName?: string;
       status?: string;
       generateSeo?: boolean;
+      tags?: string[];
+      category?: string;
     };
 
     if (!title || !content) {
@@ -137,29 +142,57 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate SEO excerpt if requested and not provided
+    // Sanitize taxonomy inputs (author-provided values win over generation)
+    let finalTags = Array.isArray(tags)
+      ? [...new Set(tags.map((t) => String(t).trim().toLowerCase()).filter(Boolean))].slice(0, 6)
+      : [];
+    let finalCategory = category?.trim() ? category.trim() : null;
+
+    // Generate SEO metadata (excerpt / category / tags) if requested and any
+    // piece is missing. One Anthropic call fills ONLY the gaps; generation
+    // failures must never block post creation.
     let finalExcerpt = excerpt;
-    if (generateSeo && !excerpt) {
+    if (generateSeo && (!finalExcerpt || finalTags.length === 0 || finalCategory === null)) {
       try {
         const client = new Anthropic();
         const response = await client.messages.create({
           model: "claude-sonnet-4-6",
-          max_tokens: 200,
+          max_tokens: 300,
           messages: [
             {
               role: "user",
-              content: `Write a concise SEO-friendly excerpt (max 150 characters) for this blog post. Return ONLY the excerpt text, nothing else.\n\n${content.slice(0, 4000)}`,
+              content: `Generate SEO metadata for this blog post. Return ONLY minified JSON, no prose or code fences, of the exact shape: {"excerpt": string (<=150 chars), "category": one of ["Engineering","Product","Company","Security","Guides"], "tags": 3-6 short lowercase topic strings}.\n\n${content.slice(0, 4000)}`,
             },
           ],
         });
         const text = response.content[0].type === "text" ? response.content[0].text.trim() : "";
-        if (text) finalExcerpt = text;
+        const cleaned = text.replace(/```(?:json)?/gi, "").trim();
+        try {
+          const parsed = JSON.parse(cleaned) as {
+            excerpt?: string;
+            category?: string;
+            tags?: string[];
+          };
+          if (!finalExcerpt && typeof parsed.excerpt === "string" && parsed.excerpt.trim()) {
+            finalExcerpt = parsed.excerpt.trim();
+          }
+          if (finalCategory === null && typeof parsed.category === "string" && parsed.category.trim()) {
+            finalCategory = parsed.category.trim();
+          }
+          if (finalTags.length === 0 && Array.isArray(parsed.tags)) {
+            finalTags = [...new Set(parsed.tags.map((t) => String(t).trim().toLowerCase()).filter(Boolean))].slice(0, 6);
+          }
+        } catch {
+          // Not valid JSON — fall back to the original excerpt-only behavior.
+          if (!finalExcerpt && text) finalExcerpt = text;
+        }
       } catch {
-        // SEO generation failed, continue without excerpt
+        // SEO generation failed, continue without generated metadata
       }
     }
 
     const isPublished = status === "published";
+    const readingTime = readingTimeMinutes(content);
 
     const post = await prisma.blogPost.create({
       data: {
@@ -172,6 +205,9 @@ export async function POST(request: NextRequest) {
         publishedAt: isPublished ? new Date() : null,
         authorId: "api",
         authorName,
+        tags: finalTags,
+        category: finalCategory,
+        readingTime,
       },
     });
 
@@ -184,6 +220,8 @@ export async function POST(request: NextRequest) {
       slug: post.slug,
       status: post.status,
       excerpt: post.excerpt,
+      tags: post.tags,
+      category: post.category,
       url: `/blog/${post.slug}`,
     });
   } catch {

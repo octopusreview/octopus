@@ -26,14 +26,17 @@ const sections: SidebarSection[] = [
     ],
   },
   {
-    title: "Setup & Integrations",
+    title: "Cloud Setup",
     items: [
       { href: "/docs/github-action", label: "GitHub Action" },
       { href: "/docs/github-app", label: "GitHub App Setup" },
       { href: "/docs/oauth-setup", label: "Google & GitHub Login" },
       { href: "/docs/integrations", label: "Integrations" },
-      { href: "/docs/self-hosting", label: "Self-Hosting" },
     ],
+  },
+  {
+    title: "Self-Host",
+    items: [{ href: "/docs/self-hosting", label: "Self-Hosting" }],
   },
   {
     title: "Features",

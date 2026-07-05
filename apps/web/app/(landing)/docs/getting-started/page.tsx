@@ -16,6 +16,7 @@ import {
   IconServer,
   IconWand,
   IconBrain,
+  IconCloud,
 } from "@tabler/icons-react";
 
 export const metadata = {
@@ -67,6 +68,37 @@ export default function GettingStartedPage() {
             icon={<IconPlugConnected className="size-4" />}
             title="Works With Your Tools"
             description="GitHub, Bitbucket, Slack, Linear. Fits into your existing workflow."
+          />
+        </div>
+      </Section>
+
+      {/* Choose your path */}
+      <Section title="Choose Your Path">
+        <Paragraph>
+          Octopus comes two ways. Most teams use{" "}
+          <strong className="text-white">Cloud</strong> — fully hosted and set
+          up in minutes. If you&apos;d rather run everything on your own
+          infrastructure, the source-available{" "}
+          <strong className="text-white">Self-Host</strong> path is free.
+        </Paragraph>
+        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <PathCard
+            recommended
+            icon={<IconCloud className="size-5" />}
+            eyebrow="Cloud · Free to start"
+            title="Hosted for you"
+            description="Sign in, install the GitHub App, and Octopus reviews every pull request automatically. No servers to run, no maintenance."
+            links={[
+              { href: "/docs/github-app", label: "Install the GitHub App" },
+              { href: "/login", label: "Sign in" },
+            ]}
+          />
+          <PathCard
+            icon={<IconServer className="size-5" />}
+            eyebrow="Self-Host · Free"
+            title="Run it yourself"
+            description="Deploy Octopus with Docker on your own infrastructure. Free and source-available — you keep full control of your data."
+            links={[{ href: "/docs/self-hosting", label: "Self-hosting guide" }]}
           />
         </div>
       </Section>
@@ -392,6 +424,76 @@ function ProviderCard({
         <p className="mt-0.5 text-xs leading-relaxed text-[#666]">
           {description}
         </p>
+      </div>
+    </div>
+  );
+}
+
+function PathCard({
+  icon,
+  eyebrow,
+  title,
+  description,
+  links,
+  recommended = false,
+}: {
+  icon: React.ReactNode;
+  eyebrow: string;
+  title: string;
+  description: string;
+  links: { href: string; label: string }[];
+  recommended?: boolean;
+}) {
+  return (
+    <div
+      className={`flex flex-col rounded-lg border p-5 ${
+        recommended
+          ? "border-[#10D8BE]/40 bg-[#10D8BE]/[0.04]"
+          : "border-white/[0.06] bg-white/[0.02]"
+      }`}
+    >
+      <div className="mb-3 flex items-center justify-between">
+        <div
+          className={`flex size-9 items-center justify-center rounded-lg ${
+            recommended
+              ? "bg-[#10D8BE]/10 text-[#10D8BE]"
+              : "bg-white/[0.06] text-[#888]"
+          }`}
+        >
+          {icon}
+        </div>
+        {recommended && (
+          <span className="rounded-full bg-[#10D8BE]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#10D8BE]">
+            Recommended
+          </span>
+        )}
+      </div>
+      <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#555]">
+        {eyebrow}
+      </div>
+      <h3 className="text-base font-semibold text-white">{title}</h3>
+      <p className="mb-4 mt-1 text-xs leading-relaxed text-[#888]">
+        {description}
+      </p>
+      <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1">
+        {links.map((link, i) => (
+          <Link
+            key={link.href}
+            href={link.href}
+            className={
+              i === 0
+                ? `inline-flex items-center gap-1 text-sm font-medium transition-colors ${
+                    recommended
+                      ? "text-[#10D8BE] hover:text-[#10D8BE]/80"
+                      : "text-white hover:text-white/80"
+                  }`
+                : "text-xs text-[#888] underline decoration-white/20 underline-offset-2 transition-colors hover:text-white"
+            }
+          >
+            {link.label}
+            {i === 0 && <IconArrowRight className="size-3.5" />}
+          </Link>
+        ))}
       </div>
     </div>
   );

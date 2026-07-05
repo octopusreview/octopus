@@ -20,10 +20,11 @@ import {
   IconMail,
   IconBrandGithub,
   IconLock,
-  IconServer,
+  IconBolt,
   IconShieldLock,
   IconGitPullRequest,
   IconSparkles,
+  IconArrowRight,
 } from "@tabler/icons-react";
 
 /** Which OAuth providers the deployment has configured. Computed server-side
@@ -62,28 +63,28 @@ function MicrosoftIcon({ className }: { className?: string }) {
 
 const LOGIN_FEATURES = [
   {
-    icon: IconServer,
-    title: "Self-host anywhere",
+    icon: IconGitPullRequest,
+    title: "Reviews on every pull request",
     description:
-      "Run the entire platform on your own servers — reviews, code search and AI all stay inside your network.",
+      "Inline, source-backed comments on GitHub, GitLab and Bitbucket — minutes after every push.",
   },
   {
     icon: IconShieldLock,
-    title: "Your code stays yours",
+    title: "Catches issues before they merge",
     description:
-      "Use local AI models via Ollama or bring your own API keys. Your code is never used to train anyone's models.",
-  },
-  {
-    icon: IconGitPullRequest,
-    title: "Reviews that never sleep",
-    description:
-      "Inline pull-request reviews for GitHub, GitLab and Bitbucket, minutes after every push.",
+      "Bugs, security holes and anti-patterns flagged with severity, so they never reach production.",
   },
   {
     icon: IconSparkles,
-    title: "Whole-repo context",
+    title: "Learns your codebase",
     description:
-      "Repository-wide indexing grounds every finding in your actual codebase — not just the diff.",
+      "Repository-wide indexing grounds every finding in your actual code and team standards — not just the diff.",
+  },
+  {
+    icon: IconBolt,
+    title: "Free credits to start",
+    description:
+      "Sign in and get reviewing in two minutes. No credit card, nothing to install or run.",
   },
 ] as const;
 
@@ -413,10 +414,10 @@ export function LoginContent({
 
         <div className="relative z-10 w-full max-w-md px-12">
           <p className="text-xs font-medium uppercase tracking-[0.2em] text-[#10d8be]/70">
-            AI code review, on your terms
+            Your AI senior reviewer
           </p>
           <h2 className="mt-3 text-2xl font-semibold leading-snug text-white">
-            Ship better code without shipping your code away.
+            Every pull request, reviewed in minutes.
           </h2>
 
           <ul className="mt-10 space-y-7">
@@ -435,9 +436,16 @@ export function LoginContent({
             ))}
           </ul>
 
-          <p className="mt-10 text-xs text-[#555]">
-            AI-powered code reviews that never sleep.
+          <p className="mt-10 text-xs leading-relaxed text-[#555]">
+            Your code is never stored long-term or used to train models.
           </p>
+          <Link
+            href="/docs/self-hosting"
+            className="mt-3 inline-flex items-center gap-1.5 text-xs text-[#10d8be]/70 transition-colors hover:text-[#10d8be]"
+          >
+            Prefer to run it yourself? Self-host Octopus
+            <IconArrowRight className="size-3.5" />
+          </Link>
         </div>
       </div>
     </div>

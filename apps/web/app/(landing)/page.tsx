@@ -11,6 +11,7 @@ import { LandingMobileNav } from "@/components/landing-mobile-nav";
 import { LandingDesktopNav } from "@/components/landing-desktop-nav";
 import { WebGLToggleButton } from "@/components/webgl-toggle-button";
 import { RotatingHeroText } from "@/components/landing-rotating-hero";
+import { LandingTerminalHero } from "@/components/landing-terminal-hero";
 import { NewsletterForm } from "@/components/landing-newsletter";
 import { CliInstallSection } from "@/components/landing-cli-install";
 import { LandingStats } from "@/components/landing-stats";
@@ -21,8 +22,9 @@ import { FaqList } from "@/components/FaqList";
 import {
   IconBrandGithub,
   IconArrowRight,
-  IconCode,
-  IconShieldCheck,
+  IconCloud,
+  IconServer,
+  IconCheck,
   IconPlugConnected,
   IconRocket,
   IconBrain,
@@ -143,14 +145,15 @@ export default async function LandingPage() {
 
       {/* Hero — dark bg */}
       <section className="relative z-10 px-6 pb-20 pt-40 md:px-8 md:pb-28 md:pt-52">
-        <div className="mx-auto max-w-4xl text-center">
-          <h1 className="animate-fade-in text-4xl font-bold leading-[1.1] tracking-tight text-white [animation-delay:100ms] sm:text-5xl md:text-6xl lg:text-7xl">
+        <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-2 lg:gap-12">
+         <div className="text-center lg:text-left">
+          <h1 className="animate-fade-in text-4xl font-bold leading-[1.1] tracking-tight text-white [animation-delay:100ms] sm:text-5xl md:text-6xl">
             Review every PR
             <br />
             <span className="text-[#777]">with repo context.</span>
           </h1>
 
-          <p className="animate-fade-in mx-auto mt-6 min-h-16 max-w-2xl text-base leading-relaxed text-[#777] [animation-delay:200ms] sm:text-lg">
+          <p className="animate-fade-in mx-auto mt-6 min-h-16 max-w-2xl text-base leading-relaxed text-[#777] [animation-delay:200ms] sm:text-lg lg:mx-0">
             <RotatingHeroText
               texts={[
                 "Octopus indexes your codebase, applies team standards,\nand leaves source-backed comments with severity on every pull request.",
@@ -170,7 +173,7 @@ export default async function LandingPage() {
             />
           </p>
 
-          <div className="animate-fade-in mt-10 flex flex-col items-center gap-4 [animation-delay:300ms] sm:flex-row sm:justify-center">
+          <div className="animate-fade-in mt-10 flex flex-col items-center gap-4 [animation-delay:300ms] sm:flex-row sm:justify-center lg:justify-start">
             <TrackedLink
               href="/login"
               event="cta_click"
@@ -192,7 +195,11 @@ export default async function LandingPage() {
               View on GitHub
             </TrackedAnchor>
           </div>
+         </div>
 
+          <div className="animate-fade-in [animation-delay:400ms]">
+            <LandingTerminalHero className="mx-auto w-full max-w-xl lg:mx-0" />
+          </div>
         </div>
       </section>
 
@@ -260,65 +267,109 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      {/* Source Available */}
-      <section id="open-source" className="relative z-10 scroll-mt-20 px-4 py-6 sm:px-8 md:px-12">
+      {/* Two ways to run — Cloud vs Self-Host */}
+      <section id="cloud-or-self-host" className="relative z-10 scroll-mt-20 px-4 py-6 sm:px-8 md:px-12">
         <div className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-white/[0.06] bg-[#161616] px-6 py-20 md:px-12 md:py-28">
           <div className="mx-auto max-w-5xl">
             <div className="mx-auto max-w-2xl text-center">
-              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">Source Available</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">Cloud or self-host</span>
               <h2 className="mt-4 text-3xl font-bold tracking-tight text-white sm:text-4xl">
-                Source-available,
-                <br />
-                built in the open
+                Two ways to run Octopus
               </h2>
               <p className="mt-4 text-[#666] sm:text-lg">
-                Source-available under a Modified MIT License. Inspect the code,
-                self-host on your own infrastructure, or contribute.
+                Start reviewing in two minutes on our managed cloud, or run the
+                entire platform on your own infrastructure.
               </p>
             </div>
 
-            <div className="mt-12 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-xl border border-white/[0.06] p-6 text-center transition-colors hover:border-white/[0.12]">
-                <div className="mx-auto flex size-10 items-center justify-center rounded-lg bg-white/[0.04] text-[#888]">
-                  <IconCode className="size-5" />
+            <div className="mt-12 grid gap-5 md:grid-cols-2">
+              {/* Cloud — primary */}
+              <div className="relative flex flex-col rounded-2xl border border-[#10D8BE]/30 bg-gradient-to-b from-[#10D8BE]/[0.06] to-transparent p-8">
+                <span className="absolute right-6 top-6 rounded-full border border-[#10D8BE]/30 bg-[#10D8BE]/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-[#10D8BE]">
+                  Recommended
+                </span>
+                <div className="flex size-11 items-center justify-center rounded-xl bg-[#10D8BE]/10 text-[#10D8BE]">
+                  <IconCloud className="size-6" />
                 </div>
-                <h3 className="mt-4 font-semibold text-white">Source Available</h3>
-                <p className="mt-2 text-sm text-[#666]">
-                  Modified MIT License — read, modify, and self-host freely.
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/[0.06] p-6 text-center transition-colors hover:border-white/[0.12]">
-                <div className="mx-auto flex size-10 items-center justify-center rounded-lg bg-white/[0.04] text-[#888]">
-                  <IconBrandGithub className="size-5" />
+                <h3 className="mt-5 text-xl font-semibold text-white">Cloud</h3>
+                <p className="mt-1.5 text-sm text-[#888]">Hosted for you. Nothing to run or maintain.</p>
+                <ul className="mt-6 space-y-3 text-sm text-[#bbb]">
+                  {[
+                    "Auto-reviews every PR via the GitHub App",
+                    "Free credits to start — usage-based after, no card",
+                    "Managed updates, backups and scaling",
+                    "Private: your code is never stored long-term or trained on",
+                  ].map((t) => (
+                    <li key={t} className="flex items-start gap-2.5">
+                      <IconCheck className="mt-0.5 size-4 shrink-0 text-[#10D8BE]" />
+                      <span>{t}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <TrackedLink
+                    href="/login"
+                    event="cta_click"
+                    eventParams={{ location: "cloud_or_self_host", label: "cloud_get_started" }}
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[#10D8BE] px-5 py-2.5 text-sm font-medium text-[#0c0c0c] transition-colors hover:bg-[#0fbfa8]"
+                  >
+                    Get started free
+                    <IconArrowRight className="size-4" />
+                  </TrackedLink>
+                  <TrackedLink
+                    href="/docs/pricing"
+                    event="cta_click"
+                    eventParams={{ location: "cloud_or_self_host", label: "see_pricing" }}
+                    className="text-sm text-[#888] transition-colors hover:text-white"
+                  >
+                    See pricing
+                  </TrackedLink>
                 </div>
-                <h3 className="mt-4 font-semibold text-white">Community Driven</h3>
-                <p className="mt-2 text-sm text-[#666]">
-                  PRs welcome. Report bugs, request features, or build integrations.
-                </p>
               </div>
-              <div className="rounded-xl border border-white/[0.06] p-6 text-center transition-colors hover:border-white/[0.12]">
-                <div className="mx-auto flex size-10 items-center justify-center rounded-lg bg-white/[0.04] text-[#888]">
-                  <IconShieldCheck className="size-5" />
-                </div>
-                <h3 className="mt-4 font-semibold text-white">Self-Host Ready</h3>
-                <p className="mt-2 text-sm text-[#666]">
-                  Deploy on your own servers. Your code never leaves your infrastructure.
-                </p>
-              </div>
-            </div>
 
-            <div className="mt-8 flex justify-center">
-              <TrackedAnchor
-                href="https://github.com/octopusreview"
-                target="_blank"
-                rel="noopener noreferrer"
-                event="cta_click"
-                eventParams={{ location: "open_source_section", label: "star_on_github" }}
-                className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] px-6 py-3 text-sm font-medium text-[#999] transition-colors hover:text-white"
-              >
-                <IconBrandGithub className="size-4" />
-                Star us on GitHub
-              </TrackedAnchor>
+              {/* Self-Host — secondary */}
+              <div className="flex flex-col rounded-2xl border border-white/[0.06] bg-white/[0.01] p-8">
+                <div className="flex size-11 items-center justify-center rounded-xl bg-white/[0.04] text-[#999]">
+                  <IconServer className="size-6" />
+                </div>
+                <h3 className="mt-5 text-xl font-semibold text-white">Self-host</h3>
+                <p className="mt-1.5 text-sm text-[#888]">Run it on your own servers. Free and source-available.</p>
+                <ul className="mt-6 space-y-3 text-sm text-[#bbb]">
+                  {[
+                    "Free & source-available (Modified MIT License)",
+                    "One Docker Compose file — up in minutes",
+                    "Your code never leaves your network",
+                    "Bring your own AI keys or run local models",
+                  ].map((t) => (
+                    <li key={t} className="flex items-start gap-2.5">
+                      <IconCheck className="mt-0.5 size-4 shrink-0 text-[#666]" />
+                      <span>{t}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <TrackedLink
+                    href="/docs/self-hosting"
+                    event="cta_click"
+                    eventParams={{ location: "cloud_or_self_host", label: "self_host_guide" }}
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-white/[0.12] px-5 py-2.5 text-sm font-medium text-[#ccc] transition-colors hover:border-white/[0.2] hover:text-white"
+                  >
+                    Read the self-host guide
+                    <IconArrowRight className="size-4" />
+                  </TrackedLink>
+                  <TrackedAnchor
+                    href="https://github.com/octopusreview"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    event="cta_click"
+                    eventParams={{ location: "cloud_or_self_host", label: "star_on_github" }}
+                    className="inline-flex items-center gap-1.5 text-sm text-[#888] transition-colors hover:text-white"
+                  >
+                    <IconBrandGithub className="size-4" />
+                    GitHub
+                  </TrackedAnchor>
+                </div>
+              </div>
             </div>
           </div>
         </div>

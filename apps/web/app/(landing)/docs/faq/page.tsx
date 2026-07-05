@@ -56,7 +56,7 @@ const securityFaqs = [
 const integrationFaqs = [
   {
     q: "Which Git platforms are supported?",
-    a: "Octopus integrates with GitHub (including GitHub Enterprise), GitLab, and Bitbucket. It installs as a GitHub App or connects via Bitbucket OAuth, and listens for pull request webhooks.",
+    a: "Octopus integrates with GitHub (including GitHub Enterprise), GitLab, and Bitbucket. It installs as a GitHub App, or connects to GitLab and Bitbucket via OAuth, and listens for pull request and merge request webhooks.",
   },
   {
     q: "Can I connect Octopus to Slack?",

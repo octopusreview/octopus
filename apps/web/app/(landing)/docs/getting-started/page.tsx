@@ -3,6 +3,7 @@ import {
   IconRocket,
   IconBrandGithub,
   IconBrandBitbucket,
+  IconBrandGitlab,
   IconGitPullRequest,
   IconAlertTriangle,
   IconAlertCircle,
@@ -107,14 +108,19 @@ export default function GettingStartedPage() {
       <Section title="1. Connect Your Repository">
         <Paragraph>
           Start by connecting your GitHub, GitLab, or Bitbucket account from the
-          dashboard. Octopus will install as a GitHub App or set up Bitbucket
-          OAuth to receive webhook events from your repositories.
+          dashboard. Octopus installs as a GitHub App, or connects to GitLab and
+          Bitbucket via OAuth, to receive webhook events from your repositories.
         </Paragraph>
-        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+        <div className="mb-4 grid gap-3 sm:grid-cols-3">
           <ProviderCard
             icon={<IconBrandGithub className="size-5" />}
             name="GitHub"
             description="Install the GitHub App, select repositories, and you're ready to go."
+          />
+          <ProviderCard
+            icon={<IconBrandGitlab className="size-5" />}
+            name="GitLab"
+            description="Connect via OAuth (gitlab.com or self-managed); Octopus reviews every merge request."
           />
           <ProviderCard
             icon={<IconBrandBitbucket className="size-5" />}
@@ -214,7 +220,7 @@ export default function GettingStartedPage() {
           />
           <SeverityRow
             icon={<IconBulb className="size-4" />}
-            color="text-amber-400"
+            color="text-purple-400"
             label="Tip"
             description="Informational notes about the code, documentation, or conventions."
           />

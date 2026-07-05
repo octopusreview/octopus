@@ -82,7 +82,7 @@ export default async function BlogPage({
       <LandingDesktopNav isLoggedIn={isLoggedIn} />
       <LandingMobileNav isLoggedIn={isLoggedIn} />
 
-      <main className="mx-auto max-w-4xl px-6 pt-32 pb-20">
+      <main className="mx-auto max-w-5xl px-6 pt-32 pb-20">
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-4xl font-bold tracking-tight">Blog</h1>

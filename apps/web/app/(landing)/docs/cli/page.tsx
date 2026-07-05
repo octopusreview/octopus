@@ -30,14 +30,9 @@ export default function CLIPage() {
 
       {/* Install */}
       <Section title="Installation">
-        <CodeBlock>npm install -g @octp/cli</CodeBlock>
-        <Paragraph>
-          Note: the npm package installs the legacy <Mono>octopus</Mono> binary,
-          which has a different command set. These docs cover the{" "}
-          <Mono>octp</Mono> CLI installed by the script below.
-        </Paragraph>
-        <Paragraph>Or with bun:</Paragraph>
-        <CodeBlock>bun add -g @octp/cli</CodeBlock>
+        <CodeBlock>curl -fsSL https://octopus-review.ai/install.sh | bash</CodeBlock>
+        <Paragraph>Or on Windows (PowerShell):</Paragraph>
+        <CodeBlock>{`powershell -c "irm https://octopus-review.ai/install.ps1 | iex"`}</CodeBlock>
       </Section>
 
       {/* Auth */}
@@ -244,26 +239,26 @@ octp agent serve --verbose`}</CodeBlock>
         </Paragraph>
 
         <CommandCard
-          command="octopus skills list"
+          command="octp skills list"
           description="List available Octopus skills."
         />
-        <CodeBlock>{`$ octopus skills list
+        <CodeBlock>{`$ octp skills list
 
   Skill        Description
   octopus-fix  Check open PRs for review comments, apply fixes, and push updates`}</CodeBlock>
 
         <CommandCard
-          command="octopus skills install"
+          command="octp skills install"
           description="Install Octopus skills for AI coding agents. By default installs for both Claude Code and Codex."
         />
         <CodeBlock>{`# Install for both Claude Code and Codex
-octopus skills install
+octp skills install
 
 # Install only for Claude Code
-octopus skills install --claude
+octp skills install --claude
 
 # Install only for Codex
-octopus skills install --codex`}</CodeBlock>
+octp skills install --codex`}</CodeBlock>
         <Paragraph>
           Once installed, you can use the skills as slash commands:
         </Paragraph>

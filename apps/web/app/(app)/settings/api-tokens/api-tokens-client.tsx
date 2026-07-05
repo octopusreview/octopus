@@ -242,18 +242,18 @@ function CliQuickStart() {
           <p className="text-muted-foreground mb-1.5 text-xs font-medium">
             1. Install the CLI
           </p>
-          <CodeBlock>npm install -g @octp/cli</CodeBlock>
+          <CodeBlock>curl -fsSL https://octopus-review.ai/install.sh | bash</CodeBlock>
         </div>
 
         <div>
           <p className="text-muted-foreground mb-1.5 text-xs font-medium">
             2. Log in (opens browser to authorize)
           </p>
-          <CodeBlock>octopus login</CodeBlock>
+          <CodeBlock>octp login</CodeBlock>
           <p className="text-muted-foreground mt-1.5 text-xs">
             Or use an existing token:{" "}
             <code className="rounded bg-stone-100 px-1 py-0.5 dark:bg-stone-700">
-              octopus login --token oct_...
+              octp login --token oct_...
             </code>
           </p>
         </div>
@@ -262,7 +262,7 @@ function CliQuickStart() {
           <p className="text-muted-foreground mb-1.5 text-xs font-medium">
             3. Verify your connection
           </p>
-          <CodeBlock>octopus whoami</CodeBlock>
+          <CodeBlock>octp whoami</CodeBlock>
         </div>
       </div>
 
@@ -272,22 +272,22 @@ function CliQuickStart() {
         </p>
         <div className="space-y-2">
           <CodeBlock>{`# List your repositories
-octopus repo list
+octp repo list
 
 # Index a repository for code search
-octopus repo index
+octp repo index
 
 # Review a pull request
-octopus pr review --pr <number>
+octp review --pr <number>
 
 # Chat with your codebase
-octopus repo chat
+octp chat
 
 # Add knowledge to your org
-octopus knowledge add <file>
+octp knowledge add <file>
 
 # Check your usage
-octopus usage`}</CodeBlock>
+octp usage`}</CodeBlock>
         </div>
       </div>
     </div>

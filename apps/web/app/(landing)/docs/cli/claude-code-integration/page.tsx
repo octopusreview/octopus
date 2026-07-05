@@ -77,10 +77,7 @@ export default function ClaudeCodeIntegrationPage() {
 curl -fsSL https://octopus-review.ai/install.sh | bash
 
 # Windows (PowerShell)
-irm https://octopus-review.ai/install.ps1 | iex
-
-# Windows ARM
-npm install -g @octp/cli`}</CodeBlock>
+irm https://octopus-review.ai/install.ps1 | iex`}</CodeBlock>
 
         <h3 className="mb-2 mt-4 text-sm font-semibold text-white">
           2. Authenticate

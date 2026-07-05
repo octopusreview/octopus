@@ -113,8 +113,8 @@ The review pipeline: Webhook receives PR event → Octopus fetches the diff → 
       {
         heading: "4. Use the CLI",
         text: `Install the Octopus CLI for terminal-based workflows:
-npm install -g @octp/cli (or bun add -g @octp/cli)
-Key commands: octopus chat (chat with your codebase), octopus pr review <number> (review a specific PR), octopus index (re-index a repository), octopus knowledge add (add knowledge documents).`,
+curl -fsSL https://octopus-review.ai/install.sh | bash (macOS/Linux) or powershell -c "irm https://octopus-review.ai/install.ps1 | iex" (Windows)
+Key commands: octp chat (chat with your codebase), octp review --pr <number> (review a specific PR), octp repo index (re-index a repository), octp knowledge add (add knowledge documents).`,
       },
       {
         heading: "5. Customize Your Setup",
@@ -135,55 +135,55 @@ Notifications: Configure Slack and Linear integration for review events.`,
       {
         heading: "Installation",
         text: `Install the Octopus CLI globally:
-npm install -g @octp/cli
-or: bun add -g @octp/cli
-After installing, authenticate with: octopus login
-Verify your session with: octopus whoami`,
+curl -fsSL https://octopus-review.ai/install.sh | bash
+Windows: powershell -c "irm https://octopus-review.ai/install.ps1 | iex"
+After installing, authenticate with: octp login
+Verify your session with: octp whoami`,
       },
       {
         heading: "Repository Commands",
-        text: `octopus repos — List all connected repositories.
-octopus status — Show indexing status for a repository.
-octopus index — Re-index the current repository (or specify a repo).
-octopus analyze — Run AI analysis on a repository.
-octopus chat — Start an interactive chat session about your codebase.`,
+        text: `octp repo list — List all connected repositories.
+octp repo status — Show indexing status for a repository.
+octp repo index — Re-index the current repository (or specify a repo).
+octp repo analyze — Run AI analysis on a repository.
+octp chat — Start an interactive chat session about your codebase.`,
       },
       {
         heading: "Pull Request Commands",
-        text: `octopus pr review <number> — Review a specific pull request.
-You can also pass a full PR URL: octopus pr review https://github.com/org/repo/pull/142
+        text: `octp review --pr <number> — Review a specific pull request.
+You can also pass a full PR URL: octp review --pr https://github.com/org/repo/pull/142
 The CLI streams the review in real-time and posts findings to the PR.`,
       },
       {
         heading: "Dependency Analysis",
-        text: `octopus analyze-deps <repo-url> — Analyze dependencies for a repository.
+        text: `octp analyze-deps <repo-url> — Analyze dependencies for a repository.
 Checks for outdated packages, known vulnerabilities, and license compatibility.`,
       },
       {
         heading: "Knowledge Base",
-        text: `octopus knowledge list — List all knowledge documents.
-octopus knowledge add <file> — Add a document to the knowledge base.
-octopus knowledge remove <id> — Remove a knowledge document.
+        text: `octp knowledge list — List all knowledge documents.
+octp knowledge add <file> — Add a document to the knowledge base.
+octp knowledge remove <id> — Remove a knowledge document.
 Knowledge documents are referenced during code reviews for custom rules and guidelines.`,
       },
       {
         heading: "Local Agent",
-        text: `octopus watch — Start a local file watcher agent.
-octopus start — Start the local agent with semantic search (requires ripgrep or Claude CLI).
+        text: `octp agent serve — Run the local agent (Ollama LLM tasks + code search).
+octp agent watch [path] — Watch a repo directory so cloud chat can search it locally.
 The local agent monitors your project and provides real-time assistance.`,
       },
       {
         heading: "Skills",
-        text: `octopus skills list — List available automation skills.
-octopus skills install <name> — Install a skill for Claude Code or Codex.
+        text: `octp skills list — List available automation skills.
+octp skills install <name> — Install a skill for Claude Code or Codex.
 Skills are pre-built automation workflows like "Split and Ship" and "Octopus Fix".`,
       },
       {
         heading: "Configuration",
-        text: `octopus config list — Show current configuration.
-octopus config set <key> <value> — Set a configuration value.
-octopus usage — View token and credit usage.
-octopus logout — End your session.
+        text: `octp config list — Show current configuration.
+octp config set <key> <value> — Set a configuration value.
+octp usage — View token and credit usage.
+octp logout — End your session.
 Multiple profiles are supported for switching between accounts.`,
       },
     ],
@@ -368,7 +368,7 @@ Q: Does Octopus support monorepos?
 A: Yes. Octopus indexes the entire repository including all packages in a monorepo.
 
 Q: Is there a CLI?
-A: Yes. Install with npm install -g @octp/cli. Use it to review PRs, chat with your codebase, and manage knowledge.`,
+A: Yes. Install with curl -fsSL https://octopus-review.ai/install.sh | bash. Use it to review PRs, chat with your codebase, and manage knowledge.`,
       },
       {
         heading: "Pricing & Billing",

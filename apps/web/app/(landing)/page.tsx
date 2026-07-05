@@ -203,6 +203,9 @@ export default async function LandingPage() {
         </div>
       </section>
 
+      {/* Install the CLI — right below the terminal hero */}
+      <CliInstallSection />
+
       {/* How it works */}
       <section id="how-it-works" className="relative z-10 scroll-mt-20 px-4 pb-6 sm:px-8 md:px-12">
         <div className="relative mx-auto max-w-6xl">
@@ -249,11 +252,6 @@ export default async function LandingPage() {
                 title="Reviews on Autopilot"
                 description="Every new PR gets an instant, context-aware review automatically."
               />
-            </div>
-
-            {/* CLI Quick Install (embedded) */}
-            <div className="mt-16 border-t border-white/[0.06] pt-12">
-              <CliInstallSection embedded />
             </div>
 
           </div>

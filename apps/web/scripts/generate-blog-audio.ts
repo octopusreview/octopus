@@ -86,13 +86,16 @@ async function fetchPublishedPosts(): Promise<BlogPost[]> {
       throw new Error(`GET /api/blog failed: ${res.status} ${res.statusText}`);
     }
     const data = (await res.json()) as {
-      posts: BlogPost[];
-      pagination: { totalPages: number };
+      posts?: BlogPost[];
+      pagination?: { totalPages?: number };
     };
+    totalPages = Number(data?.pagination?.totalPages);
+    if (!Array.isArray(data.posts) || !Number.isFinite(totalPages)) {
+      throw new Error(`Unexpected /api/blog response shape on page ${page}`);
+    }
     posts.push(...data.posts);
-    totalPages = data.pagination.totalPages;
     page++;
-  } while (page <= totalPages);
+  } while (page <= totalPages && page <= 500);
 
   return posts;
 }

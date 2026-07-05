@@ -25,14 +25,19 @@ type Post = { id: string; slug: string; category?: string | null; tags?: string[
 
 async function fetchAllPosts(): Promise<Post[]> {
   const posts: Post[] = [];
-  for (let page = 1; ; page++) {
+  // Hard page cap as a backstop; the real exit is page >= totalPages below.
+  for (let page = 1; page <= 500; page++) {
     const res = await fetch(`${API_URL}/api/blog?status=published&limit=50&page=${page}`, {
       headers: { authorization: `Bearer ${TOKEN}` },
     });
     if (!res.ok) throw new Error(`GET /api/blog failed: ${res.status} ${res.statusText}`);
-    const data = (await res.json()) as { posts: Post[]; pagination: { totalPages: number } };
+    const data = (await res.json()) as { posts?: Post[]; pagination?: { totalPages?: number } };
+    const totalPages = Number(data?.pagination?.totalPages);
+    if (!Array.isArray(data.posts) || !Number.isFinite(totalPages)) {
+      throw new Error(`Unexpected /api/blog response shape on page ${page}`);
+    }
     posts.push(...data.posts);
-    if (page >= data.pagination.totalPages) break;
+    if (page >= totalPages) break;
   }
   return posts;
 }

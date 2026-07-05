@@ -8,6 +8,7 @@ import { LandingFooter } from "@/components/landing-footer";
 import { LandingMobileNav } from "@/components/landing-mobile-nav";
 import { LandingDesktopNav } from "@/components/landing-desktop-nav";
 import { BlogContent } from "@/components/blog-content";
+import { BlogAudioPlayer } from "@/components/blog-audio-player";
 import { BlogToc } from "@/components/blog-toc";
 import { ScrollToTop } from "@/components/scroll-to-top";
 import { IconArrowLeft } from "@tabler/icons-react";
@@ -186,6 +187,12 @@ export default async function BlogPostPage({
               </time>
               <span aria-hidden="true">·</span>
               <span>{minutes} min read</span>
+              {post.audioUrl && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <BlogAudioPlayer src={post.audioUrl} />
+                </>
+              )}
             </div>
 
             {headings.length >= 2 && (

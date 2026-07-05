@@ -930,6 +930,7 @@ model BlogPost {
   tags          String[]  @default([])
   category      String?
   readingTime   Int? // whole minutes, precomputed on write
+  audioUrl      String? // read-aloud MP3 (R2), generated in CI
   deletedAt     DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt

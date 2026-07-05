@@ -22,7 +22,6 @@ const sections: MenuSection[] = [
     title: "Get Started",
     items: [
       { href: "/docs/getting-started", label: "Introduction" },
-      { href: "/docs/open-source", label: "Free for Open Source" },
       { href: "/docs/pricing", label: "Pricing" },
     ],
   },

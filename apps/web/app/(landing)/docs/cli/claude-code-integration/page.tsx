@@ -269,7 +269,7 @@ skills/
       {/* Source Code */}
       <Section title="Source Code">
         <Paragraph>
-          The plugin is open source. Contributions are welcome.
+          The plugin&apos;s source is available. Contributions are welcome.
         </Paragraph>
         <a
           href="https://github.com/octopusreview/claude-plugin"

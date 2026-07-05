@@ -13,7 +13,6 @@ const publicPrefixes = [
   "/not-a-rabbit",
   "/compare",
   "/vs-",
-  "/open-source",
   "/api/auth",
   "/api/github",
   "/api/bitbucket/webhook",

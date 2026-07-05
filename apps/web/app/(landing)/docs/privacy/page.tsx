@@ -25,8 +25,8 @@ export default function PrivacyPage() {
 
       <Section title="1. Introduction">
         <P>
-          Octopus (&quot;we&quot;, &quot;our&quot;, &quot;us&quot;) is an
-          open source, AI-powered code review platform. This Privacy Policy
+          Octopus (&quot;we&quot;, &quot;our&quot;, &quot;us&quot;) is a
+          source-available, AI-powered code review platform. This Privacy Policy
           explains how we collect, use, and protect your information when you
           use our cloud-hosted service. If you self-host Octopus, your own
           privacy policies apply.
@@ -180,7 +180,7 @@ export default function PrivacyPage() {
 
       <Section title="10. Self-Hosting">
         <P>
-          Octopus is fully open source. If you self-host Octopus on your own
+          Octopus is source-available. If you self-host Octopus on your own
           infrastructure, your code never touches our servers. You are
           responsible for your own data handling and privacy compliance.
         </P>

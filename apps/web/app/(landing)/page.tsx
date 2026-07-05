@@ -7,7 +7,6 @@ import { FloatingOctopus } from "@/components/landing-unicorn-section";
 import { LandingFeatures } from "@/components/landing-features";
 import { TrackedLink, TrackedAnchor } from "@/components/tracked-link";
 import { LandingFooter } from "@/components/landing-footer";
-import { LaunchCountdown } from "@/components/landing-countdown";
 import { LandingMobileNav } from "@/components/landing-mobile-nav";
 import { LandingDesktopNav } from "@/components/landing-desktop-nav";
 import { WebGLToggleButton } from "@/components/webgl-toggle-button";
@@ -15,7 +14,6 @@ import { RotatingHeroText } from "@/components/landing-rotating-hero";
 import { NewsletterForm } from "@/components/landing-newsletter";
 import { CliInstallSection } from "@/components/landing-cli-install";
 import { LandingStats } from "@/components/landing-stats";
-import { LandingOssWorkflowSnippet } from "@/components/landing-oss-workflow-snippet";
 import { LandingAnnouncementBar } from "@/components/landing-announcement-bar";
 import { loadActiveAnnouncements } from "@/lib/announcements";
 
@@ -28,8 +26,6 @@ import {
   IconPlugConnected,
   IconRocket,
   IconBrain,
-  IconHeartHandshake,
-  IconChecks,
 } from "@tabler/icons-react";
 
 const landingFaqs = [
@@ -55,7 +51,7 @@ const landingFaqs = [
   },
   {
     q: "Is Octopus free to use?",
-    a: "Yes. Octopus is open source under the MIT license and free to self-host. The cloud service includes free credits to get started, with a credit-based model for continued use. You can also bring your own API keys to use your existing AI provider billing.",
+    a: "Yes. Octopus is source-available under a Modified MIT License and free to self-host. The cloud service includes free credits to get started, with a credit-based model for continued use. You can also bring your own API keys to use your existing AI provider billing.",
   },
 ];
 
@@ -165,7 +161,7 @@ export default async function LandingPage() {
                 "Indexes every file, function, and relationship in your repo",
                 "Posts inline comments with severity levels directly on your PRs",
                 "Works with GitHub and Bitbucket out of the box",
-                "Open source and self-hostable, your code never leaves your servers",
+                "Source-available and self-hostable, your code never leaves your servers",
                 "Improves over time with team feedback on every finding",
                 "Powered by Claude, understands any language, any framework",
                 "Reviews every PR in under 2 minutes, 24/7",
@@ -264,29 +260,21 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      {/* Open Source */}
+      {/* Source Available */}
       <section id="open-source" className="relative z-10 scroll-mt-20 px-4 py-6 sm:px-8 md:px-12">
         <div className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-white/[0.06] bg-[#161616] px-6 py-20 md:px-12 md:py-28">
           <div className="mx-auto max-w-5xl">
             <div className="mx-auto max-w-2xl text-center">
-              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">Open Source</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">Source Available</span>
               <h2 className="mt-4 text-3xl font-bold tracking-tight text-white sm:text-4xl">
-                Fully open source,
+                Source-available,
                 <br />
                 built in the open
               </h2>
               <p className="mt-4 text-[#666] sm:text-lg">
-                100% open source under the MIT license. Inspect the code,
+                Source-available under a Modified MIT License. Inspect the code,
                 self-host on your own infrastructure, or contribute.
               </p>
-
-              {/* Open Source Launch Countdown */}
-              <div className="mt-10 rounded-2xl border border-white/[0.06] bg-white/[0.02] px-6 py-8">
-                <p className="mb-5 text-sm font-medium text-[#888]">
-                  Core codebase goes public on <span className="text-white">March 23, 2026 — 15:00 UTC</span>
-                </p>
-                <LaunchCountdown />
-              </div>
             </div>
 
             <div className="mt-12 grid gap-3 sm:grid-cols-3">
@@ -294,9 +282,9 @@ export default async function LandingPage() {
                 <div className="mx-auto flex size-10 items-center justify-center rounded-lg bg-white/[0.04] text-[#888]">
                   <IconCode className="size-5" />
                 </div>
-                <h3 className="mt-4 font-semibold text-white">MIT Licensed</h3>
+                <h3 className="mt-4 font-semibold text-white">Source Available</h3>
                 <p className="mt-2 text-sm text-[#666]">
-                  Use it however you want — personal, commercial, or enterprise.
+                  Modified MIT License — read, modify, and self-host freely.
                 </p>
               </div>
               <div className="rounded-xl border border-white/[0.06] p-6 text-center transition-colors hover:border-white/[0.12]">
@@ -331,80 +319,6 @@ export default async function LandingPage() {
                 <IconBrandGithub className="size-4" />
                 Star us on GitHub
               </TrackedAnchor>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Free for Open Source — promo banner */}
-      <section id="oss-program" className="relative z-10 scroll-mt-20 px-4 py-6 sm:px-8 md:px-12">
-        <div className="relative mx-auto max-w-6xl overflow-hidden rounded-3xl border border-[#10D8BE]/25 bg-gradient-to-br from-[#10D8BE]/[0.06] via-[#161616] to-[#161616] px-6 py-20 md:px-12 md:py-24">
-          <div
-            className="pointer-events-none absolute inset-0 opacity-40"
-            aria-hidden="true"
-            style={{
-              backgroundImage:
-                "radial-gradient(circle at 15% 20%, rgba(16,216,190,0.15) 0%, transparent 45%)",
-            }}
-          />
-          <div className="relative grid gap-10 lg:grid-cols-[1.05fr_1fr] lg:items-center">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-[#10D8BE]/30 bg-[#10D8BE]/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-[#a4f3e6]">
-                <IconHeartHandshake className="size-3.5" />
-                New · Open Source Program
-              </div>
-              <h2 className="mt-5 text-3xl font-bold tracking-tight text-white sm:text-4xl">
-                Free, unlimited reviews
-                <br />
-                for open source projects
-              </h2>
-              <p className="mt-4 max-w-xl text-[#aaa] sm:text-lg">
-                If your repository is public and OSI-licensed, Octopus reviews
-                every pull request — forever, on us. No credit card, no monthly
-                quota. Maintainers deserve great tooling.
-              </p>
-
-              <ul className="mt-6 space-y-2.5 text-sm text-[#bbb]">
-                <li className="flex items-start gap-2">
-                  <IconChecks className="mt-0.5 size-4 shrink-0 text-[#10D8BE]" />
-                  <span>Unlimited PR reviews on every public repo</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <IconChecks className="mt-0.5 size-4 shrink-0 text-[#10D8BE]" />
-                  <span>One-file setup with a GitHub Action</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <IconChecks className="mt-0.5 size-4 shrink-0 text-[#10D8BE]" />
-                  <span>Source-backed inline comments with severity levels</span>
-                </li>
-              </ul>
-
-              <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-                <TrackedLink
-                  href="/open-source"
-                  event="cta_click"
-                  eventParams={{ location: "oss_program", label: "learn_more" }}
-                  className="inline-flex items-center gap-2 rounded-full bg-[#10D8BE] px-5 py-2.5 text-sm font-medium text-[#0c0c0c] transition-colors hover:bg-[#0fbfa8]"
-                >
-                  Learn more
-                  <IconArrowRight className="size-4" />
-                </TrackedLink>
-                <TrackedAnchor
-                  href="https://github.com/marketplace/actions/octopus-review"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  event="cta_click"
-                  eventParams={{ location: "oss_program", label: "marketplace" }}
-                  className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] px-5 py-2.5 text-sm font-medium text-[#bbb] transition-colors hover:text-white"
-                >
-                  <IconBrandGithub className="size-4" />
-                  GitHub Marketplace
-                </TrackedAnchor>
-              </div>
-            </div>
-
-            <div className="relative">
-              <LandingOssWorkflowSnippet />
             </div>
           </div>
         </div>
@@ -519,7 +433,7 @@ export default async function LandingPage() {
             <br />
             code review workflow?
           </h2>
-          <p className="mt-4 text-[#666] sm:text-lg">Open source, free forever. Set up in under 2 minutes.</p>
+          <p className="mt-4 text-[#666] sm:text-lg">Source-available and self-hostable. Set up in under 2 minutes.</p>
           <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
             <TrackedLink
               href="/login"
@@ -540,7 +454,7 @@ export default async function LandingPage() {
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-lg font-semibold text-white">Stay in the loop</h2>
           <p className="mt-2 text-sm text-[#666]">
-            Get notified about new features, updates, and the open source launch.
+            Get notified about new features and product updates.
           </p>
           <div className="mt-6">
             <NewsletterForm />

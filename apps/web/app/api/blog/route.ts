@@ -83,7 +83,9 @@ export async function GET(request: NextRequest) {
         title: true,
         slug: true,
         excerpt: true,
+        content: true,
         coverImageUrl: true,
+        audioUrl: true,
         status: true,
         authorName: true,
         publishedAt: true,
@@ -239,6 +241,77 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json(
       { error: "Failed to create blog post" },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  const token = await authenticateBlogToken(request);
+  if (!token) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const body = await request.json();
+    const { id, audioUrl, tags, category } = body as {
+      id?: string;
+      audioUrl?: string | null;
+      tags?: string[];
+      category?: string;
+    };
+
+    if (!id) {
+      return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+
+    const post = await prisma.blogPost.findFirst({ where: { id, deletedAt: null } });
+    if (!post) {
+      return NextResponse.json({ error: "Post not found" }, { status: 404 });
+    }
+
+    // Update ONLY the fields the caller provided. `audioUrl` may be set to a
+    // string or explicitly cleared with null; tags/category reuse the same
+    // sanitization as POST.
+    const data: { audioUrl?: string | null; tags?: string[]; category?: string | null } = {};
+
+    if ("audioUrl" in body) {
+      data.audioUrl = typeof audioUrl === "string" ? audioUrl : null;
+    }
+    if ("tags" in body && Array.isArray(tags)) {
+      data.tags = [...new Set(tags.map((t) => String(t).trim().toLowerCase()).filter(Boolean))].slice(0, 6);
+    }
+    if ("category" in body) {
+      data.category = normalizeCategory(category);
+    }
+
+    if (Object.keys(data).length === 0) {
+      return NextResponse.json(
+        { error: "No updatable fields provided" },
+        { status: 400 },
+      );
+    }
+
+    const updated = await prisma.blogPost.update({
+      where: { id: post.id },
+      data,
+      select: { id: true, slug: true, audioUrl: true, tags: true, category: true },
+    });
+
+    revalidatePath("/blog");
+    revalidatePath(`/blog/${updated.slug}`);
+
+    return NextResponse.json({
+      success: true,
+      id: updated.id,
+      slug: updated.slug,
+      audioUrl: updated.audioUrl,
+      tags: updated.tags,
+      category: updated.category,
+    });
+  } catch {
+    return NextResponse.json(
+      { error: "Failed to update blog post" },
       { status: 500 },
     );
   }

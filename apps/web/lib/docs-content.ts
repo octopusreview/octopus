@@ -23,7 +23,7 @@ export const docsContent: DocsDocument[] = [
         heading: "Hero",
         text: `Octopus — Your AI code reviewer that never sleeps.
 Octopus reviews every pull request with deep context awareness. Catch bugs, enforce standards, and ship with confidence.
-Octopus is an open-source, AI-powered code review tool.`,
+Octopus is a source-available, AI-powered code review tool.`,
       },
       {
         heading: "How It Works",
@@ -48,8 +48,8 @@ Team Sharing — Share chat conversations with your team. Collaborate on code un
 Analytics — Track review activity, time to merge, token usage, and costs across your organization.`,
       },
       {
-        heading: "Open Source",
-        text: `Octopus is open source under the MIT License.
+        heading: "Source-Available",
+        text: `Octopus is source-available under a Modified MIT License.
 Community Driven — Contributions welcome. Open issues, submit PRs, and help shape the future of AI code review.
 Self-Host Ready — Run Octopus on your own infrastructure with Docker. Your code never leaves your servers.`,
       },
@@ -322,7 +322,7 @@ Running without Docker: Install Bun, set up PostgreSQL and Qdrant locally, run b
       {
         heading: "General",
         text: `Q: What is Octopus?
-A: Octopus is an open-source, AI-powered code review tool that indexes your codebase and automatically reviews pull requests with context-aware findings.
+A: Octopus is a source-available, AI-powered code review tool that indexes your codebase and automatically reviews pull requests with context-aware findings.
 
 Q: How does Octopus review code?
 A: When a PR is opened, Octopus fetches the diff, retrieves relevant code context via vector search, and uses an LLM (Claude or OpenAI) to analyze changes. Findings are posted as inline PR comments.
@@ -482,11 +482,11 @@ Rules: Never force-push. Show proposed fixes before applying. Make minimal chang
 Octopus is not a toy — it's a serious tool built by an independent developer who cares about code quality and developer experience.`,
       },
       {
-        heading: "Open Source Principles",
-        text: `Transparency: The entire codebase is open. You can read, audit, and understand exactly how your code is processed.
+        heading: "Source-Available Principles",
+        text: `Transparency: The full source is available. You can read, audit, and understand exactly how your code is processed.
 No vendor lock-in: Self-host on your own infrastructure. Bring your own API keys.
 Community driven: Contributions are welcome. Open issues, submit PRs, and help shape the future.
-Free forever: The open-source core will always be free.`,
+Free forever: The self-hosted, source-available core will always be free.`,
       },
       {
         heading: "Tech Stack",

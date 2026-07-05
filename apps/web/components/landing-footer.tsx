@@ -27,7 +27,7 @@ export function LandingFooter() {
               <span className="text-sm font-semibold text-white">Octopus</span>
             </div>
             <p className="mt-3 text-sm leading-relaxed text-[#555]">
-              AI-powered code review automation. Open source, self-hostable.
+              AI-powered code review automation. Source-available, self-hostable.
             </p>
             <div className="mt-4 flex items-center gap-3">
               <TrackedAnchor
@@ -419,7 +419,7 @@ export function LandingFooter() {
         <div className="mt-10 flex flex-col items-center gap-3 border-t border-white/[0.06] pt-6 sm:flex-row sm:justify-between">
           <div className="flex flex-col gap-1">
             <span className="text-xs text-[#333]">
-              &copy; {new Date().getFullYear()} Octopus. Open source code review
+              &copy; {new Date().getFullYear()} Octopus. Source-available code review
               automation.
             </span>
             <span className="text-xs text-[#333]">

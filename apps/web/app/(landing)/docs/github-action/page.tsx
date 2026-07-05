@@ -103,8 +103,7 @@ export default function GitHubActionPage() {
           Octopus GitHub Action
         </h1>
         <p className="mt-3 text-lg text-[#888]">
-          AI-powered, context-aware code review for every pull request. Free
-          for open source. Add an API key to unlock your team&apos;s knowledge
+          AI-powered, context-aware code review for every pull request. Add an API key to unlock your team&apos;s knowledge
           base, custom rules, and full review history.
         </p>
       </div>
@@ -402,7 +401,7 @@ export default function GitHubActionPage() {
           For larger repositories that prefer not to grant a writable token in
           CI at all, install the{" "}
           <a
-            href="https://octopus-review.ai/open-source"
+            href="/docs/github-app"
             className="text-[#10D8BE] hover:underline"
           >
             Octopus GitHub App
@@ -488,7 +487,7 @@ export default function GitHubActionPage() {
           to exclude files from review and indexing.
         </Faq>
         <Faq question="Where is the action source code?">
-          The action is open source at{" "}
+          The action&apos;s source is available at{" "}
           <a
             href="https://github.com/octopusreview/action"
             target="_blank"
@@ -505,9 +504,9 @@ export default function GitHubActionPage() {
       <Section title="Related">
         <div className="grid gap-2 sm:grid-cols-2">
           <RelatedLink
-            href="/docs/open-source"
-            title="Free for Open Source"
-            description="Why Octopus is free for public repos."
+            href="/docs/github-app"
+            title="GitHub App"
+            description="Install the App for zero-config PR reviews."
           />
           <RelatedLink
             href="/docs/integrations"

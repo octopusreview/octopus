@@ -11,7 +11,7 @@ import { Cell, type ComparisonRow } from "../compare/_shared";
 export const metadata: Metadata = {
   title: "Octopus vs Greptile — AI Code Review Comparison",
   description:
-    "Compare Octopus and Greptile for AI code review and codebase intelligence. Architecture, pricing, self-hosting, and open source — see which fits your team.",
+    "Compare Octopus and Greptile for AI code review and codebase intelligence. Architecture, pricing, self-hosting, and licensing — see which fits your team.",
   keywords: [
     "Octopus vs Greptile",
     "Greptile alternative",
@@ -22,7 +22,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Octopus vs Greptile — AI Code Review Comparison",
     description:
-      "Compare Octopus and Greptile for AI code review and codebase intelligence. Architecture, pricing, self-hosting, and open source.",
+      "Compare Octopus and Greptile for AI code review and codebase intelligence. Architecture, pricing, self-hosting, and licensing.",
     url: "https://octopus-review.ai/vs-greptile",
     type: "website",
   },
@@ -42,7 +42,7 @@ const faqs = [
   },
   {
     q: "Is Octopus open source?",
-    a: "Yes. Octopus is MIT-licensed and free to self-host on your own infrastructure. Greptile is a proprietary SaaS. If audit, customization, or running fully on-prem matters for your team, Octopus is the only option of the two.",
+    a: "Octopus is source-available under a Modified MIT License and free to self-host on your own infrastructure. Greptile is a proprietary SaaS. If audit, customization, or running fully on-prem matters for your team, Octopus is the only option of the two.",
   },
   {
     q: "Which is better for codebase chat or Q&A?",
@@ -78,7 +78,7 @@ const rows: ComparisonRow[] = [
   { label: "Codebase Q&A API for developers", octopus: true, competitor: true },
   { label: "Inline PR comments", octopus: true, competitor: true },
   { label: "Severity-rated findings", octopus: "Critical, Major, Minor, Suggestion, Tip", competitor: "Review comments" },
-  { label: "Open source", octopus: "MIT licensed", competitor: "Proprietary SaaS" },
+  { label: "Licensing", octopus: "Source-available (Modified MIT)", competitor: "Proprietary SaaS" },
   { label: "Self-hosting option", octopus: true, competitor: "Enterprise plans" },
   { label: "Bring your own LLM API keys", octopus: true, competitor: "Enterprise plans" },
   { label: "Pricing model", octopus: "Usage-based credits", competitor: "Per-developer subscription" },
@@ -182,7 +182,7 @@ export default async function VsGreptilePage() {
               </li>
               <li className="flex gap-3">
                 <IconCheck className="mt-0.5 size-4 shrink-0 text-[#10D8BE]" />
-                Open source matters for audit, compliance, or customization.
+                Source access matters for audit, compliance, or customization.
               </li>
             </ul>
           </div>
@@ -237,7 +237,7 @@ export default async function VsGreptilePage() {
             Try Octopus free on your next PR
           </h2>
           <p className="mx-auto mt-4 max-w-md text-[#888]">
-            Free credits to start, open source, and self-hostable. No credit
+            Free credits to start, source-available, and self-hostable. No credit
             card required.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">

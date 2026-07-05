@@ -269,7 +269,7 @@ export default async function NotARabbitPage() {
             Start seeing everything.
           </h2>
           <p className="mx-auto mt-4 max-w-md text-[#666]">
-            Octopus is open source, free to self-host, and ready to review your
+            Octopus is source-available, free to self-host, and ready to review your
             next pull request.
           </p>
           <div className="mt-8">

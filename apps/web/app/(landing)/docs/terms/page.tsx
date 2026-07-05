@@ -34,10 +34,10 @@ export default function TermsPage() {
 
       <Section title="2. Description of Service">
         <P>
-          Octopus is an open source, AI-powered code review platform that
+          Octopus is a source-available, AI-powered code review platform that
           analyzes pull requests, creates code embeddings, and provides
           automated review feedback. The Service is available as a
-          cloud-hosted platform and as a self-hosted open source application.
+          cloud-hosted platform and as a self-hosted source-available application.
         </P>
       </Section>
 
@@ -116,9 +116,9 @@ export default function TermsPage() {
         </P>
       </Section>
 
-      <Section title="8. Open Source License">
+      <Section title="8. Source-Available License">
         <P>
-          The Octopus source code is licensed under the MIT License. You are
+          The Octopus source code is licensed under a Modified MIT License. You are
           free to use, modify, and distribute the software in accordance with
           that license. These Terms apply specifically to the cloud-hosted
           Service.
@@ -133,7 +133,7 @@ export default function TermsPage() {
         </P>
         <P>
           We may modify, suspend, or discontinue the Service at any time with
-          reasonable notice. Since Octopus is open source, you can always
+          reasonable notice. Since Octopus is source-available, you can always
           self-host the application independently.
         </P>
       </Section>

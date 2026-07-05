@@ -12,7 +12,7 @@ import { TrackedAnchor } from "@/components/tracked-link";
 export const metadata = {
   title: "About — Octopus Docs",
   description:
-    "Learn the story behind Octopus, an open source AI code review tool built to catch bugs before humans do. Meet the team and see where we are headed.",
+    "Learn the story behind Octopus, a source-available AI code review tool built to catch bugs before humans do. Meet the team and see where we are headed.",
   alternates: {
     canonical: "https://octopus-review.ai/docs/about",
   },
@@ -30,7 +30,7 @@ export default function AboutPage() {
           The Story Behind Octopus
         </h1>
         <p className="mt-3 text-lg text-[#888]">
-          An open source code review tool, built by an independent developer.
+          A source-available code review tool, built by an independent developer.
         </p>
       </div>
 
@@ -56,10 +56,10 @@ export default function AboutPage() {
         </Paragraph>
       </Section>
 
-      {/* Open Source */}
-      <Section title="Open Source, Always">
+      {/* Source Available */}
+      <Section title="Source Available, Always">
         <Paragraph>
-          Octopus is fully open source under the MIT license. This isn&apos;t an
+          Octopus is source-available under a Modified MIT License. This isn&apos;t an
           afterthought. It&apos;s a core principle.
         </Paragraph>
         <div className="mb-4 grid gap-3 sm:grid-cols-2">

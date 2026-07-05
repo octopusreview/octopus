@@ -14,7 +14,6 @@ import {
   IconCookie,
   IconQuestionMark,
   IconSearch,
-  IconHeartHandshake,
   IconBrandGithub,
 } from "@tabler/icons-react";
 import {
@@ -27,13 +26,6 @@ import {
 } from "@/components/ui/command";
 
 const docsPages = [
-  {
-    href: "/docs/open-source",
-    label: "Free for Open Source",
-    description: "Unlimited AI reviews for public OSS repos via the GitHub Action.",
-    icon: IconHeartHandshake,
-    keywords: ["open source", "oss", "free", "github action", "workflow", "yaml", "public repo", "maintainer"],
-  },
   {
     href: "/docs/self-hosting",
     label: "Self-Hosting",

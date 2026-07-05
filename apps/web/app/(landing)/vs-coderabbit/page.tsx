@@ -42,7 +42,7 @@ const faqs = [
   },
   {
     q: "What are the main differences in approach?",
-    a: "Under the hood, Octopus uses RAG: it pre-indexes your codebase into vector embeddings and retrieves the most relevant chunks during review. CodeRabbit uses Dynamic Discovery, fetching context on demand while it reviews the diff. Both are valid strategies with different tradeoffs: RAG is consistent and fast at review time; Dynamic Discovery avoids index maintenance. Beyond the technical approach, Octopus is open source with self-hosting and usage-based pricing, while CodeRabbit is a managed SaaS with per-developer pricing.",
+    a: "Under the hood, Octopus uses RAG: it pre-indexes your codebase into vector embeddings and retrieves the most relevant chunks during review. CodeRabbit uses Dynamic Discovery, fetching context on demand while it reviews the diff. Both are valid strategies with different tradeoffs: RAG is consistent and fast at review time; Dynamic Discovery avoids index maintenance. Beyond the technical approach, Octopus is source-available with self-hosting and usage-based pricing, while CodeRabbit is a managed SaaS with per-developer pricing.",
   },
   {
     q: "How does pricing work with Octopus?",
@@ -74,7 +74,7 @@ const rows: ComparisonRow[] = [
   { label: "Codebase Q&A API for developers", octopus: true, competitor: false },
   { label: "Inline PR comments", octopus: true, competitor: true },
   { label: "Severity-rated findings", octopus: "Critical, Major, Minor, Suggestion, Tip", competitor: "Review comments" },
-  { label: "Open source", octopus: "MIT licensed", competitor: "Proprietary SaaS" },
+  { label: "Licensing", octopus: "Source-available (Modified MIT)", competitor: "Proprietary SaaS" },
   { label: "Self-hosting option", octopus: true, competitor: false },
   { label: "Bring your own LLM API keys", octopus: true, competitor: "Enterprise plans" },
   { label: "Pricing model", octopus: "Usage-based credits", competitor: "Per-developer subscription" },
@@ -175,7 +175,7 @@ export default async function VsCodeRabbitPage() {
               </li>
               <li className="flex gap-3">
                 <IconCheck className="mt-0.5 size-4 shrink-0 text-[#10D8BE]" />
-                Open source matters for audit, compliance, or customization.
+                Source access matters for audit, compliance, or customization.
               </li>
               <li className="flex gap-3">
                 <IconCheck className="mt-0.5 size-4 shrink-0 text-[#10D8BE]" />
@@ -229,7 +229,7 @@ export default async function VsCodeRabbitPage() {
             Try Octopus free on your next PR
           </h2>
           <p className="mx-auto mt-4 max-w-md text-[#888]">
-            Free credits to start, open source, and self-hostable. No credit
+            Free credits to start, source-available, and self-hostable. No credit
             card required.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">

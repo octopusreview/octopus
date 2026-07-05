@@ -94,7 +94,7 @@ export default function DpaPage() {
           When you self-host Octopus, no data leaves your infrastructure
           (unless you connect external integrations like a cloud LLM provider
           or Slack). In that arrangement Octopus is not your data processor —
-          you operate the software yourself, like any open-source server. A
+          you operate the software yourself, like any self-hosted server. A
           DPA is not required for self-hosted unless you have an external
           integration that brings a third party into scope.
         </P>

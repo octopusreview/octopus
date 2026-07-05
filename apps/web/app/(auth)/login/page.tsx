@@ -1,5 +1,13 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { LoginContent } from "./login-content";
+
+export const metadata: Metadata = {
+  title: "Sign in — Octopus",
+  alternates: {
+    canonical: "https://octopus-review.ai/login",
+  },
+};
 
 // The provider gate below reads runtime env, but without a dynamic marker
 // Next statically prerenders this page AT IMAGE BUILD TIME — where no OAuth

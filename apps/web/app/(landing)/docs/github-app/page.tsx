@@ -51,7 +51,7 @@ export default function GithubAppPage() {
           </li>
         </UL>
         <P>
-          For one-off <Mono>octp review &lt;PR&gt;</Mono> from the CLI, a
+          For one-off <Mono>octp review --pr &lt;PR&gt;</Mono> from the CLI, a
           personal token works fine. The web app + auto-review-every-PR flow
           needs the App.
         </P>

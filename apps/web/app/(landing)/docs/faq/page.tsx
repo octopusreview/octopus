@@ -14,7 +14,7 @@ export const metadata = {
 const generalFaqs = [
   {
     q: "What is Octopus?",
-    a: "Octopus is an AI-powered code review tool. It connects to your GitHub or Bitbucket repositories, indexes your codebase, and automatically reviews pull requests — posting findings as inline comments with severity levels.",
+    a: "Octopus is an AI-powered code review tool. It connects to your GitHub, GitLab, or Bitbucket repositories, indexes your codebase, and automatically reviews pull requests — posting findings as inline comments with severity levels.",
   },
   {
     q: "How does Octopus review my code?",
@@ -56,7 +56,7 @@ const securityFaqs = [
 const integrationFaqs = [
   {
     q: "Which Git platforms are supported?",
-    a: "Octopus integrates with GitHub (including GitHub Enterprise) and Bitbucket. It installs as a GitHub App or connects via Bitbucket OAuth, and listens for pull request webhooks.",
+    a: "Octopus integrates with GitHub (including GitHub Enterprise), GitLab, and Bitbucket. It installs as a GitHub App or connects via Bitbucket OAuth, and listens for pull request webhooks.",
   },
   {
     q: "Can I connect Octopus to Slack?",

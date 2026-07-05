@@ -7,6 +7,17 @@ const disallow = [
   "/settings",
   "/admin",
   "/onboarding",
+  "/monitor",
+  "/chat",
+  "/package-analyzer",
+  "/usage",
+  "/repositories",
+  "/knowledge",
+  "/complete-profile",
+  "/review-logs",
+  "/timeline",
+  "/issues",
+  "/coupon",
 ];
 
 export default function robots(): MetadataRoute.Robots {

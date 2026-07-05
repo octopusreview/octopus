@@ -16,7 +16,7 @@ export const metadata: Metadata = {
     "Octopus vs Greptile",
     "Greptile alternative",
     "AI code review comparison",
-    "open source code review",
+    "source-available code review",
     "RAG code review",
   ],
   openGraph: {
@@ -41,7 +41,7 @@ const faqs = [
     a: "The foundation is similar: both use RAG (Retrieval Augmented Generation) with pre-indexed vector embeddings to give the LLM relevant codebase context during review and chat. Where they differ is positioning, deployment, and licensing rather than core architecture.",
   },
   {
-    q: "Is Octopus open source?",
+    q: "Is Octopus open source or source-available?",
     a: "Octopus is source-available under a Modified MIT License and free to self-host on your own infrastructure. Greptile is a proprietary SaaS. If audit, customization, or running fully on-prem matters for your team, Octopus is the only option of the two.",
   },
   {

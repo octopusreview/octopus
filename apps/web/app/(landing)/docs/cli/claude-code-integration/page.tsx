@@ -125,10 +125,10 @@ octp login --token oct_your_token_here`}</CodeBlock>
         <div className="mb-4 space-y-1.5">
           {[
             { severity: "Critical", color: "text-red-400", desc: "Security vulnerabilities, data loss risks" },
-            { severity: "High", color: "text-orange-400", desc: "Bugs, logic errors, performance issues" },
-            { severity: "Medium", color: "text-yellow-400", desc: "Code quality, maintainability concerns" },
-            { severity: "Low", color: "text-blue-400", desc: "Style, naming, minor improvements" },
-            { severity: "Info", color: "text-purple-400", desc: "Suggestions, best practices, tips" },
+            { severity: "Major", color: "text-orange-400", desc: "Bugs, logic errors, performance issues" },
+            { severity: "Minor", color: "text-yellow-400", desc: "Code quality, maintainability concerns" },
+            { severity: "Suggestion", color: "text-blue-400", desc: "Style, naming, improvement ideas" },
+            { severity: "Tip", color: "text-purple-400", desc: "Best practices, informational notes" },
           ].map((item) => (
             <div
               key={item.severity}

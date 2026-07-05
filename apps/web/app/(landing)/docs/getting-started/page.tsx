@@ -22,7 +22,7 @@ import {
 export const metadata = {
   title: "Getting Started | Octopus Docs",
   description:
-    "Connect your repo in two minutes and get AI code reviews on every pull request. Step-by-step setup guide for GitHub and Bitbucket, with examples.",
+    "Connect your repo in two minutes and get AI code reviews on every pull request. Step-by-step setup guide for GitHub, GitLab, and Bitbucket, with examples.",
   alternates: {
     canonical: "https://octopus-review.ai/docs/getting-started",
   },
@@ -67,7 +67,7 @@ export default function GettingStartedPage() {
           <FeatureCard
             icon={<IconPlugConnected className="size-4" />}
             title="Works With Your Tools"
-            description="GitHub, Bitbucket, Slack, Linear. Fits into your existing workflow."
+            description="GitHub, GitLab, Bitbucket, Slack, Linear. Fits into your existing workflow."
           />
         </div>
       </Section>
@@ -89,8 +89,8 @@ export default function GettingStartedPage() {
             title="Hosted for you"
             description="Sign in, install the GitHub App, and Octopus reviews every pull request automatically. No servers to run, no maintenance."
             links={[
-              { href: "/docs/github-app", label: "Install the GitHub App" },
-              { href: "/login", label: "Sign in" },
+              { href: "/login", label: "Install the GitHub App" },
+              { href: "/docs/pricing", label: "View pricing" },
             ]}
           />
           <PathCard
@@ -106,7 +106,7 @@ export default function GettingStartedPage() {
       {/* Step 1: Connect */}
       <Section title="1. Connect Your Repository">
         <Paragraph>
-          Start by connecting your GitHub or Bitbucket account from the
+          Start by connecting your GitHub, GitLab, or Bitbucket account from the
           dashboard. Octopus will install as a GitHub App or set up Bitbucket
           OAuth to receive webhook events from your repositories.
         </Paragraph>
@@ -197,26 +197,26 @@ export default function GettingStartedPage() {
           <SeverityRow
             icon={<IconAlertTriangle className="size-4" />}
             color="text-orange-400"
-            label="Warning"
+            label="Major"
             description="Logic errors, performance issues, potential edge cases."
           />
           <SeverityRow
             icon={<IconAlertCircle className="size-4" />}
             color="text-yellow-400"
-            label="Caution"
+            label="Minor"
             description="Code quality, maintainability, and best practice concerns."
           />
           <SeverityRow
             icon={<IconInfoCircle className="size-4" />}
             color="text-blue-400"
-            label="Info"
-            description="Informational notes about the code, documentation, or conventions."
+            label="Suggestion"
+            description="Optional improvements, alternative approaches, and ideas."
           />
           <SeverityRow
             icon={<IconBulb className="size-4" />}
-            color="text-purple-400"
-            label="Suggestion"
-            description="Optional improvements, alternative approaches, and ideas."
+            color="text-amber-400"
+            label="Tip"
+            description="Informational notes about the code, documentation, or conventions."
           />
         </div>
       </Section>
@@ -309,7 +309,7 @@ export default function GettingStartedPage() {
             href="/docs/integrations"
             icon={<IconPlugConnected className="size-4" />}
             title="Integrations"
-            description="Connect GitHub, Bitbucket, Slack, and Linear"
+            description="Connect GitHub, GitLab, Bitbucket, Slack, and Linear"
           />
           <NextStepCard
             href="/docs/cli"

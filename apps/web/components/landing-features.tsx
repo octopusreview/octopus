@@ -268,33 +268,42 @@ function FeaturePreview({ featureId }: { featureId: FeatureId }) {
 }
 
 function ChatPreview() {
+  const command = "octp chat";
   const question = "How does the auth middleware validate tokens?";
   const answer =
     "It extracts the JWT from the Authorization header, verifies it with jose.jwtVerify(), then attaches the decoded user to request context.";
-  const typedQuestion = useTypewriter(question, 20, 250);
+  const typedQuestion = useTypewriter(question, 20, 500);
   const questionDone = typedQuestion.length === question.length;
   const typedAnswer = useTypewriter(answer, 18, 260, questionDone);
   const answerDone = typedAnswer.length === answer.length;
 
   return (
-    <div className="mx-auto max-w-2xl rounded-lg border border-white/[0.08] bg-[#111] p-4 shadow-2xl shadow-black/30">
-      <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
-        <div className="flex items-center gap-2 text-sm text-[#a8a8a8]">
-          <span className="feature-pulse-dot size-2 rounded-full bg-[#10d8be]" />
-          auth-service
+    <div className="mx-auto max-w-2xl overflow-hidden rounded-lg border border-white/[0.08] bg-[#080808] font-mono shadow-2xl shadow-black/30">
+      <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+        <div className="flex gap-1">
+          <span className="size-2 rounded-full bg-[#ff6b5f]/70" />
+          <span className="size-2 rounded-full bg-[#f9c74f]/70" />
+          <span className="size-2 rounded-full bg-[#10d8be]/70" />
         </div>
-        <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-xs text-[#858585]">3 sources</span>
+        <span className="text-xs text-[#555]">octp chat · auth-service</span>
       </div>
 
-      <div className="mt-5 space-y-4">
-        <div className="ml-auto min-h-11 max-w-[82%] rounded-lg bg-white/[0.08] px-4 py-3 text-sm text-[#dfdfdf]">
-          {typedQuestion}
-          {!questionDone && <TypingCursor />}
-        </div>
+      <div className="feature-stagger space-y-4 p-5 text-sm">
+        <p>
+          <span className="text-[#555]">$</span>{" "}
+          <span className="text-[#e7e7e7]">{command}</span>
+        </p>
+        <p className="min-w-0 break-words">
+          <span className="text-[#10d8be]">{">"}</span>{" "}
+          <span className="text-[#dfdfdf]">
+            {typedQuestion}
+            {!questionDone && <TypingCursor />}
+          </span>
+        </p>
         {questionDone && (
-          <div className="feature-fade-in flex items-start gap-3">
-            <Image src="/logo.svg" alt="" width={24} height={24} className="mt-1 shrink-0" />
-            <div className="min-h-36 min-w-0 flex-1 rounded-lg border border-white/[0.08] bg-white/[0.045] p-4 text-sm leading-relaxed text-[#d0d0d0]">
+          <div className="feature-fade-in flex items-start gap-2.5">
+            <Image src="/logo.svg" alt="" width={18} height={18} className="mt-0.5 shrink-0" />
+            <div className="min-h-24 min-w-0 flex-1 leading-relaxed text-[#c9c9c9]">
               {typedAnswer}
               {!answerDone && <TypingCursor />}
               {answerDone && (

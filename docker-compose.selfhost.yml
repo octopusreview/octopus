@@ -1,0 +1,65 @@
+# Self-host deployment compose — pulls the prebuilt public image instead of
+# building from source (see docker-compose.yml for the build-from-source dev
+# variant). The image bakes NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true, so
+# email/password sign-in is enabled out of the box.
+#
+#   docker compose -f docker-compose.selfhost.yml pull
+#   docker compose -f docker-compose.selfhost.yml up -d
+#
+# Pin a release by exporting OCTOPUS_VERSION (e.g. OCTOPUS_VERSION=1.0.27);
+# defaults to :latest. Migrations are NOT in the runtime image — run them from
+# a checkout of the matching tag (see docs/self-hosting).
+services:
+  web:
+    image: ghcr.io/octopusreview/octopus-selfhost:${OCTOPUS_VERSION:-latest}
+    ports:
+      - "43300:3000"
+    # env_file delivers the operator's secrets into the container (the
+    # environment: block only overrides the compose-internal service URLs).
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://octopus:octopus@postgres:5432/octopus
+      - QDRANT_URL=http://qdrant:6333
+      - ENABLE_REVIEW_WORKERS=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    ports:
+      - "43332:5432"
+    environment:
+      POSTGRES_USER: octopus
+      POSTGRES_PASSWORD: octopus
+      POSTGRES_DB: octopus
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U octopus"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.17.0
+    ports:
+      - "43333:6333"
+      - "43334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:6333/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  qdrant_data:

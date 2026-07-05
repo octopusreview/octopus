@@ -9,11 +9,14 @@
 # Pin a release by exporting OCTOPUS_VERSION (e.g. OCTOPUS_VERSION=1.0.27);
 # defaults to :latest. Migrations are NOT in the runtime image — run them from
 # a checkout of the matching tag (see docs/self-hosting).
+#
+# Change the published port by exporting OCTOPUS_PORT (defaults to 43300):
+#   OCTOPUS_PORT=8080 docker compose -f docker-compose.selfhost.yml up -d
 services:
   web:
     image: ghcr.io/octopusreview/octopus-selfhost:${OCTOPUS_VERSION:-latest}
     ports:
-      - "43300:3000"
+      - "${OCTOPUS_PORT:-43300}:3000"
     # env_file delivers the operator's secrets into the container (the
     # environment: block only overrides the compose-internal service URLs).
     env_file:

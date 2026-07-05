@@ -1,6 +1,7 @@
 import { IconServer } from "@tabler/icons-react";
 import { CodeBlock } from "./code-block";
 import { EnvGenerator } from "./env-generator";
+import { Tabs } from "./tabs";
 
 export const metadata = {
   title: "Self-Hosting — Octopus Docs",
@@ -12,6 +13,183 @@ export const metadata = {
 };
 
 export default function SelfHostingPage() {
+  const composeFile = `# Self-host deployment compose — pulls the prebuilt public image instead of
+# building from source (see docker-compose.yml for the build-from-source dev
+# variant). The image bakes NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true, so
+# email/password sign-in is enabled out of the box.
+#
+#   docker compose -f docker-compose.selfhost.yml pull
+#   docker compose -f docker-compose.selfhost.yml up -d
+#
+# Pin a release by exporting OCTOPUS_VERSION (e.g. OCTOPUS_VERSION=1.0.27);
+# defaults to :latest. Migrations are NOT in the runtime image — run them from
+# a checkout of the matching tag (see docs/self-hosting).
+#
+# Change the published port by exporting OCTOPUS_PORT (defaults to 43300):
+#   OCTOPUS_PORT=8080 docker compose -f docker-compose.selfhost.yml up -d
+services:
+  web:
+    image: ghcr.io/octopusreview/octopus-selfhost:\${OCTOPUS_VERSION:-latest}
+    ports:
+      - "\${OCTOPUS_PORT:-43300}:3000"
+    # env_file delivers the operator's secrets into the container (the
+    # environment: block only overrides the compose-internal service URLs).
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://octopus:octopus@postgres:5432/octopus
+      - QDRANT_URL=http://qdrant:6333
+      - ENABLE_REVIEW_WORKERS=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    ports:
+      - "43332:5432"
+    environment:
+      POSTGRES_USER: octopus
+      POSTGRES_PASSWORD: octopus
+      POSTGRES_DB: octopus
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U octopus"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.17.0
+    ports:
+      - "43333:6333"
+      - "43334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:6333/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  qdrant_data:`;
+
+  const installTabs = [
+    {
+      id: "docker",
+      label: "Docker (recommended)",
+      content: (
+        <>
+          <Step number={1} title="Clone the repository">
+            <CodeBlock>{`git clone https://github.com/octopusreview/octopus.git
+cd octopus`}</CodeBlock>
+          </Step>
+
+          <Step number={2} title="Create your .env file">
+            <Paragraph>
+              Use the{" "}
+              <a
+                href="#environment-variables"
+                className="text-white underline underline-offset-2 hover:text-[#ccc]"
+              >
+                environment generator below
+              </a>{" "}
+              to create a <Mono>.env</Mono> file with a pre-generated auth
+              secret, then save it to the project root. Fill in your API keys
+              before continuing.
+            </Paragraph>
+          </Step>
+
+          <Step number={3} title="Review docker-compose.selfhost.yml">
+            <Paragraph>
+              The repository&apos;s <Mono>docker-compose.selfhost.yml</Mono>{" "}
+              pulls the prebuilt public image{" "}
+              <Mono>ghcr.io/octopusreview/octopus-selfhost</Mono> (no local
+              build) and runs the <Mono>web</Mono> service, PostgreSQL, and
+              Qdrant together, with the database and Qdrant URLs wired for
+              Docker&apos;s internal network. Use it as-is:
+            </Paragraph>
+            <CodeBlock title="docker-compose.selfhost.yml">
+              {composeFile}
+            </CodeBlock>
+          </Step>
+
+          <Step number={4} title="Pull and run">
+            <CodeBlock>{`export OCTOPUS_VERSION=latest   # or a pinned release, e.g. 1.0.27
+docker compose -f docker-compose.selfhost.yml pull
+docker compose -f docker-compose.selfhost.yml up -d`}</CodeBlock>
+            <Paragraph>
+              The public image is built with{" "}
+              <Mono>NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true</Mono> already baked in,
+              so email/password sign-in and the first-boot admin work out of the
+              box — no build step and no build args needed. (To build from
+              source instead, use <Mono>docker-compose.yml</Mono> with{" "}
+              <Mono>docker compose build --build-arg NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true</Mono>
+              .)
+            </Paragraph>
+            <Paragraph>
+              Octopus is then available at{" "}
+              <Mono>http://localhost:43300</Mono>. To publish on a different
+              port, set <Mono>OCTOPUS_PORT</Mono> (defaults to{" "}
+              <Mono>43300</Mono>):
+            </Paragraph>
+            <CodeBlock>{`OCTOPUS_PORT=8080 docker compose -f docker-compose.selfhost.yml up -d`}</CodeBlock>
+          </Step>
+
+          <Step number={5} title="Run database migrations">
+            <Paragraph>
+              Migrations run from the repo checkout — the runtime image
+              doesn&apos;t ship the Prisma CLI or migration files.
+            </Paragraph>
+            <CodeBlock>{`cd packages/db
+DATABASE_URL=postgresql://octopus:octopus@localhost:43332/octopus bunx prisma migrate deploy`}</CodeBlock>
+          </Step>
+
+          <Step number={6} title="Open Octopus">
+            <Paragraph>
+              Visit <Mono>http://localhost:43300</Mono> to access your
+              self-hosted Octopus instance. Create your first account and
+              connect a GitHub repository to get started.
+            </Paragraph>
+          </Step>
+        </>
+      ),
+    },
+    {
+      id: "no-docker",
+      label: "Without Docker",
+      content: (
+        <>
+          <Paragraph>
+            If you prefer to run Octopus directly, you&apos;ll need PostgreSQL,
+            Qdrant, and Bun installed on your machine. Create your{" "}
+            <Mono>.env</Mono> file first using the generator below.
+          </Paragraph>
+          <CodeBlock>{`git clone https://github.com/octopusreview/octopus.git
+cd octopus
+bun install
+bun run db:generate
+bun run db:migrate
+bun run build
+bun run start`}</CodeBlock>
+          <Paragraph>
+            The standalone output is at{" "}
+            <Mono>apps/web/.next/standalone</Mono>. You can deploy this
+            directory directly.
+          </Paragraph>
+        </>
+      ),
+    },
+  ];
+
   return (
     <article className="max-w-3xl">
       <div className="mb-8">
@@ -43,66 +221,14 @@ export default function SelfHostingPage() {
       </Section>
 
       {/* Quick start */}
-      <Section title="Quick Start with Docker">
-        <Step number={1} title="Clone the repository">
-          <CodeBlock>{`git clone https://github.com/octopusreview/octopus.git
-cd octopus`}</CodeBlock>
-        </Step>
-
-        <Step number={2} title="Create your .env file">
-          <Paragraph>
-            Use the <a href="#environment-variables" className="text-white underline underline-offset-2 hover:text-[#ccc]">environment generator below</a> to
-            create a <Mono>.env</Mono> file with a pre-generated auth secret,
-            then save it to the project root. Fill in your API keys before
-            continuing.
-          </Paragraph>
-        </Step>
-
-        <Step number={3} title="Review docker-compose.selfhost.yml">
-          <Paragraph>
-            Use the repository&apos;s <Mono>docker-compose.selfhost.yml</Mono> — it
-            pulls the prebuilt public image{" "}
-            <Mono>ghcr.io/octopusreview/octopus-selfhost</Mono> (no local build)
-            and runs the <Mono>web</Mono> service, PostgreSQL, and Qdrant together
-            with the database and Qdrant URLs wired for Docker&apos;s internal
-            network. It publishes the app on <Mono>43300:3000</Mono>, uses{" "}
-            <Mono>postgres:17-alpine</Mono> (host port <Mono>43332</Mono>) and{" "}
-            <Mono>qdrant/qdrant:v1.17.0</Mono> (host port <Mono>43333</Mono>).
-            Pin a release with <Mono>OCTOPUS_VERSION</Mono> (defaults to{" "}
-            <Mono>latest</Mono>). Use it as-is.
-          </Paragraph>
-        </Step>
-
-        <Step number={4} title="Pull and run">
-          <CodeBlock>{`export OCTOPUS_VERSION=latest   # or a pinned release, e.g. 1.0.27
-docker compose -f docker-compose.selfhost.yml pull
-docker compose -f docker-compose.selfhost.yml up -d`}</CodeBlock>
-          <Paragraph>
-            The public image is built with{" "}
-            <Mono>NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true</Mono> already baked in, so
-            email/password sign-in and the first-boot admin work out of the box —
-            no build step and no build args needed. (To build from source instead,
-            use <Mono>docker-compose.yml</Mono> with{" "}
-            <Mono>docker compose build --build-arg NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true</Mono>.)
-          </Paragraph>
-        </Step>
-
-        <Step number={5} title="Run database migrations">
-          <Paragraph>
-            Migrations run from the repo checkout — the runtime image doesn&apos;t
-            ship the Prisma CLI or migration files.
-          </Paragraph>
-          <CodeBlock>{`cd packages/db
-DATABASE_URL=postgresql://octopus:octopus@localhost:43332/octopus bunx prisma migrate deploy`}</CodeBlock>
-        </Step>
-
-        <Step number={6} title="Open Octopus">
-          <Paragraph>
-            Visit <Mono>http://localhost:43300</Mono> to access your self-hosted
-            Octopus instance. Create your first account and connect a GitHub
-            repository to get started.
-          </Paragraph>
-        </Step>
+      <Section title="Quick Start">
+        <Paragraph>
+          The fastest way to run Octopus is the prebuilt Docker image — it needs
+          no build step and brings up the app, PostgreSQL, and Qdrant together.
+          Prefer to run against your own services instead? Switch to{" "}
+          <em>Without Docker</em>.
+        </Paragraph>
+        <Tabs tabs={installTabs} label="Installation method" />
       </Section>
 
       <Section title="All-local with Ollama (optional)">
@@ -225,34 +351,13 @@ DATABASE_URL=postgresql://octopus:octopus@localhost:43332/octopus bunx prisma mi
         </div>
       </Section>
 
-      {/* From source */}
-      <Section title="Running without Docker">
-        <Paragraph>
-          If you prefer to run Octopus directly, you&apos;ll need PostgreSQL,
-          Qdrant, and Bun installed on your machine. Create your{" "}
-          <Mono>.env</Mono> file first using the generator above.
-        </Paragraph>
-        <CodeBlock>{`git clone https://github.com/octopusreview/octopus.git
-cd octopus
-bun install
-bun run db:generate
-bun run db:migrate
-bun run build
-bun run start`}</CodeBlock>
-        <Paragraph>
-          The standalone output is at{" "}
-          <Mono>apps/web/.next/standalone</Mono>. You can deploy this directory
-          directly.
-        </Paragraph>
-      </Section>
-
       {/* Upgrading & rolling back */}
       <Section title="Upgrading & rolling back">
         <Paragraph>
           Check out a specific release tag in production rather than tracking{" "}
           <Mono>master</Mono> — that is what turns a rollback into re-checking-out
-          the previous tag. The published GHCR image is private, so self-hosters
-          build the image from source rather than pulling it.
+          the previous tag for the matching compose file and migrations. The
+          runtime image itself is pulled from GHCR.
         </Paragraph>
 
         <Step number={1} title="Upgrade">

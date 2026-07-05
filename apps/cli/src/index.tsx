@@ -22,7 +22,7 @@ import { ensureProfilesMigrated, isValidProfileName, ensureProfile, setActivePro
 import { setActiveProfileOverride } from "./lib/paths.js";
 import { flagValue } from "./lib/args.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
 /** Remove a `--flag <value>` pair from argv (the value is dropped only when the
  *  next token isn't itself a flag). Used to peel the global --account/--profile

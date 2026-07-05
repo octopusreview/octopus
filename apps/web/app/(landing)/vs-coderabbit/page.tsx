@@ -16,7 +16,7 @@ export const metadata: Metadata = {
     "Octopus vs CodeRabbit",
     "CodeRabbit alternative",
     "AI code review comparison",
-    "open source code review",
+    "source-available code review",
     "self-hosted code review",
   ],
   openGraph: {

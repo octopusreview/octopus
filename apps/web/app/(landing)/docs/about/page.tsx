@@ -80,8 +80,8 @@ export default function AboutPage() {
           />
           <ValueCard
             icon={<IconRocket className="size-4" />}
-            title="Free Forever"
-            description="The core product is free and always will be. No artificial limitations, no feature gates for essential functionality."
+            title="Free to self-host"
+            description="Self-host Octopus for free on your own infrastructure — the source is available under a Modified MIT License. The managed cloud is a paid, hosted option, with free credits to start and no card required."
           />
         </div>
       </Section>
@@ -113,7 +113,7 @@ export default function AboutPage() {
           horizon:
         </Paragraph>
         <ul className="mb-4 space-y-2">
-          <VisionItem text="Deeper integration with more Git providers beyond GitHub and Bitbucket" />
+          <VisionItem text="Deeper integration with more Git providers beyond GitHub, GitLab, and Bitbucket" />
           <VisionItem text="Smarter review engine that learns from your team's feedback over time" />
           <VisionItem text="Expanded CLI capabilities for CI/CD pipeline integration" />
           <VisionItem text="Plugin system for custom review rules and checks" />

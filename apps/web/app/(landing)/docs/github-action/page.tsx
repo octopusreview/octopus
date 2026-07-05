@@ -401,7 +401,7 @@ export default function GitHubActionPage() {
           For larger repositories that prefer not to grant a writable token in
           CI at all, install the{" "}
           <a
-            href="/docs/github-app"
+            href="/login"
             className="text-[#10D8BE] hover:underline"
           >
             Octopus GitHub App
@@ -504,14 +504,14 @@ export default function GitHubActionPage() {
       <Section title="Related">
         <div className="grid gap-2 sm:grid-cols-2">
           <RelatedLink
-            href="/docs/github-app"
+            href="/login"
             title="GitHub App"
             description="Install the App for zero-config PR reviews."
           />
           <RelatedLink
             href="/docs/integrations"
             title="Integrations"
-            description="GitHub, Bitbucket, Slack, Linear."
+            description="GitHub, GitLab, Bitbucket, Slack, Linear."
           />
           <RelatedLink
             href="/docs/cli"

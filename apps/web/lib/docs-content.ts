@@ -284,11 +284,12 @@ Anthropic API key for Claude (reviews and chat).`,
       {
         heading: "Quick Start with Docker",
         text: `1. Clone the repository: git clone https://github.com/octopusreview/octopus.git
-2. Create a .env file with your configuration (an auto-generator is provided on the docs page).
-3. Run with Docker Compose: docker compose up -d --build
-4. Run database migrations: docker compose exec octopus bun run db:migrate
-5. Access Octopus at http://localhost:3000
-Docker Compose includes PostgreSQL and Qdrant containers.`,
+2. Create a .env file with your configuration (an auto-generator is provided on the docs page). Pin OCTOPUS_VERSION to the release tag you want to run.
+3. Pull the prebuilt self-host image: docker compose -f docker-compose.selfhost.yml pull
+4. Start the stack: docker compose -f docker-compose.selfhost.yml up -d
+5. Run database migrations from a checkout matching OCTOPUS_VERSION: docker compose -f docker-compose.selfhost.yml exec octopus bun run db:migrate
+6. Access Octopus at http://localhost:43300 (set OCTOPUS_PORT to override the default 43300).
+The self-host compose file includes PostgreSQL and Qdrant containers.`,
       },
       {
         heading: "Environment Variables",
@@ -486,7 +487,7 @@ Octopus is not a toy — it's a serious tool built by an independent developer w
         text: `Transparency: The full source is available. You can read, audit, and understand exactly how your code is processed.
 No vendor lock-in: Self-host on your own infrastructure. Bring your own API keys.
 Community driven: Contributions are welcome. Open issues, submit PRs, and help shape the future.
-Free forever: The self-hosted, source-available core will always be free.`,
+Free to self-host: run the source-available core on your own infrastructure at no cost. The managed cloud is a paid, credit-based service with free credits to start.`,
       },
       {
         heading: "Tech Stack",

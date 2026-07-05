@@ -66,7 +66,7 @@ const docsPages = [
     label: "CLI",
     description: "Installation, commands, authentication, and profiles.",
     icon: IconTerminal2,
-    keywords: ["terminal", "command", "npm", "bun", "login", "review", "index", "chat"],
+    keywords: ["terminal", "command", "install", "curl", "octp", "login", "review", "index", "chat"],
   },
   {
     href: "/docs/octopusignore",

@@ -33,7 +33,7 @@ import {
 const landingFaqs = [
   {
     q: "What is Octopus?",
-    a: "Octopus is an AI-powered code review tool that connects to GitHub and Bitbucket, indexes your codebase for deep context, and automatically reviews every pull request — posting findings as inline comments with severity levels.",
+    a: "Octopus is an AI-powered code review tool that connects to GitHub, GitLab, and Bitbucket, indexes your codebase for deep context, and automatically reviews every pull request — posting findings as inline comments with severity levels.",
   },
   {
     q: "How does the automated review work?",
@@ -64,19 +64,20 @@ const productJsonLd = {
   url: "https://octopus-review.ai",
   logo: "https://octopus-review.ai/logo.svg",
   description:
-    "AI-powered code review tool that connects to GitHub and Bitbucket, indexes your codebase, and automatically reviews pull requests with severity-rated findings.",
+    "AI-powered code review tool that connects to GitHub, GitLab, and Bitbucket, indexes your codebase, and automatically reviews pull requests with severity-rated findings.",
   applicationCategory: "DeveloperApplication",
   operatingSystem: "Web",
   offers: {
     "@type": "Offer",
     price: "0",
     priceCurrency: "USD",
+    url: "https://octopus-review.ai/docs/pricing",
   },
   featureList: [
     "Automated pull request review",
     "Codebase indexing with vector search",
     "Severity-rated findings (Critical, Major, Minor, Suggestion, Tip)",
-    "GitHub and Bitbucket integration",
+    "GitHub, GitLab, and Bitbucket integration",
     "Slack and Linear integration",
     "Self-hostable with Docker",
     "Bring Your Own API keys",
@@ -163,7 +164,7 @@ export default async function LandingPage() {
                 "Deep context awareness across your entire codebase",
                 "Indexes every file, function, and relationship in your repo",
                 "Posts inline comments with severity levels directly on your PRs",
-                "Works with GitHub and Bitbucket out of the box",
+                "Works with GitHub, GitLab, and Bitbucket out of the box",
                 "Source-available and self-hostable, your code never leaves your servers",
                 "Improves over time with team feedback on every finding",
                 "Powered by Claude, understands any language, any framework",
@@ -482,7 +483,7 @@ export default async function LandingPage() {
             <br />
             code review workflow?
           </h2>
-          <p className="mt-4 text-[#666] sm:text-lg">Source-available and self-hostable. Set up in under 2 minutes.</p>
+          <p className="mt-4 text-[#666] sm:text-lg">Start reviewing in two minutes on our managed cloud — free credits, no card.</p>
           <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
             <TrackedLink
               href="/login"
@@ -494,7 +495,7 @@ export default async function LandingPage() {
               <IconArrowRight className="size-4" />
             </TrackedLink>
           </div>
-          <p className="mt-6 text-xs text-[#444]">No credit card required. Self-host or use our cloud.</p>
+          <p className="mt-6 text-xs text-[#444]">No credit card required. Or self-host for free.</p>
         </div>
       </section>
 

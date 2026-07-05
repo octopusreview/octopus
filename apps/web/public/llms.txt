@@ -2,7 +2,7 @@
 
 > AI-powered code review tool
 
-Octopus is an open-source, AI-powered code review platform. It connects to GitHub and Bitbucket repositories, indexes codebases using vector embeddings, and automatically reviews pull requests — posting findings as inline comments with severity levels.
+Octopus is a source-available, AI-powered code review platform. It connects to GitHub and Bitbucket repositories, indexes codebases using vector embeddings, and automatically reviews pull requests — posting findings as inline comments with severity levels.
 
 ## Core Features
 

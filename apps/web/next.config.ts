@@ -28,6 +28,14 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_BUILD_ID: Date.now().toString(),
   },
+  async redirects() {
+    // The Free-for-OSS pages were removed; keep inbound links (search, the
+    // GitHub Marketplace CTA, blog posts) from 404ing by pointing them at pricing.
+    return [
+      { source: "/open-source", destination: "/docs/pricing", permanent: true },
+      { source: "/docs/open-source", destination: "/docs/pricing", permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;

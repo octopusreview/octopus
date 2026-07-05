@@ -62,19 +62,22 @@ jobs:
           # add linux/arm64 to platforms when there's demand.
           platforms: linux/amd64
           push: true
+          # The self-host distribution lives on a SEPARATE package
+          # (octopusreview/octopus-selfhost) which is PUBLIC, so self-hosters can
+          # `docker compose pull` it. The private `octopus` package holds only
+          # the hosted-deploy variant below — keeping prod images off the public
+          # package. Visibility is per-package, which is why they're split.
           tags: |
-            ${{ steps.tags.outputs.image_name }}:${{ steps.tags.outputs.semver }}
-            ${{ steps.tags.outputs.image_name }}:latest
+            ${{ steps.tags.outputs.image_name }}-selfhost:${{ steps.tags.outputs.semver }}
+            ${{ steps.tags.outputs.image_name }}-selfhost:latest
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.tags.outputs.semver }}
           build-args: |
             NEXT_PUBLIC_BUILD_ID=${{ github.sha }}
             NEXT_PUBLIC_APP_VERSION=${{ steps.tags.outputs.semver }}
-            # Self-host build variant: ships the Updates page + nav entry (gated
-            # on this build-time flag). Note the GHCR package is currently
-            # PRIVATE, so self-hosters build from source; these tags serve
-            # org-internal use until/unless the package is made public.
+            # Ships the Updates page + nav entry (gated on this build-time flag).
+            # No app-slug/pubby baked here — safe to publish publicly.
             NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true
           # Distinct cache scope per variant — with the shared default scope the
           # two builds would overwrite each other's cache every release.
@@ -119,16 +122,18 @@ jobs:
           generate_release_notes: true
           name: ${{ steps.tags.outputs.semver }}
           body: |
-            To upgrade a self-hosted instance, rebuild from the tagged source
-            (the GHCR image is private and the runtime image ships no migrations):
+            To upgrade a self-hosted instance, pull the new public image and
+            apply migrations (the runtime image ships no migrations, so run them
+            from a checkout of this tag):
 
             ```bash
-            git pull                       # or: git fetch --tags && git checkout vX.Y.Z
-            docker compose build --build-arg NEXT_PUBLIC_OCTOPUS_SELF_HOSTED=true
+            git fetch --tags && git checkout vX.Y.Z    # for the compose file + migrations
+            export OCTOPUS_VERSION=${{ steps.tags.outputs.semver }}
+            docker compose -f docker-compose.selfhost.yml pull
             # migrate FIRST (expand-only, safe under the still-running old version) ...
             cd packages/db && DATABASE_URL=postgresql://octopus:octopus@localhost:43332/octopus bunx prisma migrate deploy && cd ../..
-            # ... then start the new version
-            docker compose up -d
+            # ... then roll to the new version
+            docker compose -f docker-compose.selfhost.yml up -d
             ```
 
             Then verify:

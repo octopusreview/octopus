@@ -9,13 +9,10 @@ export function BlogAudioPlayer({ src }: { src: string }) {
   function toggle() {
     const audio = audioRef.current;
     if (!audio) return;
-    if (audio.paused) {
-      audio.play().catch(() => setPlaying(false));
-      setPlaying(true);
-    } else {
-      audio.pause();
-      setPlaying(false);
-    }
+    // Drive state from the audio element's own play/pause/ended events (below)
+    // so the button always reflects real playback, even if play() is blocked.
+    if (audio.paused) audio.play().catch(() => {});
+    else audio.pause();
   }
 
   return (
@@ -34,6 +31,8 @@ export function BlogAudioPlayer({ src }: { src: string }) {
         ref={audioRef}
         src={src}
         preload="none"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)}
         className="hidden"
       />

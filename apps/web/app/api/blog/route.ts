@@ -46,6 +46,25 @@ function normalizeCategory(value: string | null | undefined): string | null {
   return match ?? null;
 }
 
+// audioUrl is rendered as <audio src> on the public blog, so only accept null
+// (clear) or an https URL under the configured R2 public base — never an
+// arbitrary origin (guards against a leaked token pointing audio elsewhere).
+function normalizeAudioUrl(
+  value: unknown,
+): { ok: true; value: string | null } | { ok: false } {
+  if (value === null || value === undefined) return { ok: true, value: null };
+  if (typeof value !== "string") return { ok: false };
+  try {
+    const u = new URL(value);
+    if (u.protocol !== "https:") return { ok: false };
+    const base = process.env.R2_PUBLIC_URL?.replace(/\/$/, "");
+    if (base && !value.startsWith(`${base}/`)) return { ok: false };
+    return { ok: true, value };
+  } catch {
+    return { ok: false };
+  }
+}
+
 export async function GET(request: NextRequest) {
   const token = await authenticateBlogToken(request);
   if (!token) {
@@ -57,6 +76,9 @@ export async function GET(request: NextRequest) {
   const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1);
   const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") ?? "10", 10) || 10));
   const status = searchParams.get("status") || undefined;
+  // Full post bodies are opt-in (the audio generator needs them); the default
+  // list response stays lean.
+  const includeContent = searchParams.get("includeContent") === "true";
 
   const where = {
     deletedAt: null,
@@ -83,7 +105,7 @@ export async function GET(request: NextRequest) {
         title: true,
         slug: true,
         excerpt: true,
-        content: true,
+        ...(includeContent ? { content: true } : {}),
         coverImageUrl: true,
         audioUrl: true,
         status: true,
@@ -276,7 +298,14 @@ export async function PATCH(request: NextRequest) {
     const data: { audioUrl?: string | null; tags?: string[]; category?: string | null } = {};
 
     if ("audioUrl" in body) {
-      data.audioUrl = typeof audioUrl === "string" ? audioUrl : null;
+      const result = normalizeAudioUrl(audioUrl);
+      if (!result.ok) {
+        return NextResponse.json(
+          { error: "audioUrl must be null or an https URL under the configured audio host" },
+          { status: 400 },
+        );
+      }
+      data.audioUrl = result.value;
     }
     if ("tags" in body && Array.isArray(tags)) {
       data.tags = [...new Set(tags.map((t) => String(t).trim().toLowerCase()).filter(Boolean))].slice(0, 6);

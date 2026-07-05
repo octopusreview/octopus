@@ -79,7 +79,7 @@ async function fetchPublishedPosts(): Promise<BlogPost[]> {
 
   do {
     const res = await fetch(
-      `${API_URL}/api/blog?status=published&limit=50&page=${page}`,
+      `${API_URL}/api/blog?status=published&includeContent=true&limit=50&page=${page}`,
       { headers: { authorization: `Bearer ${BLOG_API_TOKEN}` } },
     );
     if (!res.ok) {

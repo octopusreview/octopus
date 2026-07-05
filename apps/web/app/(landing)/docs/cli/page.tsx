@@ -108,12 +108,12 @@ octp setup-token --no-open`}</CodeBlock>
       {/* PR commands */}
       <Section title="Pull Request Commands">
         <CommandCard
-          command="octp review <pr>"
+          command="octp review --pr <pr>"
           description="Trigger an AI review on a pull request. Accepts a PR number or full URL."
         />
         <Paragraph>Examples:</Paragraph>
-        <CodeBlock>{`octp review 42
-octp review https://github.com/owner/repo/pull/42`}</CodeBlock>
+        <CodeBlock>{`octp review --pr 42
+octp review --pr https://github.com/owner/repo/pull/42`}</CodeBlock>
       </Section>
 
       {/* Dependency Analysis */}

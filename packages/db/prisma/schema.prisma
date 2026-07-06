@@ -802,6 +802,7 @@ model SystemConfig {
   queueConfig         Json @default("{}") // { reviewTimeoutSeconds, reviewConcurrency }
   announcements       Json @default("[]") // landing-page announcement bar entries (see lib/announcements types)
   latestRelease       Json?    // cached latest GitHub release for the self-hosted Updates page (see lib/releases.ts)
+  blogAudioVoiceId    String?  // selected ElevenLabs voice id for blog read-aloud (see lib/elevenlabs.ts)
   updatedAt DateTime @updatedAt
 
   @@map("system_config")

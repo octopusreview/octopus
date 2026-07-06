@@ -23,9 +23,9 @@ export default function SecurityOverviewPage() {
 
       <Section title="1. Data flow at a glance">
         <P>
-          Octopus reviews pull requests in five stages. Each stage runs inside the
-          customer&apos;s VPC tenancy (hosted Octopus) or the customer&apos;s own
-          infrastructure (self-hosted Octopus).
+          Octopus reviews pull requests in five stages. Each stage runs in
+          Octopus&apos;s managed cloud infrastructure (hosted Octopus) or in the
+          customer&apos;s own infrastructure (self-hosted Octopus).
         </P>
         <UL>
           <li><strong>Webhook</strong> — GitHub, GitLab, or Bitbucket POSTs a PR/MR event; we verify the HMAC signature before processing.</li>

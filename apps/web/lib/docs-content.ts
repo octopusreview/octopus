@@ -104,11 +104,11 @@ The review pipeline: Webhook receives PR event → Octopus fetches the diff → 
       {
         heading: "3. Understanding Findings",
         text: `Each finding includes a severity level to help you prioritize:
-🔴 Critical — Security vulnerabilities, data loss risks, breaking changes that must be fixed.
-🟠 Major — Bugs, logic errors, performance issues that should be addressed.
-🟡 Minor — Code quality issues, minor improvements, style concerns.
-🔵 Suggestion — Best practice recommendations, alternative approaches.
-💡 Tip — Educational insights, helpful context, nice-to-know information.`,
+🔴 Critical — Security vulnerabilities, data loss risks, broken functionality. Blocks merge.
+🟠 Major — Bugs, logic errors, performance issues, and missing error handling.
+🟡 Minor — Code quality, maintainability, and best-practice concerns.
+🔵 Suggestion — Optional improvements, alternative approaches, and ideas.
+💡 Tip — Informational notes about the code, documentation, or conventions.`,
       },
       {
         heading: "4. Use the CLI",
@@ -207,13 +207,15 @@ This is ideal for teams that already have API agreements with AI providers or wa
       },
       {
         heading: "Model Pricing",
-        text: `Octopus supports multiple AI models:
-Claude Sonnet 4.6 — Primary review model. High quality, fast.
-Claude Haiku — Used for lightweight tasks like title generation.
-OpenAI GPT-4o — Alternative review model.
-OpenAI text-embedding-3-large — Used for creating embeddings (3072 dimensions).
-Cohere rerank-v3.5 — Used for re-ranking search results.
-Prompt caching reduces costs: cached reads cost 10% of the normal input price.`,
+        text: `Octopus supports multiple AI models. A 20% platform fee is applied on top of provider costs. Base prices per 1M tokens:
+Claude Opus 4.6 and Claude Opus 4 — $15 input / $75 output. Highest-quality review models.
+Claude Sonnet 4.6 and Claude Sonnet 4 — $3 input / $15 output. Primary review models: high quality, fast.
+Claude Haiku 4.5 — $1 input / $5 output. Lightweight tasks like title generation.
+Gemini 2.5 Pro — $1.25 input / $10 output. Gemini 2.5 Flash — $0.15 input / $0.60 output.
+GPT-5.3 Codex — $1.75 input / $14 output.
+Embeddings: text-embedding-3-large ($0.13) and text-embedding-3-small ($0.02).
+Cohere rerank is used for re-ranking search results.
+Prompt caching reduces costs: cached reads are billed at 10% of the input price.`,
       },
       {
         heading: "Spend Limits & Billing",
@@ -287,22 +289,22 @@ Anthropic API key for Claude (reviews and chat).`,
 2. Create a .env file with your configuration (an auto-generator is provided on the docs page). Pin OCTOPUS_VERSION to the release tag you want to run.
 3. Pull the prebuilt self-host image: docker compose -f docker-compose.selfhost.yml pull
 4. Start the stack: docker compose -f docker-compose.selfhost.yml up -d
-5. Run database migrations from a checkout matching OCTOPUS_VERSION: docker compose -f docker-compose.selfhost.yml exec octopus bun run db:migrate
+5. Run database migrations from a repo checkout matching OCTOPUS_VERSION (the runtime image does not ship the Prisma CLI or migration files): cd packages/db && DATABASE_URL=postgresql://octopus:octopus@localhost:43332/octopus bunx prisma migrate deploy
 6. Access Octopus at http://localhost:43300 (set OCTOPUS_PORT to override the default 43300).
 The self-host compose file includes PostgreSQL and Qdrant containers.`,
       },
       {
         heading: "Environment Variables",
-        text: `Required: DATABASE_URL, QDRANT_URL, OPENAI_API_KEY, ANTHROPIC_API_KEY, BETTER_AUTH_SECRET, BETTER_AUTH_URL.
-Optional: COHERE_API_KEY (for re-ranking), GITHUB_APP_ID, GITHUB_PRIVATE_KEY, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, SLACK_BOT_TOKEN, LINEAR_API_KEY, STRIPE_SECRET_KEY.
+        text: `Required: DATABASE_URL, QDRANT_URL, OPENAI_API_KEY, ANTHROPIC_API_KEY, BETTER_AUTH_SECRET, BETTER_AUTH_URL, GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, GITHUB_WEBHOOK_SECRET.
+Optional: GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET (for GitHub login), COHERE_API_KEY (for re-ranking), GOOGLE_API_KEY (Gemini models), STRIPE_SECRET_KEY (for billing).
 The self-hosting docs page includes an interactive env generator.`,
       },
       {
         heading: "GitHub App Setup",
         text: `Create a GitHub App for your self-hosted instance:
 Set the webhook URL to your instance's /api/github/webhook endpoint.
-Required permissions: Repository contents (read), Pull requests (read/write), Issues (read/write), Checks (read/write), Metadata (read).
-Subscribe to events: Pull request, Push, Installation.`,
+Required permissions: Contents (read), Pull requests (read/write), Checks (read/write), Metadata (read).
+Subscribe to events: Pull request, Pull request review.`,
       },
       {
         heading: "Production Tips",
@@ -465,9 +467,15 @@ Rules: Each file belongs to exactly one category. User confirms before proceedin
       {
         heading: "Octopus Fix",
         text: `The Octopus Fix skill discovers open PRs with review comments, presents a summary, and applies fixes.
-Workflow: 1) Discover open PRs 2) Check for review comments 3) Present summary to user 4) Apply fixes 5) Return to original branch 6) Report.
-Review handling: Thumbs up for valid suggestions, thumbs down for false positives.
-Rules: Never force-push. Show proposed fixes before applying. Make minimal changes. Ask on unclear comments. Handle merge conflicts. Preserve git history.`,
+Workflow: 1) Discover open PRs 2) Check reviews (fetch comments/threads; automatically skip PRs whose latest bot review shows 0 findings) 3) Present summary and get confirmation 4) Apply fixes (checkout branch, minimal changes, commit, push) 5) Report.
+Review handling: Thumbs up for valid suggestions (fixed with a reply describing the change), thumbs down for false positives (with an explanation). Review threads are resolved after fixes, and a final PR comment tags @octopusreview to signal updates are ready.
+Rules: Never force-push. Show proposed fixes and get confirmation before committing. Make minimal changes. Ask on unclear comments. Stop on merge conflicts. Preserve git history — no squash, rebase, or amend.`,
+      },
+      {
+        heading: "Octopus Changelog",
+        text: `The Octopus Changelog skill reads your git history since the last tag, categorizes commits using the Keep a Changelog standard, and updates CHANGELOG.md for a new release.
+Workflow: 1) Determine version (detect the latest git tag and suggest the next, or use the version you provide) 2) Gather commits since the last tag and parse conventional-commit prefixes 3) Categorize into Added, Fixed, Changed, Removed, Deprecated, Security (skipping dependency bumps and trivial changes) 4) Review draft — present the formatted entries for approval 5) Update file — insert the new version section into CHANGELOG.md with comparison links.
+Rules: Never commits or pushes — only updates the file. Always shows a draft and gets confirmation before writing. Skips dependency bumps, trivial refactors, and CI-only changes. Groups related commits into single entries.`,
       },
     ],
   },

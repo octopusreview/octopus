@@ -14,7 +14,7 @@ const glossary: { term: string; definition: string }[] = [
   {
     term: "BYO Keys (Bring Your Own Keys)",
     definition:
-      "A configuration option that lets you use your own Anthropic or OpenAI API keys. AI token usage is billed directly to your provider account instead of consuming Octopus credits.",
+      "A configuration option that lets you use your own Anthropic, OpenAI, Google, or Cohere API keys. AI token usage is billed directly to your provider account instead of consuming Octopus credits.",
   },
   {
     term: "Codebase Indexing",
@@ -84,7 +84,7 @@ const glossary: { term: string; definition: string }[] = [
   {
     term: "Webhook",
     definition:
-      "An HTTP callback sent by GitHub or Bitbucket to Octopus when an event occurs — typically a pull request being opened or updated. This is how Octopus knows when to start a review automatically.",
+      "An HTTP callback sent by GitHub, GitLab, or Bitbucket to Octopus when an event occurs — typically a pull request or merge request being opened or updated. This is how Octopus knows when to start a review automatically.",
   },
 ];
 

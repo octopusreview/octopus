@@ -68,7 +68,7 @@ export default function GettingStartedPage() {
           <FeatureCard
             icon={<IconPlugConnected className="size-4" />}
             title="Works With Your Tools"
-            description="GitHub, GitLab, Bitbucket, Slack, Linear. Fits into your existing workflow."
+            description="GitHub, GitLab, Bitbucket, Slack, Linear, Jira. Fits into your existing workflow."
           />
         </div>
       </Section>
@@ -198,13 +198,13 @@ export default function GettingStartedPage() {
             icon={<IconCircleDot className="size-4" />}
             color="text-red-400"
             label="Critical"
-            description="Bugs, security vulnerabilities, data loss risks. Blocks merge."
+            description="Security vulnerabilities, data loss risks, broken functionality. Blocks merge."
           />
           <SeverityRow
             icon={<IconAlertTriangle className="size-4" />}
             color="text-orange-400"
             label="Major"
-            description="Logic errors, performance issues, potential edge cases."
+            description="Bugs, logic errors, performance issues, and missing error handling."
           />
           <SeverityRow
             icon={<IconAlertCircle className="size-4" />}
@@ -315,7 +315,7 @@ export default function GettingStartedPage() {
             href="/docs/integrations"
             icon={<IconPlugConnected className="size-4" />}
             title="Integrations"
-            description="Connect GitHub, GitLab, Bitbucket, Slack, and Linear"
+            description="Connect GitHub, GitLab, Bitbucket, Slack, Linear, and Jira"
           />
           <NextStepCard
             href="/docs/cli"

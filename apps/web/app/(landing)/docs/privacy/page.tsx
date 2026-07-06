@@ -51,7 +51,7 @@ export default function PrivacyPage() {
         <H3>Repository Data</H3>
         <P>
           When you connect a repository, we access its contents through the
-          GitHub or Bitbucket API to create code embeddings and perform
+          GitHub, GitLab, or Bitbucket API to create code embeddings and perform
           reviews. We process pull request diffs, file contents, and
           repository metadata.
         </P>
@@ -100,7 +100,7 @@ export default function PrivacyPage() {
             reviews
           </li>
           <li>
-            <strong className="text-white">GitHub / Bitbucket</strong> for
+            <strong className="text-white">GitHub / GitLab / Bitbucket</strong> for
             repository access and webhook events
           </li>
           <li>
@@ -146,8 +146,9 @@ export default function PrivacyPage() {
           <li>Opt out of live team-telemetry visibility (from member settings)</li>
         </UL>
         <P>
-          For any privacy-related requests, open an issue on our GitHub
-          repository or contact us directly.
+          For any privacy-related request (access, export, deletion, or
+          opt-out), email privacy@octopus-review.ai from the address on your
+          account. See our Data Retention policy for details.
         </P>
       </Section>
 

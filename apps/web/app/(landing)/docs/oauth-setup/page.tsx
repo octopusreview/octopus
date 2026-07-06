@@ -23,7 +23,7 @@ export default function OauthSetupPage() {
         </h1>
         <p className="mt-3 text-sm text-[#888]">
           Octopus uses Better Auth for sign-in. Magic-link email works out of the box;
-          Google and GitHub need OAuth credentials. This page walks you through both.
+          Google, GitHub, and Microsoft need OAuth credentials. This page walks you through each.
         </p>
       </div>
 

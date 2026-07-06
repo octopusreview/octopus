@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { prisma } from "@octopus/db";
 import {
   isElevenLabsConfigured,
@@ -8,21 +9,14 @@ import {
   MAX_TTS_CHARS,
 } from "@/lib/elevenlabs";
 import { isR2Configured, uploadToR2 } from "@/lib/r2";
+import { isAdminApiAuthorized } from "@/lib/admin-auth";
 
 // Machine auth: shared ADMIN_API_SECRET bearer. The admin UI lives in the
 // octopus-configuration console and calls this via lib/octopus-api.ts.
-function isAuthorized(request: NextRequest): boolean {
-  const expected = process.env.ADMIN_API_SECRET;
-  if (!expected) return false;
-  const header = request.headers.get("authorization");
-  if (!header) return false;
-  const token = header.startsWith("Bearer ") ? header.slice(7) : header;
-  return token === expected;
-}
 
 /** State for the admin UI: config flags, selected voice, voices, and posts. */
 export async function GET(request: NextRequest) {
-  if (!isAuthorized(request)) {
+  if (!isAdminApiAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const elevenConfigured = isElevenLabsConfigured();
@@ -62,7 +56,7 @@ export async function GET(request: NextRequest) {
 
 /** Actions: save-voice | generate | clear. */
 export async function POST(request: NextRequest) {
-  if (!isAuthorized(request)) {
+  if (!isAdminApiAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = await request.json().catch(() => ({}));
@@ -76,6 +70,7 @@ export async function POST(request: NextRequest) {
       update: { blogAudioVoiceId: voiceId },
       create: { id: "singleton", blogAudioVoiceId: voiceId },
     });
+    console.log(`[admin] blog-audio save-voice voice=${voiceId}`);
     return NextResponse.json({ ok: true });
   }
 
@@ -83,10 +78,13 @@ export async function POST(request: NextRequest) {
     const postId = String(body.postId ?? "");
     const post = await prisma.blogPost.findFirst({
       where: { id: postId, deletedAt: null },
-      select: { id: true },
+      select: { id: true, slug: true },
     });
     if (!post) return NextResponse.json({ error: "Post not found" }, { status: 404 });
     await prisma.blogPost.update({ where: { id: post.id }, data: { audioUrl: null } });
+    revalidatePath("/blog");
+    revalidatePath(`/blog/${post.slug}`);
+    console.log(`[admin] blog-audio clear post=${post.id} slug=${post.slug}`);
     return NextResponse.json({ ok: true });
   }
 
@@ -120,6 +118,8 @@ export async function POST(request: NextRequest) {
       const baseUrl = await uploadToR2(`blog-audio/${post.slug}.mp3`, mp3, "audio/mpeg");
       const url = `${baseUrl}?v=${Date.now()}`;
       await prisma.blogPost.update({ where: { id: post.id }, data: { audioUrl: url } });
+      revalidatePath("/blog");
+      revalidatePath(`/blog/${post.slug}`);
       console.log(`[admin] blog-audio generate post=${post.id} slug=${post.slug} bytes=${mp3.length}`);
       return NextResponse.json({ ok: true, audioUrl: url });
     } catch (e) {

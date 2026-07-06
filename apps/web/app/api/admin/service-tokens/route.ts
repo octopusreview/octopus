@@ -2,22 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@octopus/db";
 import { generateServiceToken, hashToken, serviceTokenPrefix } from "@/lib/api-auth";
 import { normalizeScopes, ALL_SCOPES } from "@/lib/scopes";
+import { isAdminApiAuthorized } from "@/lib/admin-auth";
 
 // Machine auth: the shared ADMIN_API_SECRET bearer (matches /api/admin/seed-docs
 // & telemetry). The admin UI for this lives in the octopus-configuration console,
 // which calls these endpoints via lib/octopus-api.ts.
-function isAuthorized(request: NextRequest): boolean {
-  const expected = process.env.ADMIN_API_SECRET;
-  if (!expected) return false;
-  const header = request.headers.get("authorization");
-  if (!header) return false;
-  const token = header.startsWith("Bearer ") ? header.slice(7) : header;
-  return token === expected;
-}
 
 /** List active service tokens (+ the scope registry for the mint form). */
 export async function GET(request: NextRequest) {
-  if (!isAuthorized(request)) {
+  if (!isAdminApiAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const tokens = await prisma.serviceToken.findMany({
@@ -37,7 +30,7 @@ export async function GET(request: NextRequest) {
 
 /** Mint a new service token. Returns the plaintext token ONCE (never stored). */
 export async function POST(request: NextRequest) {
-  if (!isAuthorized(request)) {
+  if (!isAdminApiAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = await request.json().catch(() => ({}));

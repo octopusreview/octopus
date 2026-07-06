@@ -21,7 +21,7 @@ export const docsContent: DocsDocument[] = [
     sections: [
       {
         heading: "Hero",
-        text: `Octopus — Your AI code reviewer that never sleeps.
+        text: `Octopus — Review every PR with repo context.
 Octopus reviews every pull request with deep context awareness. Catch bugs, enforce standards, and ship with confidence.
 Octopus is a source-available, AI-powered code review tool.`,
       },
@@ -32,11 +32,12 @@ Step 2: AI Learns Your Code — Octopus indexes your codebase, creating vector e
 Step 3: Reviews on Autopilot — Every pull request is automatically reviewed. Octopus posts findings as inline comments with severity levels: Critical, Major, Minor, Suggestion, and Tip.`,
       },
       {
+        heading: "Cloud or Self-Host",
+        text: `Two ways to run Octopus. Cloud (recommended): a fully managed service — nothing to run or maintain. Auto-reviews every PR via the GitHub App, free credits to start with usage-based pricing after (no card required), managed updates, backups, and scaling, and your code is never stored long-term or used for training. Self-host: run the entire platform on your own infrastructure with one Docker Compose file — free and source-available (Modified MIT License), your code never leaves your network, and you can bring your own AI keys or run local models.`,
+      },
+      {
         heading: "Stats",
-        text: `10x Faster reviews compared to manual code review.
-85% Bugs caught before they reach production.
-Less than 2 minutes average review time.
-24/7 Always on — reviews happen any time, day or night.`,
+        text: `The homepage displays four live, real-time platform counters, computed dynamically from the production database: Code Chunks indexed, Findings posted, PR Reviews completed, and Repositories connected. These figures update in real time and are not fixed marketing numbers. Octopus does not advertise a specific speed multiplier, bug-catch percentage, or average review time.`,
       },
       {
         heading: "Features",
@@ -44,14 +45,13 @@ Less than 2 minutes average review time.
 CLI Tool — Review PRs, chat with your codebase, and manage knowledge from your terminal. Command: octp review --pr 142.
 Codebase Indexing — Your entire codebase is chunked, embedded, and indexed for semantic search. Embeddings are created using OpenAI text-embedding-3-large with 3072 dimensions.
 Knowledge Base — Add custom documents, guidelines, and rules that Octopus references during reviews. Enforce your team's standards automatically.
-Team Sharing — Share chat conversations with your team. Collaborate on code understanding in real-time.
+Team — Share one setup. Org rules, repositories, and reviewer settings stay aligned across your team.
 Analytics — Track review activity, time to merge, token usage, and costs across your organization.`,
       },
       {
         heading: "Source-Available",
-        text: `Octopus is source-available under a Modified MIT License.
-Community Driven — Contributions welcome. Open issues, submit PRs, and help shape the future of AI code review.
-Self-Host Ready — Run Octopus on your own infrastructure with Docker. Your code never leaves your servers.`,
+        text: `Octopus is source-available under a Modified MIT License and free to self-host.
+Self-Host Ready — Run Octopus on your own infrastructure with one Docker Compose file. Your code never leaves your servers. Bring your own AI keys or run local models.`,
       },
       {
         heading: "FAQ",

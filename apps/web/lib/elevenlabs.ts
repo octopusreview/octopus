@@ -1,9 +1,8 @@
 import "server-only";
 
-// App-side ElevenLabs text-to-speech for blog read-aloud. Replaces the cloud-CI
-// generation path (scripts/generate-blog-audio.ts): the app holds the API key
-// and the selected voice, so audio is generated on demand from the admin UI and
-// the audioUrl is written straight to the DB.
+// App-side ElevenLabs text-to-speech for blog read-aloud. The app holds the API
+// key and the selected voice, so audio is generated on demand from the admin UI
+// (/admin/blog-audio) and the audioUrl is written straight to the DB.
 
 const API_BASE = "https://api.elevenlabs.io/v1";
 const MODEL_ID = "eleven_turbo_v2_5";
@@ -50,7 +49,7 @@ export async function listVoices(): Promise<ElevenVoice[]> {
 /** Synthesize speech for `text` with `voiceId` → MP3 buffer. */
 export async function synthesizeSpeech(text: string, voiceId: string): Promise<Buffer> {
   if (!apiKey) throw new Error("ELEVENLABS_API_KEY is not configured.");
-  const res = await fetch(`${API_BASE}/text-to-speech/${voiceId}`, {
+  const res = await fetch(`${API_BASE}/text-to-speech/${encodeURIComponent(voiceId)}`, {
     method: "POST",
     headers: {
       "xi-api-key": apiKey,
@@ -70,7 +69,7 @@ export async function synthesizeSpeech(text: string, voiceId: string): Promise<B
 
 /**
  * Strip Markdown to readable prose for TTS (fenced/inline code, images, links,
- * heading markers, residual punctuation). Mirrors scripts/generate-blog-audio.ts.
+ * heading markers, residual punctuation).
  */
 export function markdownToPlainText(markdown: string): string {
   return markdown

@@ -13,12 +13,14 @@ type Post = { id: string; title: string; slug: string; audioUrl: string | null }
 export function BlogAudioClient({
   elevenConfigured,
   r2Configured,
+  voicesError,
   selectedVoiceId,
   voices,
   posts,
 }: {
   elevenConfigured: boolean;
   r2Configured: boolean;
+  voicesError: boolean;
   selectedVoiceId: string | null;
   voices: Voice[];
   posts: Post[];
@@ -64,11 +66,13 @@ export function BlogAudioClient({
   }
 
   function onClear(postId: string) {
+    setError(null);
     setBusyPost(postId);
     startTransition(async () => {
-      await clearBlogAudio(postId);
+      const res = await clearBlogAudio(postId);
       setBusyPost(null);
-      setAudio((a) => ({ ...a, [postId]: null }));
+      if (res.ok) setAudio((a) => ({ ...a, [postId]: null }));
+      else setError("Failed to clear audio.");
     });
   }
 
@@ -94,6 +98,12 @@ export function BlogAudioClient({
         <Banner tone="warn">
           R2 is not configured — generated audio can’t be uploaded until the{" "}
           <code>R2_*</code> variables are set.
+        </Banner>
+      )}
+      {elevenConfigured && voicesError && (
+        <Banner tone="error">
+          Couldn’t load voices from ElevenLabs — the key may be invalid or the
+          API is unreachable. Generation is disabled until voices load.
         </Banner>
       )}
       {notice && <Banner tone="ok">{notice}</Banner>}

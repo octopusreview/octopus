@@ -21,7 +21,7 @@ export default async function BlogAudioPage() {
   const elevenConfigured = isElevenLabsConfigured();
   const r2Configured = isR2Configured();
 
-  const [cfg, posts, voices] = await Promise.all([
+  const [cfg, posts] = await Promise.all([
     prisma.systemConfig.findUnique({
       where: { id: "singleton" },
       select: { blogAudioVoiceId: true },
@@ -31,13 +31,25 @@ export default async function BlogAudioPage() {
       orderBy: { publishedAt: "desc" },
       select: { id: true, title: true, slug: true, audioUrl: true },
     }),
-    elevenConfigured ? listVoices().catch(() => []) : Promise.resolve([]),
   ]);
+
+  // Fetch voices separately so a listing failure surfaces to the admin instead
+  // of silently rendering an empty picker.
+  let voices: Awaited<ReturnType<typeof listVoices>> = [];
+  let voicesError = false;
+  if (elevenConfigured) {
+    try {
+      voices = await listVoices();
+    } catch {
+      voicesError = true;
+    }
+  }
 
   return (
     <BlogAudioClient
       elevenConfigured={elevenConfigured}
       r2Configured={r2Configured}
+      voicesError={voicesError}
       selectedVoiceId={cfg?.blogAudioVoiceId ?? null}
       voices={voices}
       posts={posts}

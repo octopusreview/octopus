@@ -60,9 +60,12 @@ export async function generateBlogAudio(
 
   try {
     const mp3 = await synthesizeSpeech(text, voiceId);
-    // Immutable-cached key per slug; regenerating overwrites in place. A query
-    // param busts the CDN cache on the audio player after a regenerate.
-    const url = await uploadToR2(`blog-audio/${post.slug}.mp3`, mp3, "audio/mpeg");
+    // The R2 object lives at a stable per-slug key and is served immutable +
+    // max-age=1y, so regenerating overwrites it in place at the SAME URL. Append
+    // a version query param to the STORED url so the CDN/browser fetch a fresh
+    // copy and the <audio key={url}> element remounts after a regenerate.
+    const baseUrl = await uploadToR2(`blog-audio/${post.slug}.mp3`, mp3, "audio/mpeg");
+    const url = `${baseUrl}?v=${Date.now()}`;
     await prisma.blogPost.update({ where: { id: post.id }, data: { audioUrl: url } });
     revalidatePath("/admin/blog-audio");
     revalidatePath(`/blog/${post.slug}`);

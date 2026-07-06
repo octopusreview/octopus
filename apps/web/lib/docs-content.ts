@@ -348,7 +348,7 @@ Q: Can I self-host Octopus?
 A: Yes. Octopus is fully self-hostable with Docker. Your code never leaves your infrastructure.
 
 Q: Which AI models are used?
-A: Claude (Anthropic) and OpenAI GPT-4o for reviews and chat. OpenAI text-embedding-3-large for embeddings. Cohere rerank-v3.5 for search re-ranking.
+A: Claude (Anthropic) and OpenAI models for reviews and chat. OpenAI text-embedding-3-large for embeddings. Cohere Rerank for search re-ranking.
 
 Q: Is my code used for AI training?
 A: No. Neither Anthropic nor OpenAI use API inputs for training. Your code is never used to train AI models.`,
@@ -428,15 +428,15 @@ Embeddings: Numerical vector representations of text. Octopus uses OpenAI text-e
 
 Knowledge Base: Custom documents uploaded to an organization (coding guidelines, architecture decisions, style guides) that Octopus references during reviews.
 
-LLM (Large Language Model): AI models like Claude (Anthropic) and GPT-4o (OpenAI) that analyze code and generate review findings.
+LLM (Large Language Model): AI models like Claude (Anthropic) and GPT (OpenAI) that analyze code and generate review findings.
 
 .octopusignore: A file in your repository root (same syntax as .gitignore) that tells Octopus which files to skip during indexing and review.
 
 Qdrant: The vector database used by Octopus to store and search code embeddings. Collections: code_chunks, knowledge_chunks, review_chunks, chat_chunks, flowchart_chunks.
 
-Reranking: A second-pass ranking step using Cohere rerank-v3.5 that re-orders search results by relevance to the query, improving the quality of retrieved context.
+Reranking: A second-pass ranking step using Cohere Rerank that re-orders search results by relevance to the query, improving the quality of retrieved context.
 
-Severity Levels: Finding priority ratings — 🔴 Critical (must fix), 🟠 Major (should fix), 🟡 Minor (nice to fix), 🔵 Suggestion (consider), 💡 Tip (informational).
+Severity Levels: Finding priority ratings — 🔴 Critical (security, data loss, or broken functionality; blocks merge), 🟠 Major (bugs, logic errors, performance), 🟡 Minor (code quality, maintainability), 🔵 Suggestion (optional improvement), 💡 Tip (informational).
 
 Spend Limit: A monthly cost cap per organization. When reached, AI operations are paused until the next billing cycle or limit increase.
 

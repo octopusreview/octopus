@@ -69,7 +69,7 @@ const glossary: { term: string; definition: string }[] = [
   {
     term: "Severity Levels",
     definition:
-      "A rating system Octopus assigns to each review finding: 🔴 Critical (likely bug or security issue), 🟠 Major (significant concern), 🟡 Minor (style or minor issue), 🔵 Suggestion (improvement idea), 💡 Tip (informational note). Helps teams prioritize what to fix first.",
+      "A rating system Octopus assigns to each review finding: 🔴 Critical (security, data loss, or broken functionality — blocks merge), 🟠 Major (bugs, logic errors, performance), 🟡 Minor (code quality and maintainability), 🔵 Suggestion (optional improvement), 💡 Tip (informational note). Helps teams prioritize what to fix first.",
   },
   {
     term: "Spend Limit",

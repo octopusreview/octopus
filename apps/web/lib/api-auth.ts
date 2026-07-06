@@ -65,3 +65,19 @@ export function generateApiToken(): string {
 export function getTokenPrefix(token: string): string {
   return token.slice(0, 8) + "...";
 }
+
+// Platform-global service tokens (scoped; see lib/scopes.ts). Distinct `oct_svc_`
+// namespace + 32-byte body. The prefix includes a few random chars so tokens are
+// distinguishable in the admin list (plain "oct_svc_" would collide).
+export function generateServiceToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const hex = Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return `oct_svc_${hex}`;
+}
+
+export function serviceTokenPrefix(token: string): string {
+  return token.slice(0, 16) + "..."; // "oct_svc_" + 8 hex chars
+}

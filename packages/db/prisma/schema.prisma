@@ -940,13 +940,20 @@ model BlogPost {
   @@map("blog_posts")
 }
 
-model BlogApiToken {
+// Platform-global service token (external apps: Claude/MCP/other) with scopes.
+// Physically the same `blog_api_tokens` table (model renamed from BlogApiToken
+// with @@map unchanged → zero DDL for the rename; only the scope/expiry/createdBy
+// columns are added). Org-scoped resources use OrgApiToken instead.
+model ServiceToken {
   id          String    @id @default(cuid())
   name        String
   tokenHash   String    @unique
   tokenPrefix String
+  scopes      String[]  @default([]) // e.g. ["blog:read","blog:create","blog:update"]
+  expiresAt   DateTime?
+  createdBy   String? // super-admin user id, or "cli"/"seed"
   lastUsedAt  DateTime?
-  deletedAt   DateTime?
+  deletedAt   DateTime? // soft-delete = revoked
   createdAt   DateTime  @default(now())
 
   @@index([tokenHash])

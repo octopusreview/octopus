@@ -334,7 +334,7 @@ DATABASE_URL=postgresql://octopus:octopus@localhost:43332/octopus bunx prisma mi
         <div className="space-y-3">
           <TipCard
             title="Use connection pooling"
-            description="Use PgBouncer or Supabase pooler for PostgreSQL connections. Next.js serverless functions can exhaust connection limits quickly."
+            description="Use PgBouncer or Supabase pooler for PostgreSQL connections. Multiple app instances and pg-boss worker processes can otherwise exhaust Postgres connection limits."
           />
           <TipCard
             title="Secure Qdrant"

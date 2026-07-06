@@ -231,13 +231,21 @@ models/**/*.bin`}
       {/* Providers */}
       <Section title="Provider Support">
         <Paragraph>
-          <Mono>.octopusignore</Mono> works with both supported providers:
+          <Mono>.octopusignore</Mono> works across your connected code
+          providers:
         </Paragraph>
-        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+        <div className="mb-4 grid gap-3 sm:grid-cols-3">
           <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
             <h4 className="text-sm font-medium text-white">GitHub</h4>
             <p className="mt-1 text-xs text-[#666]">
               Fetched via Contents API from the PR&apos;s base branch.
+            </p>
+          </div>
+          <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
+            <h4 className="text-sm font-medium text-white">GitLab</h4>
+            <p className="mt-1 text-xs text-[#666]">
+              Fetched via the Repository Files API from the MR&apos;s target
+              branch.
             </p>
           </div>
           <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">

@@ -72,13 +72,6 @@ export default function IntegrationsPage() {
             description="Create GitHub issues directly from review findings for tracking and follow-up."
           />
         </FeatureGrid>
-        <EnvBlock
-          vars={[
-            { name: "GITHUB_APP_ID", description: "Your GitHub App ID" },
-            { name: "GITHUB_APP_PRIVATE_KEY", description: "RSA private key (PEM or base64-encoded)" },
-            { name: "GITHUB_WEBHOOK_SECRET", description: "Webhook secret for event verification" },
-          ]}
-        />
       </IntegrationSection>
 
       {/* GitLab */}
@@ -115,13 +108,6 @@ export default function IntegrationsPage() {
             description="One webhook per project is registered at sync time — no Premium tier required."
           />
         </FeatureGrid>
-        <EnvBlock
-          vars={[
-            { name: "GITLAB_CLIENT_ID", description: "OAuth application ID for gitlab.com" },
-            { name: "GITLAB_CLIENT_SECRET", description: "OAuth application secret for gitlab.com" },
-            { name: "GITLAB_REDIRECT_URI", description: "OAuth callback URL, e.g. https://octopus-review.ai/api/gitlab/callback" },
-          ]}
-        />
       </IntegrationSection>
 
       {/* Bitbucket */}
@@ -152,12 +138,6 @@ export default function IntegrationsPage() {
             description="Automatic webhook management for real-time PR event processing."
           />
         </FeatureGrid>
-        <EnvBlock
-          vars={[
-            { name: "BITBUCKET_CLIENT_ID", description: "OAuth consumer key" },
-            { name: "BITBUCKET_CLIENT_SECRET", description: "OAuth consumer secret" },
-          ]}
-        />
       </IntegrationSection>
 
       {/* Linear */}
@@ -216,13 +196,6 @@ export default function IntegrationsPage() {
             description="Track issue status directly from the Octopus dashboard without leaving the review."
           />
         </FeatureGrid>
-        <EnvBlock
-          vars={[
-            { name: "JIRA_CLIENT_ID", description: "Atlassian OAuth 2.0 (3LO) client ID" },
-            { name: "JIRA_CLIENT_SECRET", description: "Atlassian OAuth 2.0 (3LO) client secret" },
-            { name: "JIRA_REDIRECT_URI", description: "OAuth callback URL, e.g. https://octopus-review.ai/api/jira/callback" },
-          ]}
-        />
       </IntegrationSection>
 
       {/* Slack */}
@@ -338,31 +311,4 @@ function Feature({
 
 function P({ children }: { children: React.ReactNode }) {
   return <p className="mb-3 text-sm leading-relaxed text-[#888]">{children}</p>;
-}
-
-function EnvBlock({
-  vars,
-}: {
-  vars: { name: string; description: string }[];
-}) {
-  return (
-    <div className="mb-4">
-      <h3 className="mb-2 text-sm font-semibold text-[#ccc]">
-        Environment Variables
-      </h3>
-      <div className="space-y-1">
-        {vars.map((v) => (
-          <div
-            key={v.name}
-            className="rounded-lg border border-white/[0.04] bg-white/[0.01] px-3 py-2"
-          >
-            <code className="text-xs text-white sm:text-sm">{v.name}</code>
-            <span className="mt-1 block text-xs text-[#555]">
-              {v.description}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }

@@ -76,6 +76,15 @@ const sections: SidebarSection[] = [
       { href: "/docs/security", label: "Security & Bug Bounty" },
     ],
   },
+  {
+    title: "Compliance",
+    items: [
+      { href: "/docs/security-overview", label: "Security Overview" },
+      { href: "/docs/dpa", label: "Data Processing Addendum" },
+      { href: "/docs/sub-processors", label: "Sub-processors" },
+      { href: "/docs/data-retention", label: "Data Retention" },
+    ],
+  },
 ];
 
 export function DocsSidebar() {

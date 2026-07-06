@@ -37,7 +37,7 @@ const generalFaqs = [
 const securityFaqs = [
   {
     q: "Is my code safe?",
-    a: "Yes. Your code is processed in-memory and never stored permanently on our servers. Embeddings are stored in your Qdrant instance for search, but the original source code is not retained. If you self-host, everything stays on your own infrastructure.",
+    a: "Yes. Your code is processed in-memory and never stored permanently on our servers. Embeddings are stored in a Qdrant vector database for search, but the original source code is not retained. If you self-host, the entire pipeline — including Qdrant — runs on your own infrastructure.",
   },
   {
     q: "Can I self-host Octopus?",
@@ -67,6 +67,10 @@ const integrationFaqs = [
     a: "Yes. You can connect Octopus to Linear to automatically create issues from review findings. This makes it easy to track and prioritize the issues Octopus discovers.",
   },
   {
+    q: "Does Octopus integrate with Jira?",
+    a: "Yes. Connect your Atlassian site to create Jira issues directly from review findings. Each issue is pre-filled with the finding details, severity, and a link back to the PR/MR.",
+  },
+  {
     q: "Can I use Octopus with a monorepo?",
     a: <>Yes. Octopus indexes the entire repository and understands cross-package dependencies. You can use <Link href="/docs/octopusignore" className="text-white underline decoration-white/30 underline-offset-2 hover:decoration-white">.octopusignore</Link> to exclude directories that shouldn&apos;t be reviewed (build outputs, vendor code, etc.).</>,
   },
@@ -87,7 +91,7 @@ const pricingFaqs = [
   },
   {
     q: "What are BYO (Bring Your Own) keys?",
-    a: "BYO keys let you use your own Anthropic or OpenAI API keys. This way, AI usage is billed directly to your provider account, and you only pay Octopus for the platform — not the AI tokens.",
+    a: "BYO keys let you use your own Anthropic, OpenAI, Google, or Cohere API keys. This way, AI usage is billed directly to your provider account, and you only pay Octopus for the platform — not the AI tokens.",
   },
   {
     q: "Can I set spend limits?",

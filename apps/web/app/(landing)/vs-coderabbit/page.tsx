@@ -46,7 +46,7 @@ const faqs = [
   },
   {
     q: "How does pricing work with Octopus?",
-    a: "Octopus is credit-based and usage-only, so you pay for what the AI actually reviews. You can also bring your own Claude or OpenAI API key and pay the LLM provider directly. Self-hosted Octopus is free. See the pricing page for current rates.",
+    a: "Octopus is credit-based and usage-only, so you pay for what the AI actually reviews. You can also bring your own Claude, OpenAI, or Gemini API key and pay the LLM provider directly. Self-hosted Octopus is free. See the pricing page for current rates.",
   },
 ];
 
@@ -171,7 +171,7 @@ export default async function VsCodeRabbitPage() {
               </li>
               <li className="flex gap-3">
                 <IconCheck className="mt-0.5 size-4 shrink-0 text-[#10D8BE]" />
-                You want to bring your own Claude or OpenAI API keys.
+                You want to bring your own Claude, OpenAI, or Gemini API keys.
               </li>
               <li className="flex gap-3">
                 <IconCheck className="mt-0.5 size-4 shrink-0 text-[#10D8BE]" />

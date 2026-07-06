@@ -18,7 +18,7 @@ const generalFaqs = [
   },
   {
     q: "How does Octopus review my code?",
-    a: "When a pull request is opened, Octopus fetches the diff, retrieves relevant context from your indexed codebase using vector search, and sends it to an LLM (Claude or OpenAI) for analysis. The results are posted as PR comments with severity indicators: 🔴 Critical, 🟠 Major, 🟡 Minor, 🔵 Suggestion, 💡 Tip.",
+    a: "When a pull request is opened, Octopus fetches the diff, retrieves relevant context from your indexed codebase using vector search, and sends it to an LLM (Claude, OpenAI, or Google Gemini) for analysis. The results are posted as PR comments with severity indicators: 🔴 Critical, 🟠 Major, 🟡 Minor, 🔵 Suggestion, 💡 Tip.",
   },
   {
     q: "Which programming languages does Octopus support?",
@@ -45,11 +45,11 @@ const securityFaqs = [
   },
   {
     q: "Which AI models process my code?",
-    a: "Octopus supports Anthropic Claude and OpenAI models. You can configure which model your organization uses, or bring your own API keys (BYO keys) so requests go directly to the provider without any intermediary.",
+    a: "Octopus supports Anthropic Claude, OpenAI (GPT), and Google Gemini as review models. You can configure which your organization uses, or bring your own API key (BYOK) for any of them — including a Google Gemini key — so requests go directly to the provider without any intermediary. (Embeddings use OpenAI, and Cohere is used for search re-ranking.)",
   },
   {
     q: "Does Octopus train AI models on my code?",
-    a: "No. Your code is never used for training. When using the cloud service, code is sent to Anthropic or OpenAI via their API, which does not use API inputs for model training. When self-hosting, you control the entire pipeline.",
+    a: "No. Your code is never used for training. When using the cloud service, code is sent to Anthropic, OpenAI, or Google via their API, which do not use API inputs for model training. When self-hosting, you control the entire pipeline.",
   },
 ];
 

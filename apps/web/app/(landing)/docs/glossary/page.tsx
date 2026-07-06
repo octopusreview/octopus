@@ -49,7 +49,7 @@ const glossary: { term: string; definition: string }[] = [
   {
     term: "LLM (Large Language Model)",
     definition:
-      "An AI model trained on large amounts of text, such as Anthropic Claude or OpenAI GPT. Octopus sends code context and diffs to an LLM, which performs the actual analysis and generates review findings.",
+      "An AI model trained on large amounts of text, such as Anthropic Claude, OpenAI GPT, or Google Gemini. Octopus sends code context and diffs to an LLM, which performs the actual analysis and generates review findings.",
   },
   {
     term: ".octopusignore",

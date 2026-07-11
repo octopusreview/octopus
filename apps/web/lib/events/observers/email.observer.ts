@@ -2,6 +2,7 @@ import { prisma } from "@octopus/db";
 import { sendEmail } from "@/lib/email";
 import { escapeHtml, sanitizeUrl } from "@/lib/html";
 import { renderEmailTemplate } from "@/lib/email-renderer";
+import { getAdminRecipients } from "@/lib/org-recipients";
 import { eventBus } from "../bus";
 import type {
   RepoIndexedEvent,
@@ -126,24 +127,6 @@ function onKnowledgeReady(event: KnowledgeReadyEvent): Promise<void> {
   });
 }
 
-async function getAdminRecipients(
-  orgId: string,
-): Promise<{ email: string; name: string }[]> {
-  const members = await prisma.organizationMember.findMany({
-    where: {
-      organizationId: orgId,
-      deletedAt: null,
-      role: { in: ["owner", "admin"] },
-    },
-    select: {
-      user: { select: { email: true, name: true } },
-    },
-  });
-
-  return members
-    .filter((m) => m.user.email)
-    .map((m) => ({ email: m.user.email, name: m.user.name }));
-}
 
 const CREDIT_LOW_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24h
 

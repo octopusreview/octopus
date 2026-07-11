@@ -177,8 +177,29 @@ model Organization {
   safePackageRequests   SafePackageRequest[]
   packageDeepDives      PackageDeepDive[]
   couponRedemptions     CouponRedemption[]
+  incidentComms         IncidentComm[]
 
   @@map("organizations")
+}
+
+// One row per (incident, organization) admin communication — the idempotency
+// spine for `octp admin incidents notify`: the unique constraint guarantees a
+// re-run of the same incidentKey can never re-email or re-grant an org. Rows
+// are created as a claim before sending and deleted if that org's send fails,
+// so a partial run can be safely retried.
+model IncidentComm {
+  id               String   @id @default(cuid())
+  incidentKey      String
+  emailsSent       Int      @default(0)
+  creditGrantedUsd Float    @default(0)
+  createdAt        DateTime @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([incidentKey, organizationId])
+  @@index([incidentKey])
+  @@map("incident_comms")
 }
 
 model OrganizationMember {

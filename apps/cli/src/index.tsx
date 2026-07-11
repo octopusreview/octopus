@@ -3,6 +3,7 @@ import React from "react";
 import { render } from "ink";
 import { OnboardWizard } from "./OnboardWizard.js";
 import { isOnboarded, loadConfig } from "./lib/config.js";
+import { adminCommand } from "./commands/admin.js";
 import { agentServeCommand } from "./commands/agent-serve.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { reviewCommand } from "./commands/review.js";
@@ -31,6 +32,7 @@ const KNOWN_SUBCOMMANDS = new Set([
   "onboard",
   "review",
   "agent",
+  "admin",
   "config",
   "doctor",
 ]);
@@ -43,6 +45,8 @@ Usage:
   octp onboard [--reset]     Run the onboarding wizard explicitly
   octp review [--staged]     Review local changes pre-PR (see \`octp review --help\`)
   octp agent serve           Run as a local-agent bridge (poll for tasks, run via Ollama)
+  octp admin <subcommand>    Operator ops: incident emails + goodwill credits
+                             (see \`octp admin --help\`; needs OCTOPUS_ADMIN_SECRET)
   octp config <get|set>      Manage ~/.octopus/config.json               (coming soon)
   octp doctor                Environment + auth health check
 
@@ -104,6 +108,10 @@ async function main(argv: string[]): Promise<number> {
     console.error(`Unknown agent subcommand: ${sub ?? "(none)"}`);
     console.error("Try: octp agent serve");
     return 2;
+  }
+
+  if (first === "admin") {
+    return await adminCommand(argv.slice(1));
   }
 
   if (first === "doctor") {

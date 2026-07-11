@@ -164,6 +164,8 @@ export interface OrgOutcome {
 export interface NotifyResult {
   dryRun: boolean;
   incidentKey: string;
+  /** Resolved window start (ISO) — clients pin the live send to the dry-run's window with this. */
+  since: string;
   orgs: OrgOutcome[];
   totals: { orgs: number; emails: number; creditUsd: number };
 }
@@ -321,6 +323,7 @@ export async function notifyAffectedOrgs(params: NotifyParams): Promise<NotifyRe
   return {
     dryRun: params.dryRun,
     incidentKey: params.incidentKey,
+    since: params.since.toISOString(),
     orgs: outcomes,
     totals: {
       orgs: sentOrPlanned.length,

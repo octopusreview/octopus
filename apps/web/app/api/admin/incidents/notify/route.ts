@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAdminApiAuthorized } from "@/lib/admin-auth";
 import {
   INCIDENT_KEY_RE,
   IncidentNotifyError,
@@ -6,15 +7,6 @@ import {
   notifyAffectedOrgs,
   parseSince,
 } from "@/lib/incidents";
-
-function isAuthorized(request: NextRequest): boolean {
-  const expected = process.env.ADMIN_API_SECRET;
-  if (!expected) return false;
-  const header = request.headers.get("authorization");
-  if (!header) return false;
-  const token = header.startsWith("Bearer ") ? header.slice(7) : header;
-  return token === expected;
-}
 
 interface NotifyBody {
   incidentKey?: unknown;
@@ -35,7 +27,7 @@ interface NotifyBody {
  * explicitly false. Idempotent per (incidentKey, org) — see lib/incidents.ts.
  */
 export async function POST(request: NextRequest) {
-  if (!isAuthorized(request)) {
+  if (!isAdminApiAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

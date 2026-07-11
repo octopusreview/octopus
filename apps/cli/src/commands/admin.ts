@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline";
 import { loadCredentials } from "../lib/credentials.js";
-import { getJson, postJson } from "../lib/api.js";
+import { getJson, isTransportSafe, postJson } from "../lib/api.js";
+import { sanitizeTerminal } from "../lib/output.js";
 
 /**
  * `octp admin` — operator-only commands against the /api/admin/* endpoints.
@@ -64,6 +65,8 @@ interface OrgOutcome {
 interface NotifyResponse {
   dryRun: boolean;
   incidentKey: string;
+  /** The window start the server resolved, as ISO — reused verbatim for the live send. */
+  since: string;
   orgs: OrgOutcome[];
   totals: { orgs: number; emails: number; creditUsd: number };
 }
@@ -99,6 +102,8 @@ Usage:
 Common flags:
   --url <base>                  API base (default: OCTOPUS_ADMIN_URL, then your
                                 signed-in baseUrl from ~/.octopus/credentials)
+  --insecure                    Allow sending the admin secret over cleartext
+                                HTTP to a non-local host (not recommended)
 `);
 }
 
@@ -127,7 +132,16 @@ async function resolveContext(argv: string[]): Promise<AdminContext | null> {
     return null;
   }
 
-  return { baseUrl: baseUrl.replace(/\/+$/, ""), secret };
+  const cleanBase = baseUrl.replace(/\/+$/, "");
+  // The admin secret is strictly more sensitive than a customer token (it
+  // grants mass-email + credit-granting) — same cleartext guard as login.ts.
+  if (!isTransportSafe(cleanBase) && !argv.includes("--insecure")) {
+    console.error("Refusing to send the admin secret over cleartext HTTP to a non-local host.");
+    console.error("Use an https URL (or a loopback / private-LAN host), or pass --insecure to override.");
+    return null;
+  }
+
+  return { baseUrl: cleanBase, secret };
 }
 
 async function confirm(prompt: string): Promise<boolean> {
@@ -146,14 +160,16 @@ function formatWindow(startIso: string, endIso: string): string {
   return `${fmt(startIso)} → ${fmt(endIso)} UTC`;
 }
 
+// All org/repo/error strings below are server-provided (and error text can
+// echo upstream API responses) — sanitize before they reach the terminal.
 function printOrgTable(orgs: AffectedOrg[]): void {
   for (const org of orgs) {
-    console.log(`\n  ${org.orgName} (${org.orgSlug})`);
+    console.log(`\n  ${sanitizeTerminal(org.orgName)} (${sanitizeTerminal(org.orgSlug)})`);
     console.log(`    failed reviews : ${org.failedCount}  [${formatWindow(org.firstFailureAt, org.lastFailureAt)}]`);
-    console.log(`    repositories   : ${org.repositories.join(", ")}`);
-    console.log(`    recipients     : ${org.recipients.map((r) => r.email).join(", ") || "(none — would be skipped)"}`);
+    console.log(`    repositories   : ${sanitizeTerminal(org.repositories.join(", "))}`);
+    console.log(`    recipients     : ${sanitizeTerminal(org.recipients.map((r) => r.email).join(", ")) || "(none — would be skipped)"}`);
     for (const err of org.errors) {
-      console.log(`    error          : ${err}`);
+      console.log(`    error          : ${sanitizeTerminal(err)}`);
     }
   }
 }
@@ -161,8 +177,8 @@ function printOrgTable(orgs: AffectedOrg[]): void {
 function printOutcomes(result: NotifyResponse): void {
   for (const org of result.orgs) {
     const credit = org.creditUsd > 0 ? ` +$${org.creditUsd.toFixed(2)}` : "";
-    const reason = org.reason ? ` — ${org.reason}` : "";
-    console.log(`  [${org.action.toUpperCase().padEnd(7)}] ${org.orgSlug} (${org.failedCount} failed, ${org.recipients.length} recipient(s)${credit})${reason}`);
+    const reason = org.reason ? ` — ${sanitizeTerminal(org.reason)}` : "";
+    console.log(`  [${org.action.toUpperCase().padEnd(7)}] ${sanitizeTerminal(org.orgSlug)} (${org.failedCount} failed, ${org.recipients.length} recipient(s)${credit})${reason}`);
   }
   console.log(
     `\n  Totals: ${result.totals.orgs} org(s), ${result.totals.emails} email(s), $${result.totals.creditUsd.toFixed(2)} credits${result.dryRun ? "  [DRY RUN]" : ""}`,
@@ -250,9 +266,12 @@ async function incidentsNotify(argv: string[], ctx: AdminContext): Promise<numbe
     }
   }
 
+  // Pin the live send to the exact window the operator just approved — a
+  // relative --since would re-resolve at send time and could pull in orgs
+  // that failed after the plan was printed.
   const live = await postJson<NotifyResponse>(
     `${ctx.baseUrl}/api/admin/incidents/notify`,
-    { ...payload, dryRun: false },
+    { ...payload, since: dry.data.since, dryRun: false },
     ctx.secret,
     { timeoutMs: NOTIFY_TIMEOUT_MS },
   );
@@ -302,7 +321,7 @@ async function creditsGrant(argv: string[], ctx: AdminContext): Promise<number> 
 
   const { balance } = res.data;
   console.log(
-    `Granted $${res.data.granted.toFixed(2)} to ${res.data.org.slug}. Balance: $${balance.free.toFixed(2)} free + $${balance.purchased.toFixed(2)} purchased = $${balance.total.toFixed(2)}.`,
+    `Granted $${res.data.granted.toFixed(2)} to ${sanitizeTerminal(res.data.org.slug)}. Balance: $${balance.free.toFixed(2)} free + $${balance.purchased.toFixed(2)} purchased = $${balance.total.toFixed(2)}.`,
   );
   return 0;
 }

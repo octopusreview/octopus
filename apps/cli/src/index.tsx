@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { renderWizard } from "./OnboardWizard.js";
 import { isOnboarded, loadConfig } from "./lib/config.js";
+import { adminCommand } from "./commands/admin.js";
 import { agentServeCommand } from "./commands/agent-serve.js";
 import { agentWatchCommand } from "./commands/agent-watch.js";
 import { doctorCommand } from "./commands/doctor.js";
@@ -86,6 +87,8 @@ Agent & ops:
   octp agent watch [path]    Watch a repo dir so cloud chat can search it locally
   octp config <get|set|list> Manage ~/.octopus/config.json
   octp skills <list|install|update|remove>       Manage AI-agent skills
+  octp admin <subcommand>    Operator ops: incident emails + goodwill credits
+                             (see \`octp admin --help\`; needs OCTOPUS_ADMIN_SECRET)
   octp doctor                Environment + auth health check
   octp update [--check]      Update the CLI
 
@@ -209,6 +212,8 @@ async function main(rawArgv: string[]): Promise<number> {
     case "account":
     case "profile":
       return await accountCommand(rest);
+    case "admin":
+      return await adminCommand(rest);
     case "agent": {
       const sub = argv[1];
       if (sub === "serve") return await agentServeCommand(argv.slice(2));

@@ -285,6 +285,28 @@ Let us know how your first review goes!`,
     buttonUrl: "{{appUrl}}/repositories",
     variables: ["firstName", "appUrl"],
   },
+  {
+    slug: "incident-resolved",
+    name: "Incident Resolved",
+    category: "transactional",
+    fromType: "system",
+    subject: "Resolved: Octopus review failures in {{orgName}}",
+    body: `Hi {{orgName}} team,
+
+Between {{windowStart}} and {{windowEnd}}, {{failedCount}} pull request review(s) in your organization failed because of a problem on our side — not anything in your code or configuration. {{incidentSummary}}
+
+The issue is fixed and reviews are running normally again. You can re-run any affected review by re-triggering it on the pull request or from the repository page.{{creditNote}}
+
+Sorry for the disruption, and thank you for your patience.`,
+    variables: [
+      "orgName",
+      "windowStart",
+      "windowEnd",
+      "failedCount",
+      "incidentSummary",
+      "creditNote",
+    ],
+  },
 ];
 
 /**

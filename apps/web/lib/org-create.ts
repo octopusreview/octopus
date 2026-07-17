@@ -1,7 +1,7 @@
 import { prisma } from "@octopus/db";
 import { toBaseSlug, randomSlugSuffix } from "@/lib/slug";
 import { canUserCreateOrg } from "@/lib/org-limits";
-import { MAX_OWNED_ORGS_PER_USER } from "@/lib/constants";
+import { MAX_OWNED_ORGS_PER_USER, WELCOME_FREE_CREDITS } from "@/lib/constants";
 
 /**
  * Creates an organization for a user. Pure DB operation — no cookie setting,
@@ -63,12 +63,13 @@ export async function createOrgForUser(userId: string, userName: string) {
           },
         },
         ...(firstOrg && {
+          freeCreditBalance: WELCOME_FREE_CREDITS,
           creditTransactions: {
             create: {
-              amount: 150,
+              amount: WELCOME_FREE_CREDITS,
               type: "free_credit",
-              description: "Welcome bonus — $150 free credits",
-              balanceAfter: 150,
+              description: `Welcome bonus — $${WELCOME_FREE_CREDITS} free credits`,
+              balanceAfter: WELCOME_FREE_CREDITS,
             },
           },
         }),

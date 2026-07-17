@@ -1,6 +1,6 @@
 import { prisma } from "@octopus/db";
 import { addCredits } from "@/lib/credits";
-import { getStripe } from "@/lib/stripe";
+import { getStripe, getOffSessionPaymentMethodId } from "@/lib/stripe";
 import { SUBSCRIPTION_PLANS, type PaidPlanTier } from "@/lib/plans";
 
 /**
@@ -104,6 +104,9 @@ export async function chargeSubscription(
   });
   if (!org?.stripeCustomerId) return null;
 
+  const paymentMethod = await getOffSessionPaymentMethodId(org.stripeCustomerId);
+  if (!paymentMethod) return null;
+
   const plan = SUBSCRIPTION_PLANS[tier];
   try {
     const paymentIntent = await getStripe().paymentIntents.create(
@@ -111,6 +114,7 @@ export async function chargeSubscription(
         amount: Math.round(plan.priceUsd * 100),
         currency: "usd",
         customer: org.stripeCustomerId,
+        payment_method: paymentMethod,
         off_session: true,
         confirm: true,
         metadata: { orgId, type: "subscription", tier, amountUsd: String(plan.priceUsd) },

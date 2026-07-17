@@ -168,6 +168,36 @@ export async function createSubscriptionCheckoutSession(
   return session.url!;
 }
 
+/**
+ * Resolve the payment method to use for off-session charges (auto-reload,
+ * subscription renewals). Cards saved via Checkout's setup_future_usage are
+ * ATTACHED to the customer but not made the default, and a PaymentIntent
+ * confirmed without an explicit payment_method does not fall back to attached
+ * cards — so we prefer the customer's default and fall back to the most
+ * recently attached card. Returns null when the customer has no card at all.
+ */
+export async function getOffSessionPaymentMethodId(
+  stripeCustomerId: string,
+): Promise<string | null> {
+  try {
+    const customer = await getStripe().customers.retrieve(stripeCustomerId);
+    if (!customer.deleted) {
+      const def = customer.invoice_settings?.default_payment_method;
+      if (typeof def === "string") return def;
+      if (def && typeof def === "object") return def.id;
+    }
+    const methods = await getStripe().paymentMethods.list({
+      customer: stripeCustomerId,
+      type: "card",
+      limit: 1,
+    });
+    return methods.data[0]?.id ?? null;
+  } catch (err) {
+    console.error("[stripe] Failed to resolve off-session payment method:", err);
+    return null;
+  }
+}
+
 export async function createPortalSession(
   orgId: string,
   returnUrl: string,

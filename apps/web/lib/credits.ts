@@ -1,5 +1,5 @@
 import { prisma } from "@octopus/db";
-import { getStripe } from "./stripe";
+import { getStripe, getOffSessionPaymentMethodId } from "./stripe";
 import { eventBus } from "./events/bus";
 
 export async function getOrgBalance(orgId: string) {
@@ -218,12 +218,18 @@ async function triggerAutoReloadIfNeeded(
 
   if (recentReload) return;
 
+  // Cards saved via Checkout are attached but not the customer default, and
+  // an off-session confirm does not fall back to attached cards — resolve the
+  // payment method explicitly or the reload silently no-ops.
+  const paymentMethod = await getOffSessionPaymentMethodId(org.stripeCustomerId);
+  if (!paymentMethod) return;
+
   try {
-    // Create a PaymentIntent and confirm immediately using the customer's default payment method
     const paymentIntent = await getStripe().paymentIntents.create({
       amount: Math.round(reloadAmount * 100),
       currency: "usd",
       customer: org.stripeCustomerId,
+      payment_method: paymentMethod,
       off_session: true,
       confirm: true,
       metadata: {

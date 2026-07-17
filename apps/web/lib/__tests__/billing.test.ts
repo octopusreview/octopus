@@ -128,8 +128,11 @@ mock.module("@octopus/db", () => ({
   },
 }));
 
+let mockOffSessionPaymentMethodId = mock(() => Promise.resolve("pm_default" as string | null));
+
 mock.module("@/lib/stripe", () => ({
   constructWebhookEvent: (...args: unknown[]) => mockConstructWebhookEvent(...args),
+  getOffSessionPaymentMethodId: (...args: unknown[]) => mockOffSessionPaymentMethodId(...args),
   getStripe: () => ({
     charges: {
       list: (...args: unknown[]) => mockChargesList(...args),
@@ -212,6 +215,7 @@ function resetBillingMocks() {
   mockAutoReloadConfigFindUnique = mock(() => Promise.resolve(null));
   mockOrganizationFindUnique = mock(() => Promise.resolve(null));
   organizationUpdates = [];
+  mockOffSessionPaymentMethodId = mock(() => Promise.resolve("pm_default" as string | null));
   mockOrganizationFindMany = mock(() => Promise.resolve([] as unknown[]));
   mockOrganizationUpdate = mock((args: unknown) => {
     organizationUpdates.push(args);
@@ -735,3 +739,24 @@ describe("subscription webhook", () => {
     expect(organizationUpdates).toEqual([]);
   });
 });
+
+describe("off-session payment method resolution", () => {
+  it("does not charge a renewal when the org has no saved card", async () => {
+    mockOrganizationFindMany = mock(() =>
+      Promise.resolve([
+        { id: "org_1", planTier: "pro", planRenewsAt: new Date(), planCancelAtPeriodEnd: false },
+      ]),
+    );
+    mockOrganizationFindUnique = mock(() =>
+      Promise.resolve({ stripeCustomerId: "cus_1" } as never),
+    );
+    mockOffSessionPaymentMethodId = mock(() => Promise.resolve(null));
+
+    const result = await renewDueSubscriptions();
+
+    // No card → charge returns null → treated as a failed charge (grace retry).
+    expect(result).toEqual({ renewed: 0, canceled: 0, downgraded: 0, failed: 1 });
+    expect(mockPaymentIntentsCreate).not.toHaveBeenCalled();
+    expect(orgState.creditBalance).toBe(20);
+  });
+})

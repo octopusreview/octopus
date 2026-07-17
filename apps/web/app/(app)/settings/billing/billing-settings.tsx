@@ -23,7 +23,9 @@ import {
   IconChevronLeft,
   IconChevronRight,
 } from "@tabler/icons-react";
+import { useRouter } from "next/navigation";
 import { PurchaseDialog } from "./purchase-dialog";
+import { CardSetupDialog } from "./card-setup-dialog";
 import { SUBSCRIPTION_PLANS } from "@/lib/plans";
 import {
   updateAutoReload,
@@ -124,7 +126,9 @@ export function BillingSettings({
   monthlySpend,
   paymentMethods,
 }: Props) {
+  const router = useRouter();
   const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [cardOpen, setCardOpen] = useState(false);
   const [transactions, setTransactions] = useState(initialTransactions);
   const [hasMore, setHasMore] = useState(initialTransactions.length < totalTransactions);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -149,6 +153,13 @@ export function BillingSettings({
 
   const handleSubscribe = (tier: string) => {
     setPlanError(null);
+    // No saved card yet — capture one in-app first, then they subscribe with
+    // the card on file (a saved card makes subscribeToPlan charge directly,
+    // no Stripe redirect).
+    if (paymentMethods.length === 0) {
+      setCardOpen(true);
+      return;
+    }
     startPlanTransition(async () => {
       const res = await subscribeToPlan(tier);
       if (res.error) setPlanError(res.error);
@@ -402,58 +413,63 @@ export function BillingSettings({
         <CardHeader>
           <CardTitle>Payment Methods</CardTitle>
           <CardDescription>
-            Manage your payment methods through Stripe.
+            One card for your subscription, top-ups, and auto-refill.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {!stripeCustomerId ? (
-            <p className="text-sm text-muted-foreground">
-              Purchase credits to set up billing.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {paymentMethods.length > 0 ? (
-                <div className="space-y-2">
-                  {paymentMethods.map((pm, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-3 rounded-md border bg-muted/20 px-3 py-2.5"
-                    >
-                      <IconCreditCard className="size-5 text-muted-foreground" />
-                      <div className="flex-1">
-                        <span className="text-sm font-medium capitalize">
-                          {pm.brand}
-                        </span>
-                        <span className="text-sm text-muted-foreground">
-                          {" "}•••• {pm.last4}
-                        </span>
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                        {String(pm.expMonth).padStart(2, "0")}/{pm.expYear}
+          <div className="space-y-3">
+            {paymentMethods.length > 0 ? (
+              <div className="space-y-2">
+                {paymentMethods.map((pm, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-3 rounded-md border bg-muted/20 px-3 py-2.5"
+                  >
+                    <IconCreditCard className="size-5 text-muted-foreground" />
+                    <div className="flex-1">
+                      <span className="text-sm font-medium capitalize">
+                        {pm.brand}
+                      </span>
+                      <span className="text-sm text-muted-foreground">
+                        {" "}•••• {pm.last4}
                       </span>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  No saved payment methods.
-                </p>
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handlePortal}
-                disabled={portalLoading || !isOwner}
-              >
-                {portalLoading ? (
-                  <IconLoader2 className="size-4 animate-spin mr-1" />
-                ) : (
-                  <IconExternalLink className="size-4 mr-1" />
+                    <span className="text-xs text-muted-foreground">
+                      {String(pm.expMonth).padStart(2, "0")}/{pm.expYear}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No saved payment methods.
+              </p>
+            )}
+            {isOwner && (
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={() => setCardOpen(true)}>
+                  <IconCreditCard className="size-4 mr-1" />
+                  {paymentMethods.length > 0 ? "Replace card" : "Add card"}
+                </Button>
+                {stripeCustomerId && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground"
+                    onClick={handlePortal}
+                    disabled={portalLoading}
+                  >
+                    {portalLoading ? (
+                      <IconLoader2 className="size-4 animate-spin mr-1" />
+                    ) : (
+                      <IconExternalLink className="size-4 mr-1" />
+                    )}
+                    Manage on Stripe
+                  </Button>
                 )}
-                Manage Payment Methods
-              </Button>
-            </div>
-          )}
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -792,6 +808,12 @@ export function BillingSettings({
       </Card>
 
       <PurchaseDialog open={purchaseOpen} onOpenChange={setPurchaseOpen} />
+      <CardSetupDialog
+        open={cardOpen}
+        onOpenChange={setCardOpen}
+        publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ""}
+        onSaved={() => router.refresh()}
+      />
     </div>
   );
 }

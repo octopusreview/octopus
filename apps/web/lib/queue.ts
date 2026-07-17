@@ -123,6 +123,16 @@ export async function startQueue(): Promise<PgBoss> {
     expireInSeconds: 300, // 5 min — a single GitHub fetch + upsert
   }).catch(() => {});
 
+  // Daily subscription renewals (scheduled in instrumentation.ts, worked in
+  // queue-workers.ts). Same pg-boss v12 requirement — the queue must exist
+  // before schedule()/work(); a missing queue crashed review-engine startup
+  // in the 1.0.43 deploy. No auto-retry: renewDueSubscriptions is idempotent
+  // and the next daily run re-sweeps anything unfinished.
+  await boss.createQueue("subscription-renewals", {
+    retryLimit: 1,
+    expireInSeconds: 1800, // 30 min — one off-session charge per due org
+  }).catch(() => {});
+
   // Admin-triggered Ollama model downloads (self-hosted). Long expiry — a
   // large model is many GB. No auto-retry: runOllamaPull records failures in
   // the OllamaModelPull row itself and re-pulls are admin-driven from the UI.

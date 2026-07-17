@@ -72,7 +72,11 @@ export function CardSetupDialog({
           if (!cancelled) setReady(true);
         });
       }
-    })();
+    })().catch((err) => {
+      if (cancelled) return;
+      console.error("[billing] card setup failed to initialize:", err);
+      setError("Could not load the payment form. Please try again.");
+    });
 
     return () => {
       cancelled = true;

@@ -218,13 +218,13 @@ async function triggerAutoReloadIfNeeded(
 
   if (recentReload) return;
 
-  // Cards saved via Checkout are attached but not the customer default, and
-  // an off-session confirm does not fall back to attached cards — resolve the
-  // payment method explicitly or the reload silently no-ops.
-  const paymentMethod = await getOffSessionPaymentMethodId(org.stripeCustomerId);
-  if (!paymentMethod) return;
-
   try {
+    // Cards saved via Checkout are attached but not the customer default, and
+    // an off-session confirm does not fall back to attached cards — resolve
+    // the payment method explicitly or the reload silently no-ops.
+    const paymentMethod = await getOffSessionPaymentMethodId(org.stripeCustomerId);
+    if (!paymentMethod) return;
+
     const paymentIntent = await getStripe().paymentIntents.create({
       amount: Math.round(reloadAmount * 100),
       currency: "usd",

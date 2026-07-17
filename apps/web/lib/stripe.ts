@@ -174,28 +174,25 @@ export async function createSubscriptionCheckoutSession(
  * ATTACHED to the customer but not made the default, and a PaymentIntent
  * confirmed without an explicit payment_method does not fall back to attached
  * cards — so we prefer the customer's default and fall back to the most
- * recently attached card. Returns null when the customer has no card at all.
+ * recently attached card. Returns null ONLY when the customer genuinely has
+ * no card; a Stripe API error propagates so callers don't mistake an outage
+ * for "no card" (which would wrongly count as a failed renewal / downgrade).
  */
 export async function getOffSessionPaymentMethodId(
   stripeCustomerId: string,
 ): Promise<string | null> {
-  try {
-    const customer = await getStripe().customers.retrieve(stripeCustomerId);
-    if (!customer.deleted) {
-      const def = customer.invoice_settings?.default_payment_method;
-      if (typeof def === "string") return def;
-      if (def && typeof def === "object") return def.id;
-    }
-    const methods = await getStripe().paymentMethods.list({
-      customer: stripeCustomerId,
-      type: "card",
-      limit: 1,
-    });
-    return methods.data[0]?.id ?? null;
-  } catch (err) {
-    console.error("[stripe] Failed to resolve off-session payment method:", err);
-    return null;
+  const customer = await getStripe().customers.retrieve(stripeCustomerId);
+  if (!customer.deleted) {
+    const def = customer.invoice_settings?.default_payment_method;
+    if (typeof def === "string") return def;
+    if (def && typeof def === "object") return def.id;
   }
+  const methods = await getStripe().paymentMethods.list({
+    customer: stripeCustomerId,
+    type: "card",
+    limit: 1,
+  });
+  return methods.data[0]?.id ?? null;
 }
 
 export async function createPortalSession(

@@ -104,11 +104,11 @@ export async function chargeSubscription(
   });
   if (!org?.stripeCustomerId) return null;
 
-  const paymentMethod = await getOffSessionPaymentMethodId(org.stripeCustomerId);
-  if (!paymentMethod) return null;
-
   const plan = SUBSCRIPTION_PLANS[tier];
   try {
+    const paymentMethod = await getOffSessionPaymentMethodId(org.stripeCustomerId);
+    if (!paymentMethod) return null;
+
     const paymentIntent = await getStripe().paymentIntents.create(
       {
         amount: Math.round(plan.priceUsd * 100),

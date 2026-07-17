@@ -119,6 +119,25 @@ export async function finalizeCardSetup(
       invoice_settings: { default_payment_method: intent.payment_method },
     });
 
+    // One card per customer: detach every previously-attached card so a
+    // "Replace card" leaves exactly the new one (matches the UI copy, and
+    // stops stale cards being reachable for off-session charges). Best-effort
+    // — the new default is already set, so a detach failure must not fail the
+    // save.
+    try {
+      const existing = await getStripe().paymentMethods.list({
+        customer: org.stripeCustomerId,
+        type: "card",
+      });
+      await Promise.all(
+        existing.data
+          .filter((pm) => pm.id !== intent.payment_method)
+          .map((pm) => getStripe().paymentMethods.detach(pm.id)),
+      );
+    } catch (err) {
+      console.error("[billing] finalizeCardSetup: detaching old cards failed (non-fatal):", err);
+    }
+
     revalidatePath("/settings/billing");
     return { success: true };
   } catch (err) {

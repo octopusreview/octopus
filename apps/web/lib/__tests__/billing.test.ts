@@ -759,4 +759,23 @@ describe("off-session payment method resolution", () => {
     expect(mockPaymentIntentsCreate).not.toHaveBeenCalled();
     expect(orgState.creditBalance).toBe(20);
   });
-})
+
+  it("does not downgrade on a Stripe API error resolving the card (transient)", async () => {
+    mockOrganizationFindMany = mock(() =>
+      Promise.resolve([
+        { id: "org_1", planTier: "pro", planRenewsAt: new Date(), planCancelAtPeriodEnd: false },
+      ]),
+    );
+    mockOrganizationFindUnique = mock(() =>
+      Promise.resolve({ stripeCustomerId: "cus_1" } as never),
+    );
+    // A Stripe outage must NOT read as "no card" — it should count as a failed
+    // charge (grace retry), never a downgrade.
+    mockOffSessionPaymentMethodId = mock(() => Promise.reject(new Error("stripe down")));
+
+    const result = await renewDueSubscriptions();
+
+    expect(result).toEqual({ renewed: 0, canceled: 0, downgraded: 0, failed: 1 });
+    expect(orgState.creditBalance).toBe(20);
+  });
+});

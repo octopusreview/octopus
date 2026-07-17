@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { constructWebhookEvent, getStripe } from "@/lib/stripe";
 import { addCredits, deductCredits } from "@/lib/credits";
+import { grantSubscriptionPeriod, addOneMonth } from "@/lib/subscription";
+import { isPaidPlanTier } from "@/lib/plans";
 import { prisma } from "@octopus/db";
 
 async function getReceiptUrl(paymentIntentId: string | null): Promise<string | null> {
@@ -48,7 +50,12 @@ export async function POST(req: NextRequest) {
       const type = session.metadata?.type;
       const amountUsd = Number(session.metadata?.amountUsd || 0);
 
-      if (orgId && type === "credit_purchase" && amountUsd > 0) {
+      // checkout.session.completed fires even when payment is still pending
+      // (async payment methods); only grant once Stripe reports it paid.
+      // Cards — the only method we accept — are always "paid" at completion.
+      const isPaid = session.payment_status === "paid";
+
+      if (isPaid && orgId && type === "credit_purchase" && amountUsd > 0) {
         try {
           await addCredits(
             orgId,
@@ -80,6 +87,21 @@ export async function POST(req: NextRequest) {
         } catch (err) {
           console.error("[stripe-webhook] Receipt URL backfill failed (non-fatal):", err);
         }
+      }
+    }
+
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object;
+      const orgId = session.metadata?.orgId;
+      const tier = session.metadata?.tier;
+
+      const isPaid = session.payment_status === "paid";
+
+      if (isPaid && session.metadata?.type === "subscription_start" && orgId && tier && isPaidPlanTier(tier)) {
+        // Idempotent: the grant is keyed on session.id; a redelivery re-runs
+        // grantSubscriptionPeriod, which treats the duplicate ledger row as
+        // already-granted and re-stamps the same plan state.
+        await grantSubscriptionPeriod(orgId, tier, session.id, addOneMonth(new Date()));
       }
     }
 

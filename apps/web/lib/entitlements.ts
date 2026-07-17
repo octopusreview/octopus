@@ -4,14 +4,15 @@ import { ORG_TYPE } from "@/lib/org-types";
 /**
  * Feature entitlements for paid-only features (currently: live telemetry).
  *
- * There is no subscription/plan model — billing is credit-based (one-time
- * Stripe top-ups). "Paid" is therefore defined monotonically so it can't
- * flicker as credits are spent, and so it doesn't wrongly lock the feature
- * for legitimate non-credit payers. An org is paid when ANY of:
+ * "Paid" is defined monotonically so it can't flicker as credits are spent,
+ * and so it doesn't wrongly lock the feature for legitimate non-credit
+ * payers. An org is paid when ANY of:
  *   1. self-hosted install (no billing path at all);
  *   2. FRIENDLY org type (comped / relationship tier);
  *   3. BYOK — the org runs on its own provider key(s);
- *   4. it has ever made a real purchase (purchase / auto_reload txn).
+ *   4. it has ever made a real purchase (purchase / auto_reload /
+ *      subscription txn);
+ *   5. it has an active subscription tier (planTier != "free").
  *
  * COMMUNITY orgs are intentionally excluded — that tier is rate-limited, not
  * credit-based, and live telemetry is a paid perk.
@@ -23,7 +24,7 @@ import { ORG_TYPE } from "@/lib/org-types";
 const IS_SELF_HOSTED = process.env.NEXT_PUBLIC_OCTOPUS_SELF_HOSTED === "true";
 
 /** CreditTransaction.type values that represent a real (paid) purchase. */
-const PURCHASE_TXN_TYPES = ["purchase", "auto_reload"];
+const PURCHASE_TXN_TYPES = ["purchase", "auto_reload", "subscription"];
 
 /** True when the deployment is a self-hosted install (no billing path). */
 export function isSelfHosted(): boolean {
@@ -55,6 +56,8 @@ function hasOwnProviderKey(org: ProviderKeyFields): boolean {
 export type OrgEntitlements = {
   /** Entitled to paid-only features. */
   paid: boolean;
+  /** Current subscription tier ("free" | "pro" | "team") for tier-specific gates. */
+  planTier: string;
   /** Live telemetry is entitled AND the org owner has enabled it. */
   liveTelemetryActive: boolean;
   /** Org has opted in to letting vendor staff see member-level detail. */
@@ -72,10 +75,11 @@ export async function getOrgEntitlements(orgId: string): Promise<OrgEntitlements
     // self-host, where there is no vendor console — but kept consistent).
     const org = await prisma.organization.findUnique({
       where: { id: orgId },
-      select: { liveTelemetryEnabled: true, allowVendorMemberVisibility: true },
+      select: { liveTelemetryEnabled: true, allowVendorMemberVisibility: true, planTier: true },
     });
     return {
       paid: true,
+      planTier: org?.planTier ?? "free",
       liveTelemetryActive: Boolean(org?.liveTelemetryEnabled),
       allowVendorMemberVisibility: Boolean(org?.allowVendorMemberVisibility),
     };
@@ -94,13 +98,15 @@ export async function getOrgEntitlements(orgId: string): Promise<OrgEntitlements
       claudeCodeApiKey: true,
       liveTelemetryEnabled: true,
       allowVendorMemberVisibility: true,
+      planTier: true,
     },
   });
   if (!org) {
-    return { paid: false, liveTelemetryActive: false, allowVendorMemberVisibility: false };
+    return { paid: false, planTier: "free", liveTelemetryActive: false, allowVendorMemberVisibility: false };
   }
 
-  let paid = org.type === ORG_TYPE.FRIENDLY || hasOwnProviderKey(org);
+  let paid =
+    org.type === ORG_TYPE.FRIENDLY || hasOwnProviderKey(org) || org.planTier !== "free";
   if (!paid) {
     const purchase = await prisma.creditTransaction.findFirst({
       where: { organizationId: orgId, type: { in: PURCHASE_TXN_TYPES } },
@@ -111,6 +117,7 @@ export async function getOrgEntitlements(orgId: string): Promise<OrgEntitlements
 
   return {
     paid,
+    planTier: org.planTier,
     liveTelemetryActive: paid && Boolean(org.liveTelemetryEnabled),
     allowVendorMemberVisibility: Boolean(org.allowVendorMemberVisibility),
   };

@@ -120,7 +120,48 @@ export async function createCheckoutSession(
       },
     ],
     metadata: { orgId, type: "credit_purchase", amountUsd: String(amountUsd) },
+    // Save the card for off-session use (auto-reload, subscription renewals).
+    payment_intent_data: { setup_future_usage: "off_session" },
     success_url: `${returnUrl}?success=true`,
+    cancel_url: `${returnUrl}?canceled=true`,
+  });
+
+  return session.url!;
+}
+
+/**
+ * First subscription payment via Checkout for orgs with no saved card.
+ * The webhook (metadata.type === "subscription_start") grants the period and
+ * stamps the plan; setup_future_usage saves the card so renewals can charge
+ * off-session.
+ */
+export async function createSubscriptionCheckoutSession(
+  orgId: string,
+  tier: string,
+  planName: string,
+  priceUsd: number,
+  returnUrl: string,
+): Promise<string> {
+  const customerId = await getOrCreateStripeCustomer(orgId);
+
+  const session = await getStripe().checkout.sessions.create({
+    mode: "payment",
+    customer: customerId,
+    line_items: [
+      {
+        price_data: {
+          currency: "usd",
+          unit_amount: Math.round(priceUsd * 100),
+          product_data: {
+            name: `Octopus ${planName} plan — first month`,
+          },
+        },
+        quantity: 1,
+      },
+    ],
+    metadata: { orgId, type: "subscription_start", tier },
+    payment_intent_data: { setup_future_usage: "off_session" },
+    success_url: `${returnUrl}?subscribed=true`,
     cancel_url: `${returnUrl}?canceled=true`,
   });
 

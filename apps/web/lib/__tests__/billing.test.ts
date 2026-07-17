@@ -57,6 +57,12 @@ let mockCreditTransactionFindFirst = mock(() => Promise.resolve(null));
 let mockCreditTransactionUpdate = mock(() => Promise.resolve());
 let mockAutoReloadConfigFindUnique = mock(() => Promise.resolve(null));
 let mockOrganizationFindUnique = mock(() => Promise.resolve(null));
+let mockOrganizationFindMany = mock(() => Promise.resolve([] as unknown[]));
+let mockOrganizationUpdate = mock((args: unknown) => {
+  organizationUpdates.push(args);
+  return Promise.resolve({});
+});
+let organizationUpdates: unknown[];
 
 let mockConstructWebhookEvent = mock(() => currentEvent);
 let mockChargesList = mock(() =>
@@ -89,6 +95,8 @@ mock.module("@octopus/db", () => ({
     organization: {
       findUniqueOrThrow: (...args: unknown[]) => mockFindUniqueOrThrow(...args),
       findUnique: (...args: unknown[]) => mockOrganizationFindUnique(...args),
+      findMany: (...args: unknown[]) => mockOrganizationFindMany(...args),
+      update: (...args: unknown[]) => mockOrganizationUpdate(...args),
     },
     creditTransaction: {
       aggregate: (...args: unknown[]) => mockCreditAggregate(...args),
@@ -148,6 +156,7 @@ const {
   getOrgBalance,
 } = await import("@/lib/credits");
 const { POST } = await import("@/app/api/stripe/webhook/route");
+const { addOneMonth, renewDueSubscriptions } = await import("@/lib/subscription");
 
 function resetBillingMocks() {
   orgState = { creditBalance: 20, freeCreditBalance: 8 };
@@ -202,6 +211,12 @@ function resetBillingMocks() {
   mockCreditTransactionUpdate = mock(() => Promise.resolve());
   mockAutoReloadConfigFindUnique = mock(() => Promise.resolve(null));
   mockOrganizationFindUnique = mock(() => Promise.resolve(null));
+  organizationUpdates = [];
+  mockOrganizationFindMany = mock(() => Promise.resolve([] as unknown[]));
+  mockOrganizationUpdate = mock((args: unknown) => {
+    organizationUpdates.push(args);
+    return Promise.resolve({});
+  });
 
   mockConstructWebhookEvent = mock((body: string, signature: string) => {
     expect(body).toBe("{}");
@@ -332,6 +347,7 @@ describe("Stripe webhook route", () => {
       data: {
         object: {
           id: "cs_123",
+          payment_status: "paid",
           metadata: {
             orgId: "org_1",
             type: "credit_purchase",
@@ -500,6 +516,7 @@ describe("Stripe webhook route", () => {
       data: {
         object: {
           id: "cs_fail",
+          payment_status: "paid",
           metadata: { orgId: "org_1", type: "credit_purchase", amountUsd: "25" },
           payment_intent: "pi_fail",
         },
@@ -525,5 +542,196 @@ describe("Stripe webhook route", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ received: true });
     expect(createdTransactions).toEqual([]);
+  });
+});
+
+describe("subscription renewals", () => {
+  it("addOneMonth clamps the day (Jan 31 → Feb 28)", () => {
+    expect(addOneMonth(new Date(Date.UTC(2026, 0, 31))).toISOString()).toBe(
+      new Date(Date.UTC(2026, 1, 28)).toISOString(),
+    );
+  });
+
+  it("renews a due org: charges, grants credits, advances from the due date", async () => {
+    const due = new Date(Date.UTC(2026, 6, 15));
+    mockOrganizationFindMany = mock(() =>
+      Promise.resolve([
+        { id: "org_1", planTier: "pro", planRenewsAt: due, planCancelAtPeriodEnd: false },
+      ]),
+    );
+    mockOrganizationFindUnique = mock(() =>
+      Promise.resolve({ stripeCustomerId: "cus_1" } as never),
+    );
+    mockPaymentIntentsCreate = mock(() =>
+      Promise.resolve({ id: "pi_sub_1", status: "succeeded", latest_charge: null } as never),
+    );
+
+    const result = await renewDueSubscriptions();
+
+    expect(result).toEqual({ renewed: 1, canceled: 0, downgraded: 0, failed: 0 });
+    expect(orgState.creditBalance).toBe(20 + 54); // Pro grants $54
+    expect(createdTransactions).toHaveLength(1);
+    expect((createdTransactions[0] as { type: string }).type).toBe("subscription");
+    const stamp = organizationUpdates.find(
+      (u) => (u as { data: { planTier?: string } }).data.planTier === "pro",
+    ) as { data: { planRenewsAt: Date } };
+    expect(stamp.data.planRenewsAt.toISOString()).toBe(
+      new Date(Date.UTC(2026, 7, 15)).toISOString(),
+    );
+  });
+
+  it("downgrades a cancel-at-period-end org without charging", async () => {
+    mockOrganizationFindMany = mock(() =>
+      Promise.resolve([
+        { id: "org_1", planTier: "pro", planRenewsAt: new Date(), planCancelAtPeriodEnd: true },
+      ]),
+    );
+
+    const result = await renewDueSubscriptions();
+
+    expect(result).toEqual({ renewed: 0, canceled: 1, downgraded: 0, failed: 0 });
+    expect(mockPaymentIntentsCreate).not.toHaveBeenCalled();
+    expect(orgState.creditBalance).toBe(20);
+    expect(organizationUpdates).toEqual([
+      {
+        where: { id: "org_1" },
+        data: { planTier: "free", planRenewsAt: null, planCancelAtPeriodEnd: false },
+      },
+    ]);
+  });
+
+  it("keeps retrying a failed charge inside the grace window", async () => {
+    mockOrganizationFindMany = mock(() =>
+      Promise.resolve([
+        { id: "org_1", planTier: "pro", planRenewsAt: new Date(Date.now() - 24 * 60 * 60 * 1000), planCancelAtPeriodEnd: false },
+      ]),
+    );
+    mockOrganizationFindUnique = mock(() =>
+      Promise.resolve({ stripeCustomerId: "cus_1" } as never),
+    );
+    mockPaymentIntentsCreate = mock(() => Promise.reject(new Error("card_declined")));
+
+    const result = await renewDueSubscriptions();
+
+    expect(result).toEqual({ renewed: 0, canceled: 0, downgraded: 0, failed: 1 });
+    expect(orgState.creditBalance).toBe(20);
+    expect(organizationUpdates).toEqual([]);
+  });
+
+  it("downgrades after the grace window of failed charges", async () => {
+    mockOrganizationFindMany = mock(() =>
+      Promise.resolve([
+        { id: "org_1", planTier: "pro", planRenewsAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000), planCancelAtPeriodEnd: false },
+      ]),
+    );
+    mockOrganizationFindUnique = mock(() =>
+      Promise.resolve({ stripeCustomerId: "cus_1" } as never),
+    );
+    mockPaymentIntentsCreate = mock(() => Promise.reject(new Error("card_declined")));
+
+    const result = await renewDueSubscriptions();
+
+    expect(result).toEqual({ renewed: 0, canceled: 0, downgraded: 1, failed: 0 });
+    expect(organizationUpdates).toEqual([
+      {
+        where: { id: "org_1" },
+        data: { planTier: "free", planRenewsAt: null, planCancelAtPeriodEnd: false },
+      },
+    ]);
+  });
+
+  it("treats a duplicate grant (P2002) as already processed — no double credit, no re-stamp", async () => {
+    const due = new Date(Date.UTC(2026, 6, 15));
+    mockOrganizationFindMany = mock(() =>
+      Promise.resolve([
+        { id: "org_1", planTier: "pro", planRenewsAt: due, planCancelAtPeriodEnd: false },
+      ]),
+    );
+    mockOrganizationFindUnique = mock(() =>
+      Promise.resolve({ stripeCustomerId: "cus_1" } as never),
+    );
+    mockPaymentIntentsCreate = mock(() =>
+      Promise.resolve({ id: "pi_sub_dup", status: "succeeded", latest_charge: null } as never),
+    );
+    mockTxCreditTransactionCreate = mock(() => {
+      const err = new Error("unique") as Error & { code: string };
+      err.code = "P2002";
+      return Promise.reject(err);
+    });
+
+    const result = await renewDueSubscriptions();
+
+    expect(result).toEqual({ renewed: 1, canceled: 0, downgraded: 0, failed: 0 });
+    expect(orgState.creditBalance).toBe(20); // rolled back, not re-granted
+    expect(organizationUpdates).toEqual([]); // plan state untouched
+  });
+});
+
+describe("subscription webhook", () => {
+  it("grants the first period and stamps the plan for a paid subscription_start session", async () => {
+    currentEvent = {
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_sub_1",
+          payment_status: "paid",
+          metadata: { orgId: "org_1", type: "subscription_start", tier: "pro" },
+          payment_intent: "pi_sub_1",
+        },
+      },
+    };
+
+    const response = await POST(stripeRequest() as never);
+
+    expect(response.status).toBe(200);
+    expect(orgState.creditBalance).toBe(20 + 54);
+    expect(createdTransactions).toHaveLength(1);
+    expect((createdTransactions[0] as { type: string; stripeSessionId: string }).type).toBe(
+      "subscription",
+    );
+    expect(
+      (createdTransactions[0] as { stripeSessionId: string }).stripeSessionId,
+    ).toBe("cs_sub_1");
+    const stamp = organizationUpdates[0] as { data: { planTier: string } };
+    expect(stamp.data.planTier).toBe("pro");
+  });
+
+  it("does not grant when the session is not paid yet", async () => {
+    currentEvent = {
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_sub_unpaid",
+          payment_status: "unpaid",
+          metadata: { orgId: "org_1", type: "subscription_start", tier: "pro" },
+        },
+      },
+    };
+
+    const response = await POST(stripeRequest() as never);
+
+    expect(response.status).toBe(200);
+    expect(createdTransactions).toEqual([]);
+    expect(organizationUpdates).toEqual([]);
+    expect(orgState.creditBalance).toBe(20);
+  });
+
+  it("ignores unknown tiers without granting", async () => {
+    currentEvent = {
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_sub_bad",
+          payment_status: "paid",
+          metadata: { orgId: "org_1", type: "subscription_start", tier: "mega" },
+        },
+      },
+    };
+
+    const response = await POST(stripeRequest() as never);
+
+    expect(response.status).toBe(200);
+    expect(createdTransactions).toEqual([]);
+    expect(organizationUpdates).toEqual([]);
   });
 });

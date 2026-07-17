@@ -49,6 +49,14 @@ export async function register() {
       if (process.env.NEXT_PUBLIC_OCTOPUS_SELF_HOSTED === "true") {
         await boss.schedule("refresh-release-cache", "0 5 * * *");
       }
+
+      // Daily subscription renewals (06:00 UTC — offset from the jobs above).
+      // Cloud-only: self-hosted installs have no billing path. Charges due
+      // orgs' saved cards and grants the period's credits; failures retry
+      // daily inside a grace window (see lib/subscription.ts).
+      if (process.env.NEXT_PUBLIC_OCTOPUS_SELF_HOSTED !== "true") {
+        await boss.schedule("subscription-renewals", "0 6 * * *");
+      }
     }
 
     // Graceful shutdown: wait for active jobs (e.g. in-progress reviews) to finish

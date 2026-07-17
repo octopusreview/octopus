@@ -24,11 +24,14 @@ import {
   IconChevronRight,
 } from "@tabler/icons-react";
 import { PurchaseDialog } from "./purchase-dialog";
+import { SUBSCRIPTION_PLANS } from "@/lib/plans";
 import {
   updateAutoReload,
   updateBillingEmail,
   updateSpendLimit,
   loadMoreTransactions,
+  subscribeToPlan,
+  setSubscriptionCancel,
   type TransactionDTO,
 } from "./actions";
 
@@ -49,6 +52,9 @@ type Props = {
   billingEmail: string | null;
   monthlySpendLimitUsd: number | null;
   stripeCustomerId: string | null;
+  planTier: string;
+  planRenewsAt: string | null;
+  planCancelAtPeriodEnd: boolean;
   autoReloadConfig: {
     enabled: boolean;
     thresholdAmount: number;
@@ -77,6 +83,8 @@ function typeBadgeVariant(type: string) {
       return "default" as const;
     case "coupon":
       return "outline" as const;
+    case "subscription":
+      return "default" as const;
     default:
       return "secondary" as const;
   }
@@ -92,6 +100,8 @@ function typeBadgeClass(type: string) {
       return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800";
     case "coupon":
       return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200 dark:border-purple-800";
+    case "subscription":
+      return "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800";
     default:
       return "";
   }
@@ -105,6 +115,9 @@ export function BillingSettings({
   billingEmail,
   monthlySpendLimitUsd,
   stripeCustomerId,
+  planTier,
+  planRenewsAt,
+  planCancelAtPeriodEnd,
   autoReloadConfig,
   initialTransactions,
   totalTransactions,
@@ -130,6 +143,27 @@ export function BillingSettings({
   const [autoReloadEnabled, setAutoReloadEnabled] = useState(
     autoReloadConfig?.enabled ?? false,
   );
+
+  const [planPending, startPlanTransition] = useTransition();
+  const [planError, setPlanError] = useState<string | null>(null);
+
+  const handleSubscribe = (tier: string) => {
+    setPlanError(null);
+    startPlanTransition(async () => {
+      const res = await subscribeToPlan(tier);
+      if (res.error) setPlanError(res.error);
+      else if (res.url) window.location.href = res.url;
+      // On success the server action revalidates the page.
+    });
+  };
+
+  const handleCancelToggle = (cancel: boolean) => {
+    setPlanError(null);
+    startPlanTransition(async () => {
+      const res = await setSubscriptionCancel(cancel);
+      if (res.error) setPlanError(res.error);
+    });
+  };
 
   const total = creditBalance + freeCreditBalance;
 
@@ -198,6 +232,91 @@ export function BillingSettings({
               </Button>
             )}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Card: Subscription */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Subscription</CardTitle>
+          <CardDescription>
+            Monthly plans charge your saved card and grant bonus credits into
+            your balance each month. Credits never expire.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {(Object.entries(SUBSCRIPTION_PLANS) as [string, { name: string; priceUsd: number; creditsUsd: number }][]).map(
+              ([tier, plan]) => {
+                const isCurrent = planTier === tier;
+                return (
+                  <div
+                    key={tier}
+                    className={`rounded-lg border p-4 space-y-2 ${isCurrent ? "border-primary bg-muted/20" : ""}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="font-semibold">{plan.name}</p>
+                      {isCurrent && <Badge>Current plan</Badge>}
+                    </div>
+                    <p className="text-2xl font-semibold">
+                      ${plan.priceUsd}
+                      <span className="text-sm font-normal text-muted-foreground">/month</span>
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      ${plan.creditsUsd} in credits every month — $
+                      {plan.creditsUsd - plan.priceUsd} bonus over topping up.
+                    </p>
+                    {isOwner && !isCurrent && (
+                      <Button
+                        size="sm"
+                        disabled={planPending}
+                        onClick={() => handleSubscribe(tier)}
+                      >
+                        {planPending ? (
+                          <IconLoader2 className="size-4 mr-1 animate-spin" />
+                        ) : (
+                          <IconPlus className="size-4 mr-1" />
+                        )}
+                        {planTier === "free" ? "Subscribe" : "Switch"}
+                      </Button>
+                    )}
+                    {isCurrent && (
+                      <p className="text-xs text-muted-foreground">
+                        {planCancelAtPeriodEnd
+                          ? `Ends ${planRenewsAt ? new Date(planRenewsAt).toLocaleDateString() : "at period end"} — credits keep working.`
+                          : `Renews ${planRenewsAt ? new Date(planRenewsAt).toLocaleDateString() : "monthly"}.`}
+                      </p>
+                    )}
+                  </div>
+                );
+              },
+            )}
+          </div>
+          {planError && <p className="text-sm text-destructive mt-3">{planError}</p>}
+          {isOwner && planTier !== "free" && (
+            <div className="mt-4">
+              {planCancelAtPeriodEnd ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={planPending}
+                  onClick={() => handleCancelToggle(false)}
+                >
+                  Resume subscription
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                  disabled={planPending}
+                  onClick={() => handleCancelToggle(true)}
+                >
+                  Cancel at period end
+                </Button>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 

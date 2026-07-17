@@ -5,7 +5,9 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
-import { createCheckoutSession, getStripe } from "@/lib/stripe";
+import { createCheckoutSession, createSubscriptionCheckoutSession, getStripe } from "@/lib/stripe";
+import { SUBSCRIPTION_PLANS, isPaidPlanTier } from "@/lib/plans";
+import { chargeSubscription, grantSubscriptionPeriod, addOneMonth } from "@/lib/subscription";
 
 async function getOwnerOrgId(): Promise<{ orgId: string } | { error: string }> {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -48,6 +50,61 @@ export async function purchaseCredits(
   );
 
   return { url };
+}
+
+export async function subscribeToPlan(
+  tier: string,
+): Promise<{ url?: string; success?: boolean; error?: string }> {
+  if (!isPaidPlanTier(tier)) return { error: "Unknown plan." };
+
+  const result = await getOwnerOrgId();
+  if ("error" in result) return { error: result.error };
+
+  const org = await prisma.organization.findUnique({
+    where: { id: result.orgId },
+    select: { planTier: true },
+  });
+  if (org?.planTier === tier) return { error: "Already on this plan." };
+
+  // Saved card? Charge off-session right now; otherwise send to Checkout
+  // (which saves the card for renewals).
+  const chargeRef = await chargeSubscription(result.orgId, tier);
+  if (chargeRef) {
+    await grantSubscriptionPeriod(result.orgId, tier, chargeRef, addOneMonth(new Date()));
+    revalidatePath("/settings/billing");
+    return { success: true };
+  }
+
+  const plan = SUBSCRIPTION_PLANS[tier];
+  const url = await createSubscriptionCheckoutSession(
+    result.orgId,
+    tier,
+    plan.name,
+    plan.priceUsd,
+    `${process.env.BETTER_AUTH_URL || "http://localhost:3000"}/settings/billing`,
+  );
+  return { url };
+}
+
+export async function setSubscriptionCancel(
+  cancel: boolean,
+): Promise<{ success?: boolean; error?: string }> {
+  const result = await getOwnerOrgId();
+  if ("error" in result) return { error: result.error };
+
+  const org = await prisma.organization.findUnique({
+    where: { id: result.orgId },
+    select: { planTier: true },
+  });
+  if (!org || org.planTier === "free") return { error: "No active subscription." };
+
+  await prisma.organization.update({
+    where: { id: result.orgId },
+    data: { planCancelAtPeriodEnd: cancel },
+  });
+
+  revalidatePath("/settings/billing");
+  return { success: true };
 }
 
 export async function updateAutoReload(

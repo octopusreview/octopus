@@ -31,6 +31,9 @@ export default async function BillingPage() {
           billingEmail: true,
           monthlySpendLimitUsd: true,
           stripeCustomerId: true,
+          planTier: true,
+          planRenewsAt: true,
+          planCancelAtPeriodEnd: true,
         },
       },
     },
@@ -69,6 +72,9 @@ export default async function BillingPage() {
       billingEmail={org.billingEmail}
       monthlySpendLimitUsd={org.monthlySpendLimitUsd}
       stripeCustomerId={org.stripeCustomerId}
+      planTier={org.planTier}
+      planRenewsAt={org.planRenewsAt ? org.planRenewsAt.toISOString() : null}
+      planCancelAtPeriodEnd={org.planCancelAtPeriodEnd}
       autoReloadConfig={
         autoReloadConfig
           ? {

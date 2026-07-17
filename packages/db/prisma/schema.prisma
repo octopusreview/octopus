@@ -133,6 +133,11 @@ model Organization {
   creditBalance           Decimal  @default(0) @db.Decimal(12, 4)
   freeCreditBalance       Decimal  @default(0) @db.Decimal(12, 4)
   billingEmail            String?
+  // Monthly subscription plan (charged off-session against the saved card;
+  // grants non-expiring credits each period). "free" | "pro" | "team".
+  planTier              String    @default("free")
+  planRenewsAt          DateTime?
+  planCancelAtPeriodEnd Boolean   @default(false)
   githubMarketplacePlanId   Int?
   githubMarketplacePlanName String?
   githubMarketplaceAccountId Int?     @unique

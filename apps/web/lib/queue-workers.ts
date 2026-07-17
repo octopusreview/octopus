@@ -8,6 +8,7 @@ import {
 import { processCommunityReview, type CommunityReviewJobData } from "./community-review";
 import { enforceAuditLogRetention, enforceActivityEventRetention } from "./audit";
 import { refreshReleaseCache } from "./releases";
+import { renewDueSubscriptions } from "./subscription";
 import { runOllamaPull } from "./ollama-admin";
 import type { QueueConfig } from "./queue";
 
@@ -88,6 +89,23 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
         console.log(`[queue] enforce-audit-retention ${job.id}: deleted ${deleted} rows`);
       } catch (err) {
         console.error(`[queue] enforce-audit-retention failed (job ${job.id}):`, err);
+        throw err;
+      }
+    }
+  });
+
+  // Daily subscription renewals — scheduled in instrumentation.ts via
+  // boss.schedule() (cloud only). Idempotent: grants are keyed on the Stripe
+  // PaymentIntent id, so a re-run can never double-grant a period.
+  await boss.work("subscription-renewals", async (jobs) => {
+    for (const job of jobs) {
+      try {
+        const r = await renewDueSubscriptions();
+        console.log(
+          `[queue] subscription-renewals ${job.id}: renewed=${r.renewed} canceled=${r.canceled} downgraded=${r.downgraded} failed=${r.failed}`,
+        );
+      } catch (err) {
+        console.error(`[queue] subscription-renewals failed (job ${job.id}):`, err);
         throw err;
       }
     }

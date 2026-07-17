@@ -67,9 +67,6 @@ CLAUDE.md
 # root migrations
 /migrations/
 
-# prisma migrations (managed manually)
-packages/db/prisma/migrations/
-
 # openclaw
 .openclaw/
 

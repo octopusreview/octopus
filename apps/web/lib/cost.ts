@@ -50,6 +50,13 @@ export async function getModelPricing(): Promise<Map<string, ModelPricing>> {
   return map;
 }
 
+// Multiplier applied to provider list price when charging credits.
+// Overridable per deployment via PLATFORM_MARKUP; guarded so a bad value
+// can never zero out or invert billing.
+const parsedMarkup = Number(process.env.PLATFORM_MARKUP);
+export const PLATFORM_MARKUP =
+  Number.isFinite(parsedMarkup) && parsedMarkup >= 1 ? parsedMarkup : 1.2;
+
 export function calcCost(
   pricing: Map<string, ModelPricing>,
   model: string,
@@ -60,7 +67,6 @@ export function calcCost(
 ): number {
   const p = pricing.get(model);
   if (!p) return 0;
-  const PLATFORM_MARKUP = 1.2; // 20% markup
   const plainInput = Math.max(inputTokens - cacheReadTokens - cacheWriteTokens, 0);
   const baseCost =
     (plainInput * p.input +

@@ -63,6 +63,7 @@ export async function createOrgForUser(userId: string, userName: string) {
           },
         },
         ...(firstOrg && {
+          freeCreditBalance: 150,
           creditTransactions: {
             create: {
               amount: 150,

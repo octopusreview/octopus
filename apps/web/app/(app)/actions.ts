@@ -119,6 +119,7 @@ export async function createOrganization(
             },
           },
           ...(firstOrg && {
+            freeCreditBalance: 150,
             creditTransactions: {
               create: {
                 amount: 150,

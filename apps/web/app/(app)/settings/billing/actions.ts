@@ -66,24 +66,35 @@ export async function subscribeToPlan(
   });
   if (org?.planTier === tier) return { error: "Already on this plan." };
 
-  // Saved card? Charge off-session right now; otherwise send to Checkout
-  // (which saves the card for renewals).
-  const chargeRef = await chargeSubscription(result.orgId, tier);
-  if (chargeRef) {
-    await grantSubscriptionPeriod(result.orgId, tier, chargeRef, addOneMonth(new Date()));
-    revalidatePath("/settings/billing");
-    return { success: true };
-  }
+  try {
+    // Saved card? Charge off-session right now; otherwise send to Checkout
+    // (which saves the card for renewals). The idempotency key is stable for
+    // the calendar day, so a double-clicked subscribe can't charge twice.
+    const day = new Date().toISOString().slice(0, 10);
+    const chargeRef = await chargeSubscription(
+      result.orgId,
+      tier,
+      `sub-start-${result.orgId}-${tier}-${day}`,
+    );
+    if (chargeRef) {
+      await grantSubscriptionPeriod(result.orgId, tier, chargeRef, addOneMonth(new Date()));
+      revalidatePath("/settings/billing");
+      return { success: true };
+    }
 
-  const plan = SUBSCRIPTION_PLANS[tier];
-  const url = await createSubscriptionCheckoutSession(
-    result.orgId,
-    tier,
-    plan.name,
-    plan.priceUsd,
-    `${process.env.BETTER_AUTH_URL || "http://localhost:3000"}/settings/billing`,
-  );
-  return { url };
+    const plan = SUBSCRIPTION_PLANS[tier];
+    const url = await createSubscriptionCheckoutSession(
+      result.orgId,
+      tier,
+      plan.name,
+      plan.priceUsd,
+      `${process.env.BETTER_AUTH_URL || "http://localhost:3000"}/settings/billing`,
+    );
+    return { url };
+  } catch (err) {
+    console.error("[billing] subscribeToPlan failed:", err);
+    return { error: "Could not start the subscription. Please try again or update your card." };
+  }
 }
 
 export async function setSubscriptionCancel(

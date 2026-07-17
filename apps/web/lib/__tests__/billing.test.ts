@@ -347,6 +347,7 @@ describe("Stripe webhook route", () => {
       data: {
         object: {
           id: "cs_123",
+          payment_status: "paid",
           metadata: {
             orgId: "org_1",
             type: "credit_purchase",
@@ -515,6 +516,7 @@ describe("Stripe webhook route", () => {
       data: {
         object: {
           id: "cs_fail",
+          payment_status: "paid",
           metadata: { orgId: "org_1", type: "credit_purchase", amountUsd: "25" },
           payment_intent: "pi_fail",
         },
@@ -662,5 +664,74 @@ describe("subscription renewals", () => {
     expect(result).toEqual({ renewed: 1, canceled: 0, downgraded: 0, failed: 0 });
     expect(orgState.creditBalance).toBe(20); // rolled back, not re-granted
     expect(organizationUpdates).toEqual([]); // plan state untouched
+  });
+});
+
+describe("subscription webhook", () => {
+  it("grants the first period and stamps the plan for a paid subscription_start session", async () => {
+    currentEvent = {
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_sub_1",
+          payment_status: "paid",
+          metadata: { orgId: "org_1", type: "subscription_start", tier: "pro" },
+          payment_intent: "pi_sub_1",
+        },
+      },
+    };
+
+    const response = await POST(stripeRequest() as never);
+
+    expect(response.status).toBe(200);
+    expect(orgState.creditBalance).toBe(20 + 54);
+    expect(createdTransactions).toHaveLength(1);
+    expect((createdTransactions[0] as { type: string; stripeSessionId: string }).type).toBe(
+      "subscription",
+    );
+    expect(
+      (createdTransactions[0] as { stripeSessionId: string }).stripeSessionId,
+    ).toBe("cs_sub_1");
+    const stamp = organizationUpdates[0] as { data: { planTier: string } };
+    expect(stamp.data.planTier).toBe("pro");
+  });
+
+  it("does not grant when the session is not paid yet", async () => {
+    currentEvent = {
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_sub_unpaid",
+          payment_status: "unpaid",
+          metadata: { orgId: "org_1", type: "subscription_start", tier: "pro" },
+        },
+      },
+    };
+
+    const response = await POST(stripeRequest() as never);
+
+    expect(response.status).toBe(200);
+    expect(createdTransactions).toEqual([]);
+    expect(organizationUpdates).toEqual([]);
+    expect(orgState.creditBalance).toBe(20);
+  });
+
+  it("ignores unknown tiers without granting", async () => {
+    currentEvent = {
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_sub_bad",
+          payment_status: "paid",
+          metadata: { orgId: "org_1", type: "subscription_start", tier: "mega" },
+        },
+      },
+    };
+
+    const response = await POST(stripeRequest() as never);
+
+    expect(response.status).toBe(200);
+    expect(createdTransactions).toEqual([]);
+    expect(organizationUpdates).toEqual([]);
   });
 });

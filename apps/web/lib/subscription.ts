@@ -86,6 +86,9 @@ export async function grantSubscriptionPeriod(
 
 /**
  * Charge the saved card off-session for one period of `tier`.
+ * `idempotencyKey` must be deterministic for the billing event (org + period)
+ * so concurrent callers — double-clicked subscribe, overlapping cron runs —
+ * collapse into ONE Stripe charge instead of two.
  * Returns the PaymentIntent id on success, null when the org has no saved
  * card or the charge fails (caller decides: fall back to Checkout, or leave
  * for the next daily retry).
@@ -93,6 +96,7 @@ export async function grantSubscriptionPeriod(
 export async function chargeSubscription(
   orgId: string,
   tier: PaidPlanTier,
+  idempotencyKey: string,
 ): Promise<string | null> {
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
@@ -102,14 +106,17 @@ export async function chargeSubscription(
 
   const plan = SUBSCRIPTION_PLANS[tier];
   try {
-    const paymentIntent = await getStripe().paymentIntents.create({
-      amount: Math.round(plan.priceUsd * 100),
-      currency: "usd",
-      customer: org.stripeCustomerId,
-      off_session: true,
-      confirm: true,
-      metadata: { orgId, type: "subscription", tier, amountUsd: String(plan.priceUsd) },
-    });
+    const paymentIntent = await getStripe().paymentIntents.create(
+      {
+        amount: Math.round(plan.priceUsd * 100),
+        currency: "usd",
+        customer: org.stripeCustomerId,
+        off_session: true,
+        confirm: true,
+        metadata: { orgId, type: "subscription", tier, amountUsd: String(plan.priceUsd) },
+      },
+      { idempotencyKey },
+    );
     if (paymentIntent.status !== "succeeded") return null;
     return paymentIntent.id;
   } catch (err) {
@@ -158,7 +165,13 @@ export async function renewDueSubscriptions(): Promise<{
     }
 
     const tier = org.planTier as PaidPlanTier;
-    const chargeRef = await chargeSubscription(org.id, tier);
+    // Keyed on the due date: every retry of THIS period reuses the key (no
+    // double-charge from overlapping runs), while next period gets a new one.
+    const chargeRef = await chargeSubscription(
+      org.id,
+      tier,
+      `sub-renew-${org.id}-${(org.planRenewsAt ?? now).toISOString()}`,
+    );
     if (chargeRef) {
       // Advance from the DUE date (not now) so billing anchors don't drift.
       const base = org.planRenewsAt ?? now;

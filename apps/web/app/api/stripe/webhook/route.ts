@@ -50,7 +50,12 @@ export async function POST(req: NextRequest) {
       const type = session.metadata?.type;
       const amountUsd = Number(session.metadata?.amountUsd || 0);
 
-      if (orgId && type === "credit_purchase" && amountUsd > 0) {
+      // checkout.session.completed fires even when payment is still pending
+      // (async payment methods); only grant once Stripe reports it paid.
+      // Cards — the only method we accept — are always "paid" at completion.
+      const isPaid = session.payment_status === "paid";
+
+      if (isPaid && orgId && type === "credit_purchase" && amountUsd > 0) {
         try {
           await addCredits(
             orgId,
@@ -90,7 +95,9 @@ export async function POST(req: NextRequest) {
       const orgId = session.metadata?.orgId;
       const tier = session.metadata?.tier;
 
-      if (session.metadata?.type === "subscription_start" && orgId && tier && isPaidPlanTier(tier)) {
+      const isPaid = session.payment_status === "paid";
+
+      if (isPaid && session.metadata?.type === "subscription_start" && orgId && tier && isPaidPlanTier(tier)) {
         // Idempotent: the grant is keyed on session.id; a redelivery re-runs
         // grantSubscriptionPeriod, which treats the duplicate ledger row as
         // already-granted and re-stamps the same plan state.

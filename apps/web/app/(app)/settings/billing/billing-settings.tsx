@@ -263,8 +263,9 @@ export function BillingSettings({
                       <span className="text-sm font-normal text-muted-foreground">/month</span>
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      ${plan.creditsUsd} in credits every month — $
-                      {plan.creditsUsd - plan.priceUsd} bonus over topping up.
+                      ${plan.creditsUsd} in credits every month (
+                      {Math.round(((plan.creditsUsd - plan.priceUsd) / plan.priceUsd) * 100)}%
+                      bonus over topping up).
                     </p>
                     {isOwner && !isCurrent && (
                       <Button
@@ -293,6 +294,23 @@ export function BillingSettings({
             )}
           </div>
           {planError && <p className="text-sm text-destructive mt-3">{planError}</p>}
+          {isOwner && stripeCustomerId && (
+            <div className="mt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={portalLoading}
+                onClick={handlePortal}
+              >
+                {portalLoading ? (
+                  <IconLoader2 className="size-4 mr-1 animate-spin" />
+                ) : (
+                  <IconReceipt className="size-4 mr-1" />
+                )}
+                View invoices
+              </Button>
+            </div>
+          )}
           {isOwner && planTier !== "free" && (
             <div className="mt-4">
               {planCancelAtPeriodEnd ? (

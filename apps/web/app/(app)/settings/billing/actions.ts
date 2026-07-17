@@ -5,7 +5,12 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
-import { createCheckoutSession, createSubscriptionCheckoutSession, getStripe } from "@/lib/stripe";
+import {
+  createCheckoutSession,
+  createSubscriptionCheckoutSession,
+  getOrCreateStripeCustomer,
+  getStripe,
+} from "@/lib/stripe";
 import { SUBSCRIPTION_PLANS, isPaidPlanTier } from "@/lib/plans";
 import { chargeSubscription, grantSubscriptionPeriod, addOneMonth } from "@/lib/subscription";
 
@@ -50,6 +55,95 @@ export async function purchaseCredits(
   );
 
   return { url };
+}
+
+/**
+ * In-app card capture: create a SetupIntent whose client_secret the billing
+ * page feeds to an embedded Stripe Payment Element — no redirect to Stripe.
+ */
+export async function createCardSetupIntent(): Promise<{
+  clientSecret?: string;
+  error?: string;
+}> {
+  const result = await getOwnerOrgId();
+  if ("error" in result) return { error: result.error };
+
+  try {
+    const customerId = await getOrCreateStripeCustomer(result.orgId);
+    const intent = await getStripe().setupIntents.create({
+      customer: customerId,
+      payment_method_types: ["card"],
+      usage: "off_session",
+      metadata: { orgId: result.orgId },
+    });
+    if (!intent.client_secret) return { error: "Could not start card setup." };
+    return { clientSecret: intent.client_secret };
+  } catch (err) {
+    console.error("[billing] createCardSetupIntent failed:", err);
+    return { error: "Could not start card setup. Please try again." };
+  }
+}
+
+/**
+ * After the Payment Element confirms the SetupIntent client-side, make the
+ * new card the customer's default so off-session charges (auto-reload,
+ * subscription renewals) use it. Verifies the intent belongs to THIS org's
+ * customer — the id comes from the browser.
+ */
+export async function finalizeCardSetup(
+  setupIntentId: string,
+): Promise<{ success?: boolean; error?: string }> {
+  if (typeof setupIntentId !== "string" || !setupIntentId.startsWith("seti_")) {
+    return { error: "Invalid card setup reference." };
+  }
+
+  const result = await getOwnerOrgId();
+  if ("error" in result) return { error: result.error };
+
+  try {
+    const org = await prisma.organization.findUnique({
+      where: { id: result.orgId },
+      select: { stripeCustomerId: true },
+    });
+    if (!org?.stripeCustomerId) return { error: "No billing account for this organization." };
+
+    const intent = await getStripe().setupIntents.retrieve(setupIntentId);
+    if (intent.customer !== org.stripeCustomerId) {
+      return { error: "Card setup doesn't belong to this organization." };
+    }
+    if (intent.status !== "succeeded" || typeof intent.payment_method !== "string") {
+      return { error: "Card setup hasn't completed." };
+    }
+
+    await getStripe().customers.update(org.stripeCustomerId, {
+      invoice_settings: { default_payment_method: intent.payment_method },
+    });
+
+    // One card per customer: detach every previously-attached card so a
+    // "Replace card" leaves exactly the new one (matches the UI copy, and
+    // stops stale cards being reachable for off-session charges). Best-effort
+    // — the new default is already set, so a detach failure must not fail the
+    // save.
+    try {
+      const existing = await getStripe().paymentMethods.list({
+        customer: org.stripeCustomerId,
+        type: "card",
+      });
+      await Promise.all(
+        existing.data
+          .filter((pm) => pm.id !== intent.payment_method)
+          .map((pm) => getStripe().paymentMethods.detach(pm.id)),
+      );
+    } catch (err) {
+      console.error("[billing] finalizeCardSetup: detaching old cards failed (non-fatal):", err);
+    }
+
+    revalidatePath("/settings/billing");
+    return { success: true };
+  } catch (err) {
+    console.error("[billing] finalizeCardSetup failed:", err);
+    return { error: "Could not save the card. Please try again." };
+  }
 }
 
 export async function subscribeToPlan(

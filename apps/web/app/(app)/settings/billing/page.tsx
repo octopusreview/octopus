@@ -44,6 +44,13 @@ export default async function BillingPage() {
   const org = member.organization;
   const isOwner = member.role === "owner" || member.role === "admin";
 
+  // Bracket notation on purpose: Next inlines `process.env.NEXT_PUBLIC_*`
+  // dot-access at BUILD time (client and server), and the CI image is built
+  // without the Stripe key — dot-access would bake in an empty string.
+  // Computed access isn't inlined, so this reads the runtime value the box
+  // actually has. Passed to the client component as a prop.
+  const stripePublishableKey = process.env["NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"] ?? "";
+
   const [autoReloadConfig, transactions, totalTransactions, monthlySpend, paymentMethods] = await Promise.all([
     prisma.autoReloadConfig.findUnique({
       where: { organizationId: org.id },
@@ -72,6 +79,7 @@ export default async function BillingPage() {
       billingEmail={org.billingEmail}
       monthlySpendLimitUsd={org.monthlySpendLimitUsd}
       stripeCustomerId={org.stripeCustomerId}
+      stripePublishableKey={stripePublishableKey}
       planTier={org.planTier}
       planRenewsAt={org.planRenewsAt ? org.planRenewsAt.toISOString() : null}
       planCancelAtPeriodEnd={org.planCancelAtPeriodEnd}

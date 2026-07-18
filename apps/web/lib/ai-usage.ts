@@ -56,9 +56,8 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
       params.provider === "mock" ||
       params.provider === "mock-fail";
 
-    // Compute the platform charge up front so we can snapshot it on the row —
-    // recording the cost as-charged means historical margin no longer drifts
-    // when model prices change later. Own-key usage is never charged (null).
+    // Compute the platform charge up front (needed for both the deduction and
+    // the cost snapshot). Own-key usage is never charged.
     let cost = 0;
     if (!hasOwnKey) {
       const pricing = await getModelPricing();
@@ -72,7 +71,13 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
       );
     }
 
-    await prisma.aiUsage.create({
+    // Record the usage row FIRST (usage happened regardless of billing), with
+    // chargedCostUsd left null. We stamp the snapshot only AFTER a successful
+    // deduction, so the field always reflects what we actually charged — a
+    // failed deduction leaves it null ("usage served, charged nothing"), never
+    // a phantom charge. Recording the snapshot means historical margin no
+    // longer drifts when model prices change later.
+    const usage = await prisma.aiUsage.create({
       data: {
         provider: params.provider,
         model: params.model,
@@ -82,7 +87,6 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
         cacheReadTokens: params.cacheReadTokens ?? 0,
         cacheWriteTokens: params.cacheWriteTokens ?? 0,
         usedOwnKey: hasOwnKey,
-        chargedCostUsd: hasOwnKey ? null : cost,
         organizationId: params.organizationId,
       },
     });
@@ -100,6 +104,12 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
           `${params.operation} — ${params.model}`,
         );
       }
+
+      // Deduction committed (or was $0) — now stamp the cost snapshot.
+      await prisma.aiUsage.update({
+        where: { id: usage.id },
+        data: { chargedCostUsd: cost },
+      });
     }
   } catch (err) {
     console.error("[ai-usage] Failed to log:", err);

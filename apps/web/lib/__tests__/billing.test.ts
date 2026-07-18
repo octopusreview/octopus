@@ -58,7 +58,7 @@ let mockCreditTransactionUpdate = mock(() => Promise.resolve());
 let mockAutoReloadConfigFindUnique = mock(() => Promise.resolve(null));
 let mockOrganizationFindUnique = mock(() => Promise.resolve(null));
 let mockOrganizationFindMany = mock(() => Promise.resolve([] as unknown[]));
-let createdAiUsage: Array<{ usedOwnKey: boolean; chargedCostUsd: number | null }>;
+let createdAiUsage: Array<{ id: string; usedOwnKey: boolean; chargedCostUsd: number | null }>;
 let mockAvailableModelFindMany = mock(() =>
   Promise.resolve([{ modelId: "m", inputPrice: 10, outputPrice: 10 }] as unknown[]),
 );
@@ -111,9 +111,15 @@ mock.module("@octopus/db", () => ({
       findUnique: (...args: unknown[]) => mockAutoReloadConfigFindUnique(...args),
     },
     aiUsage: {
-      create: ({ data }: { data: { usedOwnKey: boolean; chargedCostUsd: number | null } }) => {
-        createdAiUsage.push(data);
-        return Promise.resolve(data);
+      create: ({ data }: { data: { usedOwnKey: boolean } }) => {
+        const row = { id: "ai_1", chargedCostUsd: null as number | null, ...data };
+        createdAiUsage.push(row);
+        return Promise.resolve(row);
+      },
+      update: ({ where, data }: { where: { id: string }; data: { chargedCostUsd: number } }) => {
+        const row = createdAiUsage.find((u) => (u as { id: string }).id === where.id);
+        if (row) row.chargedCostUsd = data.chargedCostUsd;
+        return Promise.resolve(row);
       },
     },
     availableModel: {
@@ -949,6 +955,36 @@ describe("AiUsage cost snapshot", () => {
     expect(createdAiUsage[0].chargedCostUsd).toBeCloseTo(12, 6);
     // Deducted from the ledger: free 8 → 0, purchased 20 → 16.
     expect(orgState).toEqual({ creditBalance: 16, freeCreditBalance: 0 });
+  });
+
+  it("leaves chargedCostUsd null when the deduction fails (usage served, not charged)", async () => {
+    mockOrganizationFindUnique = mock(() =>
+      Promise.resolve({
+        anthropicApiKey: null,
+        openaiApiKey: null,
+        cohereApiKey: null,
+        googleApiKey: null,
+        grokApiKey: null,
+        openrouterApiKey: null,
+        claudeCodeApiKey: null,
+        claudeCodeAuthMode: null,
+      } as never),
+    );
+    // Deduction blows up mid-transaction.
+    mockTxCreditTransactionCreate = mock(() => Promise.reject(new Error("db down")));
+
+    await logAiUsage({
+      provider: "anthropic",
+      model: "m",
+      operation: "review",
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      organizationId: "org_1",
+    });
+
+    // Usage row exists (usage happened) but the snapshot was never stamped.
+    expect(createdAiUsage).toHaveLength(1);
+    expect(createdAiUsage[0].chargedCostUsd).toBeNull();
   });
 
   it("stores null chargedCostUsd for own-key usage and never deducts", async () => {

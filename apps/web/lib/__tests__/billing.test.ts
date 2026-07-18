@@ -58,6 +58,10 @@ let mockCreditTransactionUpdate = mock(() => Promise.resolve());
 let mockAutoReloadConfigFindUnique = mock(() => Promise.resolve(null));
 let mockOrganizationFindUnique = mock(() => Promise.resolve(null));
 let mockOrganizationFindMany = mock(() => Promise.resolve([] as unknown[]));
+let createdAiUsage: Array<{ usedOwnKey: boolean; chargedCostUsd: number | null }>;
+let mockAvailableModelFindMany = mock(() =>
+  Promise.resolve([{ modelId: "m", inputPrice: 10, outputPrice: 10 }] as unknown[]),
+);
 let mockOrganizationUpdate = mock((args: unknown) => {
   organizationUpdates.push(args);
   return Promise.resolve({});
@@ -105,6 +109,15 @@ mock.module("@octopus/db", () => ({
     },
     autoReloadConfig: {
       findUnique: (...args: unknown[]) => mockAutoReloadConfigFindUnique(...args),
+    },
+    aiUsage: {
+      create: ({ data }: { data: { usedOwnKey: boolean; chargedCostUsd: number | null } }) => {
+        createdAiUsage.push(data);
+        return Promise.resolve(data);
+      },
+    },
+    availableModel: {
+      findMany: (...args: unknown[]) => mockAvailableModelFindMany(...args),
     },
     $transaction: async (callback: (tx: unknown) => Promise<unknown>) => {
       const snapshot = { ...orgState };
@@ -172,6 +185,7 @@ const {
 const { POST } = await import("@/app/api/stripe/webhook/route");
 const { addOneMonth, renewDueSubscriptions } = await import("@/lib/subscription");
 const { volumeBonusUsd } = await import("@/lib/plans");
+const { logAiUsage } = await import("@/lib/ai-usage");
 
 function resetBillingMocks() {
   orgState = { creditBalance: 20, freeCreditBalance: 8 };
@@ -228,8 +242,12 @@ function resetBillingMocks() {
   mockAutoReloadConfigFindUnique = mock(() => Promise.resolve(null));
   mockOrganizationFindUnique = mock(() => Promise.resolve(null));
   organizationUpdates = [];
+  createdAiUsage = [];
   mockOffSessionPaymentMethodId = mock(() => Promise.resolve("pm_default" as string | null));
   mockOrganizationFindMany = mock(() => Promise.resolve([] as unknown[]));
+  mockAvailableModelFindMany = mock(() =>
+    Promise.resolve([{ modelId: "m", inputPrice: 10, outputPrice: 10 }] as unknown[]),
+  );
   mockOrganizationUpdate = mock((args: unknown) => {
     organizationUpdates.push(args);
     return Promise.resolve({});
@@ -898,5 +916,66 @@ describe("volume purchase bonus", () => {
     const types = createdTransactions.map((t) => (t as { type: string }).type);
     expect(types).toContain("purchase");
     expect(types).not.toContain("free_credit");
+  });
+});
+
+describe("AiUsage cost snapshot", () => {
+  it("stores chargedCostUsd = deducted cost for platform-key usage", async () => {
+    mockOrganizationFindUnique = mock(() =>
+      Promise.resolve({
+        anthropicApiKey: null,
+        openaiApiKey: null,
+        cohereApiKey: null,
+        googleApiKey: null,
+        grokApiKey: null,
+        openrouterApiKey: null,
+        claudeCodeApiKey: null,
+        claudeCodeAuthMode: null,
+      } as never),
+    );
+
+    await logAiUsage({
+      provider: "anthropic",
+      model: "m",
+      operation: "review",
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      organizationId: "org_1",
+    });
+
+    // 1M input × $10/1M × 1.2 markup = $12.
+    expect(createdAiUsage).toHaveLength(1);
+    expect(createdAiUsage[0].usedOwnKey).toBe(false);
+    expect(createdAiUsage[0].chargedCostUsd).toBeCloseTo(12, 6);
+    // Deducted from the ledger: free 8 → 0, purchased 20 → 16.
+    expect(orgState).toEqual({ creditBalance: 16, freeCreditBalance: 0 });
+  });
+
+  it("stores null chargedCostUsd for own-key usage and never deducts", async () => {
+    mockOrganizationFindUnique = mock(() =>
+      Promise.resolve({
+        anthropicApiKey: "sk-ant-user",
+        openaiApiKey: null,
+        cohereApiKey: null,
+        googleApiKey: null,
+        grokApiKey: null,
+        openrouterApiKey: null,
+        claudeCodeApiKey: null,
+        claudeCodeAuthMode: null,
+      } as never),
+    );
+
+    await logAiUsage({
+      provider: "anthropic",
+      model: "m",
+      operation: "review",
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      organizationId: "org_1",
+    });
+
+    expect(createdAiUsage[0].usedOwnKey).toBe(true);
+    expect(createdAiUsage[0].chargedCostUsd).toBeNull();
+    expect(orgState).toEqual({ creditBalance: 20, freeCreditBalance: 8 });
   });
 });

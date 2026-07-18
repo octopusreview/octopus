@@ -194,6 +194,21 @@ When credits run out, PR reviews and other AI-powered features will stop working
     buttonUrl: "{{appUrl}}/settings/billing",
     variables: ["balance", "paceLine", "appUrl"],
   },
+  {
+    slug: "auto-reload-failed",
+    name: "Auto-Reload Payment Failed",
+    category: "transactional",
+    fromType: "system",
+    subject: "Action needed: auto-reload payment failed",
+    body: `We tried to automatically top up your organization's credits by **{{reloadAmount}}**, but the payment did not go through.{{reasonLine}}
+
+Your balance is currently **{{balance}}**. Once it runs out, PR reviews and other AI-powered features will stop working.
+
+Please update your card to keep automatic top-ups running.`,
+    buttonText: "Update payment method",
+    buttonUrl: "{{appUrl}}/settings/billing",
+    variables: ["reloadAmount", "reasonLine", "balance", "appUrl"],
+  },
 
   // ── Marketing templates (for Send Email) ──────────────────────────────
 

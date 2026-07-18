@@ -61,6 +61,17 @@ export type CreditLowEvent = {
   runwayMinutes?: number;
 };
 
+export type AutoReloadFailedEvent = {
+  type: "auto-reload-failed";
+  orgId: string;
+  /** The reload amount we tried to charge. */
+  reloadAmount: number;
+  /** Balance at the time the reload was attempted. */
+  remainingBalance: number;
+  /** Stripe's decline reason, when available. */
+  reason?: string;
+};
+
 export type OrgTypeChangedEvent = {
   type: "org-type-changed";
   orgId: string;
@@ -88,6 +99,7 @@ export type AppEvent =
   | ReviewFailedEvent
   | KnowledgeReadyEvent
   | CreditLowEvent
+  | AutoReloadFailedEvent
   | OrgTypeChangedEvent
   | CommunityReviewEvent;
 

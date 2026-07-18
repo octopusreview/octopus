@@ -12,6 +12,7 @@ import type {
   ReviewFailedEvent,
   KnowledgeReadyEvent,
   CreditLowEvent,
+  AutoReloadFailedEvent,
 } from "../types";
 
 async function getEligibleRecipients(
@@ -231,6 +232,72 @@ async function onCreditLow(event: CreditLowEvent): Promise<void> {
   );
 }
 
+// Cooldown so a burst of failed auto-reloads (each low-balance deduction
+// re-attempts) can't spam the owner — one card-failure email per day.
+const AUTO_RELOAD_FAILED_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24h
+
+async function onAutoReloadFailed(event: AutoReloadFailedEvent): Promise<void> {
+  // Same atomic cooldown-claim as onCreditLow: a marker ledger row under
+  // Serializable isolation ensures at most one email per window even when
+  // concurrent deductions each fail their reload.
+  let claimed = false;
+  try {
+    claimed = await prisma.$transaction(
+      async (tx) => {
+        const recent = await tx.creditTransaction.findFirst({
+          where: {
+            organizationId: event.orgId,
+            type: "auto_reload_failed_email",
+            createdAt: { gte: new Date(Date.now() - AUTO_RELOAD_FAILED_COOLDOWN_MS) },
+          },
+          select: { id: true },
+        });
+        if (recent) return false;
+        await tx.creditTransaction.create({
+          data: {
+            amount: 0,
+            type: "auto_reload_failed_email",
+            description: "Auto-reload failure notification sent",
+            balanceAfter: event.remainingBalance,
+            organizationId: event.orgId,
+          },
+        });
+        return true;
+      },
+      { isolationLevel: "Serializable" },
+    );
+  } catch (err) {
+    console.error("[email-observer] auto-reload-failed cooldown claim lost:", err);
+    return;
+  }
+
+  if (!claimed) return;
+
+  const recipients = await getAdminRecipients(event.orgId);
+  if (recipients.length === 0) return;
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://octopus-review.ai";
+  const reasonLine = event.reason
+    ? ` (reason: ${escapeHtml(event.reason)})`
+    : "";
+
+  const result = await renderEmailTemplate("auto-reload-failed", {
+    reloadAmount: `$${event.reloadAmount.toFixed(2)}`,
+    reasonLine,
+    balance: `$${event.remainingBalance.toFixed(2)}`,
+    appUrl,
+  });
+  if (!result) return;
+
+  await Promise.allSettled(
+    recipients.map((r) =>
+      sendEmail({ to: r.email, subject: result.subject, html: result.html }).catch((err) =>
+        console.error(`[email-observer] Failed to send auto-reload-failed to ${r.email}:`, err),
+      ),
+    ),
+  );
+}
+
 export function registerEmailObserver(): void {
   console.log("[email-observer] Registering Email observer");
 
@@ -241,4 +308,5 @@ export function registerEmailObserver(): void {
   eventBus.on<ReviewFailedEvent>("review-failed", onReviewFailed);
   eventBus.on<KnowledgeReadyEvent>("knowledge-ready", onKnowledgeReady);
   eventBus.on<CreditLowEvent>("credit-low", onCreditLow);
+  eventBus.on<AutoReloadFailedEvent>("auto-reload-failed", onAutoReloadFailed);
 }

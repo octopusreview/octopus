@@ -130,6 +130,17 @@ mock.module("@octopus/db", () => ({
 
 let mockOffSessionPaymentMethodId = mock(() => Promise.resolve("pm_default" as string | null));
 
+// Capture emitted events; mocking the bus also stops the real observers (which
+// hit prisma methods this harness doesn't stub) from registering on import.
+let emittedEvents: Array<{ type: string; [k: string]: unknown }> = [];
+mock.module("@/lib/events/bus", () => ({
+  eventBus: {
+    emit: (e: { type: string }) => emittedEvents.push(e as never),
+    on: () => {},
+    off: () => {},
+  },
+}));
+
 mock.module("@/lib/stripe", () => ({
   constructWebhookEvent: (...args: unknown[]) => mockConstructWebhookEvent(...args),
   getOffSessionPaymentMethodId: (...args: unknown[]) => mockOffSessionPaymentMethodId(...args),
@@ -164,6 +175,7 @@ const { addOneMonth, renewDueSubscriptions } = await import("@/lib/subscription"
 function resetBillingMocks() {
   orgState = { creditBalance: 20, freeCreditBalance: 8 };
   createdTransactions = [];
+  emittedEvents = [];
   currentEvent = { type: "unhandled.event", data: { object: {} } };
   shouldRejectSignature = false;
 
@@ -318,6 +330,53 @@ describe("credits ledger", () => {
     expect(mockTxQueryRaw).not.toHaveBeenCalled();
     expect(mockTxOrganizationUpdate).not.toHaveBeenCalled();
     expect(mockTxCreditTransactionCreate).not.toHaveBeenCalled();
+  });
+
+  it("records a truthful negative balance when usage exceeds the balance (post-paid)", async () => {
+    // free 8 + purchased 20 = 28; a $30 deduction (tokens already spent) must
+    // record the real overage, not clamp to zero.
+    await deductCredits("org_1", 30, "Expensive review");
+
+    expect(orgState).toEqual({ creditBalance: -2, freeCreditBalance: 0 });
+    expect(createdTransactions).toEqual([
+      {
+        amount: -30,
+        type: "usage",
+        description: "Expensive review",
+        balanceAfter: -2,
+        organizationId: "org_1",
+      },
+    ]);
+  });
+});
+
+describe("auto-reload failure notification", () => {
+  it("emits auto-reload-failed when the reload charge is declined", async () => {
+    mockAutoReloadConfigFindUnique = mock(() =>
+      Promise.resolve({ enabled: true, thresholdAmount: 25, reloadAmount: 50 } as never),
+    );
+    mockOrganizationFindUnique = mock(() =>
+      Promise.resolve({ stripeCustomerId: "cus_1" } as never),
+    );
+    mockCreditTransactionFindFirst = mock(() => Promise.resolve(null)); // no recent reload
+    mockOffSessionPaymentMethodId = mock(() => Promise.resolve("pm_1"));
+    const declined = new Error("Your card was declined.") as Error & { code: string };
+    declined.code = "card_declined";
+    mockPaymentIntentsCreate = mock(() => Promise.reject(declined));
+
+    // Deduct into the auto-reload threshold; the fire-and-forget reload runs.
+    await deductCredits("org_1", 6, "Review run");
+    // Let the fire-and-forget triggerAutoReloadIfNeeded settle.
+    await new Promise((r) => setTimeout(r, 0));
+
+    const failed = emittedEvents.find((e) => e.type === "auto-reload-failed");
+    expect(failed).toBeTruthy();
+    expect(failed).toMatchObject({
+      type: "auto-reload-failed",
+      orgId: "org_1",
+      reloadAmount: 50,
+      reason: "card_declined",
+    });
   });
 });
 

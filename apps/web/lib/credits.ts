@@ -265,8 +265,22 @@ async function triggerAutoReloadIfNeeded(
       console.log(`[credits] Auto-reload $${reloadAmount} for org ${orgId}`);
     }
   } catch (err) {
-    // Payment failed (no default payment method, card declined, etc.)
+    // Payment failed (card declined, expired, etc.). Post-paid metering means
+    // the in-flight review already spent the tokens; the actionable signal is
+    // to the owner — their card failed and reviews will stop once the balance
+    // is exhausted. A silent console.error left them blind (#506).
     console.error("[credits] Auto-reload payment failed:", err);
+    const reason =
+      err && typeof err === "object" && "code" in err
+        ? String((err as { code?: unknown }).code)
+        : undefined;
+    eventBus.emit({
+      type: "auto-reload-failed",
+      orgId,
+      reloadAmount,
+      remainingBalance: currentBalance,
+      reason,
+    });
   }
 }
 

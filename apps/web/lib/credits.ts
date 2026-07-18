@@ -270,10 +270,8 @@ async function triggerAutoReloadIfNeeded(
     // to the owner — their card failed and reviews will stop once the balance
     // is exhausted. A silent console.error left them blind (#506).
     console.error("[credits] Auto-reload payment failed:", err);
-    const reason =
-      err && typeof err === "object" && "code" in err
-        ? String((err as { code?: unknown }).code)
-        : undefined;
+    const code = (err as { code?: unknown } | null)?.code;
+    const reason = typeof code === "string" ? code : undefined;
     eventBus.emit({
       type: "auto-reload-failed",
       orgId,

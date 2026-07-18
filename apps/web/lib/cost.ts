@@ -189,6 +189,7 @@ export async function shouldGuardConcurrency(orgId: string): Promise<boolean> {
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
     select: {
+      type: true,
       anthropicApiKey: true,
       openaiApiKey: true,
       googleApiKey: true,
@@ -197,6 +198,10 @@ export async function shouldGuardConcurrency(orgId: string): Promise<boolean> {
     },
   });
   if (!org) return false;
+  // Community orgs are rate-limited (communityDailyReviewLimit), not credit-
+  // billed — same exemption getOrgSpendLimitStatus applies. No credit spend to
+  // serialize.
+  if (org.type === ORG_TYPE.COMMUNITY) return false;
   const fullyBYOK = Boolean(org.anthropicApiKey && org.openaiApiKey && org.googleApiKey);
   const total = Number(org.creditBalance) + Number(org.freeCreditBalance);
   return concurrencyGuardApplies(fullyBYOK, total);

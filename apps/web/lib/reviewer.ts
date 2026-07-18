@@ -1127,16 +1127,27 @@ export async function processReview(pullRequestId: string): Promise<void> {
     // spend-limit block above once credits hit zero; stale reviews are reclaimed
     // by the existing stuck-review sweeper.
     if (await shouldGuardConcurrency(org.id)) {
-      const inFlight = await prisma.pullRequest.count({
-        where: {
-          repository: { organizationId: org.id },
-          status: "reviewing",
-          id: { not: pr.id },
-        },
+      // Admission must be ATOMIC — a plain count-then-mark is check-then-act:
+      // N parallel workers each see 0 in-flight (none marked yet) and all admit.
+      // A transaction-scoped advisory lock keyed on the org serializes the
+      // count+mark so exactly one review per org is admitted at a time. The
+      // lock is held only for this fast count/update, not the whole review.
+      const admitted = await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${org.id}))`;
+        const inFlight = await tx.pullRequest.count({
+          where: {
+            repository: { organizationId: org.id },
+            status: "reviewing",
+            id: { not: pr.id },
+          },
+        });
+        if (inFlight > 0) return false;
+        await tx.pullRequest.update({ where: { id: pr.id }, data: { status: "reviewing" } });
+        return true;
       });
-      if (inFlight > 0) {
+      if (!admitted) {
         console.log(
-          `[reviewer] Low balance + ${inFlight} in-flight review(s) for org ${org.id} — re-queuing PR ${pr.id}`,
+          `[reviewer] Low balance + in-flight review for org ${org.id} — re-queuing PR ${pr.id}`,
         );
         await prisma.pullRequest.update({
           where: { id: pr.id },
@@ -1147,7 +1158,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
       }
     }
 
-    // Step 1: Mark as reviewing
+    // Step 1: Mark as reviewing (idempotent — the guard may have set it already)
     await prisma.pullRequest.update({
       where: { id: pr.id },
       data: { status: "reviewing" },

@@ -300,6 +300,50 @@ export async function createPullRequestComment(
   return data.id as number;
 }
 
+/**
+ * Set (post) a commit status on a GitLab commit. Shows on the MR as a
+ * pipeline/status check; a project can require it to pass before merge
+ * ("Merge checks → Pipelines must succeed" with an external status). This is
+ * the GitLab equivalent of a GitHub check-run — the merge-gating primitive.
+ * `state`: "running" | "success" | "failed" | "canceled".
+ */
+export async function setCommitStatus(
+  organizationId: string,
+  projectPath: string,
+  sha: string,
+  state: "running" | "success" | "failed" | "canceled",
+  name: string,
+  description: string,
+  targetUrl?: string,
+): Promise<void> {
+  const token = await getAccessToken(organizationId);
+  const host = await getHost(organizationId);
+  const res = await fetch(
+    `${apiBase(host)}/projects/${encodeURIComponent(projectPath)}/statuses/${sha}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        state,
+        name,
+        description: description.slice(0, 255), // GitLab caps the field
+        ...(targetUrl ? { target_url: targetUrl } : {}),
+      }),
+    },
+  );
+
+  if (!res.ok) {
+    // GitLab 400s when the same (sha, name, state) is posted twice — that's a
+    // benign no-op, not a failure worth throwing over.
+    const errBody = await res.text();
+    if (res.status === 400 && errBody.includes("Cannot transition status")) return;
+    throw new Error(`Failed to set GitLab commit status: ${res.status} ${errBody}`);
+  }
+}
+
 export async function updatePullRequestComment(
   organizationId: string,
   projectPath: string,

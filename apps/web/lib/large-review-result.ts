@@ -12,6 +12,7 @@ import {
   buildLowSeveritySummary,
   stripDetailedFindings,
   countFindings,
+  shouldFailReviewCheck,
 } from "@/lib/review-helpers";
 import { eventBus } from "@/lib/events";
 
@@ -169,11 +170,10 @@ export async function handleLargeReviewResult(
   const hasHigh = findings.some((f) => f.severity === "🟠");
   const hasMedium = findings.some((f) => f.severity === "🟡");
   const threshold = org.checkFailureThreshold || "critical";
-  const shouldRequestChanges =
-    threshold !== "none" &&
-    (hasCritical ||
-      (threshold !== "critical" && hasHigh) ||
-      (threshold === "medium" && hasMedium));
+  const shouldRequestChanges = shouldFailReviewCheck(
+    { hasCritical, hasHigh, hasMedium },
+    threshold,
+  );
   const reviewEvent: "COMMENT" | "REQUEST_CHANGES" = shouldRequestChanges
     ? "REQUEST_CHANGES"
     : "COMMENT";

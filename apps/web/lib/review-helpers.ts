@@ -693,3 +693,22 @@ export function generateVerificationQueries(
 
   return queries.slice(0, 15);
 }
+
+/**
+ * The merge-gating decision: does a review fail its check given the findings'
+ * severities and the org's checkFailureThreshold? Single source of truth for
+ * both the GitHub check-run conclusion and the GitLab commit status (and the
+ * REQUEST_CHANGES review event), so the two providers can never drift.
+ * threshold: "none" | "critical" | "high" | "medium".
+ */
+export function shouldFailReviewCheck(
+  sev: { hasCritical: boolean; hasHigh: boolean; hasMedium: boolean },
+  threshold: string,
+): boolean {
+  return (
+    threshold !== "none" &&
+    (sev.hasCritical ||
+      (threshold !== "critical" && sev.hasHigh) ||
+      (threshold === "medium" && sev.hasMedium))
+  );
+}

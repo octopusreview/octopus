@@ -67,6 +67,7 @@ import {
   generateVerificationQueries,
   resolveIndexClaimWait,
   normalizeScoreDenominators,
+  shouldFailReviewCheck,
 } from "@/lib/review-helpers";
 import type { ReviewConfig } from "@/lib/review-helpers";
 import { getCategoryConfidenceThreshold } from "@/lib/review-categories";
@@ -154,6 +155,11 @@ async function emitReviewStatus(orgId: string, event: ReviewEvent) {
 // --- LLM-based reply intent classification ---
 
 const FEEDBACK_CLASSIFICATION_MODEL = "claude-sonnet-4-6";
+
+// GitLab commit-status context name — the merge-gating check GitLab MRs can
+// require. Kept as one constant so every finalize path uses the same name
+// (GitLab keys statuses by name; a mismatch would leave a stale "running" one).
+const GITLAB_STATUS_NAME = "octopus";
 
 type ReplyIntent = "dismissed" | "accepted" | "unclear";
 
@@ -823,6 +829,16 @@ export async function processReview(pullRequestId: string): Promise<void> {
     }
   }
 
+  // GitLab: post a running commit status so the MR shows the review in flight.
+  // This is the merge-gating primitive — a project can require the "octopus"
+  // status to pass before merge. Best-effort; a status failure never blocks the
+  // review itself.
+  if (pr.headSha && isGitlab) {
+    await gitlab
+      .setCommitStatus(org.id, projectPath, pr.headSha, "running", GITLAB_STATUS_NAME, "Octopus review in progress")
+      .catch((err) => console.error("[reviewer] Failed to set GitLab running status:", err));
+  }
+
   // Pre-review: sync feedback from GitHub before generating new findings
   if (isGitHub && installationId) {
     try {
@@ -904,6 +920,13 @@ export async function processReview(pullRequestId: string): Promise<void> {
                 reviewCommentId,
                 "> 🐙 **Octopus Review** — Repository indexing failed and could not be recovered.\n>\n> Please re-trigger the review by commenting `@octopusreview`.",
               );
+            }
+            // Terminal — the review won't run, so finalize the GitLab status
+            // (leaving "running" would strand the MR).
+            if (pr.headSha && isGitlab) {
+              await gitlab
+                .setCommitStatus(org.id, projectPath, pr.headSha, "failed", GITLAB_STATUS_NAME, "Repository indexing failed.")
+                .catch((e) => console.error("[reviewer] Failed to set GitLab status:", e));
             }
             return;
           }
@@ -1084,6 +1107,14 @@ export async function processReview(pullRequestId: string): Promise<void> {
         where: { id: pr.id },
         data: { status: "failed", errorMessage: "Monthly spend limit reached" },
       });
+      // Finalize the GitLab status as success — a billing limit is not a code
+      // problem, so it must not block the MR merge (and leaving "running" would
+      // strand it). GitHub uses no check here for the same reason.
+      if (pr.headSha && isGitlab) {
+        await gitlab
+          .setCommitStatus(org.id, projectPath, pr.headSha, "success", GITLAB_STATUS_NAME, "Review skipped — monthly usage limit reached.")
+          .catch((e) => console.error("[reviewer] Failed to set GitLab status:", e));
+      }
       return;
     }
 
@@ -1217,6 +1248,12 @@ export async function processReview(pullRequestId: string): Promise<void> {
           title: "No reviewable changes",
           summary: "The diff is empty — there are no reviewable code changes.",
         });
+      }
+      // GitLab has no "neutral" — an empty diff shouldn't block a merge, so pass.
+      if (pr.headSha && isGitlab) {
+        await gitlab
+          .setCommitStatus(org.id, projectPath, pr.headSha, "success", GITLAB_STATUS_NAME, "No reviewable code changes.")
+          .catch((e) => console.error("[reviewer] Failed to set GitLab status:", e));
       }
 
       console.log(`[reviewer] Skipped PR #${pr.number} — empty diff`);
@@ -2043,12 +2080,10 @@ Rules:
     const hasMedium = findings.some((f) => f.severity === "🟡");
 
     const threshold = org.checkFailureThreshold || "critical";
-    const shouldRequestChanges =
-      threshold !== "none" && (
-        hasCritical ||
-        (threshold !== "critical" && hasHigh) ||
-        (threshold === "medium" && hasMedium)
-      );
+    const shouldRequestChanges = shouldFailReviewCheck(
+      { hasCritical, hasHigh, hasMedium },
+      threshold,
+    );
     const reviewEvent = shouldRequestChanges ? "REQUEST_CHANGES" : "COMMENT";
 
     // Track the actual number of findings visible to the user (inline + summary table)
@@ -2301,37 +2336,38 @@ Rules:
       },
     });
 
+    // Merge-gating result, computed once and applied to whichever provider
+    // supports a status check (GitHub check-run, GitLab commit status).
+    const checkShouldFail = shouldFailReviewCheck(
+      { hasCritical, hasHigh, hasMedium },
+      threshold,
+    );
+    const summaryText = checkShouldFail
+      ? hasCritical
+        ? "Critical issues found that must be fixed before merge."
+        : hasHigh
+          ? "High severity issues found that should be fixed before merge."
+          : "Medium severity issues found that should be fixed before merge."
+      : effectiveFindingsCount > 0
+        ? "Review complete. No issues above the configured threshold."
+        : "Review complete. No issues found.";
+    const checkTitle = `${filesChanged} file${filesChanged !== 1 ? "s" : ""} reviewed, ${effectiveFindingsCount} finding${effectiveFindingsCount !== 1 ? "s" : ""}`;
+
     if (checkRunId && isGitHub && installationId) {
-      const checkShouldFail =
-        threshold !== "none" && (
-          hasCritical ||
-          (threshold !== "critical" && hasHigh) ||
-          (threshold === "medium" && hasMedium)
-        );
       const conclusion = checkShouldFail ? "failure" : "success";
-
-      const summaryText = checkShouldFail
-        ? hasCritical
-          ? "Critical issues found that must be fixed before merge."
-          : hasHigh
-            ? "High severity issues found that should be fixed before merge."
-            : "Medium severity issues found that should be fixed before merge."
-        : effectiveFindingsCount > 0
-          ? "Review complete. No issues above the configured threshold."
-          : "Review complete. No issues found.";
-
-      await ghUpdateCheckRun(
-        installationId,
-        owner,
-        repoName,
-        checkRunId,
-        conclusion,
-        {
-          title: `${filesChanged} file${filesChanged !== 1 ? "s" : ""} reviewed, ${effectiveFindingsCount} finding${effectiveFindingsCount !== 1 ? "s" : ""}`,
-          summary: summaryText,
-        },
-      );
+      await ghUpdateCheckRun(installationId, owner, repoName, checkRunId, conclusion, {
+        title: checkTitle,
+        summary: summaryText,
+      });
       console.log(`[reviewer] Check run updated — conclusion: ${conclusion} (threshold: ${threshold})`);
+    }
+
+    if (pr.headSha && isGitlab) {
+      const state = checkShouldFail ? "failed" : "success";
+      await gitlab
+        .setCommitStatus(org.id, projectPath, pr.headSha, state, GITLAB_STATUS_NAME, summaryText)
+        .catch((err) => console.error("[reviewer] Failed to set GitLab commit status:", err));
+      console.log(`[reviewer] GitLab commit status set — state: ${state} (threshold: ${threshold})`);
     }
 
     // Step 7: Store review in vector DB for timeline/search
@@ -2456,6 +2492,13 @@ Rules:
           summary: `Octopus Review encountered an error: ${errorMessage}`,
         },
       ).catch((e) => console.error("[reviewer] Failed to update check run:", e));
+    }
+    // GitLab: mark the status failed on a review error so a gated MR isn't left
+    // hanging on a "running" status forever.
+    if (pr.headSha && isGitlab) {
+      await gitlab
+        .setCommitStatus(org.id, projectPath, pr.headSha, "failed", GITLAB_STATUS_NAME, `Review error: ${errorMessage}`.slice(0, 255))
+        .catch((e) => console.error("[reviewer] Failed to set GitLab failed status:", e));
     }
 
     // If indexing was in progress, mark it as failed (check current DB state, not stale in-memory value)

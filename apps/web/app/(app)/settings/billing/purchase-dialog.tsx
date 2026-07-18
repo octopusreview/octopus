@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +25,7 @@ export function PurchaseDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const router = useRouter();
   const [amount, setAmount] = useState<number | "">(25);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -38,6 +40,10 @@ export function PurchaseDialog({
       const result = await purchaseCredits(amount);
       if (result.error) {
         setError(result.error);
+      } else if (result.success) {
+        // Charged the saved card in-app — close and refresh the balance.
+        onOpenChange(false);
+        router.refresh();
       } else if (result.url) {
         window.location.href = result.url;
       }
@@ -112,9 +118,7 @@ export function PurchaseDialog({
             disabled={pending || !amount}
             className="w-full"
           >
-            {pending
-              ? "Redirecting to Stripe..."
-              : `Purchase $${amount || 0} Credits`}
+            {pending ? "Processing…" : `Purchase $${amount || 0} Credits`}
           </Button>
         </DialogFooter>
       </DialogContent>

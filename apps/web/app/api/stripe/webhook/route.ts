@@ -125,9 +125,17 @@ export async function POST(req: NextRequest) {
       const paymentIntentId = typeof charge.payment_intent === "string" ? charge.payment_intent : null;
 
       if (paymentIntentId) {
-        // Find the org via the checkout session tied to this payment intent.
+        // Find the org: Checkout purchases carry orgId on the session, but
+        // off-session charges (auto-reload, subscription, direct top-ups) have
+        // no session — those carry orgId on the PaymentIntent metadata. Try the
+        // session first, then fall back to the intent so every charge's refund
+        // is attributable.
         const sessions = await getStripe().checkout.sessions.list({ payment_intent: paymentIntentId, limit: 1 });
-        const orgId = sessions.data[0]?.metadata?.orgId;
+        let orgId = sessions.data[0]?.metadata?.orgId;
+        if (!orgId) {
+          const intent = await getStripe().paymentIntents.retrieve(paymentIntentId);
+          orgId = intent.metadata?.orgId;
+        }
 
         if (orgId) {
           // Deduct each refund INDIVIDUALLY, keyed on its own id, using the

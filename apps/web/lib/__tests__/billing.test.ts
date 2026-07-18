@@ -171,6 +171,7 @@ const {
 } = await import("@/lib/credits");
 const { POST } = await import("@/app/api/stripe/webhook/route");
 const { addOneMonth, renewDueSubscriptions } = await import("@/lib/subscription");
+const { chargeCreditsOffSession } = await import("@/lib/credits");
 const { volumeBonusUsd } = await import("@/lib/plans");
 
 function resetBillingMocks() {
@@ -898,5 +899,60 @@ describe("volume purchase bonus", () => {
     const types = createdTransactions.map((t) => (t as { type: string }).type);
     expect(types).toContain("purchase");
     expect(types).not.toContain("free_credit");
+  });
+});
+
+
+describe("off-session credit purchase", () => {
+  it("no_card when the org has no saved payment method", async () => {
+    mockOrganizationFindUnique = mock(() => Promise.resolve({ stripeCustomerId: "cus_1" } as never));
+    mockOffSessionPaymentMethodId = mock(() => Promise.resolve(null));
+
+    const res = await chargeCreditsOffSession("org_1", 100);
+    expect(res).toEqual({ status: "no_card" });
+    expect(mockPaymentIntentsCreate).not.toHaveBeenCalled();
+  });
+
+  it("no_card when the org has no stripe customer at all", async () => {
+    mockOrganizationFindUnique = mock(() => Promise.resolve({ stripeCustomerId: null } as never));
+    const res = await chargeCreditsOffSession("org_1", 100);
+    expect(res).toEqual({ status: "no_card" });
+  });
+
+  it("charges the saved card and grants purchase + volume bonus keyed on the PI id", async () => {
+    mockOrganizationFindUnique = mock(() => Promise.resolve({ stripeCustomerId: "cus_1" } as never));
+    mockOffSessionPaymentMethodId = mock(() => Promise.resolve("pm_1"));
+    mockPaymentIntentsCreate = mock(() =>
+      Promise.resolve({ id: "pi_buy", status: "succeeded", latest_charge: null } as never),
+    );
+
+    const res = await chargeCreditsOffSession("org_1", 100);
+
+    expect(res).toEqual({ status: "succeeded", paymentIntentId: "pi_buy" });
+    // free 8 + purchased 20, then +100 purchased and +5 free bonus.
+    expect(orgState).toEqual({ creditBalance: 120, freeCreditBalance: 13 });
+    const purchase = createdTransactions.find((t) => (t as { type: string }).type === "purchase") as {
+      stripeSessionId: string;
+      amount: number;
+    };
+    expect(purchase.stripeSessionId).toBe("pi_buy");
+    expect(purchase.amount).toBe(100);
+    const bonus = createdTransactions.find((t) => (t as { type: string }).type === "free_credit") as {
+      amount: number;
+    };
+    expect(bonus.amount).toBe(5);
+  });
+
+  it("failed when the saved card is declined", async () => {
+    mockOrganizationFindUnique = mock(() => Promise.resolve({ stripeCustomerId: "cus_1" } as never));
+    mockOffSessionPaymentMethodId = mock(() => Promise.resolve("pm_1"));
+    const declined = new Error("declined") as Error & { code: string };
+    declined.code = "card_declined";
+    mockPaymentIntentsCreate = mock(() => Promise.reject(declined));
+
+    const res = await chargeCreditsOffSession("org_1", 25);
+
+    expect(res).toEqual({ status: "failed", reason: "card_declined" });
+    expect(orgState).toEqual({ creditBalance: 20, freeCreditBalance: 8 }); // untouched
   });
 });

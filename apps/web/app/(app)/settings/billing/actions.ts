@@ -12,6 +12,7 @@ import {
   getStripe,
 } from "@/lib/stripe";
 import { SUBSCRIPTION_PLANS, isPaidPlanTier } from "@/lib/plans";
+import { chargeCreditsOffSession } from "@/lib/credits";
 import { chargeSubscription, grantSubscriptionPeriod, addOneMonth } from "@/lib/subscription";
 
 async function getOwnerOrgId(): Promise<{ orgId: string } | { error: string }> {
@@ -40,13 +41,27 @@ async function getOwnerOrgId(): Promise<{ orgId: string } | { error: string }> {
 
 export async function purchaseCredits(
   amount: number,
-): Promise<{ url?: string; error?: string }> {
+): Promise<{ url?: string; success?: boolean; error?: string }> {
   if (typeof amount !== "number" || amount < 5 || amount > 1000) {
     return { error: "Amount must be between $5 and $1,000." };
   }
 
   const result = await getOwnerOrgId();
   if ("error" in result) return { error: result.error };
+
+  // Returning buyer with a saved card → charge off-session, grant in-app, no
+  // redirect. Only a first-time buyer (no card) or a declined saved card
+  // needs Stripe Checkout.
+  const charge = await chargeCreditsOffSession(result.orgId, amount);
+  if (charge.status === "succeeded") {
+    revalidatePath("/settings/billing");
+    return { success: true };
+  }
+  if (charge.status === "failed") {
+    return {
+      error: "Your saved card was declined. Update your card and try again.",
+    };
+  }
 
   const url = await createCheckoutSession(
     result.orgId,

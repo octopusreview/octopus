@@ -1,6 +1,82 @@
 import { prisma } from "@octopus/db";
 import { getStripe, getOffSessionPaymentMethodId } from "./stripe";
 import { eventBus } from "./events/bus";
+import { volumeBonusUsd } from "./plans";
+
+export type OffSessionPurchaseResult =
+  | { status: "succeeded"; paymentIntentId: string }
+  | { status: "no_card" }
+  | { status: "failed"; reason?: string };
+
+/**
+ * Charge the org's saved card off-session for a one-off credit top-up and
+ * grant the credits inline — no Stripe Checkout redirect. Mirrors the
+ * auto-reload/subscription off-session charge. There is no
+ * payment_intent.succeeded webhook, so the grant MUST happen here; it is
+ * keyed on the PaymentIntent id (unique stripeSessionId) so it can't
+ * double-grant. Returns "no_card" when there's nothing saved (caller falls
+ * back to Checkout), "failed" on decline/Stripe error.
+ */
+export async function chargeCreditsOffSession(
+  orgId: string,
+  amountUsd: number,
+): Promise<OffSessionPurchaseResult> {
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { stripeCustomerId: true },
+  });
+  if (!org?.stripeCustomerId) return { status: "no_card" };
+
+  let paymentMethod: string | null;
+  try {
+    paymentMethod = await getOffSessionPaymentMethodId(org.stripeCustomerId);
+  } catch {
+    return { status: "failed" };
+  }
+  if (!paymentMethod) return { status: "no_card" };
+
+  let paymentIntent;
+  try {
+    paymentIntent = await getStripe().paymentIntents.create({
+      amount: Math.round(amountUsd * 100),
+      currency: "usd",
+      customer: org.stripeCustomerId,
+      payment_method: paymentMethod,
+      off_session: true,
+      confirm: true,
+      metadata: { orgId, type: "credit_purchase", amountUsd: String(amountUsd) },
+    });
+  } catch (err) {
+    const code = (err as { code?: unknown } | null)?.code;
+    console.error("[credits] Off-session purchase charge failed:", err);
+    return { status: "failed", reason: typeof code === "string" ? code : undefined };
+  }
+  if (paymentIntent.status !== "succeeded") return { status: "failed" };
+
+  await addCredits(orgId, amountUsd, "purchase", `Credit purchase — $${amountUsd}`, paymentIntent.id);
+  const bonus = volumeBonusUsd(amountUsd);
+  if (bonus > 0) {
+    await addFreeCredits(orgId, bonus, `Volume bonus — $${bonus} on $${amountUsd} purchase`);
+  }
+
+  // Best-effort receipt backfill — credits already committed.
+  const charge = paymentIntent.latest_charge;
+  if (charge && typeof charge === "string") {
+    try {
+      const chargeObj = await getStripe().charges.retrieve(charge);
+      if (chargeObj.receipt_url) {
+        await prisma.creditTransaction.update({
+          where: { stripeSessionId: paymentIntent.id },
+          data: { receiptUrl: chargeObj.receipt_url },
+        });
+      }
+    } catch {
+      /* non-critical */
+    }
+  }
+
+  return { status: "succeeded", paymentIntentId: paymentIntent.id };
+}
 
 export async function getOrgBalance(orgId: string) {
   const org = await prisma.organization.findUniqueOrThrow({

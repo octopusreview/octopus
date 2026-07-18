@@ -15,3 +15,21 @@ export type PaidPlanTier = keyof typeof SUBSCRIPTION_PLANS;
 export function isPaidPlanTier(tier: string): tier is PaidPlanTier {
   return tier in SUBSCRIPTION_PLANS;
 }
+
+/**
+ * Volume bonus on one-off credit top-ups: pay $N, get bonus credits on top.
+ * Rates are kept below the subscription per-dollar bonus (10–16%) so a
+ * recurring plan stays the better deal. Highest matching tier wins.
+ */
+export const VOLUME_BONUS_TIERS = [
+  { minUsd: 500, rate: 0.1 },
+  { minUsd: 100, rate: 0.05 },
+] as const;
+
+/** Bonus credits (USD, rounded to cents) granted for a top-up of `amountUsd`. */
+export function volumeBonusUsd(amountUsd: number): number {
+  if (!Number.isFinite(amountUsd) || amountUsd <= 0) return 0;
+  const tier = VOLUME_BONUS_TIERS.find((t) => amountUsd >= t.minUsd);
+  if (!tier) return 0;
+  return Math.round(amountUsd * tier.rate * 100) / 100;
+}

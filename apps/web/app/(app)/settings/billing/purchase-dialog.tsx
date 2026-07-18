@@ -13,6 +13,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { purchaseCredits } from "./actions";
+import { volumeBonusUsd } from "@/lib/plans";
 
 const PRESETS = [10, 25, 50, 100];
 
@@ -94,6 +95,13 @@ export function PurchaseDialog({
             </div>
             <p className="text-xs text-muted-foreground">Min $5, max $1,000</p>
           </div>
+
+          {typeof amount === "number" && volumeBonusUsd(amount) > 0 && (
+            <p className="text-sm text-emerald-600 dark:text-emerald-400">
+              +${volumeBonusUsd(amount).toFixed(2)} bonus credits — you&apos;ll get $
+              {(amount + volumeBonusUsd(amount)).toFixed(2)} total.
+            </p>
+          )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>

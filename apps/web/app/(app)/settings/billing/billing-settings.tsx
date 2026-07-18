@@ -54,6 +54,10 @@ type Props = {
   billingEmail: string | null;
   monthlySpendLimitUsd: number | null;
   stripeCustomerId: string | null;
+  // Read server-side (runtime env) and passed down — NOT read from
+  // process.env in the client, where NEXT_PUBLIC_* is inlined at build time
+  // and the CI build has no Stripe key (would bake in an empty string).
+  stripePublishableKey: string;
   planTier: string;
   planRenewsAt: string | null;
   planCancelAtPeriodEnd: boolean;
@@ -117,6 +121,7 @@ export function BillingSettings({
   billingEmail,
   monthlySpendLimitUsd,
   stripeCustomerId,
+  stripePublishableKey,
   planTier,
   planRenewsAt,
   planCancelAtPeriodEnd,
@@ -811,7 +816,7 @@ export function BillingSettings({
       <CardSetupDialog
         open={cardOpen}
         onOpenChange={setCardOpen}
-        publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ""}
+        publishableKey={stripePublishableKey}
         onSaved={() => router.refresh()}
       />
     </div>

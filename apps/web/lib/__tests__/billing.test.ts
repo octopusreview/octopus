@@ -187,6 +187,7 @@ const {
   addFreeCredits,
   deductCredits,
   getOrgBalance,
+  chargeCreditsOffSession,
 } = await import("@/lib/credits");
 const { POST } = await import("@/app/api/stripe/webhook/route");
 const { addOneMonth, renewDueSubscriptions } = await import("@/lib/subscription");
@@ -922,6 +923,135 @@ describe("volume purchase bonus", () => {
     const types = createdTransactions.map((t) => (t as { type: string }).type);
     expect(types).toContain("purchase");
     expect(types).not.toContain("free_credit");
+  });
+});
+
+describe("off-session credit purchase", () => {
+  it("no_card when the org has no saved payment method", async () => {
+    mockOrganizationFindUnique = mock(() => Promise.resolve({ stripeCustomerId: "cus_1" } as never));
+    mockOffSessionPaymentMethodId = mock(() => Promise.resolve(null));
+
+    const res = await chargeCreditsOffSession("org_1", 100, "idem-test");
+    expect(res).toEqual({ status: "no_card" });
+    expect(mockPaymentIntentsCreate).not.toHaveBeenCalled();
+  });
+
+  it("no_card when the org has no stripe customer at all", async () => {
+    mockOrganizationFindUnique = mock(() => Promise.resolve({ stripeCustomerId: null } as never));
+    const res = await chargeCreditsOffSession("org_1", 100, "idem-test");
+    expect(res).toEqual({ status: "no_card" });
+  });
+
+  it("passes the idempotency key to Stripe so SDK retries can't double-charge", async () => {
+    mockOrganizationFindUnique = mock(() => Promise.resolve({ stripeCustomerId: "cus_1" } as never));
+    mockOffSessionPaymentMethodId = mock(() => Promise.resolve("pm_1"));
+    let seenOpts: unknown;
+    mockPaymentIntentsCreate = mock((_params: unknown, opts: unknown) => {
+      seenOpts = opts;
+      return Promise.resolve({ id: "pi_idem", status: "succeeded", latest_charge: null } as never);
+    });
+
+    await chargeCreditsOffSession("org_1", 25, "idem-abc");
+
+    expect(seenOpts).toEqual({ idempotencyKey: "idem-abc" });
+  });
+
+  it("charges the saved card and grants purchase + volume bonus keyed on the PI id", async () => {
+    mockOrganizationFindUnique = mock(() => Promise.resolve({ stripeCustomerId: "cus_1" } as never));
+    mockOffSessionPaymentMethodId = mock(() => Promise.resolve("pm_1"));
+    mockPaymentIntentsCreate = mock(() =>
+      Promise.resolve({ id: "pi_buy", status: "succeeded", latest_charge: null } as never),
+    );
+
+    const res = await chargeCreditsOffSession("org_1", 100, "idem-test");
+
+    expect(res).toEqual({ status: "succeeded", paymentIntentId: "pi_buy" });
+    // free 8 + purchased 20, then +100 purchased and +5 free bonus.
+    expect(orgState).toEqual({ creditBalance: 120, freeCreditBalance: 13 });
+    const purchase = createdTransactions.find((t) => (t as { type: string }).type === "purchase") as {
+      stripeSessionId: string;
+      amount: number;
+    };
+    expect(purchase.stripeSessionId).toBe("pi_buy");
+    expect(purchase.amount).toBe(100);
+    const bonus = createdTransactions.find((t) => (t as { type: string }).type === "free_credit") as {
+      amount: number;
+    };
+    expect(bonus.amount).toBe(5);
+  });
+
+  it("failed when the saved card is declined", async () => {
+    mockOrganizationFindUnique = mock(() => Promise.resolve({ stripeCustomerId: "cus_1" } as never));
+    mockOffSessionPaymentMethodId = mock(() => Promise.resolve("pm_1"));
+    const declined = new Error("declined") as Error & { code: string };
+    declined.code = "card_declined";
+    mockPaymentIntentsCreate = mock(() => Promise.reject(declined));
+
+    const res = await chargeCreditsOffSession("org_1", 25, "idem-test");
+
+    expect(res).toEqual({ status: "failed", reason: "card_declined" });
+    expect(orgState).toEqual({ creditBalance: 20, freeCreditBalance: 8 }); // untouched
+  });
+});
+
+describe("payment_intent.succeeded backfill (charge-without-grant recovery)", () => {
+  it("grants purchase + volume bonus for a direct off-session credit_purchase PI", async () => {
+    currentEvent = {
+      type: "payment_intent.succeeded",
+      data: {
+        object: {
+          id: "pi_direct",
+          latest_charge: null,
+          metadata: { orgId: "org_1", type: "credit_purchase", amountUsd: "100" },
+        },
+      },
+    };
+
+    const response = await POST(stripeRequest() as never);
+
+    expect(response.status).toBe(200);
+    // +100 purchased, +5 bonus.
+    expect(orgState).toEqual({ creditBalance: 120, freeCreditBalance: 13 });
+    const purchase = createdTransactions.find((t) => (t as { type: string }).type === "purchase") as {
+      stripeSessionId: string;
+    };
+    expect(purchase.stripeSessionId).toBe("pi_direct");
+  });
+
+  it("is a no-op when the inline grant already ran (same PI id → P2002)", async () => {
+    // Simulate 'already granted': the ledger insert hits the unique constraint.
+    mockTxCreditTransactionCreate = mock(() => {
+      const err = new Error("dup") as Error & { code: string };
+      err.code = "P2002";
+      return Promise.reject(err);
+    });
+    currentEvent = {
+      type: "payment_intent.succeeded",
+      data: {
+        object: {
+          id: "pi_dup",
+          latest_charge: null,
+          metadata: { orgId: "org_1", type: "credit_purchase", amountUsd: "100" },
+        },
+      },
+    };
+
+    const response = await POST(stripeRequest() as never);
+
+    expect(response.status).toBe(200);
+    expect(orgState).toEqual({ creditBalance: 20, freeCreditBalance: 8 }); // unchanged, no double-grant
+  });
+
+  it("ignores a Checkout PI (no metadata.type) so it can't double-grant a checkout purchase", async () => {
+    currentEvent = {
+      type: "payment_intent.succeeded",
+      data: { object: { id: "pi_checkout", latest_charge: null, metadata: {} } },
+    };
+
+    await POST(stripeRequest() as never);
+
+    expect(createdTransactions).toEqual([]);
+    expect(orgState).toEqual({ creditBalance: 20, freeCreditBalance: 8 });
   });
 });
 

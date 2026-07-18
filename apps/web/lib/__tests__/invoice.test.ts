@@ -15,8 +15,7 @@ describe("invoice", () => {
       createdAt: new Date("2026-07-18T00:00:00Z"),
       amountUsd: 100,
       description: "Credit purchase — $100",
-      type: "purchase",
-      org: { name: "AOT", slug: "aot", billingEmail: "cem@weezboo.com" },
+      org: { name: "AOT", billingEmail: "cem@weezboo.com" },
     });
     expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
     expect(pdf.subarray(-8).toString("latin1")).toContain("%%EOF");
@@ -29,8 +28,7 @@ describe("invoice", () => {
       createdAt: new Date("2026-07-18T00:00:00Z"),
       amountUsd: 49,
       description: "Pro plan — $54 credits",
-      type: "subscription",
-      org: { name: "AOT", slug: "aot", billingEmail: null },
+      org: { name: "AOT", billingEmail: null },
     });
     expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
   });

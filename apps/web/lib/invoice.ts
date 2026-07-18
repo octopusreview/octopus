@@ -5,8 +5,7 @@ export type InvoiceData = {
   createdAt: Date;
   amountUsd: number; // positive dollars paid
   description: string;
-  type: string; // "purchase" | "auto_reload" | "subscription"
-  org: { name: string; slug: string; billingEmail: string | null };
+  org: { name: string; billingEmail: string | null };
 };
 
 const BRAND = "Octopus Review";

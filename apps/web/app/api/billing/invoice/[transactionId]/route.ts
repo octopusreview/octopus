@@ -3,12 +3,9 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { renderInvoicePdf, invoiceNumber } from "@/lib/invoice";
+import { INVOICEABLE_TXN_TYPES } from "@/lib/plans";
 
 export const runtime = "nodejs";
-
-// Only real payments get a receipt — usage/free_credit/coupon rows are not
-// invoiceable (and refund rows are negative).
-const INVOICEABLE_TYPES = ["purchase", "auto_reload", "subscription"];
 
 export async function GET(
   _req: NextRequest,
@@ -30,29 +27,29 @@ export async function GET(
       description: true,
       createdAt: true,
       organizationId: true,
-      organization: { select: { name: true, slug: true, billingEmail: true } },
+      organization: { select: { name: true, billingEmail: true } },
     },
   });
 
-  if (!txn) {
+  // Caller must be a member of the transaction's org. A missing transaction
+  // and one belonging to another org return the SAME 404 — a distinct 403
+  // would confirm the id exists, leaking transaction existence to a prober.
+  const member = txn
+    ? await prisma.organizationMember.findFirst({
+        where: {
+          organizationId: txn.organizationId,
+          userId: session.user.id,
+          deletedAt: null,
+        },
+        select: { id: true },
+      })
+    : null;
+
+  if (!txn || !member) {
     return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
   }
 
-  // Caller must be a member of the transaction's org (any role can view a
-  // receipt for their own org).
-  const member = await prisma.organizationMember.findFirst({
-    where: {
-      organizationId: txn.organizationId,
-      userId: session.user.id,
-      deletedAt: null,
-    },
-    select: { id: true },
-  });
-  if (!member) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  if (!INVOICEABLE_TYPES.includes(txn.type)) {
+  if (!INVOICEABLE_TXN_TYPES.includes(txn.type)) {
     return NextResponse.json({ error: "No receipt for this transaction" }, { status: 400 });
   }
 
@@ -61,7 +58,6 @@ export async function GET(
     createdAt: txn.createdAt,
     amountUsd: Math.abs(Number(txn.amount)),
     description: txn.description ?? "Credit purchase",
-    type: txn.type,
     org: txn.organization,
   });
 

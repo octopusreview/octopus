@@ -33,3 +33,10 @@ export function volumeBonusUsd(amountUsd: number): number {
   if (!tier) return 0;
   return Math.round(amountUsd * tier.rate * 100) / 100;
 }
+
+/**
+ * CreditTransaction types that represent a real payment and so get a
+ * downloadable invoice/receipt PDF. Shared by the invoice route (server) and
+ * the billing UI (client) — kept here (no pdfkit dep) so both can import it.
+ */
+export const INVOICEABLE_TXN_TYPES = ["purchase", "auto_reload", "subscription"];

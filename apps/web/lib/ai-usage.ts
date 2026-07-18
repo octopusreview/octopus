@@ -56,6 +56,22 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
       params.provider === "mock" ||
       params.provider === "mock-fail";
 
+    // Compute the platform charge up front so we can snapshot it on the row —
+    // recording the cost as-charged means historical margin no longer drifts
+    // when model prices change later. Own-key usage is never charged (null).
+    let cost = 0;
+    if (!hasOwnKey) {
+      const pricing = await getModelPricing();
+      cost = calcCost(
+        pricing,
+        params.model,
+        params.inputTokens,
+        params.outputTokens,
+        params.cacheReadTokens ?? 0,
+        params.cacheWriteTokens ?? 0,
+      );
+    }
+
     await prisma.aiUsage.create({
       data: {
         provider: params.provider,
@@ -66,22 +82,13 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
         cacheReadTokens: params.cacheReadTokens ?? 0,
         cacheWriteTokens: params.cacheWriteTokens ?? 0,
         usedOwnKey: hasOwnKey,
+        chargedCostUsd: hasOwnKey ? null : cost,
         organizationId: params.organizationId,
       },
     });
 
     // Only deduct credits for orgs without their own API key
     if (!hasOwnKey) {
-      const pricing = await getModelPricing();
-      const cost = calcCost(
-        pricing,
-        params.model,
-        params.inputTokens,
-        params.outputTokens,
-        params.cacheReadTokens ?? 0,
-        params.cacheWriteTokens ?? 0,
-      );
-
       console.log(
         `[ai-usage] ${params.operation} model=${params.model} cost=$${cost.toFixed(6)} org=${params.organizationId} hasOwnKey=${hasOwnKey}`,
       );

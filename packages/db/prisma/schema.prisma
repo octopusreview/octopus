@@ -601,6 +601,12 @@ model AiUsage {
   cacheReadTokens  Int      @default(0)
   cacheWriteTokens Int      @default(0)
   usedOwnKey       Boolean  @default(false)
+  // Cost snapshot (USD) charged at record time for platform-key usage — the
+  // marked-up amount deducted from credits. Null for own-key rows (we charge
+  // nothing) and for rows predating this column. Recording it means historical
+  // margin no longer drifts when AvailableModel prices change; the recompute
+  // path (lib/cost.ts) stays as the fallback for null rows.
+  chargedCostUsd Float?
   createdAt      DateTime @default(now())
 
   organizationId String

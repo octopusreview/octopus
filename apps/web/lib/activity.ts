@@ -61,6 +61,7 @@ export function projectActivity(event: AppEvent): ProjectedActivity | null {
       });
     // Not surfaced in the activity feed:
     case "credit-low": // billing alert
+    case "auto-reload-failed": // billing alert
     case "org-type-changed": // admin/audit concern
       return null;
     default:

@@ -156,6 +156,11 @@ async function emitReviewStatus(orgId: string, event: ReviewEvent) {
 
 const FEEDBACK_CLASSIFICATION_MODEL = "claude-sonnet-4-6";
 
+// GitLab commit-status context name — the merge-gating check GitLab MRs can
+// require. Kept as one constant so every finalize path uses the same name
+// (GitLab keys statuses by name; a mismatch would leave a stale "running" one).
+const GITLAB_STATUS_NAME = "octopus";
+
 type ReplyIntent = "dismissed" | "accepted" | "unclear";
 
 /**
@@ -830,7 +835,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
   // review itself.
   if (pr.headSha && isGitlab) {
     await gitlab
-      .setCommitStatus(org.id, projectPath, pr.headSha, "running", "octopus", "Octopus review in progress")
+      .setCommitStatus(org.id, projectPath, pr.headSha, "running", GITLAB_STATUS_NAME, "Octopus review in progress")
       .catch((err) => console.error("[reviewer] Failed to set GitLab running status:", err));
   }
 
@@ -915,6 +920,13 @@ export async function processReview(pullRequestId: string): Promise<void> {
                 reviewCommentId,
                 "> 🐙 **Octopus Review** — Repository indexing failed and could not be recovered.\n>\n> Please re-trigger the review by commenting `@octopusreview`.",
               );
+            }
+            // Terminal — the review won't run, so finalize the GitLab status
+            // (leaving "running" would strand the MR).
+            if (pr.headSha && isGitlab) {
+              await gitlab
+                .setCommitStatus(org.id, projectPath, pr.headSha, "failed", GITLAB_STATUS_NAME, "Repository indexing failed.")
+                .catch((e) => console.error("[reviewer] Failed to set GitLab status:", e));
             }
             return;
           }
@@ -1095,6 +1107,14 @@ export async function processReview(pullRequestId: string): Promise<void> {
         where: { id: pr.id },
         data: { status: "failed", errorMessage: "Monthly spend limit reached" },
       });
+      // Finalize the GitLab status as success — a billing limit is not a code
+      // problem, so it must not block the MR merge (and leaving "running" would
+      // strand it). GitHub uses no check here for the same reason.
+      if (pr.headSha && isGitlab) {
+        await gitlab
+          .setCommitStatus(org.id, projectPath, pr.headSha, "success", GITLAB_STATUS_NAME, "Review skipped — monthly usage limit reached.")
+          .catch((e) => console.error("[reviewer] Failed to set GitLab status:", e));
+      }
       return;
     }
 
@@ -1232,7 +1252,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
       // GitLab has no "neutral" — an empty diff shouldn't block a merge, so pass.
       if (pr.headSha && isGitlab) {
         await gitlab
-          .setCommitStatus(org.id, projectPath, pr.headSha, "success", "octopus", "No reviewable code changes.")
+          .setCommitStatus(org.id, projectPath, pr.headSha, "success", GITLAB_STATUS_NAME, "No reviewable code changes.")
           .catch((e) => console.error("[reviewer] Failed to set GitLab status:", e));
       }
 
@@ -2345,7 +2365,7 @@ Rules:
     if (pr.headSha && isGitlab) {
       const state = checkShouldFail ? "failed" : "success";
       await gitlab
-        .setCommitStatus(org.id, projectPath, pr.headSha, state, "octopus", summaryText)
+        .setCommitStatus(org.id, projectPath, pr.headSha, state, GITLAB_STATUS_NAME, summaryText)
         .catch((err) => console.error("[reviewer] Failed to set GitLab commit status:", err));
       console.log(`[reviewer] GitLab commit status set — state: ${state} (threshold: ${threshold})`);
     }
@@ -2477,7 +2497,7 @@ Rules:
     // hanging on a "running" status forever.
     if (pr.headSha && isGitlab) {
       await gitlab
-        .setCommitStatus(org.id, projectPath, pr.headSha, "failed", "octopus", `Review error: ${errorMessage}`.slice(0, 255))
+        .setCommitStatus(org.id, projectPath, pr.headSha, "failed", GITLAB_STATUS_NAME, `Review error: ${errorMessage}`.slice(0, 255))
         .catch((e) => console.error("[reviewer] Failed to set GitLab failed status:", e));
     }
 

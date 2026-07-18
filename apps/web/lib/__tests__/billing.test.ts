@@ -970,3 +970,64 @@ describe("off-session credit purchase", () => {
     expect(orgState).toEqual({ creditBalance: 20, freeCreditBalance: 8 }); // untouched
   });
 });
+
+describe("payment_intent.succeeded backfill (charge-without-grant recovery)", () => {
+  it("grants purchase + volume bonus for a direct off-session credit_purchase PI", async () => {
+    currentEvent = {
+      type: "payment_intent.succeeded",
+      data: {
+        object: {
+          id: "pi_direct",
+          latest_charge: null,
+          metadata: { orgId: "org_1", type: "credit_purchase", amountUsd: "100" },
+        },
+      },
+    };
+
+    const response = await POST(stripeRequest() as never);
+
+    expect(response.status).toBe(200);
+    // +100 purchased, +5 bonus.
+    expect(orgState).toEqual({ creditBalance: 120, freeCreditBalance: 13 });
+    const purchase = createdTransactions.find((t) => (t as { type: string }).type === "purchase") as {
+      stripeSessionId: string;
+    };
+    expect(purchase.stripeSessionId).toBe("pi_direct");
+  });
+
+  it("is a no-op when the inline grant already ran (same PI id → P2002)", async () => {
+    // Simulate 'already granted': the ledger insert hits the unique constraint.
+    mockTxCreditTransactionCreate = mock(() => {
+      const err = new Error("dup") as Error & { code: string };
+      err.code = "P2002";
+      return Promise.reject(err);
+    });
+    currentEvent = {
+      type: "payment_intent.succeeded",
+      data: {
+        object: {
+          id: "pi_dup",
+          latest_charge: null,
+          metadata: { orgId: "org_1", type: "credit_purchase", amountUsd: "100" },
+        },
+      },
+    };
+
+    const response = await POST(stripeRequest() as never);
+
+    expect(response.status).toBe(200);
+    expect(orgState).toEqual({ creditBalance: 20, freeCreditBalance: 8 }); // unchanged, no double-grant
+  });
+
+  it("ignores a Checkout PI (no metadata.type) so it can't double-grant a checkout purchase", async () => {
+    currentEvent = {
+      type: "payment_intent.succeeded",
+      data: { object: { id: "pi_checkout", latest_charge: null, metadata: {} } },
+    };
+
+    await POST(stripeRequest() as never);
+
+    expect(createdTransactions).toEqual([]);
+    expect(orgState).toEqual({ creditBalance: 20, freeCreditBalance: 8 });
+  });
+});

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { constructWebhookEvent, getStripe } from "@/lib/stripe";
-import { addCredits, addFreeCredits, deductCredits } from "@/lib/credits";
+import { addCredits, addFreeCredits, deductCredits, grantPurchaseFromPaymentIntent } from "@/lib/credits";
 import { grantSubscriptionPeriod, addOneMonth } from "@/lib/subscription";
 import { isPaidPlanTier, volumeBonusUsd } from "@/lib/plans";
 import { prisma } from "@octopus/db";
@@ -161,6 +161,22 @@ export async function POST(req: NextRequest) {
             }
           }
         }
+      }
+    }
+
+    // Authoritative grant for off-session direct credit purchases. The server
+    // action grants inline for instant feedback, but if that process dies
+    // between charge and grant the customer would be charged with no credits —
+    // this webhook is the guarantee. Keyed on the PI id, so the inline grant
+    // and this one collapse to exactly one (P2002-idempotent). Only OUR direct
+    // off-session PIs carry metadata.type="credit_purchase"; Checkout PIs don't
+    // (their grant runs on checkout.session.completed), so no double-grant.
+    if (event.type === "payment_intent.succeeded") {
+      const intent = event.data.object;
+      const orgId = intent.metadata?.orgId;
+      const amountUsd = Number(intent.metadata?.amountUsd || 0);
+      if (intent.metadata?.type === "credit_purchase" && orgId && amountUsd > 0) {
+        await grantPurchaseFromPaymentIntent(orgId, amountUsd, intent.id, intent.latest_charge);
       }
     }
 

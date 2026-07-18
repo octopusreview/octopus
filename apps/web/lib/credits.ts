@@ -8,6 +8,52 @@ export type OffSessionPurchaseResult =
   | { status: "no_card" }
   | { status: "failed"; reason?: string };
 
+function isDuplicateLedgerError(err: unknown): boolean {
+  return (err as { code?: string } | null)?.code === "P2002";
+}
+
+/**
+ * Grant credits for a succeeded off-session credit-purchase PaymentIntent:
+ * the purchase amount plus the volume bonus, keyed on the PI id so it runs
+ * AT MOST ONCE across the inline fast-path and the webhook backfill. Safe to
+ * call from either; a second call (already granted) is a P2002 no-op.
+ */
+export async function grantPurchaseFromPaymentIntent(
+  orgId: string,
+  amountUsd: number,
+  paymentIntentId: string,
+  latestCharge: string | { id: string } | null,
+): Promise<void> {
+  try {
+    await addCredits(orgId, amountUsd, "purchase", `Credit purchase — $${amountUsd}`, paymentIntentId);
+  } catch (err) {
+    if (isDuplicateLedgerError(err)) return; // already granted for this PI
+    throw err;
+  }
+
+  // Reached only on the first (non-duplicate) grant, so the bonus lands once.
+  const bonus = volumeBonusUsd(amountUsd);
+  if (bonus > 0) {
+    await addFreeCredits(orgId, bonus, `Volume bonus — $${bonus} on $${amountUsd} purchase`);
+  }
+
+  // Best-effort receipt backfill — credits already committed.
+  const chargeId = typeof latestCharge === "string" ? latestCharge : latestCharge?.id;
+  if (chargeId) {
+    try {
+      const chargeObj = await getStripe().charges.retrieve(chargeId);
+      if (chargeObj.receipt_url) {
+        await prisma.creditTransaction.update({
+          where: { stripeSessionId: paymentIntentId },
+          data: { receiptUrl: chargeObj.receipt_url },
+        });
+      }
+    } catch {
+      /* non-critical */
+    }
+  }
+}
+
 /**
  * Charge the org's saved card off-session for a one-off credit top-up and
  * grant the credits inline — no Stripe Checkout redirect. Mirrors the
@@ -61,27 +107,13 @@ export async function chargeCreditsOffSession(
   }
   if (paymentIntent.status !== "succeeded") return { status: "failed" };
 
-  await addCredits(orgId, amountUsd, "purchase", `Credit purchase — $${amountUsd}`, paymentIntent.id);
-  const bonus = volumeBonusUsd(amountUsd);
-  if (bonus > 0) {
-    await addFreeCredits(orgId, bonus, `Volume bonus — $${bonus} on $${amountUsd} purchase`);
-  }
-
-  // Best-effort receipt backfill — credits already committed.
-  const charge = paymentIntent.latest_charge;
-  if (charge && typeof charge === "string") {
-    try {
-      const chargeObj = await getStripe().charges.retrieve(charge);
-      if (chargeObj.receipt_url) {
-        await prisma.creditTransaction.update({
-          where: { stripeSessionId: paymentIntent.id },
-          data: { receiptUrl: chargeObj.receipt_url },
-        });
-      }
-    } catch {
-      /* non-critical */
-    }
-  }
+  // Grant inline for instant feedback. This is a FAST PATH: the authoritative
+  // guarantee is the payment_intent.succeeded webhook, which grants the same
+  // amount keyed on the same PI id (P2002-idempotent). So if this process dies
+  // between charge and grant, the webhook still delivers the credits — the
+  // customer can never be charged without receiving them. A duplicate here
+  // (webhook already granted) is a benign no-op.
+  await grantPurchaseFromPaymentIntent(orgId, amountUsd, paymentIntent.id, paymentIntent.latest_charge);
 
   return { status: "succeeded", paymentIntentId: paymentIntent.id };
 }

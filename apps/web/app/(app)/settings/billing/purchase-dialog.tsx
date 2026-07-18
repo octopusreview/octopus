@@ -98,7 +98,7 @@ export function PurchaseDialog({
 
           {typeof amount === "number" && volumeBonusUsd(amount) > 0 && (
             <p className="text-sm text-emerald-600 dark:text-emerald-400">
-              +${volumeBonusUsd(amount)} bonus credits — you&apos;ll get $
+              +${volumeBonusUsd(amount).toFixed(2)} bonus credits — you&apos;ll get $
               {(amount + volumeBonusUsd(amount)).toFixed(2)} total.
             </p>
           )}

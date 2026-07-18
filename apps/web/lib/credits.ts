@@ -20,6 +20,11 @@ export type OffSessionPurchaseResult =
 export async function chargeCreditsOffSession(
   orgId: string,
   amountUsd: number,
+  // Deterministic per user-initiated purchase: the Stripe SDK reuses it across
+  // its own network retries of the create() call, so a blip can't double-charge.
+  // Distinct clicks pass distinct keys, so intentional repeat purchases still go
+  // through.
+  idempotencyKey: string,
 ): Promise<OffSessionPurchaseResult> {
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
@@ -37,15 +42,18 @@ export async function chargeCreditsOffSession(
 
   let paymentIntent;
   try {
-    paymentIntent = await getStripe().paymentIntents.create({
-      amount: Math.round(amountUsd * 100),
-      currency: "usd",
-      customer: org.stripeCustomerId,
-      payment_method: paymentMethod,
-      off_session: true,
-      confirm: true,
-      metadata: { orgId, type: "credit_purchase", amountUsd: String(amountUsd) },
-    });
+    paymentIntent = await getStripe().paymentIntents.create(
+      {
+        amount: Math.round(amountUsd * 100),
+        currency: "usd",
+        customer: org.stripeCustomerId,
+        payment_method: paymentMethod,
+        off_session: true,
+        confirm: true,
+        metadata: { orgId, type: "credit_purchase", amountUsd: String(amountUsd) },
+      },
+      { idempotencyKey },
+    );
   } catch (err) {
     const code = (err as { code?: unknown } | null)?.code;
     console.error("[credits] Off-session purchase charge failed:", err);

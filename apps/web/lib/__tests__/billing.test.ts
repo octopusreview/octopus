@@ -168,10 +168,10 @@ const {
   addFreeCredits,
   deductCredits,
   getOrgBalance,
+  chargeCreditsOffSession,
 } = await import("@/lib/credits");
 const { POST } = await import("@/app/api/stripe/webhook/route");
 const { addOneMonth, renewDueSubscriptions } = await import("@/lib/subscription");
-const { chargeCreditsOffSession } = await import("@/lib/credits");
 const { volumeBonusUsd } = await import("@/lib/plans");
 
 function resetBillingMocks() {
@@ -908,15 +908,29 @@ describe("off-session credit purchase", () => {
     mockOrganizationFindUnique = mock(() => Promise.resolve({ stripeCustomerId: "cus_1" } as never));
     mockOffSessionPaymentMethodId = mock(() => Promise.resolve(null));
 
-    const res = await chargeCreditsOffSession("org_1", 100);
+    const res = await chargeCreditsOffSession("org_1", 100, "idem-test");
     expect(res).toEqual({ status: "no_card" });
     expect(mockPaymentIntentsCreate).not.toHaveBeenCalled();
   });
 
   it("no_card when the org has no stripe customer at all", async () => {
     mockOrganizationFindUnique = mock(() => Promise.resolve({ stripeCustomerId: null } as never));
-    const res = await chargeCreditsOffSession("org_1", 100);
+    const res = await chargeCreditsOffSession("org_1", 100, "idem-test");
     expect(res).toEqual({ status: "no_card" });
+  });
+
+  it("passes the idempotency key to Stripe so SDK retries can't double-charge", async () => {
+    mockOrganizationFindUnique = mock(() => Promise.resolve({ stripeCustomerId: "cus_1" } as never));
+    mockOffSessionPaymentMethodId = mock(() => Promise.resolve("pm_1"));
+    let seenOpts: unknown;
+    mockPaymentIntentsCreate = mock((_params: unknown, opts: unknown) => {
+      seenOpts = opts;
+      return Promise.resolve({ id: "pi_idem", status: "succeeded", latest_charge: null } as never);
+    });
+
+    await chargeCreditsOffSession("org_1", 25, "idem-abc");
+
+    expect(seenOpts).toEqual({ idempotencyKey: "idem-abc" });
   });
 
   it("charges the saved card and grants purchase + volume bonus keyed on the PI id", async () => {
@@ -926,7 +940,7 @@ describe("off-session credit purchase", () => {
       Promise.resolve({ id: "pi_buy", status: "succeeded", latest_charge: null } as never),
     );
 
-    const res = await chargeCreditsOffSession("org_1", 100);
+    const res = await chargeCreditsOffSession("org_1", 100, "idem-test");
 
     expect(res).toEqual({ status: "succeeded", paymentIntentId: "pi_buy" });
     // free 8 + purchased 20, then +100 purchased and +5 free bonus.
@@ -950,7 +964,7 @@ describe("off-session credit purchase", () => {
     declined.code = "card_declined";
     mockPaymentIntentsCreate = mock(() => Promise.reject(declined));
 
-    const res = await chargeCreditsOffSession("org_1", 25);
+    const res = await chargeCreditsOffSession("org_1", 25, "idem-test");
 
     expect(res).toEqual({ status: "failed", reason: "card_declined" });
     expect(orgState).toEqual({ creditBalance: 20, freeCreditBalance: 8 }); // untouched

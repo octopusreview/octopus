@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { headers, cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -50,9 +51,13 @@ export async function purchaseCredits(
   if ("error" in result) return { error: result.error };
 
   // Returning buyer with a saved card → charge off-session, grant in-app, no
-  // redirect. Only a first-time buyer (no card) or a declined saved card
-  // needs Stripe Checkout.
-  const charge = await chargeCreditsOffSession(result.orgId, amount);
+  // redirect. A declined saved card surfaces an in-app error (they update the
+  // card and retry) — deliberately NOT a Checkout bounce. Only a first-time
+  // buyer with no card on file falls back to Stripe Checkout.
+  // The idempotency key is unique per click, so the Stripe SDK's own retries of
+  // the charge can't double-bill while intentional repeat purchases still go
+  // through.
+  const charge = await chargeCreditsOffSession(result.orgId, amount, randomUUID());
   if (charge.status === "succeeded") {
     revalidatePath("/settings/billing");
     return { success: true };

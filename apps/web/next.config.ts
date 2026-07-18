@@ -7,6 +7,9 @@ config({ path: path.resolve(__dirname, "../../.env") });
 const nextConfig: NextConfig = {
   output: "standalone",
   transpilePackages: ["@octopus/db", "@octopus/package-analyzer"],
+  // pdfkit reads its built-in AFM font data from disk at runtime; bundling it
+  // breaks those reads, so keep it external (traced into standalone output).
+  serverExternalPackages: ["pdfkit"],
   experimental: {
     serverActions: {
       allowedOrigins: ["octopus-review.ai", "*.octopus-review.ai"],

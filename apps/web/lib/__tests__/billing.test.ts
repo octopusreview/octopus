@@ -58,6 +58,10 @@ let mockCreditTransactionUpdate = mock(() => Promise.resolve());
 let mockAutoReloadConfigFindUnique = mock(() => Promise.resolve(null));
 let mockOrganizationFindUnique = mock(() => Promise.resolve(null));
 let mockOrganizationFindMany = mock(() => Promise.resolve([] as unknown[]));
+let createdAiUsage: Array<{ id: string; usedOwnKey: boolean; chargedCostUsd: number | null }>;
+let mockAvailableModelFindMany = mock(() =>
+  Promise.resolve([{ modelId: "m", inputPrice: 10, outputPrice: 10 }] as unknown[]),
+);
 let mockOrganizationUpdate = mock((args: unknown) => {
   organizationUpdates.push(args);
   return Promise.resolve({});
@@ -105,6 +109,21 @@ mock.module("@octopus/db", () => ({
     },
     autoReloadConfig: {
       findUnique: (...args: unknown[]) => mockAutoReloadConfigFindUnique(...args),
+    },
+    aiUsage: {
+      create: ({ data }: { data: { usedOwnKey: boolean } }) => {
+        const row = { id: "ai_1", chargedCostUsd: null as number | null, ...data };
+        createdAiUsage.push(row);
+        return Promise.resolve(row);
+      },
+      update: ({ where, data }: { where: { id: string }; data: { chargedCostUsd: number } }) => {
+        const row = createdAiUsage.find((u) => (u as { id: string }).id === where.id);
+        if (row) row.chargedCostUsd = data.chargedCostUsd;
+        return Promise.resolve(row);
+      },
+    },
+    availableModel: {
+      findMany: (...args: unknown[]) => mockAvailableModelFindMany(...args),
     },
     $transaction: async (callback: (tx: unknown) => Promise<unknown>) => {
       const snapshot = { ...orgState };
@@ -173,6 +192,7 @@ const {
 const { POST } = await import("@/app/api/stripe/webhook/route");
 const { addOneMonth, renewDueSubscriptions } = await import("@/lib/subscription");
 const { volumeBonusUsd } = await import("@/lib/plans");
+const { logAiUsage } = await import("@/lib/ai-usage");
 
 function resetBillingMocks() {
   orgState = { creditBalance: 20, freeCreditBalance: 8 };
@@ -229,8 +249,12 @@ function resetBillingMocks() {
   mockAutoReloadConfigFindUnique = mock(() => Promise.resolve(null));
   mockOrganizationFindUnique = mock(() => Promise.resolve(null));
   organizationUpdates = [];
+  createdAiUsage = [];
   mockOffSessionPaymentMethodId = mock(() => Promise.resolve("pm_default" as string | null));
   mockOrganizationFindMany = mock(() => Promise.resolve([] as unknown[]));
+  mockAvailableModelFindMany = mock(() =>
+    Promise.resolve([{ modelId: "m", inputPrice: 10, outputPrice: 10 }] as unknown[]),
+  );
   mockOrganizationUpdate = mock((args: unknown) => {
     organizationUpdates.push(args);
     return Promise.resolve({});
@@ -902,7 +926,6 @@ describe("volume purchase bonus", () => {
   });
 });
 
-
 describe("off-session credit purchase", () => {
   it("no_card when the org has no saved payment method", async () => {
     mockOrganizationFindUnique = mock(() => Promise.resolve({ stripeCustomerId: "cus_1" } as never));
@@ -1028,6 +1051,97 @@ describe("payment_intent.succeeded backfill (charge-without-grant recovery)", ()
     await POST(stripeRequest() as never);
 
     expect(createdTransactions).toEqual([]);
+    expect(orgState).toEqual({ creditBalance: 20, freeCreditBalance: 8 });
+  });
+});
+
+describe("AiUsage cost snapshot", () => {
+  it("stores chargedCostUsd = deducted cost for platform-key usage", async () => {
+    mockOrganizationFindUnique = mock(() =>
+      Promise.resolve({
+        anthropicApiKey: null,
+        openaiApiKey: null,
+        cohereApiKey: null,
+        googleApiKey: null,
+        grokApiKey: null,
+        openrouterApiKey: null,
+        claudeCodeApiKey: null,
+        claudeCodeAuthMode: null,
+      } as never),
+    );
+
+    await logAiUsage({
+      provider: "anthropic",
+      model: "m",
+      operation: "review",
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      organizationId: "org_1",
+    });
+
+    // 1M input × $10/1M × 1.2 markup = $12.
+    expect(createdAiUsage).toHaveLength(1);
+    expect(createdAiUsage[0].usedOwnKey).toBe(false);
+    expect(createdAiUsage[0].chargedCostUsd).toBeCloseTo(12, 6);
+    // Deducted from the ledger: free 8 → 0, purchased 20 → 16.
+    expect(orgState).toEqual({ creditBalance: 16, freeCreditBalance: 0 });
+  });
+
+  it("leaves chargedCostUsd null when the deduction fails (usage served, not charged)", async () => {
+    mockOrganizationFindUnique = mock(() =>
+      Promise.resolve({
+        anthropicApiKey: null,
+        openaiApiKey: null,
+        cohereApiKey: null,
+        googleApiKey: null,
+        grokApiKey: null,
+        openrouterApiKey: null,
+        claudeCodeApiKey: null,
+        claudeCodeAuthMode: null,
+      } as never),
+    );
+    // Deduction blows up mid-transaction.
+    mockTxCreditTransactionCreate = mock(() => Promise.reject(new Error("db down")));
+
+    await logAiUsage({
+      provider: "anthropic",
+      model: "m",
+      operation: "review",
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      organizationId: "org_1",
+    });
+
+    // Usage row exists (usage happened) but the snapshot was never stamped.
+    expect(createdAiUsage).toHaveLength(1);
+    expect(createdAiUsage[0].chargedCostUsd).toBeNull();
+  });
+
+  it("stores null chargedCostUsd for own-key usage and never deducts", async () => {
+    mockOrganizationFindUnique = mock(() =>
+      Promise.resolve({
+        anthropicApiKey: "sk-ant-user",
+        openaiApiKey: null,
+        cohereApiKey: null,
+        googleApiKey: null,
+        grokApiKey: null,
+        openrouterApiKey: null,
+        claudeCodeApiKey: null,
+        claudeCodeAuthMode: null,
+      } as never),
+    );
+
+    await logAiUsage({
+      provider: "anthropic",
+      model: "m",
+      operation: "review",
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      organizationId: "org_1",
+    });
+
+    expect(createdAiUsage[0].usedOwnKey).toBe(true);
+    expect(createdAiUsage[0].chargedCostUsd).toBeNull();
     expect(orgState).toEqual({ creditBalance: 20, freeCreditBalance: 8 });
   });
 });

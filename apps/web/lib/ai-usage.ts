@@ -56,7 +56,28 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
       params.provider === "mock" ||
       params.provider === "mock-fail";
 
-    await prisma.aiUsage.create({
+    // Compute the platform charge up front (needed for both the deduction and
+    // the cost snapshot). Own-key usage is never charged.
+    let cost = 0;
+    if (!hasOwnKey) {
+      const pricing = await getModelPricing();
+      cost = calcCost(
+        pricing,
+        params.model,
+        params.inputTokens,
+        params.outputTokens,
+        params.cacheReadTokens ?? 0,
+        params.cacheWriteTokens ?? 0,
+      );
+    }
+
+    // Record the usage row FIRST (usage happened regardless of billing), with
+    // chargedCostUsd left null. We stamp the snapshot only AFTER a successful
+    // deduction, so the field always reflects what we actually charged — a
+    // failed deduction leaves it null ("usage served, charged nothing"), never
+    // a phantom charge. Recording the snapshot means historical margin no
+    // longer drifts when model prices change later.
+    const usage = await prisma.aiUsage.create({
       data: {
         provider: params.provider,
         model: params.model,
@@ -72,16 +93,6 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
 
     // Only deduct credits for orgs without their own API key
     if (!hasOwnKey) {
-      const pricing = await getModelPricing();
-      const cost = calcCost(
-        pricing,
-        params.model,
-        params.inputTokens,
-        params.outputTokens,
-        params.cacheReadTokens ?? 0,
-        params.cacheWriteTokens ?? 0,
-      );
-
       console.log(
         `[ai-usage] ${params.operation} model=${params.model} cost=$${cost.toFixed(6)} org=${params.organizationId} hasOwnKey=${hasOwnKey}`,
       );
@@ -93,6 +104,12 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
           `${params.operation} — ${params.model}`,
         );
       }
+
+      // Deduction committed (or was $0) — now stamp the cost snapshot.
+      await prisma.aiUsage.update({
+        where: { id: usage.id },
+        data: { chargedCostUsd: cost },
+      });
     }
   } catch (err) {
     console.error("[ai-usage] Failed to log:", err);

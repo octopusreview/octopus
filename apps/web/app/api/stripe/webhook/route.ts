@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { constructWebhookEvent, getStripe } from "@/lib/stripe";
-import { addCredits, deductCredits } from "@/lib/credits";
+import { addCredits, addFreeCredits, deductCredits } from "@/lib/credits";
 import { grantSubscriptionPeriod, addOneMonth } from "@/lib/subscription";
-import { isPaidPlanTier } from "@/lib/plans";
+import { isPaidPlanTier, volumeBonusUsd } from "@/lib/plans";
 import { prisma } from "@octopus/db";
 
 async function getReceiptUrl(paymentIntentId: string | null): Promise<string | null> {
@@ -70,6 +70,21 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ received: true });
           }
           throw err;
+        }
+
+        // Volume bonus on top of the paid amount (separate free_credit row so
+        // it never inflates the "purchased"/revenue figure). Reached only on
+        // the first, non-duplicate delivery — a redelivery returns early above.
+        // Best-effort: the purchase is already committed, so a bonus failure
+        // must not 500 and re-drive the purchase (which would then skip the
+        // bonus on retry). A rare lost bonus is logged, not double-granted.
+        const bonusUsd = volumeBonusUsd(amountUsd);
+        if (bonusUsd > 0) {
+          try {
+            await addFreeCredits(orgId, bonusUsd, `Volume bonus — $${bonusUsd} on $${amountUsd} purchase`);
+          } catch (err) {
+            console.error("[stripe-webhook] Volume bonus grant failed (non-fatal):", err);
+          }
         }
 
         // Best-effort receipt backfill — the credits are already committed, so a

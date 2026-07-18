@@ -171,6 +171,7 @@ const {
 } = await import("@/lib/credits");
 const { POST } = await import("@/app/api/stripe/webhook/route");
 const { addOneMonth, renewDueSubscriptions } = await import("@/lib/subscription");
+const { volumeBonusUsd } = await import("@/lib/plans");
 
 function resetBillingMocks() {
   orgState = { creditBalance: 20, freeCreditBalance: 8 };
@@ -836,5 +837,66 @@ describe("off-session payment method resolution", () => {
 
     expect(result).toEqual({ renewed: 0, canceled: 0, downgraded: 0, failed: 1 });
     expect(orgState.creditBalance).toBe(20);
+  });
+});
+
+
+describe("volume purchase bonus", () => {
+  it("computes tiered bonus (0 below $100, 5% at $100+, 10% at $500+)", () => {
+    expect(volumeBonusUsd(25)).toBe(0);
+    expect(volumeBonusUsd(99)).toBe(0);
+    expect(volumeBonusUsd(100)).toBe(5);
+    expect(volumeBonusUsd(250)).toBe(12.5);
+    expect(volumeBonusUsd(500)).toBe(50);
+    expect(volumeBonusUsd(1000)).toBe(100);
+    expect(volumeBonusUsd(0)).toBe(0);
+    expect(volumeBonusUsd(-5)).toBe(0);
+  });
+
+  it("grants purchase + a separate free_credit bonus row on a $100 top-up", async () => {
+    currentEvent = {
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_bonus",
+          payment_status: "paid",
+          metadata: { orgId: "org_1", type: "credit_purchase", amountUsd: "100" },
+          payment_intent: "pi_bonus",
+        },
+      },
+    };
+
+    const response = await POST(stripeRequest() as never);
+
+    expect(response.status).toBe(200);
+    // free 8 + purchased 20, then +100 purchased, +5 free bonus.
+    expect(orgState).toEqual({ creditBalance: 120, freeCreditBalance: 13 });
+    const types = createdTransactions.map((t) => (t as { type: string }).type);
+    expect(types).toContain("purchase");
+    expect(types).toContain("free_credit");
+    const bonus = createdTransactions.find(
+      (t) => (t as { type: string }).type === "free_credit",
+    ) as { amount: number };
+    expect(bonus.amount).toBe(5); // NOT part of the purchase/revenue row
+  });
+
+  it("grants no bonus row for a sub-$100 top-up", async () => {
+    currentEvent = {
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_nobonus",
+          payment_status: "paid",
+          metadata: { orgId: "org_1", type: "credit_purchase", amountUsd: "50" },
+          payment_intent: "pi_nobonus",
+        },
+      },
+    };
+
+    await POST(stripeRequest() as never);
+
+    const types = createdTransactions.map((t) => (t as { type: string }).type);
+    expect(types).toContain("purchase");
+    expect(types).not.toContain("free_credit");
   });
 });

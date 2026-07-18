@@ -19,6 +19,7 @@ import {
   IconExternalLink,
   IconLoader2,
   IconReceipt,
+  IconFileInvoice,
   IconCreditCard,
   IconChevronLeft,
   IconChevronRight,
@@ -76,6 +77,9 @@ function formatUsd(n: number): string {
   if (Math.abs(n) < 0.01 && n !== 0) return `$${n.toFixed(4)}`;
   return `$${n.toFixed(2)}`;
 }
+
+// Only real payments get a downloadable Octopus invoice PDF.
+const INVOICEABLE_TYPES = ["purchase", "auto_reload", "subscription"];
 
 function typeBadgeVariant(type: string) {
   switch (type) {
@@ -568,17 +572,28 @@ export function BillingSettings({
                               {formatUsd(t.balanceAfter)}
                             </td>
                             <td className="px-3 py-2 text-center">
-                              {t.receiptUrl && (
-                                <a
-                                  href={t.receiptUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center text-muted-foreground hover:text-foreground transition-colors"
-                                  title="View receipt"
-                                >
-                                  <IconReceipt className="size-4" />
-                                </a>
-                              )}
+                              <div className="inline-flex items-center gap-2">
+                                {INVOICEABLE_TYPES.includes(t.type) && (
+                                  <a
+                                    href={`/api/billing/invoice/${t.id}`}
+                                    className="inline-flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                                    title="Download invoice PDF"
+                                  >
+                                    <IconFileInvoice className="size-4" />
+                                  </a>
+                                )}
+                                {t.receiptUrl && (
+                                  <a
+                                    href={t.receiptUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                                    title="View Stripe receipt"
+                                  >
+                                    <IconReceipt className="size-4" />
+                                  </a>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -615,6 +630,15 @@ export function BillingSettings({
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>{t.createdAt.slice(0, 10)}</span>
                         <div className="flex items-center gap-2">
+                          {INVOICEABLE_TYPES.includes(t.type) && (
+                            <a
+                              href={`/api/billing/invoice/${t.id}`}
+                              className="hover:text-foreground transition-colors"
+                              title="Download invoice PDF"
+                            >
+                              <IconFileInvoice className="size-3.5" />
+                            </a>
+                          )}
                           {t.receiptUrl && (
                             <a
                               href={t.receiptUrl}

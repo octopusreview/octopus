@@ -15,7 +15,7 @@ import {
   upsertFeedbackPattern,
 } from "@/lib/qdrant";
 import { extractAllMermaidBlocks, extractNodeLabels, DIAGRAM_TYPE_LABELS, sanitizeMermaidInMarkdown } from "@/lib/mermaid-utils";
-import { loadQueueConfig, computeStaleReclaimMs, enqueue } from "@/lib/queue";
+import { loadQueueConfig, computeStaleReclaimMs, enqueue, enqueueAfter } from "@/lib/queue";
 import { createEmbeddings } from "@/lib/embeddings";
 import { generateSparseVector } from "@/lib/sparse-vector";
 import { substitutePromptVars } from "@/lib/prompt-substitute";
@@ -97,7 +97,7 @@ import { writeSyncLog, deleteSyncLogs } from "@/lib/elasticsearch";
 import { logAiUsage } from "@/lib/ai-usage";
 import { getReviewModel } from "@/lib/ai-client";
 import { createAiMessage } from "@/lib/ai-router";
-import { isOrgOverSpendLimit } from "@/lib/cost";
+import { isOrgOverSpendLimit, shouldGuardConcurrency } from "@/lib/cost";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -1118,7 +1118,47 @@ export async function processReview(pullRequestId: string): Promise<void> {
       return;
     }
 
-    // Step 1: Mark as reviewing
+    // Low-balance concurrency guard (#506): post-paid metering means N reviews
+    // admitted at once can each pass the balance check and collectively
+    // overspend. When a nearly-empty platform-billed org already has a review
+    // in flight, re-queue this one to run after that finishes (and the balance
+    // is re-checked), serializing spend down to one review at a time. Bounded:
+    // the in-flight review completes → this retries and either runs or hits the
+    // spend-limit block above once credits hit zero; stale reviews are reclaimed
+    // by the existing stuck-review sweeper.
+    if (await shouldGuardConcurrency(org.id)) {
+      // Admission must be ATOMIC — a plain count-then-mark is check-then-act:
+      // N parallel workers each see 0 in-flight (none marked yet) and all admit.
+      // A transaction-scoped advisory lock keyed on the org serializes the
+      // count+mark so exactly one review per org is admitted at a time. The
+      // lock is held only for this fast count/update, not the whole review.
+      const admitted = await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${org.id}))`;
+        const inFlight = await tx.pullRequest.count({
+          where: {
+            repository: { organizationId: org.id },
+            status: "reviewing",
+            id: { not: pr.id },
+          },
+        });
+        if (inFlight > 0) return false;
+        await tx.pullRequest.update({ where: { id: pr.id }, data: { status: "reviewing" } });
+        return true;
+      });
+      if (!admitted) {
+        console.log(
+          `[reviewer] Low balance + in-flight review for org ${org.id} — re-queuing PR ${pr.id}`,
+        );
+        await prisma.pullRequest.update({
+          where: { id: pr.id },
+          data: { status: "queued", updatedAt: new Date() },
+        });
+        await enqueueAfter("process-review", { pullRequestId: pr.id }, 30);
+        return;
+      }
+    }
+
+    // Step 1: Mark as reviewing (idempotent — the guard may have set it already)
     await prisma.pullRequest.update({
       where: { id: pr.id },
       data: { status: "reviewing" },

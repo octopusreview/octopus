@@ -166,6 +166,42 @@ export async function isOrgOverSpendLimit(orgId: string): Promise<boolean> {
   return status.blocked;
 }
 
+// Balance below which we serialize a platform-billed org's reviews. Metering
+// is post-paid, so N reviews admitted at the same instant can each pass the
+// balance check and collectively overspend. This bounds that overspend to a
+// single review once the balance is nearly gone. Comfortable balances are
+// unaffected — concurrency is only capped inside this danger window.
+const CONCURRENCY_GUARD_BALANCE_USD = 10;
+
+/**
+ * Pure guard decision: serialize when the org is platform-billed (not fully
+ * BYOK) AND its balance is in the (0, threshold) danger window. At or below 0
+ * the spend-limit check already blocks admission, so the guard only covers the
+ * narrow window above it.
+ */
+export function concurrencyGuardApplies(fullyBYOK: boolean, totalBalanceUsd: number): boolean {
+  if (fullyBYOK) return false;
+  return totalBalanceUsd > 0 && totalBalanceUsd < CONCURRENCY_GUARD_BALANCE_USD;
+}
+
+/** True when an org's reviews should be serialized to prevent concurrent overspend. */
+export async function shouldGuardConcurrency(orgId: string): Promise<boolean> {
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: {
+      anthropicApiKey: true,
+      openaiApiKey: true,
+      googleApiKey: true,
+      creditBalance: true,
+      freeCreditBalance: true,
+    },
+  });
+  if (!org) return false;
+  const fullyBYOK = Boolean(org.anthropicApiKey && org.openaiApiKey && org.googleApiKey);
+  const total = Number(org.creditBalance) + Number(org.freeCreditBalance);
+  return concurrencyGuardApplies(fullyBYOK, total);
+}
+
 export function formatUsd(n: number): string {
   if (n < 0.01) return `$${n.toFixed(4)}`;
   return `$${n.toFixed(2)}`;

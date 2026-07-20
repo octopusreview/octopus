@@ -3,10 +3,12 @@ import { generateLocalReview } from "@/lib/review-core";
 import { indexRepository } from "@/lib/indexer";
 import { summarizeRepository } from "@/lib/summarizer";
 import { analyzeRepository } from "@/lib/analyzer";
-import { getRepositoryTree } from "@/lib/github";
+import { getRepositoryTree, getPullRequestDiff } from "@/lib/github";
 import { eventBus } from "@/lib/events/bus";
 import { persistCommunityReviewToPR } from "@/lib/community-pr-persist";
 import { decryptString } from "@/lib/crypto";
+import { getBotToken } from "@/lib/oss-bot";
+import { postOssReview } from "@/lib/oss-review-post";
 
 const LOG = (jobId: string, msg: string, ...rest: unknown[]) =>
   console.log(`[community-review] [${jobId}] ${msg}`, ...rest);
@@ -52,15 +54,22 @@ export async function processCommunityReview(jobId: string): Promise<void> {
     const repo = await prisma.repository.findUnique({ where: { id: job.repositoryId } });
     if (!repo) throw new Error(`Repository ${job.repositoryId} not found`);
 
-    if (!job.githubToken) {
-      throw new Error("githubToken missing on job (cannot fetch repo); job rejected");
-    }
+    // bot_account mode authenticates with the shared bot PAT (server posts the review
+    // itself); action_client mode uses the short-lived token the Action captured.
+    const isBotAccount = job.postMode === "bot_account";
     let githubToken: string;
-    try {
-      githubToken = decryptString(job.githubToken);
-    } catch (err) {
-      ERR(jobId, "githubToken decrypt failed:", err);
-      throw new Error("githubToken decrypt failed");
+    if (isBotAccount) {
+      githubToken = getBotToken();
+    } else {
+      if (!job.githubToken) {
+        throw new Error("githubToken missing on job (cannot fetch repo); job rejected");
+      }
+      try {
+        githubToken = decryptString(job.githubToken);
+      } catch (err) {
+        ERR(jobId, "githubToken decrypt failed:", err);
+        throw new Error("githubToken decrypt failed");
+      }
     }
 
     const fullName = job.repoFullName;
@@ -197,9 +206,17 @@ export async function processCommunityReview(jobId: string): Promise<void> {
       LOG(jobId, "fileTree fetch failed (non-fatal):", err);
     }
 
+    // bot_account mode does not receive a diff from the Action (the workflow grants no
+    // token); fetch it server-side with the bot token.
+    let diff = job.diff;
+    if (isBotAccount && (!diff || diff.trim().length === 0) && job.prNumber != null) {
+      const [ownerPart, repoPart] = fullName.split("/");
+      diff = await getPullRequestDiff(0, ownerPart, repoPart, job.prNumber, githubToken);
+    }
+
     LOG(jobId, "generating review...");
     const reviewResult = await generateLocalReview({
-      diff: job.diff,
+      diff,
       repoId: repo.id,
       orgId: job.organizationId,
       title: job.prTitle ?? undefined,
@@ -239,6 +256,27 @@ export async function processCommunityReview(jobId: string): Promise<void> {
       prNumber: job.prNumber ?? undefined,
       findingsCount: reviewResult.findings.length,
     });
+
+    // bot_account mode: the server posts the review as the bot user account. Posting
+    // failure is logged but does not fail the job — re-running would risk a duplicate
+    // comment, and the review is already persisted to the PR record.
+    if (isBotAccount && job.prNumber != null) {
+      try {
+        const [ownerPart, repoPart] = fullName.split("/");
+        const { posted, skipped } = await postOssReview({
+          owner: ownerPart,
+          repo: repoPart,
+          prNumber: job.prNumber,
+          findings: reviewResult.findings,
+          diff,
+          summary: reviewResult.summary,
+          botToken: githubToken,
+        });
+        LOG(jobId, `bot-account posted: ${posted} inline, ${skipped} skipped`);
+      } catch (postErr) {
+        ERR(jobId, "bot-account post failed (non-fatal):", postErr);
+      }
+    }
 
     await prisma.communityReviewJob.update({
       where: { id: jobId },

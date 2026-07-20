@@ -253,12 +253,14 @@ export async function createPullRequestReview(
   body: string,
   event: "COMMENT" | "REQUEST_CHANGES" | "APPROVE",
   comments: ReviewComment[],
+  /** Pre-resolved token (bot-account mode). Skips getInstallationToken when provided. */
+  providedToken?: string,
 ): Promise<number> {
   // The review-record `body` is subject to the same 65,536-char limit as
   // issue/PR comments; without this the standard-pipeline review path can
   // 422 even when the issue-comment path is safe.
   const safeBody = truncateForGithubComment(body);
-  const token = await getInstallationToken(installationId);
+  const token = providedToken ?? await getInstallationToken(installationId);
   const res = await fetchWithRetry(
     `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/reviews`,
     {
@@ -308,8 +310,10 @@ export async function getPullRequestDiff(
   owner: string,
   repo: string,
   prNumber: number,
+  /** Pre-resolved token (bot-account mode). Skips getInstallationToken when provided. */
+  providedToken?: string,
 ): Promise<string> {
-  const token = await getInstallationToken(installationId);
+  const token = providedToken ?? await getInstallationToken(installationId);
   const res = await fetchWithRetry(
     `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}`,
     {
@@ -469,9 +473,11 @@ export async function createPullRequestComment(
   repo: string,
   prNumber: number,
   body: string,
+  /** Pre-resolved token (bot-account mode). Skips getInstallationToken when provided. */
+  providedToken?: string,
 ): Promise<number> {
   const safeBody = truncateForGithubComment(body);
-  const token = await getInstallationToken(installationId);
+  const token = providedToken ?? await getInstallationToken(installationId);
   const res = await fetchWithRetry(
     `${GITHUB_API}/repos/${owner}/${repo}/issues/${prNumber}/comments`,
     {
@@ -498,9 +504,11 @@ export async function updatePullRequestComment(
   repo: string,
   commentId: number,
   body: string,
+  /** Pre-resolved token (bot-account mode). Skips getInstallationToken when provided. */
+  providedToken?: string,
 ): Promise<void> {
   const safeBody = truncateForGithubComment(body);
-  const token = await getInstallationToken(installationId);
+  const token = providedToken ?? await getInstallationToken(installationId);
   const res = await fetchWithRetry(
     `${GITHUB_API}/repos/${owner}/${repo}/issues/comments/${commentId}`,
     {

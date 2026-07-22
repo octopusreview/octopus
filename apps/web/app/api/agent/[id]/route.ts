@@ -2,6 +2,7 @@ import { headers, cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { writeAuditLog } from "@/lib/audit";
+import { isSameOrigin } from "@/lib/same-origin";
 
 /**
  * DELETE /api/agent/<id>
@@ -72,33 +73,4 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   });
 
   return Response.json({ ok: true });
-}
-
-function isSameOrigin(
-  host: string | null,
-  origin: string | null,
-  referer: string | null,
-): boolean {
-  if (!host) return false;
-  const expected = host.toLowerCase();
-  if (origin) {
-    try {
-      return new URL(origin).host.toLowerCase() === expected;
-    } catch {
-      return false;
-    }
-  }
-  // No Origin — fall back to Referer for the small legacy-client window.
-  if (referer) {
-    try {
-      return new URL(referer).host.toLowerCase() === expected;
-    } catch {
-      return false;
-    }
-  }
-  // Neither header present — reject. Server-side internal callers shouldn't
-  // be hitting this endpoint anyway (revoke is a UI action), and a missing
-  // Origin from a real browser is the exact shape a script-driven attempt
-  // from a hostile extension takes.
-  return false;
 }

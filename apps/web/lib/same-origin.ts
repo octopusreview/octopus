@@ -9,8 +9,9 @@
  * for redirect bases. Behind a reverse proxy the request `Host` header may be
  * rewritten to an internal value, so comparing a browser Origin against the raw
  * Host gives false negatives (every legitimate same-origin request rejected).
- * The request Host is kept as an additional accepted value so self-hosted / dev
- * deployments with no canonical URL configured still work.
+ * The request Host is trusted only when NO canonical URL is configured
+ * (self-hosted / dev). In a configured deployment the Host header may be a
+ * proxy-rewritten or spoofable value, so we pin strictly to the canonical host.
  */
 export function isSameOrigin(
   host: string | null,
@@ -24,10 +25,12 @@ export function isSameOrigin(
     try {
       allowed.add(new URL(canonical).host.toLowerCase());
     } catch {
-      // Ignore a malformed configured URL; fall back to the request host.
+      // Ignore a malformed configured URL; fall back to the request host below.
     }
   }
-  if (host) allowed.add(host.toLowerCase());
+  // Only trust the request Host when we couldn't derive a canonical host —
+  // never widen the accepted set beyond our own domain in configured deploys.
+  if (allowed.size === 0 && host) allowed.add(host.toLowerCase());
   if (allowed.size === 0) return false;
 
   const hostOf = (value: string): string | null => {

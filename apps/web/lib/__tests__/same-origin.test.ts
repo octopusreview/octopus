@@ -30,6 +30,13 @@ describe("isSameOrigin", () => {
     expect(isSameOrigin("web:3000", "https://evil.com", null)).toBe(false);
   });
 
+  it("does NOT trust the raw Host when a canonical URL is configured", () => {
+    setCanonical("https://octopus-review.ai");
+    // An Origin matching a spoofed/rewritten Host but not the canonical host
+    // must be rejected — configured deployments pin to the canonical domain.
+    expect(isSameOrigin("evil.com", "https://evil.com", null)).toBe(false);
+  });
+
   it("falls back to Referer when no Origin is present", () => {
     setCanonical("https://octopus-review.ai");
     expect(isSameOrigin("web:3000", null, "https://octopus-review.ai/monitor")).toBe(true);

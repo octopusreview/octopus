@@ -25,7 +25,9 @@ export default function PrivacyPage() {
 
       <Section title="1. Introduction">
         <P>
-          Octopus (&quot;we&quot;, &quot;our&quot;, &quot;us&quot;) is a
+          Octopus (&quot;we&quot;, &quot;our&quot;, &quot;us&quot;), operated by
+          SC Technology Limited (registered in England &amp; Wales, company no.
+          09579805, 3rd Floor, 86-90 Paul Street, London EC2A 4NE), is a
           source-available, AI-powered code review platform. This Privacy Policy
           explains how we collect, use, and protect your information when you
           use our cloud-hosted service. If you self-host Octopus, your own

@@ -24,8 +24,11 @@ export default function DpaPage() {
       <Section title="In plain language">
         <P>
           A Data Processing Addendum (DPA) is the legal document that
-          formalises Octopus&apos;s role as a data processor and your role as
-          a data controller under GDPR / UK GDPR / CCPA. It complements (does
+          formalises the role of SC Technology Limited — the company that
+          operates Octopus, registered in England &amp; Wales under company no.
+          09579805 at 3rd Floor, 86-90 Paul Street, London EC2A 4NE — as a data
+          processor, and your role as a data controller under GDPR / UK GDPR /
+          CCPA. It complements (does
           not replace) our <a href="/docs/terms" className="text-cyan-400 underline">Terms of Service</a>{" "}
           and <a href="/docs/privacy" className="text-cyan-400 underline">Privacy Policy</a>.
         </P>

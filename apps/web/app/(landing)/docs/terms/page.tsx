@@ -26,7 +26,9 @@ export default function TermsPage() {
 
       <Section title="1. Acceptance of Terms">
         <P>
-          By accessing or using Octopus (&quot;the Service&quot;), you agree
+          By accessing or using Octopus (&quot;the Service&quot;), operated by
+          SC Technology Limited (registered in England &amp; Wales, company no.
+          09579805, 3rd Floor, 86-90 Paul Street, London EC2A 4NE), you agree
           to be bound by these Terms and Conditions. If you do not agree to
           these terms, please do not use the Service.
         </P>

@@ -24,6 +24,7 @@ const publicPrefixes = [
   "/api/stripe",
   "/api/cli",
   "/api/agent",
+  "/api/presence",
   "/api/admin",
   "/api/newsletter",
   "/api/analyze-deps",

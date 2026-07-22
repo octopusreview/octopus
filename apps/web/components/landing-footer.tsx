@@ -419,8 +419,12 @@ export function LandingFooter() {
         <div className="mt-10 flex flex-col items-center gap-3 border-t border-white/[0.06] pt-6 sm:flex-row sm:justify-between">
           <div className="flex flex-col gap-1">
             <span className="text-xs text-[#333]">
-              &copy; {new Date().getFullYear()} Octopus. Source-available code review
-              automation.
+              &copy; {new Date().getFullYear()} SC Technology Limited. Octopus is
+              source-available code review automation.
+            </span>
+            <span className="text-xs text-[#333]">
+              SC Technology Limited · registered in England &amp; Wales, company no.
+              09579805 · 3rd Floor, 86-90 Paul Street, London EC2A 4NE
             </span>
             <span className="text-xs text-[#333]">
               3D model{" "}

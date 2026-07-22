@@ -48,7 +48,10 @@ export function PurchaseDialog({
         toast.success("Credits added", {
           description: `$${total.toFixed(2)} in credits added to your balance.`,
         });
-        confetti({ particleCount: 120, spread: 70, origin: { y: 0.7 } });
+        // Honor reduced-motion: the toast already confirms success; skip the burst.
+        if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          confetti({ particleCount: 120, spread: 70, origin: { y: 0.7 } });
+        }
         onOpenChange(false);
         router.refresh();
       } else if (result.url) {

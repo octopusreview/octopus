@@ -3,13 +3,11 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { getLandingStats } from "@/lib/landing-stats";
-import { FloatingOctopus } from "@/components/landing-unicorn-section";
 import { LandingFeatures } from "@/components/landing-features";
 import { TrackedLink, TrackedAnchor } from "@/components/tracked-link";
 import { LandingFooter } from "@/components/landing-footer";
 import { LandingMobileNav } from "@/components/landing-mobile-nav";
 import { LandingDesktopNav } from "@/components/landing-desktop-nav";
-import { WebGLToggleButton } from "@/components/webgl-toggle-button";
 import { RotatingHeroText } from "@/components/landing-rotating-hero";
 import { LandingTerminalHero } from "@/components/landing-terminal-hero";
 import { NewsletterForm } from "@/components/landing-newsletter";
@@ -123,9 +121,6 @@ export default async function LandingPage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
       />
 
-      {/* Floating particle octopus — follows scroll across entire page */}
-      <FloatingOctopus />
-
       {/* Grain overlay */}
       <div
         className="pointer-events-none fixed inset-0 z-50 opacity-[0.025]"
@@ -213,9 +208,6 @@ export default async function LandingPage() {
           <LandingStats initial={landingStats} />
         </div>
         <div className="relative mx-auto max-w-6xl overflow-hidden rounded-3xl border border-white/[0.06] bg-[#161616] px-6 py-20 md:px-12 md:py-28">
-          <div className="absolute right-4 top-4 z-10 md:right-6 md:top-6">
-            <WebGLToggleButton />
-          </div>
           <div className="mx-auto max-w-5xl">
             <div className="mx-auto max-w-2xl text-center">
               <span className="text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">How it works</span>

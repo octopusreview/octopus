@@ -426,26 +426,6 @@ export function LandingFooter() {
               SC Technology Limited · registered in England &amp; Wales, company no.
               09579805 · 3rd Floor, 86-90 Paul Street, London EC2A 4NE
             </span>
-            <span className="text-xs text-[#333]">
-              3D model{" "}
-              <a
-                href="https://sketchfab.com/3d-models/octopus-lowpoly-rigged-52870f0c8cec4b29992bfda0854c7a30"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline transition-colors hover:text-white"
-              >
-                &quot;Octopus Lowpoly Rigged&quot;
-              </a>{" "}
-              by MushyDay,{" "}
-              <a
-                href="https://creativecommons.org/licenses/by/4.0/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline transition-colors hover:text-white"
-              >
-                CC BY 4.0
-              </a>
-            </span>
           </div>
           <div className="flex items-center gap-4">
             <a

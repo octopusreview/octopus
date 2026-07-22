@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import confetti from "canvas-confetti";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,7 +43,12 @@ export function PurchaseDialog({
       if (result.error) {
         setError(result.error);
       } else if (result.success) {
-        // Charged the saved card in-app — close and refresh the balance.
+        // Charged the saved card in-app — celebrate, close, and refresh the balance.
+        const total = amount + volumeBonusUsd(amount);
+        toast.success("Credits added", {
+          description: `$${total.toFixed(2)} in credits added to your balance.`,
+        });
+        confetti({ particleCount: 120, spread: 70, origin: { y: 0.7 } });
         onOpenChange(false);
         router.refresh();
       } else if (result.url) {

@@ -25,6 +25,7 @@
     "@stripe/stripe-js": "^9.10.0",
     "@tabler/icons-react": "^3.44.0",
     "better-auth": "^1.4.18",
+    "canvas-confetti": "^1.9.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -64,6 +65,7 @@
   "devDependencies": {
     "@octopus/tsconfig": "workspace:*",
     "@tailwindcss/postcss": "^4",
+    "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^25",
     "@types/nodemailer": "^8.0.1",
     "@types/pdfkit": "^0.17.6",

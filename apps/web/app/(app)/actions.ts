@@ -16,6 +16,7 @@ import { toBaseSlug, randomSlugSuffix } from "@/lib/slug";
 import { canUserCreateOrg } from "@/lib/org-limits";
 import { MAX_OWNED_ORGS_PER_USER, WELCOME_FREE_CREDITS } from "@/lib/constants";
 import { encryptString } from "@/lib/crypto";
+import { validateProviderUrl } from "@/lib/providers/url-validation";
 import { writeAuditLog } from "@/lib/audit";
 import { canUseLiveTelemetry } from "@/lib/entitlements";
 import { getClientIp } from "@/lib/request-ip";
@@ -281,6 +282,35 @@ export async function updateApiKeys(
   if (cohereApiKey) data.cohereApiKey = encryptString(cohereApiKey);
   if (grokApiKey) data.grokApiKey = encryptString(grokApiKey);
   if (openrouterApiKey) data.openrouterApiKey = encryptString(openrouterApiKey);
+
+  // Per-org provider config: gateway/base-URL overrides + gateway API keys.
+  // These clear when submitted empty — a present-but-empty field sets the
+  // column to null, an absent field (formData.get() === null) is left
+  // unchanged. (The BYOK keys above share the older can't-clear-inline pattern:
+  // they only clear via removeApiKey. Left as-is — out of scope for this fix.)
+  // Base URLs are not secrets, but they become server-side fetch targets, so
+  // they are SSRF-validated here before persisting; gateway API keys are
+  // encrypted like the other BYOK keys.
+  for (const field of ["ollamaBaseUrl", "acpBaseUrl", "opencodeBaseUrl"] as const) {
+    const raw = formData.get(field);
+    if (raw === null) continue;
+    const trimmed = (raw as string).trim();
+    if (!trimmed) {
+      data[field] = null;
+      continue;
+    }
+    try {
+      data[field] = validateProviderUrl(trimmed);
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : "Invalid provider URL." };
+    }
+  }
+  for (const field of ["acpApiKey", "opencodeApiKey"] as const) {
+    const raw = formData.get(field);
+    if (raw === null) continue;
+    const trimmed = (raw as string).trim();
+    data[field] = trimmed ? encryptString(trimmed) : null;
+  }
 
   if (Object.keys(data).length === 0) {
     return { error: "Enter at least one API key to save." };

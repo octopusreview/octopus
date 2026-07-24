@@ -11,7 +11,9 @@ import { findingSignature, mergeFindingsBySignature, inheritReviewIssueTriage } 
 import {
   buildLowSeveritySummary,
   stripDetailedFindings,
-  countFindings,
+  filterByConfidence,
+  sortAndCapFindings,
+  MAX_FINDINGS_PER_REVIEW,
   shouldFailReviewCheck,
 } from "@/lib/review-helpers";
 import { eventBus } from "@/lib/events";
@@ -111,11 +113,19 @@ export async function handleLargeReviewResult(
 
   const reviewBody = data.reviewBody;
 
-  // 1. Parse findings out of the markdown
-  const findings = parseFindings(reviewBody);
-  const findingsCount = countFindings(reviewBody);
+  // 1. Parse findings out of the markdown, then apply the SAME per-category
+  // confidence filter + severity cap as the standard path (#652) so the largest,
+  // most bug-prone PRs no longer get raw model output straight to comments.
+  // (Diff-dependent validateFindings + semantic suppression require the diff,
+  // which this job payload doesn't carry — tracked as a follow-up.)
+  const parsedFindings = parseFindings(reviewBody);
+  const { kept: findings, truncatedCount } = sortAndCapFindings(
+    filterByConfidence(parsedFindings),
+    MAX_FINDINGS_PER_REVIEW,
+  );
+  const findingsCount = findings.length;
   console.log(
-    `[large-review-result] PR #${pr.number}: ${reviewBody.length} chars, ${findings.length} findings parsed`,
+    `[large-review-result] PR #${pr.number}: ${reviewBody.length} chars, ${parsedFindings.length} parsed → ${findings.length} after confidence filter${truncatedCount ? ` (capped ${truncatedCount})` : ""}`,
   );
 
   // 2. Update placeholder comment with main body (findings JSON stripped — they go inline/summary)

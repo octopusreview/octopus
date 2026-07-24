@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { formatPastReviews, formatPrIntent, buildRetrievalQuery, cappedConfidence, UNCITED_HIGH_SEV_CAP, type PastReviewHit } from "@/lib/review-helpers";
+import { formatPastReviews, formatPrIntent, buildRetrievalQuery, cappedConfidence, UNCITED_HIGH_SEV_CAP, filterByConfidence, type PastReviewHit } from "@/lib/review-helpers";
 
 describe("formatPastReviews", () => {
   const hit = (o: Partial<PastReviewHit> = {}): PastReviewHit => ({
@@ -129,5 +129,24 @@ describe("cappedConfidence (adversarial validation #654)", () => {
   });
   it("leaves an already-low uncited high-severity score untouched", () => {
     expect(cappedConfidence("🔴", 40, false)).toBe(40);
+  });
+});
+
+describe("filterByConfidence (#652 shared filter)", () => {
+  const f = (o: Partial<import("@/lib/review-dedup").InlineFinding>) => ({
+    severity: "🟡", title: "t", description: "d", category: "Style",
+    filePath: "a.ts", startLine: 1, endLine: 1, confidence: 80, ...o,
+  }) as import("@/lib/review-dedup").InlineFinding;
+
+  it("drops findings below the base threshold", () => {
+    const out = filterByConfidence([f({ confidence: 80 }), f({ confidence: 50 })], 70);
+    expect(out).toHaveLength(1);
+    expect(out[0].confidence).toBe(80);
+  });
+
+  it("keeps a high-risk category at a relaxed threshold", () => {
+    // Security is relaxed below the base 70, so a 60-confidence security finding survives.
+    const out = filterByConfidence([f({ category: "Security", confidence: 60 })], 70);
+    expect(out).toHaveLength(1);
   });
 });

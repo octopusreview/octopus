@@ -1935,21 +1935,26 @@ Rules:
         : reviewConfig.confidenceThreshold === "HIGH"
           ? 85
           : 70;
-    const allFindings = findings;
-    findings = findings.filter(
+    // #647: run confidence filter, category filter, suppression AND validation on
+    // the FULL parsed union — not just the inline subset — so the summary table
+    // and persisted DB rows carry post-validation confidence and never show a
+    // finding the validator/threshold would drop. Inline vs summary is derived
+    // from this single validated set further below.
+    const beforeConfidence = allParsedFindings.length;
+    allParsedFindings = allParsedFindings.filter(
       (f) => f.confidence >= getCategoryConfidenceThreshold(f.category, confidenceThreshold),
     );
-    if (allFindings.length !== findings.length) {
-      console.log(`[reviewer] Filtered out ${allFindings.length - findings.length} findings below per-category confidence threshold (base ${confidenceThreshold})`);
+    if (beforeConfidence !== allParsedFindings.length) {
+      console.log(`[reviewer] Filtered out ${beforeConfidence - allParsedFindings.length} findings below per-category confidence threshold (base ${confidenceThreshold})`);
     }
 
     // Filter out disabled categories
     if (reviewConfig.disabledCategories && reviewConfig.disabledCategories.length > 0) {
       const disabled = new Set(reviewConfig.disabledCategories.map((c) => c.toLowerCase()));
-      const before = findings.length;
-      findings = findings.filter((f) => !disabled.has(f.category.toLowerCase()));
-      if (findings.length !== before) {
-        console.log(`[reviewer] Filtered out ${before - findings.length} findings from disabled categories`);
+      const before = allParsedFindings.length;
+      allParsedFindings = allParsedFindings.filter((f) => !disabled.has(f.category.toLowerCase()));
+      if (allParsedFindings.length !== before) {
+        console.log(`[reviewer] Filtered out ${before - allParsedFindings.length} findings from disabled categories`);
       }
     }
 
@@ -1978,28 +1983,19 @@ Rules:
         }
 
         if (suppressedAllIndexes.size > 0) {
-          // Filter allParsedFindings so dismissed findings don't appear in the summary table
+          // Suppress dismissed-pattern findings from the union (single source).
           allParsedFindings = allParsedFindings.filter((_, i) => !suppressedAllIndexes.has(i));
-
-          // Also filter the inline findings list using the same suppressed set mapped to current findings
-          const suppressedFindingKeys = new Set(
-            [...suppressedAllIndexes].map((i) => allFindingTexts[i]),
-          );
-          const beforeCount = findings.length;
-          findings = findings.filter((f) => !suppressedFindingKeys.has(`${f.title} ${f.description}`));
-
-          const totalSuppressed = suppressedAllIndexes.size;
-          const inlineSuppressed = beforeCount - findings.length;
-          console.log(`[reviewer] Suppressed ${totalSuppressed} findings via semantic feedback matching (${inlineSuppressed} inline, ${totalSuppressed - inlineSuppressed} summary-only)`);
+          console.log(`[reviewer] Suppressed ${suppressedAllIndexes.size} findings via semantic feedback matching`);
         }
       }
     } catch (err) {
       console.warn("[reviewer] Semantic feedback matching failed, continuing:", err);
     }
 
-    // Two-pass validation: use Haiku to re-score confidence on all findings
-    // with cross-file context for verifying function signatures, types, etc.
-    if (findings.length > 0) {
+    // Two-pass validation: re-score confidence on the FULL union with cross-file
+    // context. Runs once on allParsedFindings so both the summary table and the
+    // inline subset carry validated confidence (#647).
+    if (allParsedFindings.length > 0) {
       try {
         const fileContentFetcher: FileContentFetcher | undefined =
           isGitHub && installationId && pr.headSha
@@ -2012,7 +2008,7 @@ Rules:
 
         // Phase 1: Cross-file context (existing — function signatures, types, APIs)
         let crossFileContext = "";
-        const crossFileQueries = extractCrossFileQueries(findings, diff);
+        const crossFileQueries = extractCrossFileQueries(allParsedFindings, diff);
         if (crossFileQueries.length > 0) {
           crossFileContext = await gatherCrossFileContext(crossFileQueries, repo.id, org.id, fileContentFetcher);
           if (crossFileContext) {
@@ -2022,7 +2018,7 @@ Rules:
 
         // Phase 2: Verification context (new — verify each finding's claims via Qdrant)
         let verificationContext: Map<number, string> | undefined;
-        const verificationQueries = generateVerificationQueries(findings);
+        const verificationQueries = generateVerificationQueries(allParsedFindings);
         if (verificationQueries.length > 0) {
           verificationContext = await gatherVerificationContext(verificationQueries, repo.id, org.id, fileContentFetcher);
           if (verificationContext.size > 0) {
@@ -2030,11 +2026,14 @@ Rules:
           }
         }
 
-        findings = await validateFindings(findings, diff, org.id, confidenceThreshold, crossFileContext || undefined, "[reviewer]", verificationContext, fileTree);
+        allParsedFindings = await validateFindings(allParsedFindings, diff, org.id, confidenceThreshold, crossFileContext || undefined, "[reviewer]", verificationContext, fileTree);
       } catch (err) {
         console.warn("[reviewer] Two-pass validation failed, keeping all findings:", err);
       }
     }
+
+    // Inline vs summary are both derived from the validated union from here on.
+    findings = [...allParsedFindings];
 
     // Hard dedup: remove findings that match prior bot comments, summary table findings,
     // or dismissed DB findings by file proximity + keyword overlap.

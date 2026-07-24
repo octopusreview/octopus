@@ -252,7 +252,12 @@ export async function validateFindings(
 
   // The diff shown here is a window, not the whole change. Tell the model so it
   // never infers that something is "missing" just because it falls outside it.
-  const DIFF_WINDOW = 12000;
+  // Match the effective review-diff cap (providers truncate at ~30k) so the
+  // validator sees the same diff the review did. Validating on a smaller window
+  // than the review would let it drop findings whose evidence sits in the blind
+  // zone — a false-negative regression once validation covers the full finding
+  // union (#647).
+  const DIFF_WINDOW = 30000;
   const diffWindow =
     diff.length > DIFF_WINDOW
       ? diff.slice(0, DIFF_WINDOW) +

@@ -11,9 +11,8 @@
  * self-protecting: it never emits a model that has no pricing (which would bill
  * $0), falling back to the default instead.
  */
-import { prisma } from "@octopus/db";
 import { getModelPricing } from "@/lib/cost";
-import { getReviewModel } from "@/lib/ai-client";
+import { resolveReviewModelPin } from "@/lib/ai-client";
 
 /** Cheaper model for provably-mechanical diffs. Must exist in pricing (asserted in tests). */
 export const MECHANICAL_MODEL = "claude-haiku-4-5-20251001";
@@ -106,18 +105,13 @@ export async function resolveReviewModel(args: {
 }): Promise<string> {
   const { orgId, repoId, modelOverride, diff } = args;
 
-  // Explicit pins always win — never override a user's deliberate model choice.
+  // Explicit caller override always wins — never override a deliberate choice.
   if (modelOverride) return modelOverride;
-  if (repoId) {
-    const repo = await prisma.repository.findUnique({ where: { id: repoId }, select: { reviewModelId: true } });
-    if (repo?.reviewModelId) return repo.reviewModelId;
-  }
-  const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { defaultModelId: true } });
-  if (org?.defaultModelId) return org.defaultModelId;
 
-  // No pin → routed default. getReviewModel returns the platform default here
-  // (pins already handled above).
-  const base = await getReviewModel(orgId, repoId);
+  // Single lookup that also tells us whether the model was an explicit repo/org
+  // pin (single source of truth for precedence lives in ai-client).
+  const { model: base, pinned } = await resolveReviewModelPin(orgId, repoId);
+  if (pinned) return base;
 
   const cls = classifyDiff(diff);
   if (cls.tier === "mechanical" && MECHANICAL_MODEL !== base) {

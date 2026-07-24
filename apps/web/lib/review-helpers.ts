@@ -801,8 +801,8 @@ export function formatPrIntent(
 // retrieval query is weighted toward domain identifiers, not syntax.
 const QUERY_STOPWORDS = new Set([
   "const", "let", "var", "function", "return", "import", "export", "from", "class",
-  "interface", "type", "async", "await", "if", "else", "for", "while", "switch",
-  "case", "break", "continue", "new", "this", "true", "false", "null", "undefined",
+  "interface", "type", "async", "await", "else", "while", "switch",
+  "case", "break", "continue", "new", "true", "false", "null", "undefined",
   "void", "public", "private", "protected", "static", "extends", "implements",
   "the", "and", "for", "with", "that", "this",
 ]);
@@ -855,12 +855,22 @@ export function buildRetrievalQuery(
     .slice(0, maxIdentifiers)
     .map(([id]) => id);
 
+  // Budget each section independently so a path/hunk-heavy diff can't consume the
+  // whole char budget and starve the identifiers (the strongest semantic signal).
+  // Caps sum to maxChars; identifiers get the largest guaranteed share.
+  const identifierBudget = Math.floor(maxChars * 0.55);
+  const pathBudget = Math.floor(maxChars * 0.2);
+  const hunkBudget = Math.floor(maxChars * 0.2);
+  // Leave a small margin for the newline separators so the total stays <= maxChars.
+  const titleBudget = Math.max(0, maxChars - identifierBudget - pathBudget - hunkBudget - 4);
   const parts = [
-    title,
-    [...new Set(paths)].join(" "),
-    hunkContexts.join(" "),
-    topIdentifiers.join(" "),
+    title.slice(0, titleBudget),
+    [...new Set(paths)].join(" ").slice(0, pathBudget),
+    hunkContexts.join(" ").slice(0, hunkBudget),
+    topIdentifiers.join(" ").slice(0, identifierBudget),
   ].filter((p) => p && p.trim());
 
+  // Per-section budgets already guarantee identifiers their share; the final
+  // clamp only trims trailing newline overhead, never a whole section.
   return parts.join("\n").slice(0, maxChars);
 }

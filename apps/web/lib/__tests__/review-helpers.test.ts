@@ -74,3 +74,12 @@ describe("formatPrIntent", () => {
     expect(out.includes("y".repeat(101))).toBe(false);
   });
 });
+
+describe("formatPrIntent parenthesised refs", () => {
+  it("extracts refs wrapped in parens/brackets", () => {
+    const out = formatPrIntent("t", "See (#42) and [#7].");
+    const linked = out.split("\n").find((l) => l.startsWith("Linked issues:")) ?? "";
+    expect(linked).toContain("#42");
+    expect(linked).toContain("#7");
+  });
+});

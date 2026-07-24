@@ -784,7 +784,8 @@ export function formatPrIntent(
   for (const m of b.matchAll(/\b(?:close[sd]?|fixe[sd]?|resolve[sd]?)\s+#(\d+)/gi)) {
     linked.add(`#${m[1]}`);
   }
-  for (const m of b.matchAll(/(?:^|\s)#(\d+)\b/g)) linked.add(`#${m[1]}`);
+  // Bare refs, including parenthesised/bracketed forms like "(#12)" or "[#12]".
+  for (const m of b.matchAll(/(?:^|[\s([])#(\d+)\b/g)) linked.add(`#${m[1]}`);
 
   const parts: string[] = [];
   if (t) parts.push(`Title: ${t}`);

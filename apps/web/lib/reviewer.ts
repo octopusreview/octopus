@@ -72,6 +72,7 @@ import {
   shouldFailReviewCheck,
   formatPastReviews,
   formatPrIntent,
+  buildRetrievalQuery,
 } from "@/lib/review-helpers";
 import type { ReviewConfig } from "@/lib/review-helpers";
 import { getCategoryConfidenceThreshold } from "@/lib/review-categories";
@@ -1330,16 +1331,20 @@ export async function processReview(pullRequestId: string): Promise<void> {
       step: "searching-context",
     });
 
-    // Take first 8000 chars of diff as search query
-    const searchText = diff.slice(0, 8000);
+    // Retrieval query composed from title + changed paths + hunk headers +
+    // identifiers (not raw +/- churn), so every changed file is represented
+    // regardless of diff size (#651). Bounded (<=4000 chars) — no cost increase
+    // vs the old 8000-char slice.
+    const searchText = buildRetrievalQuery(diff, pr.title);
+    console.log(`[reviewer] Retrieval query: ${searchText.length} chars from ${diffFiles.size} changed files`);
     const [queryVector] = await createEmbeddings([searchText], {
       organizationId: org.id,
       operation: "embedding",
       repositoryId: repo.id,
     });
 
-    // Over-fetch from Qdrant, then rerank with Cohere
-    const rerankQuery = `${pr.title}\n${diff.slice(0, 2000)}`;
+    // Over-fetch from Qdrant, then rerank with Cohere (same composed query).
+    const rerankQuery = searchText;
 
     const [rawCodeChunks, rawKnowledgeChunks, alwaysIncludeKnowledge, rawPastReviews, prBody] = await Promise.all([
       searchSimilarChunks(repo.id, queryVector, 50, rerankQuery),

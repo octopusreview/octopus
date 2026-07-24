@@ -796,3 +796,71 @@ export function formatPrIntent(
   if (linked.size > 0) parts.push(`Linked issues: ${[...linked].join(", ")}`);
   return parts.join("\n\n");
 }
+
+// Common language keywords/stopwords stripped from identifier extraction so the
+// retrieval query is weighted toward domain identifiers, not syntax.
+const QUERY_STOPWORDS = new Set([
+  "const", "let", "var", "function", "return", "import", "export", "from", "class",
+  "interface", "type", "async", "await", "if", "else", "for", "while", "switch",
+  "case", "break", "continue", "new", "this", "true", "false", "null", "undefined",
+  "void", "public", "private", "protected", "static", "extends", "implements",
+  "the", "and", "for", "with", "that", "this",
+]);
+
+/**
+ * Build a semantic retrieval query for a diff WITHOUT embedding the raw +/-
+ * churn (which dilutes the embedding and drops files past the old 8k slice).
+ * Composes: PR title + every changed file path + `@@` hunk-header context +
+ * de-duplicated identifiers from changed lines across the WHOLE diff, bounded so
+ * every file is represented regardless of diff size. Pure/testable.
+ */
+export function buildRetrievalQuery(
+  diff: string,
+  title: string,
+  opts: { maxIdentifiers?: number; maxChars?: number } = {},
+): string {
+  const { maxIdentifiers = 60, maxChars = 4000 } = opts;
+  const lines = diff.split("\n");
+
+  const paths: string[] = [];
+  const hunkContexts: string[] = [];
+  const identifierCounts = new Map<string, number>();
+
+  for (const line of lines) {
+    // New-side file path.
+    const fileMatch = line.match(/^\+\+\+ b\/(.+)$/);
+    if (fileMatch) {
+      paths.push(fileMatch[1]);
+      continue;
+    }
+    // Hunk header: keep the trailing context (usually the enclosing signature).
+    const hunkMatch = line.match(/^@@[^@]*@@\s*(.*)$/);
+    if (hunkMatch) {
+      if (hunkMatch[1].trim()) hunkContexts.push(hunkMatch[1].trim());
+      continue;
+    }
+    // Changed content lines (added/removed), excluding the file headers.
+    if ((line.startsWith("+") || line.startsWith("-")) && !line.startsWith("+++") && !line.startsWith("---")) {
+      for (const m of line.slice(1).matchAll(/[A-Za-z_][A-Za-z0-9_]{2,}/g)) {
+        const id = m[0];
+        if (QUERY_STOPWORDS.has(id.toLowerCase())) continue;
+        identifierCounts.set(id, (identifierCounts.get(id) ?? 0) + 1);
+      }
+    }
+  }
+
+  // Most frequent identifiers first — domain terms that recur across the change.
+  const topIdentifiers = [...identifierCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, maxIdentifiers)
+    .map(([id]) => id);
+
+  const parts = [
+    title,
+    [...new Set(paths)].join(" "),
+    hunkContexts.join(" "),
+    topIdentifiers.join(" "),
+  ].filter((p) => p && p.trim());
+
+  return parts.join("\n").slice(0, maxChars);
+}

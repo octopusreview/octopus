@@ -383,7 +383,9 @@ Output ONLY the JSON array, nothing else.`,
     const validated = findings
       .map((f, i) => {
         const score = scoreMap.get(i);
-        if (!score) return f; // unscored → keep original confidence (never a silent drop)
+        // Unscored, or a score with no numeric confidence → keep the finding's
+        // original confidence. Never let a malformed entry silently drop it.
+        if (!score || typeof score.confidence !== "number") return f;
         const hasCitation = Boolean(score.citation && score.citation.trim());
         const confidence = cappedConfidence(f.severity, score.confidence, hasCitation);
         // Emit refutation reasons for offline false-positive analysis.
@@ -397,7 +399,7 @@ Output ONLY the JSON array, nothing else.`,
     console.log(`${logPrefix} Adversarial validation: ${validated.length}/${findings.length} findings kept (base threshold: ${confidenceThreshold}, per-category)`);
     return validated;
   } catch {
-    console.warn(`${logPrefix} Failed to parse two-pass validation response, keeping all findings`);
+    console.warn(`${logPrefix} Failed to parse adversarial validation response, keeping all findings`);
     return findings;
   }
 }

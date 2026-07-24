@@ -17,10 +17,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import dotenv from "dotenv";
 import { prisma } from "@octopus/db";
-
-dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 import {
   computeLabelMetrics,
   computeRecall,
@@ -42,7 +39,15 @@ function parseArgs(): { updateBaseline: boolean; tolerance: number } {
   let tolerance = 0.05;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--update-baseline") updateBaseline = true;
-    else if (args[i] === "--tolerance" && args[i + 1]) tolerance = Number(args[++i]);
+    else if (args[i] === "--tolerance" && args[i + 1]) {
+      const t = Number(args[++i]);
+      // Reject NaN / out-of-range so a typo can't silently disable the CI gate.
+      if (!Number.isFinite(t) || t < 0 || t > 1) {
+        console.error(`Invalid --tolerance "${args[i]}"; expected a number in [0, 1].`);
+        process.exit(2);
+      }
+      tolerance = t;
+    }
   }
   return { updateBaseline, tolerance };
 }

@@ -16,22 +16,38 @@ async function getPlatformDefault(category: "llm" | "embedding"): Promise<string
   }
 }
 
-export async function getReviewModel(orgId: string, repoId?: string): Promise<string> {
+export interface ResolvedReviewModel {
+  model: string;
+  /** true when the model came from an explicit repo/org pin (not the platform default). */
+  pinned: boolean;
+}
+
+/**
+ * Resolve the review model AND report whether it was an explicit pin, in a
+ * single pass of DB lookups. Single source of truth for the
+ * repo-pin → org-pin → platform-default precedence; the router
+ * (review-routing.ts) uses `pinned` to know when it may downshift.
+ */
+export async function resolveReviewModelPin(orgId: string, repoId?: string): Promise<ResolvedReviewModel> {
   if (repoId) {
     const repo = await prisma.repository.findUnique({
       where: { id: repoId },
       select: { reviewModelId: true },
     });
-    if (repo?.reviewModelId) return repo.reviewModelId;
+    if (repo?.reviewModelId) return { model: repo.reviewModelId, pinned: true };
   }
 
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
     select: { defaultModelId: true },
   });
-  if (org?.defaultModelId) return org.defaultModelId;
+  if (org?.defaultModelId) return { model: org.defaultModelId, pinned: true };
 
-  return (await getPlatformDefault("llm")) ?? HARDCODED_REVIEW_MODEL;
+  return { model: (await getPlatformDefault("llm")) ?? HARDCODED_REVIEW_MODEL, pinned: false };
+}
+
+export async function getReviewModel(orgId: string, repoId?: string): Promise<string> {
+  return (await resolveReviewModelPin(orgId, repoId)).model;
 }
 
 export async function getEmbedModel(orgId: string, repoId?: string): Promise<string> {

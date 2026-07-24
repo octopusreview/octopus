@@ -1320,10 +1320,13 @@ export async function processReview(pullRequestId: string): Promise<void> {
     // Over-fetch from Qdrant, then rerank with Cohere
     const rerankQuery = `${pr.title}\n${diff.slice(0, 2000)}`;
 
-    const [rawCodeChunks, rawKnowledgeChunks, alwaysIncludeKnowledge] = await Promise.all([
+    const [rawCodeChunks, rawKnowledgeChunks, alwaysIncludeKnowledge, rawPastReviews] = await Promise.all([
       searchSimilarChunks(repo.id, queryVector, 50, rerankQuery),
       searchKnowledgeChunks(org.id, queryVector, 25, rerankQuery).catch(() => [] as { title: string; text: string; score: number }[]),
       getAlwaysIncludeKnowledge(org.id).catch(() => []),
+      // Past reviews on similar code — reuses the query vector (no extra
+      // embedding/LLM cost) and runs in parallel with the other retrievals.
+      searchReviewChunks(org.id, queryVector, 6, rerankQuery).catch(() => []),
     ]);
 
     const [contextChunks, similarityKnowledgeChunks] = await Promise.all([
@@ -1356,14 +1359,9 @@ export async function processReview(pullRequestId: string): Promise<void> {
       ? knowledgeChunks.map((c) => c.text).join("\n\n---\n\n")
       : "";
 
-    // Past reviews on similar code — highest-signal grounding, reuses the query
-    // vector already computed (one extra Qdrant query, no extra embedding/LLM
-    // cost). Never blocks a review on failure.
-    const pastReviewsContext = formatPastReviews(
-      await searchReviewChunks(org.id, queryVector, 6, rerankQuery).catch(() => []),
-      pr.number,
-      repo.fullName,
-    );
+    // Format past reviews retrieved above (in the parallel batch) into the
+    // prompt block; excludes this PR's own prior review, caps and score-floors.
+    const pastReviewsContext = formatPastReviews(rawPastReviews, pr.number, repo.fullName);
 
     await emitReviewStatus(org.id, {
       ...baseEvent,

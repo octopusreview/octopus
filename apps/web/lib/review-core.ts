@@ -223,10 +223,12 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
 
   const rerankQuery = `${title ?? "Local Review"}\n${diff.slice(0, 2000)}`;
 
-  const [rawCodeChunks, rawKnowledgeChunks, alwaysIncludeKnowledge] = await Promise.all([
+  const [rawCodeChunks, rawKnowledgeChunks, alwaysIncludeKnowledge, rawPastReviews] = await Promise.all([
     searchSimilarChunks(repo.id, queryVector, 50, rerankQuery),
     searchKnowledgeChunks(org.id, queryVector, 25, rerankQuery).catch(() => [] as { title: string; text: string; score: number }[]),
     getAlwaysIncludeKnowledge(org.id).catch(() => []),
+    // Past reviews on similar code — reuses the query vector, runs in parallel.
+    searchReviewChunks(org.id, queryVector, 6, rerankQuery).catch(() => []),
   ]);
 
   const [contextChunks, similarityKnowledgeChunks] = await Promise.all([
@@ -260,13 +262,8 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
     `[review-core] Context: ${contextChunks.length}/${rawCodeChunks.length} code chunks, ${knowledgeChunks.length} knowledge chunks (${alwaysIncludeKnowledge.length} pinned + ${similarityKnowledgeChunks.length}/${rawKnowledgeChunks.length} from search)`,
   );
 
-  // Past reviews on similar code — reuses the query vector already computed
-  // (one extra Qdrant query, no extra embedding/LLM cost). Never blocks review.
-  const pastReviewsContext = formatPastReviews(
-    await searchReviewChunks(org.id, queryVector, 6, rerankQuery).catch(() => []),
-    params.prNumber ?? 0,
-    repo.fullName,
-  );
+  // Format the past reviews retrieved above (in the parallel batch).
+  const pastReviewsContext = formatPastReviews(rawPastReviews, params.prNumber ?? 0, repo.fullName);
 
   // Step 2: Build false positive context from past feedback
   let falsePositiveContext = "";

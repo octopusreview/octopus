@@ -13,6 +13,7 @@ import {
   searchFeedbackPatterns,
   ensureFeedbackCollection,
   upsertFeedbackPattern,
+  searchReviewChunks,
 } from "@/lib/qdrant";
 import { extractAllMermaidBlocks, extractNodeLabels, DIAGRAM_TYPE_LABELS, sanitizeMermaidInMarkdown } from "@/lib/mermaid-utils";
 import { loadQueueConfig, computeStaleReclaimMs, enqueue, enqueueAfter } from "@/lib/queue";
@@ -68,6 +69,7 @@ import {
   resolveIndexClaimWait,
   normalizeScoreDenominators,
   shouldFailReviewCheck,
+  formatPastReviews,
 } from "@/lib/review-helpers";
 import type { ReviewConfig } from "@/lib/review-helpers";
 import { getCategoryConfidenceThreshold } from "@/lib/review-categories";
@@ -1354,6 +1356,15 @@ export async function processReview(pullRequestId: string): Promise<void> {
       ? knowledgeChunks.map((c) => c.text).join("\n\n---\n\n")
       : "";
 
+    // Past reviews on similar code — highest-signal grounding, reuses the query
+    // vector already computed (one extra Qdrant query, no extra embedding/LLM
+    // cost). Never blocks a review on failure.
+    const pastReviewsContext = formatPastReviews(
+      await searchReviewChunks(org.id, queryVector, 6, rerankQuery).catch(() => []),
+      pr.number,
+      repo.fullName,
+    );
+
     await emitReviewStatus(org.id, {
       ...baseEvent,
       status: "reviewing",
@@ -1662,6 +1673,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
       CODEBASE_CONTEXT: codebaseContext,
       FILE_TREE: fileTree,
       KNOWLEDGE_CONTEXT: knowledgeContext,
+      PAST_REVIEWS_CONTEXT: pastReviewsContext,
       PR_NUMBER: String(pr.number),
       USER_INSTRUCTION: userInstruction,
       PROVIDER: isGitHub ? "GitHub" : isBitbucket ? "Bitbucket" : isGitlab ? "GitLab" : repo.provider,

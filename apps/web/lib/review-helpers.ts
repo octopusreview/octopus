@@ -712,3 +712,50 @@ export function shouldFailReviewCheck(
       (threshold === "medium" && sev.hasMedium))
   );
 }
+
+/** One hit from `searchReviewChunks` (past review summaries in Qdrant). */
+export interface PastReviewHit {
+  text: string;
+  prTitle: string;
+  prNumber: number;
+  repoFullName: string;
+  author: string;
+  reviewDate: string;
+  score: number;
+}
+
+/**
+ * Format past reviews on similar code into a compact prompt block. Grounds a
+ * review in what Octopus already concluded on related PRs so it stops
+ * relitigating settled findings. Pure so it is unit-testable; the caller does
+ * the Qdrant query and passes the current PR's identity so we never inject the
+ * PR's own prior review back into it (that is the separate re-review context).
+ * Returns "" when there is nothing usable, so the placeholder empties cleanly.
+ */
+export function formatPastReviews(
+  hits: PastReviewHit[],
+  currentPrNumber: number,
+  currentRepoFullName: string,
+  opts: { max?: number; minScore?: number; maxCharsPerHit?: number } = {},
+): string {
+  const { max = 5, minScore = 0.3, maxCharsPerHit = 800 } = opts;
+  const usable = hits
+    .filter((h) => h.text?.trim())
+    .filter((h) => h.score >= minScore)
+    // Never echo the current PR's own prior review back at it.
+    .filter(
+      (h) =>
+        !(h.prNumber === currentPrNumber && h.repoFullName === currentRepoFullName),
+    )
+    .slice(0, max);
+
+  if (usable.length === 0) return "";
+
+  return usable
+    .map((h) => {
+      const body = h.text.trim().slice(0, maxCharsPerHit);
+      const date = h.reviewDate ? ` (${h.reviewDate.slice(0, 10)})` : "";
+      return `### ${h.repoFullName}#${h.prNumber} — ${h.prTitle}${date}\n${body}`;
+    })
+    .join("\n\n---\n\n");
+}

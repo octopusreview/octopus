@@ -12,6 +12,7 @@ import {
   searchKnowledgeChunks,
   searchFeedbackPatterns,
   ensureFeedbackCollection,
+  searchReviewChunks,
 } from "@/lib/qdrant";
 import { createEmbeddings } from "@/lib/embeddings";
 import { rerankDocuments } from "@/lib/reranker";
@@ -25,7 +26,7 @@ import {
   parseFindingsFromJson,
   parseFindingsFromMarkdown,
 } from "@/lib/review-dedup";
-import { extractCrossFileQueries, generateVerificationQueries, normalizeScoreDenominators } from "@/lib/review-helpers";
+import { extractCrossFileQueries, generateVerificationQueries, normalizeScoreDenominators, formatPastReviews } from "@/lib/review-helpers";
 import { gatherCrossFileContext, gatherVerificationContext, validateFindings } from "@/lib/review-validation";
 import { logAiUsage } from "@/lib/ai-usage";
 import { getReviewModel } from "@/lib/ai-client";
@@ -259,6 +260,14 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
     `[review-core] Context: ${contextChunks.length}/${rawCodeChunks.length} code chunks, ${knowledgeChunks.length} knowledge chunks (${alwaysIncludeKnowledge.length} pinned + ${similarityKnowledgeChunks.length}/${rawKnowledgeChunks.length} from search)`,
   );
 
+  // Past reviews on similar code — reuses the query vector already computed
+  // (one extra Qdrant query, no extra embedding/LLM cost). Never blocks review.
+  const pastReviewsContext = formatPastReviews(
+    await searchReviewChunks(org.id, queryVector, 6, rerankQuery).catch(() => []),
+    params.prNumber ?? 0,
+    repo.fullName,
+  );
+
   // Step 2: Build false positive context from past feedback
   let falsePositiveContext = "";
   try {
@@ -343,6 +352,7 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
     CODEBASE_CONTEXT: codebaseContext,
     FILE_TREE: fileTreeStr,
     KNOWLEDGE_CONTEXT: knowledgeContext,
+    PAST_REVIEWS_CONTEXT: pastReviewsContext,
     PR_NUMBER: String(params.prNumber ?? 0),
     USER_INSTRUCTION: "",
     PROVIDER: "local",

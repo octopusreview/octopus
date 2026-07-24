@@ -32,6 +32,7 @@ import {
 } from "@/lib/repo-config";
 import {
   getPullRequestDiff as ghGetPullRequestDiff,
+  getPullRequestDetails as ghGetPullRequestDetails,
   LargePrError,
   createPullRequestComment as ghCreatePullRequestComment,
   updatePullRequestComment as ghUpdatePullRequestComment,
@@ -70,6 +71,7 @@ import {
   normalizeScoreDenominators,
   shouldFailReviewCheck,
   formatPastReviews,
+  formatPrIntent,
 } from "@/lib/review-helpers";
 import type { ReviewConfig } from "@/lib/review-helpers";
 import { getCategoryConfidenceThreshold } from "@/lib/review-categories";
@@ -698,6 +700,22 @@ export async function processReview(pullRequestId: string): Promise<void> {
         ? gitlab.getPullRequestDiff(org.id, projectPath, prNumber)
         : bitbucket.getPullRequestDiff(org.id, owner, repoName, prNumber);
 
+  // PR description/body — used only to give the reviewer the change's intent.
+  // Best-effort: never block a review if the metadata fetch fails.
+  const providerGetPrBody = async (prNumber: number): Promise<string> => {
+    try {
+      const details = isGitHub
+        ? await ghGetPullRequestDetails(installationId!, owner, repoName, prNumber)
+        : isGitlab
+          ? await gitlab.getPullRequestDetails(org.id, projectPath, prNumber)
+          : await bitbucket.getPullRequestDetails(org.id, owner, repoName, prNumber);
+      return details.body ?? "";
+    } catch (err) {
+      console.warn(`[reviewer] Could not fetch PR body for intent:`, err);
+      return "";
+    }
+  };
+
   const providerCreateComment = (prNumber: number, body: string) =>
     isGitHub
       ? ghCreatePullRequestComment(installationId!, owner, repoName, prNumber, body)
@@ -1320,13 +1338,16 @@ export async function processReview(pullRequestId: string): Promise<void> {
     // Over-fetch from Qdrant, then rerank with Cohere
     const rerankQuery = `${pr.title}\n${diff.slice(0, 2000)}`;
 
-    const [rawCodeChunks, rawKnowledgeChunks, alwaysIncludeKnowledge, rawPastReviews] = await Promise.all([
+    const [rawCodeChunks, rawKnowledgeChunks, alwaysIncludeKnowledge, rawPastReviews, prBody] = await Promise.all([
       searchSimilarChunks(repo.id, queryVector, 50, rerankQuery),
       searchKnowledgeChunks(org.id, queryVector, 25, rerankQuery).catch(() => [] as { title: string; text: string; score: number }[]),
       getAlwaysIncludeKnowledge(org.id).catch(() => []),
       // Past reviews on similar code — reuses the query vector (no extra
       // embedding/LLM cost) and runs in parallel with the other retrievals.
       searchReviewChunks(org.id, queryVector, 6, rerankQuery).catch(() => []),
+      // PR description — gives the reviewer the change's intent. Runs in
+      // parallel; best-effort (empty on failure).
+      providerGetPrBody(pr.number),
     ]);
 
     const [contextChunks, similarityKnowledgeChunks] = await Promise.all([
@@ -1362,6 +1383,11 @@ export async function processReview(pullRequestId: string): Promise<void> {
     // Format past reviews retrieved above (in the parallel batch) into the
     // prompt block; excludes this PR's own prior review, caps and score-floors.
     const pastReviewsContext = formatPastReviews(rawPastReviews, pr.number, repo.fullName);
+
+    // The change's intent (title + description + linked issues) so the reviewer
+    // can flag "does not accomplish stated goal" / missing-requirement / scope
+    // creep. Author-controlled → treated as untrusted in the prompt.
+    const prIntent = formatPrIntent(pr.title, prBody);
 
     await emitReviewStatus(org.id, {
       ...baseEvent,
@@ -1672,6 +1698,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
       FILE_TREE: fileTree,
       KNOWLEDGE_CONTEXT: knowledgeContext,
       PAST_REVIEWS_CONTEXT: pastReviewsContext,
+      PR_INTENT: prIntent,
       PR_NUMBER: String(pr.number),
       USER_INSTRUCTION: userInstruction,
       PROVIDER: isGitHub ? "GitHub" : isBitbucket ? "Bitbucket" : isGitlab ? "GitLab" : repo.provider,

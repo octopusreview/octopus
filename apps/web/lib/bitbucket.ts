@@ -131,6 +131,8 @@ export interface PullRequestDetails {
   url: string;
   author: string;
   headSha: string;
+  /** PR description body (may be empty). Untrusted user content. */
+  body: string;
 }
 
 export async function getPullRequestDetails(
@@ -156,6 +158,7 @@ export async function getPullRequestDetails(
     url: data.links?.html?.href ?? "",
     author: data.author?.display_name ?? data.author?.nickname ?? "unknown",
     headSha: data.source?.commit?.hash ?? "",
+    body: data.summary?.raw ?? data.description ?? "",
   };
 }
 

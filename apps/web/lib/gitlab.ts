@@ -200,6 +200,8 @@ export interface MergeRequestDetails {
   url: string;
   author: string;
   headSha: string;
+  /** MR description body (may be empty). Untrusted user content. */
+  body: string;
 }
 
 export async function getPullRequestDetails(
@@ -225,6 +227,7 @@ export async function getPullRequestDetails(
     url: data.web_url ?? "",
     author: data.author?.name ?? data.author?.username ?? "unknown",
     headSha: data.sha ?? data.diff_refs?.head_sha ?? "",
+    body: data.description ?? "",
   };
 }
 

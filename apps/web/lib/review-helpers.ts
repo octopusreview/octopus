@@ -759,3 +759,39 @@ export function formatPastReviews(
     })
     .join("\n\n---\n\n");
 }
+
+/**
+ * Build the PR-intent context block from the PR title + description. Gives the
+ * reviewer what the change is TRYING to do so it can flag "doesn't accomplish
+ * the stated goal", missing-requirement, and scope-creep findings a diff-only
+ * reviewer cannot. Extracts linked-issue references (closes/fixes/resolves #N,
+ * plus bare #N) from the body so they surface even without fetching each issue.
+ * The body is UNTRUSTED (author-controlled) — the prompt marks it so; this
+ * helper only bounds length. Returns "" when there is no usable intent.
+ */
+export function formatPrIntent(
+  title: string | null | undefined,
+  body: string | null | undefined,
+  opts: { maxBodyChars?: number } = {},
+): string {
+  const { maxBodyChars = 2000 } = opts;
+  const t = (title ?? "").trim();
+  const b = (body ?? "").trim();
+  if (!t && !b) return "";
+
+  const linked = new Set<string>();
+  // "closes #12", "fixes #7", "resolves #9" (case-insensitive) and bare "#123".
+  for (const m of b.matchAll(/\b(?:close[sd]?|fixe[sd]?|resolve[sd]?)\s+#(\d+)/gi)) {
+    linked.add(`#${m[1]}`);
+  }
+  for (const m of b.matchAll(/(?:^|\s)#(\d+)\b/g)) linked.add(`#${m[1]}`);
+
+  const parts: string[] = [];
+  if (t) parts.push(`Title: ${t}`);
+  if (b) {
+    const truncated = b.length > maxBodyChars ? `${b.slice(0, maxBodyChars)}\n…(truncated)` : b;
+    parts.push(`Description:\n${truncated}`);
+  }
+  if (linked.size > 0) parts.push(`Linked issues: ${[...linked].join(", ")}`);
+  return parts.join("\n\n");
+}

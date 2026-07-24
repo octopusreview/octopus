@@ -26,6 +26,12 @@ const FALLBACK_PRICING: Record<string, ModelPricing> = {
   "rerank-v3.5": { input: 2000.0, output: 0 },
 };
 
+/** Models that always have pricing (independent of the DB). Lets a router
+ *  assert every model it can emit is billable, so a downshift can never bill $0. */
+export function fallbackPricedModels(): string[] {
+  return Object.keys(FALLBACK_PRICING);
+}
+
 export async function getModelPricing(): Promise<Map<string, ModelPricing>> {
   if (pricingCache && Date.now() - pricingCacheTime < PRICING_CACHE_TTL) {
     return pricingCache;

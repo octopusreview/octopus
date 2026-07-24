@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { formatPastReviews, formatPrIntent, type PastReviewHit } from "@/lib/review-helpers";
+import { formatPastReviews, formatPrIntent, buildRetrievalQuery, type PastReviewHit } from "@/lib/review-helpers";
 
 describe("formatPastReviews", () => {
   const hit = (o: Partial<PastReviewHit> = {}): PastReviewHit => ({
@@ -81,5 +81,36 @@ describe("formatPrIntent parenthesised refs", () => {
     const linked = out.split("\n").find((l) => l.startsWith("Linked issues:")) ?? "";
     expect(linked).toContain("#42");
     expect(linked).toContain("#7");
+  });
+});
+
+describe("buildRetrievalQuery", () => {
+  const bigDiff = Array.from({ length: 20 }, (_, i) =>
+    `diff --git a/src/mod${i}/file${i}.ts b/src/mod${i}/file${i}.ts\n--- a/src/mod${i}/file${i}.ts\n+++ b/src/mod${i}/file${i}.ts\n@@ -1,3 +1,4 @@ export function handler${i}() {\n+  const paymentProcessor${i} = new Stripe();\n`,
+  ).join("\n");
+
+  it("includes later-file identifiers, not just the first ~8k chars", () => {
+    const q = buildRetrievalQuery(bigDiff, "Refactor payments");
+    // file19 appears well beyond 8000 chars of raw diff — must still be represented
+    expect(q).toContain("Refactor payments");
+    expect(q).toContain("file19.ts");
+    expect(q).toContain("paymentProcessor19");
+  });
+
+  it("does NOT embed raw +/- diff markers", () => {
+    const q = buildRetrievalQuery("diff --git a/a.ts b/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n+const payload = 1;\n", "t");
+    expect(q.includes("+const")).toBe(false);
+    expect(q.includes("+++")).toBe(false);
+  });
+
+  it("is bounded in size", () => {
+    const q = buildRetrievalQuery(bigDiff, "t", { maxChars: 300 });
+    expect(q.length).toBeLessThanOrEqual(300);
+  });
+
+  it("strips language keywords from identifiers", () => {
+    const q = buildRetrievalQuery("+++ b/a.ts\n@@ @@\n+  const function return await;\n", "t");
+    expect(q).not.toContain("const");
+    expect(q).not.toContain("function");
   });
 });

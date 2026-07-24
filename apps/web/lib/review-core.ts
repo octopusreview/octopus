@@ -26,7 +26,7 @@ import {
   parseFindingsFromJson,
   parseFindingsFromMarkdown,
 } from "@/lib/review-dedup";
-import { extractCrossFileQueries, generateVerificationQueries, normalizeScoreDenominators, formatPastReviews } from "@/lib/review-helpers";
+import { extractCrossFileQueries, generateVerificationQueries, normalizeScoreDenominators, formatPastReviews, buildRetrievalQuery } from "@/lib/review-helpers";
 import { gatherCrossFileContext, gatherVerificationContext, validateFindings } from "@/lib/review-validation";
 import { logAiUsage } from "@/lib/ai-usage";
 import { resolveReviewModel } from "@/lib/review-routing";
@@ -218,15 +218,17 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
   });
   console.log(`[review-core] Using model: ${reviewModel}`);
 
-  // Step 1: Embed diff → semantic search for codebase context
-  const searchText = diff.slice(0, 8000);
+  // Step 1: Embed a composed retrieval query (title + changed paths + hunk
+  // headers + identifiers, not raw +/- churn) so every changed file is
+  // represented regardless of diff size (#651). Bounded (<=4000 chars).
+  const searchText = buildRetrievalQuery(diff, title ?? "Local Review");
   const [queryVector] = await createEmbeddings([searchText], {
     organizationId: org.id,
     operation: "embedding",
     repositoryId: repo.id,
   });
 
-  const rerankQuery = `${title ?? "Local Review"}\n${diff.slice(0, 2000)}`;
+  const rerankQuery = searchText;
 
   const [rawCodeChunks, rawKnowledgeChunks, alwaysIncludeKnowledge, rawPastReviews] = await Promise.all([
     searchSimilarChunks(repo.id, queryVector, 50, rerankQuery),

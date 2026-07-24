@@ -92,6 +92,7 @@ function loadSystemPrompt(fileTree: string, priorContext: string, userInstructio
   template = template.replace("{{FILE_TREE}}", fileTree);
   template = template.replace("{{KNOWLEDGE_CONTEXT}}", "");
   template = template.replace("{{PAST_REVIEWS_CONTEXT}}", "");
+  template = template.replace("{{PR_INTENT}}", "");
   template = template.replace("{{PR_NUMBER}}", "0");
   template = template.replace("{{USER_INSTRUCTION}}", userInstruction);
   template = template.replace("{{PROVIDER}}", "GitHub");

@@ -350,6 +350,8 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
     FILE_TREE: fileTreeStr,
     KNOWLEDGE_CONTEXT: knowledgeContext,
     PAST_REVIEWS_CONTEXT: pastReviewsContext,
+    // Local/CLI review has no upstream PR metadata to fetch.
+    PR_INTENT: "",
     PR_NUMBER: String(params.prNumber ?? 0),
     USER_INSTRUCTION: "",
     PROVIDER: "local",

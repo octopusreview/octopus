@@ -12,6 +12,7 @@ import {
   searchKnowledgeChunks,
   searchFeedbackPatterns,
   ensureFeedbackCollection,
+  searchReviewChunks,
 } from "@/lib/qdrant";
 import { createEmbeddings } from "@/lib/embeddings";
 import { rerankDocuments } from "@/lib/reranker";
@@ -25,7 +26,7 @@ import {
   parseFindingsFromJson,
   parseFindingsFromMarkdown,
 } from "@/lib/review-dedup";
-import { extractCrossFileQueries, generateVerificationQueries, normalizeScoreDenominators } from "@/lib/review-helpers";
+import { extractCrossFileQueries, generateVerificationQueries, normalizeScoreDenominators, formatPastReviews } from "@/lib/review-helpers";
 import { gatherCrossFileContext, gatherVerificationContext, validateFindings } from "@/lib/review-validation";
 import { logAiUsage } from "@/lib/ai-usage";
 import { getReviewModel } from "@/lib/ai-client";
@@ -222,10 +223,12 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
 
   const rerankQuery = `${title ?? "Local Review"}\n${diff.slice(0, 2000)}`;
 
-  const [rawCodeChunks, rawKnowledgeChunks, alwaysIncludeKnowledge] = await Promise.all([
+  const [rawCodeChunks, rawKnowledgeChunks, alwaysIncludeKnowledge, rawPastReviews] = await Promise.all([
     searchSimilarChunks(repo.id, queryVector, 50, rerankQuery),
     searchKnowledgeChunks(org.id, queryVector, 25, rerankQuery).catch(() => [] as { title: string; text: string; score: number }[]),
     getAlwaysIncludeKnowledge(org.id).catch(() => []),
+    // Past reviews on similar code — reuses the query vector, runs in parallel.
+    searchReviewChunks(org.id, queryVector, 6, rerankQuery).catch(() => []),
   ]);
 
   const [contextChunks, similarityKnowledgeChunks] = await Promise.all([
@@ -258,6 +261,9 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
   console.log(
     `[review-core] Context: ${contextChunks.length}/${rawCodeChunks.length} code chunks, ${knowledgeChunks.length} knowledge chunks (${alwaysIncludeKnowledge.length} pinned + ${similarityKnowledgeChunks.length}/${rawKnowledgeChunks.length} from search)`,
   );
+
+  // Format the past reviews retrieved above (in the parallel batch).
+  const pastReviewsContext = formatPastReviews(rawPastReviews, params.prNumber ?? 0, repo.fullName);
 
   // Step 2: Build false positive context from past feedback
   let falsePositiveContext = "";
@@ -343,6 +349,7 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
     CODEBASE_CONTEXT: codebaseContext,
     FILE_TREE: fileTreeStr,
     KNOWLEDGE_CONTEXT: knowledgeContext,
+    PAST_REVIEWS_CONTEXT: pastReviewsContext,
     PR_NUMBER: String(params.prNumber ?? 0),
     USER_INSTRUCTION: "",
     PROVIDER: "local",

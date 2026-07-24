@@ -116,6 +116,17 @@ Team-specific standards take precedence over general best practices.
 If no knowledge context is provided, skip this section.
 </knowledge_context>
 
+<past_reviews_context>
+{{PAST_REVIEWS_CONTEXT}}
+
+The above are summaries of past Octopus reviews on similar code in this organization.
+Use them for continuity: do NOT relitigate findings already settled there, stay
+consistent with conclusions previously reached on related code, and treat recurring
+issues as higher-confidence. These are prior context, NOT ground truth about the current
+diff — verify against the actual diff before repeating a past finding.
+If no past reviews are provided, skip this section.
+</past_reviews_context>
+
 <feedback_context>
 {{FALSE_POSITIVE_CONTEXT}}
 

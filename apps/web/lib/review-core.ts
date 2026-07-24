@@ -29,7 +29,7 @@ import {
 import { extractCrossFileQueries, generateVerificationQueries, normalizeScoreDenominators, formatPastReviews } from "@/lib/review-helpers";
 import { gatherCrossFileContext, gatherVerificationContext, validateFindings } from "@/lib/review-validation";
 import { logAiUsage } from "@/lib/ai-usage";
-import { getReviewModel } from "@/lib/ai-client";
+import { resolveReviewModel } from "@/lib/review-routing";
 import { createAiMessage } from "@/lib/ai-router";
 import { substitutePromptVars } from "@/lib/prompt-substitute";
 import fs from "node:fs";
@@ -210,7 +210,12 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
 
   // Resolve model — explicit override (eg. CLI passing the wizard's choice)
   // wins; otherwise fall back to the repo/org/platform-default chain.
-  const reviewModel = params.modelOverride ?? (await getReviewModel(org.id, repo.id));
+  const reviewModel = await resolveReviewModel({
+    orgId: org.id,
+    repoId: repo.id,
+    modelOverride: params.modelOverride,
+    diff,
+  });
   console.log(`[review-core] Using model: ${reviewModel}`);
 
   // Step 1: Embed diff → semantic search for codebase context
@@ -733,7 +738,7 @@ export async function generateBareLocalReview(
   // Resolve model — explicit override (eg. CLI passing the wizard's choice)
   // wins; otherwise fall back to org-default → platform-default. No repo
   // here so the repo-fallback link of the chain doesn't apply.
-  const reviewModel = modelOverride ?? (await getReviewModel(org.id));
+  const reviewModel = await resolveReviewModel({ orgId: org.id, modelOverride, diff });
 
   // System prompt gets a minimal template substitution. The template
   // placeholders that depend on repo/PR context get safe defaults so the

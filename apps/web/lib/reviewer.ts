@@ -99,7 +99,7 @@ import { summarizeRepository } from "@/lib/summarizer";
 import { analyzeRepository } from "@/lib/analyzer";
 import { writeSyncLog, deleteSyncLogs } from "@/lib/elasticsearch";
 import { logAiUsage } from "@/lib/ai-usage";
-import { getReviewModel } from "@/lib/ai-client";
+import { resolveReviewModel } from "@/lib/review-routing";
 import { createAiMessage } from "@/lib/ai-router";
 import { isOrgOverSpendLimit, shouldGuardConcurrency } from "@/lib/cost";
 import fs from "node:fs";
@@ -1109,10 +1109,6 @@ export async function processReview(pullRequestId: string): Promise<void> {
       }
     }
 
-    // Resolve the model to use for this org (with repo-level override)
-    const reviewModel = await getReviewModel(org.id, repo.id);
-    console.log(`[reviewer] Using model: ${reviewModel}`);
-
     // Spend limit check
     const overLimit = await isOrgOverSpendLimit(org.id);
     if (overLimit) {
@@ -1275,6 +1271,13 @@ export async function processReview(pullRequestId: string): Promise<void> {
 
     const diffFiles = extractDiffFiles(diff);
     const filesChanged = diffFiles.size;
+
+    // Resolve the review model now that the diff is known: explicit repo/org
+    // pins still win; otherwise mechanical diffs (lockfiles, generated, docs,
+    // tests, tiny edits) downshift to a cheaper model. Never emits an unpriced
+    // model. Substantive diffs keep the default.
+    const reviewModel = await resolveReviewModel({ orgId: org.id, repoId: repo.id, diff });
+    console.log(`[reviewer] Using model: ${reviewModel}`);
 
     // Merge PR diff files into the repo tree so new files added by the PR
     // are visible in the file tree — prevents false positives about "missing" modules.

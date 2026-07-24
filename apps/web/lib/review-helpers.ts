@@ -11,6 +11,7 @@ import {
   parseFindingsFromJson,
   extractDiffFiles,
 } from "@/lib/review-dedup";
+import { getCategoryConfidenceThreshold } from "@/lib/review-categories";
 // Re-define the type locally to avoid importing from github.ts (which has side effects in some envs)
 export type ReviewComment = {
   path: string;
@@ -891,4 +892,17 @@ export function cappedConfidence(severity: string, confidence: number, hasCitati
     return UNCITED_HIGH_SEV_CAP;
   }
   return confidence;
+}
+
+/**
+ * Per-category confidence filter — the single source of truth for "does this
+ * finding clear the bar", shared by the standard review path (reviewer.ts) and
+ * the large-PR path (large-review-result.ts) so the two can't drift (#652).
+ * High-risk categories (Security/Bug) get a relaxed threshold via
+ * getCategoryConfidenceThreshold. Pure/testable.
+ */
+export function filterByConfidence(findings: InlineFinding[], baseThreshold = 70): InlineFinding[] {
+  return findings.filter(
+    (f) => f.confidence >= getCategoryConfidenceThreshold(f.category, baseThreshold),
+  );
 }

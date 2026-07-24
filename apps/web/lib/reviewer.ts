@@ -73,9 +73,9 @@ import {
   formatPastReviews,
   formatPrIntent,
   buildRetrievalQuery,
+  filterByConfidence,
 } from "@/lib/review-helpers";
 import type { ReviewConfig } from "@/lib/review-helpers";
-import { getCategoryConfidenceThreshold } from "@/lib/review-categories";
 import {
   gatherCrossFileContext,
   gatherVerificationContext,
@@ -1946,9 +1946,7 @@ Rules:
     // finding the validator/threshold would drop. Inline vs summary is derived
     // from this single validated set further below.
     const beforeConfidence = allParsedFindings.length;
-    allParsedFindings = allParsedFindings.filter(
-      (f) => f.confidence >= getCategoryConfidenceThreshold(f.category, confidenceThreshold),
-    );
+    allParsedFindings = filterByConfidence(allParsedFindings, confidenceThreshold);
     if (beforeConfidence !== allParsedFindings.length) {
       console.log(`[reviewer] Filtered out ${beforeConfidence - allParsedFindings.length} findings below per-category confidence threshold (base ${confidenceThreshold})`);
     }

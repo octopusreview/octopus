@@ -874,3 +874,21 @@ export function buildRetrievalQuery(
   // clamp only trims trailing newline overhead, never a whole section.
   return parts.join("\n").slice(0, maxChars);
 }
+
+/** High severities that must be tied to a concrete diff line to keep a high score. */
+const HIGH_SEVERITY = new Set(["🔴", "🟠"]);
+/** Ceiling for an uncited high-severity finding after adversarial validation (#654). */
+export const UNCITED_HIGH_SEV_CAP = 60;
+
+/**
+ * A high-severity finding the adversarial validator could not tie to a concrete
+ * diff line is suspect — cap its confidence so an uncited 🔴/🟠 can't ride a high
+ * self-reported score into the review. All other findings keep the validator's
+ * score. Pure so it is unit-testable without the server-only validation module.
+ */
+export function cappedConfidence(severity: string, confidence: number, hasCitation: boolean): number {
+  if (HIGH_SEVERITY.has(severity) && !hasCitation && confidence > UNCITED_HIGH_SEV_CAP) {
+    return UNCITED_HIGH_SEV_CAP;
+  }
+  return confidence;
+}

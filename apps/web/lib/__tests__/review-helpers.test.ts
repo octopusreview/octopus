@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { formatPastReviews, formatPrIntent, buildRetrievalQuery, type PastReviewHit } from "@/lib/review-helpers";
+import { formatPastReviews, formatPrIntent, buildRetrievalQuery, cappedConfidence, UNCITED_HIGH_SEV_CAP, type PastReviewHit } from "@/lib/review-helpers";
 
 describe("formatPastReviews", () => {
   const hit = (o: Partial<PastReviewHit> = {}): PastReviewHit => ({
@@ -112,5 +112,22 @@ describe("buildRetrievalQuery", () => {
     const q = buildRetrievalQuery("+++ b/a.ts\n@@ @@\n+  const function return await;\n", "t");
     expect(q).not.toContain("const");
     expect(q).not.toContain("function");
+  });
+});
+
+describe("cappedConfidence (adversarial validation #654)", () => {
+  it("caps an uncited high-severity finding to the ceiling", () => {
+    expect(cappedConfidence("🔴", 95, false)).toBe(UNCITED_HIGH_SEV_CAP);
+    expect(cappedConfidence("🟠", 88, false)).toBe(UNCITED_HIGH_SEV_CAP);
+  });
+  it("does NOT cap a cited high-severity finding", () => {
+    expect(cappedConfidence("🔴", 95, true)).toBe(95);
+  });
+  it("does NOT cap non-high severities", () => {
+    expect(cappedConfidence("🟡", 95, false)).toBe(95);
+    expect(cappedConfidence("🔵", 90, false)).toBe(90);
+  });
+  it("leaves an already-low uncited high-severity score untouched", () => {
+    expect(cappedConfidence("🔴", 40, false)).toBe(40);
   });
 });

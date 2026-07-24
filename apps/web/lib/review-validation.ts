@@ -9,6 +9,7 @@ import { logAiUsage } from "@/lib/ai-usage";
 import { createAiMessage } from "@/lib/ai-router";
 import type { InlineFinding } from "@/lib/review-dedup";
 import type { CrossFileQuery, VerificationQuery } from "@/lib/review-helpers";
+import { cappedConfidence } from "@/lib/review-helpers";
 import { getCategoryConfidenceThreshold } from "@/lib/review-categories";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -271,11 +272,13 @@ export async function validateFindings(
   const response = await createAiMessage(
     {
       model: VALIDATION_MODEL,
-      maxTokens: 2048,
+      // Raised from 2048 to fit per-finding citations/refutations without the
+      // validator truncating its own JSON.
+      maxTokens: 4096,
       messages: [
         {
           role: "user",
-          content: `You are a senior code reviewer validating findings from an automated review. For each finding, assign a confidence score (0-100) based on whether it is a genuine issue supported by the diff.
+          content: `You are a senior code reviewer running an ADVERSARIAL check on findings from an automated review. Your default stance is skepticism: for each finding, actively try to REFUTE it using the diff and the provided context. A finding survives with high confidence ONLY if you cannot refute it and can point to the concrete evidence that proves it. Assign a confidence score (0-100); a finding you can refute, or cannot tie to concrete evidence, gets a LOW score.
 
 FINDINGS:
 ${findingsSummary}
@@ -342,8 +345,11 @@ When a finding flags storage/column size concerns:
 - If the column type is TEXT, JSONB, or similar unbounded type, assign confidence 10-20
 - Only keep size findings when there is evidence the column has a restrictive type (VARCHAR with small limit)
 
-For each finding, respond with ONLY a JSON array:
-[{"index": 0, "confidence": 92}, {"index": 1, "confidence": 35}, ...]
+For each finding, respond with ONLY a JSON array. For a finding you KEEP (high
+confidence), include a one-line "citation" with the concrete diff location
+(\`file:Lnn\`) that proves it. For a finding you REFUTE or doubt (low confidence),
+include a short "refutation" saying why:
+[{"index": 0, "confidence": 92, "citation": "src/db.ts:L42"}, {"index": 1, "confidence": 15, "refutation": "the null guard already exists 3 lines above"}, ...]
 
 Output ONLY the JSON array, nothing else.`,
         },
@@ -365,21 +371,30 @@ Output ONLY the JSON array, nothing else.`,
 
   try {
     const jsonMatch = response.text.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) return findings;
-    const scores = JSON.parse(jsonMatch[0]) as { index: number; confidence: number }[];
-    const scoreMap = new Map(scores.map((s) => [s.index, s.confidence]));
+    if (!jsonMatch) return findings; // fail-open ONLY on parse error
+    const scores = JSON.parse(jsonMatch[0]) as {
+      index: number;
+      confidence: number;
+      citation?: string;
+      refutation?: string;
+    }[];
+    const scoreMap = new Map(scores.map((s) => [s.index, s]));
 
     const validated = findings
       .map((f, i) => {
-        const newConfidence = scoreMap.get(i);
-        if (newConfidence !== undefined) {
-          return { ...f, confidence: newConfidence };
+        const score = scoreMap.get(i);
+        if (!score) return f; // unscored → keep original confidence (never a silent drop)
+        const hasCitation = Boolean(score.citation && score.citation.trim());
+        const confidence = cappedConfidence(f.severity, score.confidence, hasCitation);
+        // Emit refutation reasons for offline false-positive analysis.
+        if (score.refutation && score.refutation.trim()) {
+          console.log(`${logPrefix} refuted "${f.title}" (${f.filePath}:L${f.startLine}) → ${confidence}: ${score.refutation.trim()}`);
         }
-        return f;
+        return { ...f, confidence };
       })
       .filter((f) => f.confidence >= getCategoryConfidenceThreshold(f.category, confidenceThreshold));
 
-    console.log(`${logPrefix} Two-pass validation: ${validated.length}/${findings.length} findings kept (base threshold: ${confidenceThreshold}, per-category)`);
+    console.log(`${logPrefix} Adversarial validation: ${validated.length}/${findings.length} findings kept (base threshold: ${confidenceThreshold}, per-category)`);
     return validated;
   } catch {
     console.warn(`${logPrefix} Failed to parse two-pass validation response, keeping all findings`);

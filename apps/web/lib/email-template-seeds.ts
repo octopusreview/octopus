@@ -45,8 +45,8 @@ Worth knowing: Anthropic puts Opus 5 close to their frontier model at half the p
 
 Questions? Just reply.`,
     buttonText: "Read the full write-up",
-    buttonUrl: "https://octopus-review.ai/blog/claude-opus-5-now-available",
-    variables: ["firstName"],
+    buttonUrl: "{{appUrl}}/blog/claude-opus-5-now-available",
+    variables: ["firstName", "appUrl"],
   },
   {
     slug: "welcome",

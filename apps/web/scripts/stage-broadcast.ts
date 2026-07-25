@@ -81,15 +81,40 @@ async function main() {
   const resend = new Resend(key);
   const from = `${fromName} <${fromEmail}>`;
 
-  // Fresh audience per campaign so a re-run never sends to stale/duplicate lists.
-  const aud = await resend.audiences.create({ name: `${audienceName} — ${subject}` });
-  const audienceId = aud.data?.id;
-  if (aud.error || !audienceId) throw new Error(`audiences.create failed: ${JSON.stringify(aud.error)}`);
-  console.log(`  audience: ${audienceId}`);
+  // Reuse a STABLE audience (found by name) so Resend's per-contact unsubscribe
+  // state survives across campaigns. A fresh audience each run would re-add
+  // everyone as subscribed and silently re-mail people who had opted out.
+  const audiences = await resend.audiences.list();
+  if (audiences.error) throw new Error(`audiences.list failed: ${JSON.stringify(audiences.error)}`);
+  let audienceId = audiences.data?.data?.find((a) => a.name === audienceName)?.id;
+  if (audienceId) {
+    console.log(`  audience reused: ${audienceId} (${audienceName})`);
+  } else {
+    const created = await resend.audiences.create({ name: audienceName });
+    audienceId = created.data?.id;
+    if (created.error || !audienceId) throw new Error(`audiences.create failed: ${JSON.stringify(created.error)}`);
+    console.log(`  audience created: ${audienceId} (${audienceName})`);
+  }
 
-  let ok = 0;
-  let failed = 0;
+  // Snapshot existing contacts (paginated) so we never mutate their state.
+  const existing = new Map<string, { unsubscribed: boolean }>();
+  let after: string | undefined;
+  for (;;) {
+    const page = await resend.contacts.list({ audienceId, limit: 100, ...(after ? { after } : {}) });
+    if (page.error) throw new Error(`contacts.list failed: ${JSON.stringify(page.error)}`);
+    const rows = page.data?.data ?? [];
+    for (const c of rows) existing.set(c.email.toLowerCase(), { unsubscribed: c.unsubscribed });
+    if (!page.data?.has_more || rows.length === 0) break;
+    after = rows[rows.length - 1].id;
+  }
+  const dbSet = new Set(recipients.map((r) => r.email.toLowerCase()));
+
+  // Add only NEW opted-in contacts (subscribed). Existing contacts are left
+  // untouched so a prior unsubscribe is preserved.
+  let added = 0;
+  let addFailed = 0;
   for (const r of recipients) {
+    if (existing.has(r.email.toLowerCase())) continue;
     const res = await resend.contacts.create({
       audienceId,
       email: r.email,
@@ -97,14 +122,40 @@ async function main() {
       unsubscribed: false,
     });
     if (res.error) {
-      failed++;
-      if (failed <= 10) console.warn(`  ! contact ${maskEmail(r.email)}: ${JSON.stringify(res.error)}`);
+      addFailed++;
+      if (addFailed <= 10) console.warn(`  ! add ${maskEmail(r.email)}: ${JSON.stringify(res.error)}`);
     } else {
-      ok++;
+      added++;
     }
-    if ((ok + failed) % 100 === 0) console.log(`  synced ${ok + failed}/${recipients.length}`);
+    if ((added + addFailed) % 100 === 0) console.log(`  added ${added + addFailed}…`);
   }
-  console.log(`  contacts: ${ok} added, ${failed} failed`);
+
+  // Honor DB opt-outs: unsubscribe anyone still subscribed in Resend who is no
+  // longer in the opted-in set.
+  let optedOut = 0;
+  let optOutFailed = 0;
+  for (const [email, c] of existing) {
+    if (dbSet.has(email) || c.unsubscribed) continue;
+    const res = await resend.contacts.update({ audienceId, email, unsubscribed: true });
+    if (res.error) optOutFailed++;
+    else optedOut++;
+  }
+
+  const skipped = recipients.length - added - addFailed;
+  console.log(`  contacts: +${added} added, ${skipped} already present, ${optedOut} unsubscribed (DB opt-out)`);
+
+  // Gate: don't create a broadcast off a badly-synced audience.
+  const attempted = added + addFailed + optedOut + optOutFailed;
+  const failed = addFailed + optOutFailed;
+  if (added === 0 && existing.size === 0) {
+    console.error("Audience is empty after sync — refusing to create a broadcast.");
+    process.exit(1);
+  }
+  if (failed > 0 && failed > Math.max(5, Math.ceil(attempted * 0.02))) {
+    console.error(`Too many contact-sync failures (${failed}/${attempted}) — aborting before broadcast. Nothing else changed.`);
+    process.exit(1);
+  }
+  if (failed > 0) console.warn(`  note: ${failed} contact op(s) failed but under threshold — continuing.`);
 
   const b = await resend.broadcasts.create({ audienceId, from, subject, html });
   if (b.error || !b.data?.id) throw new Error(`broadcasts.create failed: ${JSON.stringify(b.error)}`);

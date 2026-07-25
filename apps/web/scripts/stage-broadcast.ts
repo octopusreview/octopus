@@ -17,7 +17,7 @@
  *   Create:   bun run apps/web/scripts/stage-broadcast.ts --html <file> --subject "..." --create
  */
 import { readFileSync } from "node:fs";
-import { prisma } from "@octopus/db";
+import { prisma } from "@/lib/db";
 import { Resend } from "resend";
 
 /** First token of a display name, or "there" when empty — used for {{{FIRST_NAME}}}. */
@@ -37,6 +37,23 @@ function argVal(args: string[], flag: string): string | undefined {
   return i >= 0 ? args[i + 1] : undefined;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Resend has a low req/s limit. Run a contact op, retrying on 429 with backoff,
+ *  and throttle slightly between calls. Returns the SDK's { data, error } result. */
+async function resendOp<T extends { error: unknown }>(op: () => Promise<T>): Promise<T> {
+  let res = await op();
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const err = res.error as { statusCode?: number; name?: string } | null;
+    const rateLimited = err && (err.statusCode === 429 || err.name === "rate_limit_exceeded");
+    if (!rateLimited) break;
+    await sleep(attempt * 1000);
+    res = await op();
+  }
+  await sleep(60); // ~16 req/s ceiling; stay well under Resend's limit
+  return res;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const create = args.includes("--create");
@@ -45,8 +62,7 @@ async function main() {
   const audienceName = argVal(args, "--audience") ?? "Octopus — opted-in users";
 
   if (!htmlFile || !subject) {
-    console.error('Usage: stage-broadcast.ts --html <file> --subject "..." [--audience "..."] [--create]');
-    process.exit(1);
+    throw new Error('Usage: stage-broadcast.ts --html <file> --subject "..." [--audience "..."] [--create]');
   }
 
   const html = readFileSync(htmlFile, "utf8");
@@ -67,16 +83,14 @@ async function main() {
     return;
   }
   if (recipients.length === 0) {
-    console.error("No opted-in recipients — refusing to create an empty broadcast.");
-    process.exit(1);
+    throw new Error("No opted-in recipients — refusing to create an empty broadcast.");
   }
 
   const key = process.env.RESEND_API_KEY;
   const fromEmail = process.env.EMAIL_FROM;
   const fromName = process.env.EMAIL_FROM_NAME ?? "Octopus";
   if (!key || !fromEmail) {
-    console.error("RESEND_API_KEY and EMAIL_FROM are required to create a broadcast.");
-    process.exit(1);
+    throw new Error("RESEND_API_KEY and EMAIL_FROM are required to create a broadcast.");
   }
   const resend = new Resend(key);
   const from = `${fromName} <${fromEmail}>`;
@@ -115,12 +129,14 @@ async function main() {
   let addFailed = 0;
   for (const r of recipients) {
     if (existing.has(r.email.toLowerCase())) continue;
-    const res = await resend.contacts.create({
-      audienceId,
-      email: r.email,
-      firstName: firstNameOf(r.name),
-      unsubscribed: false,
-    });
+    const res = await resendOp(() =>
+      resend.contacts.create({
+        audienceId,
+        email: r.email,
+        firstName: firstNameOf(r.name),
+        unsubscribed: false,
+      }),
+    );
     if (res.error) {
       addFailed++;
       if (addFailed <= 10) console.warn(`  ! add ${maskEmail(r.email)}: ${JSON.stringify(res.error)}`);
@@ -136,7 +152,7 @@ async function main() {
   let optOutFailed = 0;
   for (const [email, c] of existing) {
     if (dbSet.has(email) || c.unsubscribed) continue;
-    const res = await resend.contacts.update({ audienceId, email, unsubscribed: true });
+    const res = await resendOp(() => resend.contacts.update({ audienceId, email, unsubscribed: true }));
     if (res.error) optOutFailed++;
     else optedOut++;
   }
@@ -148,12 +164,12 @@ async function main() {
   const attempted = added + addFailed + optedOut + optOutFailed;
   const failed = addFailed + optOutFailed;
   if (added === 0 && existing.size === 0) {
-    console.error("Audience is empty after sync — refusing to create a broadcast.");
-    process.exit(1);
+    throw new Error("Audience is empty after sync — refusing to create a broadcast.");
   }
   if (failed > 0 && failed > Math.max(5, Math.ceil(attempted * 0.02))) {
-    console.error(`Too many contact-sync failures (${failed}/${attempted}) — aborting before broadcast. Nothing else changed.`);
-    process.exit(1);
+    throw new Error(
+      `Too many contact-sync failures (${failed}/${attempted}) — aborting before broadcast. Nothing else changed.`,
+    );
   }
   if (failed > 0) console.warn(`  note: ${failed} contact op(s) failed but under threshold — continuing.`);
 
@@ -164,8 +180,10 @@ async function main() {
 }
 
 if (import.meta.main) {
-  main().catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
+  main()
+    .catch((err) => {
+      console.error(err instanceof Error ? err.message : err);
+      process.exitCode = 1;
+    })
+    .finally(() => prisma.$disconnect());
 }

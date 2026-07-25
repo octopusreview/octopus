@@ -30,6 +30,25 @@ function getFromConfig(type: "personal" | "system") {
 
 const templates: TemplateSeed[] = [
   {
+    slug: "opus-5-launch",
+    name: "Claude Opus 5 launch",
+    category: "marketing",
+    fromType: "personal",
+    subject: "Claude Opus 5 is now available in Octopus",
+    body: `Hey {{firstName}},
+
+Anthropic released Claude Opus 5 today, their strongest coding model yet, and you can now pick it as your reviewer in Octopus.
+
+Your default doesn't change. Reviews keep running on the same fast model, at the same cost. Opus 5 is the option for the pull requests where you want a deeper read: hairy concurrency, a security-sensitive change, a big refactor. Switch a repo to it in settings and every review on that repo uses it. Your own Anthropic key works too.
+
+Worth knowing: Anthropic puts Opus 5 close to their frontier model at half the price, calls it state of the art on coding, and says it's the most-aligned model they've shipped. For a reviewer, that last part matters most. It means fewer confidently-wrong comments, which is the kind developers actually hate.
+
+Questions? Just reply.`,
+    buttonText: "Read the full write-up",
+    buttonUrl: "https://octopus-review.ai/blog/claude-opus-5-now-available",
+    variables: ["firstName"],
+  },
+  {
     slug: "welcome",
     name: "Welcome Email",
     category: "transactional",

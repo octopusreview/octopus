@@ -20,7 +20,7 @@ export function IntegrationOAuthErrorBanner({
 }: {
   error: string | null;
 }) {
-  if (!error || !(error in OAUTH_ERROR_MESSAGES)) return null;
+  if (!error || !Object.hasOwn(OAUTH_ERROR_MESSAGES, error)) return null;
 
   const content = OAUTH_ERROR_MESSAGES[error as OAuthErrorCode];
   return (

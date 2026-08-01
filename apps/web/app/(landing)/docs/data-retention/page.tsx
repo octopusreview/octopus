@@ -78,7 +78,7 @@ const RETENTION: RetentionRow[] = [
     category: "Webhook deliveries",
     what: "Signature-verified webhook delivery metadata (IDs, event type, payload hash — never payload content)",
     retention: "30 days (hosted default)",
-    notes: "Tunable via WEBHOOK_DELIVERY_RETENTION_DAYS; pruned daily.",
+    notes: "Pruned daily; WEBHOOK_DELIVERY_RETENTION_DAYS accepts positive integers and fails the cleanup job on invalid configuration.",
   },
   {
     category: "Activity events",

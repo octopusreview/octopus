@@ -305,6 +305,10 @@ export async function observeGithubWebhookDelivery(
     input.deliveryId,
     MAX_DELIVERY_ID_LENGTH,
   );
+  // GitHub's x-github-delivery header is not covered by the body HMAC. It is
+  // an observation-only correlation key here. Any future deduplication or
+  // routing enforcement must use identity derived from the verified body or
+  // signature, never this provider header alone.
   const deliveryId = providerDeliveryId ?? `sha256:${input.payloadSha256}`;
   const deliveryIdSource = providerDeliveryId ? "provider" : "payload_sha256";
   const eventType =
@@ -465,10 +469,9 @@ export async function enforceWebhookDeliveryRetention(
       : configuredDays
   );
   if (!Number.isFinite(days) || !Number.isInteger(days) || days <= 0) {
-    logger.warn(
-      `[webhook] Invalid delivery retention window (${String(days)} days); cleanup skipped`,
+    throw new Error(
+      "Invalid webhook delivery retention window; expected a positive integer number of days",
     );
-    return 0;
   }
 
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);

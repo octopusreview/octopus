@@ -395,17 +395,26 @@ describe("enforceWebhookDeliveryRetention", () => {
     expect(cutoff).toBeLessThanOrEqual(after - retentionMs);
   });
 
-  it("skips cleanup for an invalid configured window", async () => {
+  it("fails fast for invalid environment retention windows", async () => {
     const store = createStore();
-    const logger = {
-      info: mock((_message: string) => undefined),
-      warn: mock((_message: string) => undefined),
-    };
+    const previous = process.env.WEBHOOK_DELIVERY_RETENTION_DAYS;
 
-    const deleted = await enforceWebhookDeliveryRetention(0, store, logger);
-
-    expect(deleted).toBe(0);
-    expect(store.webhookDelivery.deleteMany).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledTimes(1);
+    try {
+      for (const invalidValue of ["0", "not-a-number"]) {
+        process.env.WEBHOOK_DELIVERY_RETENTION_DAYS = invalidValue;
+        await expect(
+          enforceWebhookDeliveryRetention(undefined, store),
+        ).rejects.toThrow(
+          "Invalid webhook delivery retention window; expected a positive integer number of days",
+        );
+      }
+      expect(store.webhookDelivery.deleteMany).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) {
+        delete process.env.WEBHOOK_DELIVERY_RETENTION_DAYS;
+      } else {
+        process.env.WEBHOOK_DELIVERY_RETENTION_DAYS = previous;
+      }
+    }
   });
 });

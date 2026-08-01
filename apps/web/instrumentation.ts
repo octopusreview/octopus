@@ -42,6 +42,10 @@ export async function register() {
       // ACTIVITY_RETENTION_DAYS (default 30).
       await boss.schedule("enforce-activity-retention", "0 4 * * *");
 
+      // Verified webhook-delivery telemetry retention (04:30 UTC). The default
+      // 30-day window is configurable via WEBHOOK_DELIVERY_RETENTION_DAYS.
+      await boss.schedule("enforce-webhook-delivery-retention", "30 4 * * *");
+
       // Daily release-cache refresh (05:00 UTC — offset from the retention jobs).
       // Gated to self-hosted: the release-check/update panel only surfaces there
       // (same server-side flag the admin bootstrap above uses). pg-boss dedups

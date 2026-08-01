@@ -330,6 +330,39 @@ model Repository {
   @@map("repositories")
 }
 
+// Verified provider deliveries observed at the webhook boundary. This is an
+// append-style metadata ledger: tenant/repository IDs are snapshots rather
+// than foreign keys so evidence survives later tenant or repository deletion.
+model WebhookDelivery {
+  id                        String   @id @default(cuid())
+  provider                  String
+  deliveryId                String
+  deliveryIdSource          String   @default("provider") // provider | payload_sha256
+  eventType                 String
+  action                    String?
+  payloadSha256             String
+  providerInstallationId    String?
+  providerRepositoryId      String?
+  resolvedOrganizationId    String?
+  resolvedRepositoryId      String?
+  legacyOrganizationId      String?
+  legacyRepositoryId        String?
+  resolutionStatus          String
+  comparisonStatus          String
+  legacyCandidateCount      Int      @default(0)
+  attemptCount              Int      @default(1)
+  payloadHashCollisionCount Int      @default(0)
+  firstSeenAt               DateTime @default(now())
+  lastSeenAt                DateTime @default(now())
+
+  @@unique([provider, deliveryId])
+  @@index([provider, providerInstallationId, firstSeenAt])
+  @@index([provider, comparisonStatus, firstSeenAt])
+  @@index([resolvedOrganizationId, firstSeenAt])
+  @@index([lastSeenAt])
+  @@map("webhook_deliveries")
+}
+
 model RepoConfigExtraction {
   id              String   @id @default(cuid())
   repositoryId    String

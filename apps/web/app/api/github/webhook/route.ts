@@ -1,5 +1,7 @@
+import "server-only";
+
 import crypto from "node:crypto";
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@octopus/db";
 import {
@@ -12,6 +14,11 @@ import {
 } from "@/lib/github";
 import { startReviewFlow } from "@/lib/webhook-shared";
 import { getGithubAppConfig } from "@/lib/github-app-config";
+import {
+  observeGithubWebhookDeliveryInShadowMode,
+  type LegacyWebhookRepository,
+  type GithubWebhookTenantResolution,
+} from "@/lib/webhook-tenant";
 
 async function verifySignature(payload: string, signature: string | null): Promise<boolean> {
   if (!signature) return false;
@@ -38,7 +45,28 @@ export async function POST(request: NextRequest) {
   }
 
   const event = request.headers.get("x-github-event");
+  const deliveryId = request.headers.get("x-github-delivery");
+  const payloadSha256 = crypto.createHash("sha256").update(body).digest("hex");
   const payload = JSON.parse(body);
+  let legacyRepository: LegacyWebhookRepository | null | undefined;
+  let tenantResolution: GithubWebhookTenantResolution | undefined;
+
+  // SEC-06 shadow mode: observe only signature-verified delivery metadata and
+  // compare the installation-scoped result with the route's existing lookup.
+  // The callback runs after the response and never changes routing or rejects a
+  // duplicate; enforcement follows only after production mismatches are understood.
+  after(async () => {
+    await observeGithubWebhookDeliveryInShadowMode({
+      deliveryId,
+      eventType: event,
+      action: payload.action,
+      payloadSha256,
+      installationId: payload.installation?.id,
+      repositoryExternalId: payload.repository?.id,
+      legacyRepository,
+      tenantResolution,
+    });
+  });
 
   if (event === "installation" || event === "installation_repositories") {
     const installationId = payload.installation?.id as number | undefined;
@@ -47,7 +75,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Find the org linked to this installation
-    const org = await prisma.organization.findFirst({
+    const org = await prisma.organization.findUnique({
       where: { githubInstallationId: installationId },
       select: { id: true },
     });
@@ -55,6 +83,14 @@ export async function POST(request: NextRequest) {
     if (!org) {
       return NextResponse.json({ ok: true });
     }
+
+    // Snapshot before an `installation.deleted` event clears the binding below.
+    tenantResolution = {
+      provider: "github",
+      status: "installation_only",
+      organizationId: org.id,
+      repositoryId: null,
+    };
 
     // Sync repos from GitHub
     try {
@@ -215,6 +251,9 @@ export async function POST(request: NextRequest) {
       where: { provider: "github", externalId: repoExternalId },
       select: { id: true, organizationId: true, autoReview: true, installationId: true },
     });
+    legacyRepository = repo
+      ? { id: repo.id, organizationId: repo.organizationId }
+      : null;
 
     if (!repo) {
       console.warn(`[webhook] Repo not found in DB — externalId: ${repoExternalId}`);
@@ -318,6 +357,9 @@ export async function POST(request: NextRequest) {
       where: { provider: "github", externalId: repoExternalId },
       select: { id: true, fullName: true, defaultBranch: true, indexStatus: true, organizationId: true },
     });
+    legacyRepository = repo
+      ? { id: repo.id, organizationId: repo.organizationId }
+      : null;
 
     if (repo) {
       await prisma.pullRequest.updateMany({
@@ -432,6 +474,9 @@ export async function POST(request: NextRequest) {
         where: { provider: "github", externalId: repoExternalId },
         select: { id: true, organizationId: true, installationId: true },
       });
+      legacyRepository = repo
+        ? { id: repo.id, organizationId: repo.organizationId }
+        : null;
 
       if (!repo) {
         console.warn(`[webhook] Repo not found in DB — externalId: ${repoExternalId}, fullName: ${repoFullName}`);

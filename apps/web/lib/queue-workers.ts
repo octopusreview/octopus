@@ -7,6 +7,7 @@ import {
 } from "./large-review-result";
 import { processCommunityReview, type CommunityReviewJobData } from "./community-review";
 import { enforceAuditLogRetention, enforceActivityEventRetention } from "./audit";
+import { enforceWebhookDeliveryRetention } from "./webhook-tenant";
 import { refreshReleaseCache } from "./releases";
 import { renewDueSubscriptions } from "./subscription";
 import { runOllamaPull } from "./ollama-admin";
@@ -120,6 +121,25 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
         console.log(`[queue] enforce-activity-retention ${job.id}: deleted ${deleted} rows`);
       } catch (err) {
         console.error(`[queue] enforce-activity-retention failed (job ${job.id}):`, err);
+        throw err;
+      }
+    }
+  });
+
+  // Daily signature-verified webhook-delivery retention. The delete is
+  // idempotent, so concurrent workers remain safe.
+  await boss.work("enforce-webhook-delivery-retention", async (jobs) => {
+    for (const job of jobs) {
+      try {
+        const deleted = await enforceWebhookDeliveryRetention();
+        console.log(
+          `[queue] enforce-webhook-delivery-retention ${job.id}: deleted ${deleted} rows`,
+        );
+      } catch (err) {
+        console.error(
+          `[queue] enforce-webhook-delivery-retention failed (job ${job.id}):`,
+          err,
+        );
         throw err;
       }
     }

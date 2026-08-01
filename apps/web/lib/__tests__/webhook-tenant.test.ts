@@ -1,0 +1,411 @@
+import { beforeEach, describe, expect, it, mock } from "bun:test";
+
+mock.module("server-only", () => ({}));
+mock.module("@octopus/db", () => ({ prisma: {} }));
+
+const {
+  compareWebhookTenantResolution,
+  enforceWebhookDeliveryRetention,
+  observeGithubWebhookDelivery,
+  observeGithubWebhookDeliveryInShadowMode,
+  resolveWebhookTenant,
+} = await import("@/lib/webhook-tenant");
+
+const PAYLOAD_SHA = "a".repeat(64);
+
+function createStore() {
+  const webhookDelivery = {
+    upsert: mock(() =>
+      Promise.resolve({ attemptCount: 1, payloadSha256: PAYLOAD_SHA }),
+    ),
+    update: mock(() =>
+      Promise.resolve({ payloadHashCollisionCount: 1 }),
+    ),
+    deleteMany: mock(() => Promise.resolve({ count: 0 })),
+  };
+  return {
+    organization: {
+      findUnique: mock(() => Promise.resolve({ id: "org_b" } as { id: string } | null)),
+    },
+    repository: {
+      findUnique: mock(() =>
+        Promise.resolve({ id: "repo_b", organizationId: "org_b" } as {
+          id: string;
+          organizationId: string;
+        } | null),
+      ),
+      count: mock(() => Promise.resolve(1)),
+    },
+    webhookDelivery,
+    $transaction: async <T>(
+      callback: (transaction: { webhookDelivery: typeof webhookDelivery }) =>
+        Promise<T>,
+    ) => callback({ webhookDelivery }),
+  };
+}
+
+describe("resolveWebhookTenant", () => {
+  it("resolves a GitHub repository only inside the installation-owned organization", async () => {
+    const store = createStore();
+
+    const result = await resolveWebhookTenant(
+      {
+        provider: "github",
+        installationId: 222,
+        repositoryExternalId: "9001",
+      },
+      store,
+    );
+
+    expect(result).toEqual({
+      provider: "github",
+      status: "resolved",
+      organizationId: "org_b",
+      repositoryId: "repo_b",
+    });
+    expect(store.organization.findUnique).toHaveBeenCalledWith({
+      where: { githubInstallationId: 222 },
+      select: { id: true },
+    });
+    expect(store.repository.findUnique).toHaveBeenCalledWith({
+      where: {
+        provider_externalId_organizationId: {
+          provider: "github",
+          externalId: "9001",
+          organizationId: "org_b",
+        },
+      },
+      select: { id: true, organizationId: true },
+    });
+  });
+
+  it("never falls back to a repository-only lookup for an unmapped installation", async () => {
+    const store = createStore();
+    store.organization.findUnique.mockResolvedValue(null);
+
+    const result = await resolveWebhookTenant(
+      {
+        provider: "github",
+        installationId: 999,
+        repositoryExternalId: "9001",
+      },
+      store,
+    );
+
+    expect(result).toEqual({
+      provider: "github",
+      status: "unmapped_installation",
+      organizationId: null,
+      repositoryId: null,
+    });
+    expect(store.repository.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("supports installation events that do not carry a repository", async () => {
+    const store = createStore();
+
+    const result = await resolveWebhookTenant(
+      { provider: "github", installationId: 222, repositoryExternalId: null },
+      store,
+    );
+
+    expect(result).toEqual({
+      provider: "github",
+      status: "installation_only",
+      organizationId: "org_b",
+      repositoryId: null,
+    });
+    expect(store.repository.findUnique).not.toHaveBeenCalled();
+  });
+});
+
+describe("compareWebhookTenantResolution", () => {
+  it("reports a cross-tenant legacy selection without changing either result", () => {
+    expect(
+      compareWebhookTenantResolution(
+        {
+          provider: "github",
+          status: "resolved",
+          organizationId: "org_b",
+          repositoryId: "repo_b",
+        },
+        { id: "repo_a", organizationId: "org_a" },
+        1,
+      ),
+    ).toBe("mismatch");
+  });
+
+  it("reports duplicate tenant rows as ambiguous even if the legacy row happens to match", () => {
+    expect(
+      compareWebhookTenantResolution(
+        {
+          provider: "github",
+          status: "resolved",
+          organizationId: "org_b",
+          repositoryId: "repo_b",
+        },
+        { id: "repo_b", organizationId: "org_b" },
+        2,
+      ),
+    ).toBe("ambiguous");
+  });
+});
+
+describe("observeGithubWebhookDelivery", () => {
+  let store = createStore();
+
+  beforeEach(() => {
+    store = createStore();
+  });
+
+  it("records only bounded metadata and the trusted tenant resolution", async () => {
+    store.repository.count.mockResolvedValue(2);
+
+    const result = await observeGithubWebhookDelivery(
+      {
+        deliveryId: "delivery-123",
+        eventType: "pull_request",
+        action: "opened",
+        payloadSha256: PAYLOAD_SHA,
+        installationId: 222,
+        repositoryExternalId: "9001",
+        legacyRepository: { id: "repo_a", organizationId: "org_a" },
+      },
+      store,
+    );
+
+    expect(result).toEqual({
+      recorded: true,
+      attemptCount: 1,
+      payloadHashCollision: false,
+      resolutionStatus: "resolved",
+      comparisonStatus: "ambiguous",
+    });
+    expect(store.webhookDelivery.upsert).toHaveBeenCalledTimes(1);
+    const [{ create, update, where }] = store.webhookDelivery.upsert.mock.calls[0];
+    expect(where).toEqual({
+      provider_deliveryId: { provider: "github", deliveryId: "delivery-123" },
+    });
+    expect(create).toMatchObject({
+      provider: "github",
+      deliveryId: "delivery-123",
+      deliveryIdSource: "provider",
+      eventType: "pull_request",
+      action: "opened",
+      payloadSha256: PAYLOAD_SHA,
+      providerInstallationId: "222",
+      providerRepositoryId: "9001",
+      resolvedOrganizationId: "org_b",
+      resolvedRepositoryId: "repo_b",
+      legacyOrganizationId: "org_a",
+      legacyRepositoryId: "repo_a",
+      resolutionStatus: "resolved",
+      comparisonStatus: "ambiguous",
+      legacyCandidateCount: 2,
+    });
+    expect(create).not.toHaveProperty("payload");
+    expect(create).not.toHaveProperty("signature");
+    expect(update).toMatchObject({
+      attemptCount: { increment: 1 },
+    });
+    expect(update).not.toHaveProperty("payloadSha256");
+    expect(update).not.toHaveProperty("comparisonStatus");
+  });
+
+  it("uses the verified payload hash when GitHub omits its delivery id", async () => {
+    await observeGithubWebhookDelivery(
+      {
+        deliveryId: null,
+        eventType: "ping",
+        action: null,
+        payloadSha256: PAYLOAD_SHA,
+        installationId: null,
+        repositoryExternalId: null,
+        legacyRepository: undefined,
+      },
+      store,
+    );
+
+    const [{ create, where }] = store.webhookDelivery.upsert.mock.calls[0];
+    expect(where.provider_deliveryId.deliveryId).toBe(`sha256:${PAYLOAD_SHA}`);
+    expect(create.deliveryIdSource).toBe("payload_sha256");
+  });
+
+  it("increments attempts for a duplicate without treating it as an enforcement decision", async () => {
+    store.webhookDelivery.upsert.mockResolvedValue({
+      attemptCount: 2,
+      payloadSha256: PAYLOAD_SHA,
+    });
+
+    const result = await observeGithubWebhookDelivery(
+      {
+        deliveryId: "delivery-123",
+        eventType: "pull_request",
+        action: "opened",
+        payloadSha256: PAYLOAD_SHA,
+        installationId: 222,
+        repositoryExternalId: "9001",
+        legacyRepository: { id: "repo_b", organizationId: "org_b" },
+      },
+      store,
+    );
+
+    expect(result.recorded).toBe(true);
+    expect(result.attemptCount).toBe(2);
+    expect(result.payloadHashCollision).toBe(false);
+    expect(store.webhookDelivery.update).not.toHaveBeenCalled();
+    const [{ update }] = store.webhookDelivery.upsert.mock.calls[0];
+    expect(update.attemptCount).toEqual({ increment: 1 });
+    expect(update).not.toHaveProperty("processingStatus");
+  });
+
+  it("preserves first evidence and flags a changed payload for the same delivery id", async () => {
+    store.webhookDelivery.upsert.mockResolvedValue({
+      attemptCount: 2,
+      payloadSha256: PAYLOAD_SHA,
+    });
+
+    const result = await observeGithubWebhookDelivery(
+      {
+        deliveryId: "delivery-123",
+        eventType: "pull_request",
+        action: "synchronize",
+        payloadSha256: "b".repeat(64),
+        installationId: 333,
+        repositoryExternalId: "9001",
+        legacyRepository: { id: "repo_changed", organizationId: "org_changed" },
+      },
+      store,
+    );
+
+    const [{ update }] = store.webhookDelivery.upsert.mock.calls[0];
+    expect(update).toEqual({
+      attemptCount: { increment: 1 },
+      lastSeenAt: expect.any(Date),
+    });
+    expect(store.webhookDelivery.update).toHaveBeenCalledWith({
+      where: {
+        provider_deliveryId: {
+          provider: "github",
+          deliveryId: "delivery-123",
+        },
+      },
+      data: { payloadHashCollisionCount: { increment: 1 } },
+      select: { payloadHashCollisionCount: true },
+    });
+    expect(result.payloadHashCollision).toBe(true);
+  });
+
+  it("uses a tenant snapshot captured before an installation deletion", async () => {
+    const tenantResolution = {
+      provider: "github" as const,
+      status: "installation_only" as const,
+      organizationId: "org_b",
+      repositoryId: null,
+    };
+
+    await observeGithubWebhookDelivery(
+      {
+        deliveryId: "delivery-uninstall",
+        eventType: "installation",
+        action: "deleted",
+        payloadSha256: PAYLOAD_SHA,
+        installationId: 222,
+        repositoryExternalId: null,
+        legacyRepository: undefined,
+        tenantResolution,
+      },
+      store,
+    );
+
+    expect(store.organization.findUnique).not.toHaveBeenCalled();
+    const [{ create }] = store.webhookDelivery.upsert.mock.calls[0];
+    expect(create).toMatchObject({
+      resolvedOrganizationId: "org_b",
+      resolutionStatus: "installation_only",
+      comparisonStatus: "not_applicable",
+    });
+  });
+
+  it("keeps a ledger failure non-fatal and logs no database error details", async () => {
+    store.webhookDelivery.upsert.mockRejectedValueOnce(
+      new Error("query failed with sensitive detail"),
+    );
+    const logger = {
+      info: mock((_message: string) => undefined),
+      warn: mock((_message: string) => undefined),
+    };
+
+    const result = await observeGithubWebhookDeliveryInShadowMode(
+      {
+        deliveryId: "delivery-123",
+        eventType: "pull_request",
+        action: "opened",
+        payloadSha256: PAYLOAD_SHA,
+        installationId: 222,
+        repositoryExternalId: "9001",
+        legacyRepository: { id: "repo_b", organizationId: "org_b" },
+      },
+      store,
+      logger,
+    );
+
+    expect(result).toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "[webhook] GitHub delivery observation failed; legacy routing continued (Error)",
+    );
+    expect(logger.warn.mock.calls[0]?.[0]).not.toContain("sensitive detail");
+  });
+});
+
+describe("GitHub webhook boundary wiring", () => {
+  it("registers trusted observation only after signature verification", async () => {
+    const routeSource = await Bun.file(
+      new URL("../../app/api/github/webhook/route.ts", import.meta.url),
+    ).text();
+    const signatureGuard = routeSource.indexOf(
+      "if (!(await verifySignature(body, signature)))",
+    );
+    const payloadParse = routeSource.indexOf("const payload = JSON.parse(body)");
+    const observationCall = routeSource.indexOf(
+      "observeGithubWebhookDeliveryInShadowMode({",
+      payloadParse,
+    );
+
+    expect(signatureGuard).toBeGreaterThan(-1);
+    expect(payloadParse).toBeGreaterThan(signatureGuard);
+    expect(observationCall).toBeGreaterThan(payloadParse);
+  });
+});
+
+describe("enforceWebhookDeliveryRetention", () => {
+  it("deletes rows whose last delivery attempt is outside the window", async () => {
+    const store = createStore();
+    store.webhookDelivery.deleteMany.mockResolvedValue({ count: 4 });
+    const before = Date.now();
+
+    const deleted = await enforceWebhookDeliveryRetention(30, store);
+
+    const after = Date.now();
+    expect(deleted).toBe(4);
+    const [{ where }] = store.webhookDelivery.deleteMany.mock.calls[0];
+    const cutoff = where.lastSeenAt.lt.getTime();
+    const retentionMs = 30 * 24 * 60 * 60 * 1000;
+    expect(cutoff).toBeGreaterThanOrEqual(before - retentionMs);
+    expect(cutoff).toBeLessThanOrEqual(after - retentionMs);
+  });
+
+  it("skips cleanup for an invalid configured window", async () => {
+    const store = createStore();
+    const logger = {
+      info: mock((_message: string) => undefined),
+      warn: mock((_message: string) => undefined),
+    };
+
+    const deleted = await enforceWebhookDeliveryRetention(0, store, logger);
+
+    expect(deleted).toBe(0);
+    expect(store.webhookDelivery.deleteMany).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+  });
+});

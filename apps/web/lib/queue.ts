@@ -115,6 +115,13 @@ export async function startQueue(): Promise<PgBoss> {
     expireInSeconds: 600, // 10 min — a deleteMany shouldn't take long
   }).catch(() => {});
 
+  // Daily verified-webhook delivery retention. The ledger is rollout telemetry,
+  // not a permanent audit log, so its default window is intentionally shorter.
+  await boss.createQueue("enforce-webhook-delivery-retention", {
+    retryLimit: 1,
+    expireInSeconds: 600,
+  }).catch(() => {});
+
   // Daily self-hosted release-cache refresh (scheduled in instrumentation.ts,
   // worked in queue-workers.ts). Same pg-boss v12 requirement — the queue must
   // exist before schedule()/work() or the cron silently no-ops.

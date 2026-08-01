@@ -179,6 +179,7 @@ export interface WebhookDeliveryRetentionStore {
 }
 
 export const WEBHOOK_DELIVERY_DEFAULT_RETENTION_DAYS = 30;
+export const WEBHOOK_DELIVERY_MAX_RETENTION_DAYS = 365;
 
 function boundedString(value: unknown, maxLength: number): string | null {
   if (typeof value !== "string") return null;
@@ -330,7 +331,7 @@ export async function observeGithubWebhookDelivery(
           },
           store,
         ),
-    repositoryExternalId
+    repositoryExternalId && input.legacyRepository !== undefined
       ? store.repository.count({
           where: { provider: "github", externalId: repositoryExternalId },
         })
@@ -468,9 +469,14 @@ export async function enforceWebhookDeliveryRetention(
       ? WEBHOOK_DELIVERY_DEFAULT_RETENTION_DAYS
       : configuredDays
   );
-  if (!Number.isFinite(days) || !Number.isInteger(days) || days <= 0) {
+  if (
+    !Number.isFinite(days) ||
+    !Number.isInteger(days) ||
+    days <= 0 ||
+    days > WEBHOOK_DELIVERY_MAX_RETENTION_DAYS
+  ) {
     throw new Error(
-      "Invalid webhook delivery retention window; expected a positive integer number of days",
+      `Invalid webhook delivery retention window; expected an integer from 1 to ${WEBHOOK_DELIVERY_MAX_RETENTION_DAYS} days`,
     );
   }
 

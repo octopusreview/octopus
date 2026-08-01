@@ -231,6 +231,28 @@ describe("observeGithubWebhookDelivery", () => {
     expect(create.deliveryIdSource).toBe("payload_sha256");
   });
 
+  it("skips the legacy collision query when the route did not perform a lookup", async () => {
+    await observeGithubWebhookDelivery(
+      {
+        deliveryId: "delivery-no-legacy-lookup",
+        eventType: "push",
+        action: null,
+        payloadSha256: PAYLOAD_SHA,
+        installationId: 222,
+        repositoryExternalId: "9001",
+        legacyRepository: undefined,
+      },
+      store,
+    );
+
+    expect(store.repository.count).not.toHaveBeenCalled();
+    const [{ create }] = store.webhookDelivery.upsert.mock.calls[0];
+    expect(create).toMatchObject({
+      comparisonStatus: "not_applicable",
+      legacyCandidateCount: 0,
+    });
+  });
+
   it("increments attempts for a duplicate without treating it as an enforcement decision", async () => {
     store.webhookDelivery.upsert.mockResolvedValue({
       attemptCount: 2,
@@ -400,15 +422,34 @@ describe("enforceWebhookDeliveryRetention", () => {
     const previous = process.env.WEBHOOK_DELIVERY_RETENTION_DAYS;
 
     try {
-      for (const invalidValue of ["0", "not-a-number"]) {
+      for (const invalidValue of ["0", "366", "not-a-number"]) {
         process.env.WEBHOOK_DELIVERY_RETENTION_DAYS = invalidValue;
         await expect(
           enforceWebhookDeliveryRetention(undefined, store),
         ).rejects.toThrow(
-          "Invalid webhook delivery retention window; expected a positive integer number of days",
+          "Invalid webhook delivery retention window; expected an integer from 1 to 365 days",
         );
       }
       expect(store.webhookDelivery.deleteMany).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) {
+        delete process.env.WEBHOOK_DELIVERY_RETENTION_DAYS;
+      } else {
+        process.env.WEBHOOK_DELIVERY_RETENTION_DAYS = previous;
+      }
+    }
+  });
+
+  it("accepts the maximum environment retention window", async () => {
+    const store = createStore();
+    const previous = process.env.WEBHOOK_DELIVERY_RETENTION_DAYS;
+
+    try {
+      process.env.WEBHOOK_DELIVERY_RETENTION_DAYS = "365";
+      await expect(
+        enforceWebhookDeliveryRetention(undefined, store),
+      ).resolves.toBe(0);
+      expect(store.webhookDelivery.deleteMany).toHaveBeenCalledTimes(1);
     } finally {
       if (previous === undefined) {
         delete process.env.WEBHOOK_DELIVERY_RETENTION_DAYS;

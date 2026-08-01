@@ -19,7 +19,12 @@ describe("GitHub webhook tenant shadow mode", () => {
     ]);
 
     expect(exitCode, stderr).toBe(0);
-    expect(JSON.parse(stdout)).toEqual({
+    const resultLine = stdout
+      .split(/\r?\n/)
+      .filter((line) => line.trim().length > 0)
+      .at(-1);
+    expect(resultLine).toBeDefined();
+    expect(JSON.parse(resultLine!)).toEqual({
       invalidSignatureRejected: true,
       legacyRoutingPreserved: true,
       duplicateAttemptCount: 2,

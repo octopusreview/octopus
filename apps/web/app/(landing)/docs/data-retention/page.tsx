@@ -75,6 +75,12 @@ const RETENTION: RetentionRow[] = [
     retention: "30 days for hosted; self-hosters control their own",
   },
   {
+    category: "Webhook deliveries",
+    what: "Signature-verified webhook delivery metadata (IDs, event type, payload hash — never payload content)",
+    retention: "30 days (hosted default)",
+    notes: "Tunable via WEBHOOK_DELIVERY_RETENTION_DAYS; pruned daily.",
+  },
+  {
     category: "Activity events",
     what: "Live team-telemetry feed rows (coarse actions only — no content)",
     retention: "30 days (hosted default)",
@@ -97,7 +103,7 @@ export default function DataRetentionPage() {
           Compliance
         </div>
         <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">Data Retention</h1>
-        <p className="mt-3 text-sm text-[#555]">Last updated: May 2026</p>
+        <p className="mt-3 text-sm text-[#555]">Last updated: August 2026</p>
       </div>
 
       <P>
@@ -182,9 +188,11 @@ export default function DataRetentionPage() {
       <Section title="Self-hosters">
         <P>
           Self-hosted Octopus stores everything in your PostgreSQL + Qdrant +
-          object-storage. There is no automatic retention beyond the
-          90-day-post-close window for review findings. Configure retention for
-          your stored data per your own compliance requirements.
+          object-storage. There is no automatic retention beyond the built-in
+          pruning jobs above (review findings, audit logs, activity events, and
+          webhook delivery metadata — the latter three have configurable
+          windows). Configure retention for your other stored data per your own
+          compliance requirements.
         </P>
       </Section>
     </article>

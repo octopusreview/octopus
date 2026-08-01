@@ -12,9 +12,9 @@ const OAUTH_ERROR_MESSAGES = {
       "Start the integration connection again from this page in the same browser.",
   },
   forbidden: {
-    title: "Connection flow changed accounts",
+    title: "Connection not permitted",
     description:
-      "Sign in with the account that started the integration connection, then try again.",
+      "Sign in with the account that started the integration connection and make sure it has an owner or admin role in the organization, then try again.",
   },
   insufficient_role: {
     title: "Permission required",

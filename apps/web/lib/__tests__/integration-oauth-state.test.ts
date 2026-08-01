@@ -55,16 +55,28 @@ mock.module("@octopus/db", () => ({
   },
 }));
 
+// mock.module leaks into other test files in the same `bun test` run, so
+// preserve each module's real exports and override only what this file stubs.
+const actualLinear = await import("@/lib/linear");
+const actualAudit = await import("@/lib/audit");
+const actualJira = await import("@/lib/jira");
+const actualBitbucket = await import("@/lib/bitbucket");
+
 mock.module("@/lib/linear", () => ({
+  ...actualLinear,
   getLinearViewer: () => Promise.reject(new Error("not reached")),
 }));
-mock.module("@/lib/audit", () => ({ writeAuditLog: () => Promise.resolve() }));
+mock.module("@/lib/audit", () => ({
+  ...actualAudit,
+  writeAuditLog: () => Promise.resolve(),
+}));
 mock.module("@/lib/jira", () => ({
+  ...actualJira,
   encryptJiraToken: (value: string) => value,
   getAccessibleResources: () => Promise.resolve([]),
-  JIRA_OAUTH_PENDING_COOKIE: "jira_oauth_pending",
 }));
 mock.module("@/lib/bitbucket", () => ({
+  ...actualBitbucket,
   createWebhook: () => Promise.resolve(null),
   listWorkspaceRepos: () => Promise.resolve([]),
 }));

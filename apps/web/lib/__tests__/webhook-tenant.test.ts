@@ -381,6 +381,14 @@ describe("observeGithubWebhookDelivery", () => {
 });
 
 describe("GitHub webhook boundary wiring", () => {
+  it("keeps the installation tenant authority unique in the Prisma schema", async () => {
+    const schema = await Bun.file(
+      new URL("../../../../packages/db/prisma/schema.prisma", import.meta.url),
+    ).text();
+
+    expect(schema).toMatch(/githubInstallationId\s+Int\?\s+@unique\b/);
+  });
+
   it("registers trusted observation only after signature verification", async () => {
     const routeSource = await Bun.file(
       new URL("../../app/api/github/webhook/route.ts", import.meta.url),

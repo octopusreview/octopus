@@ -108,6 +108,7 @@ model Organization {
   name                 String
   slug                 String   @unique
   avatarUrl            String?
+  // Signed webhook tenant authority; one GitHub installation maps to one org.
   githubInstallationId Int?     @unique
   needsPermissionGrant Boolean  @default(false)
   openaiApiKey         String?

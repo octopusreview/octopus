@@ -26,7 +26,12 @@ const mockFetch = mock(() =>
   ),
 );
 
+const actualHeaders = await import("next/headers");
+const actualAuth = await import("@/lib/auth");
+const actualDb = await import("@octopus/db");
+
 mock.module("next/headers", () => ({
+  ...actualHeaders,
   headers: () => Promise.resolve(new Headers()),
   cookies: () =>
     Promise.resolve({
@@ -40,6 +45,7 @@ mock.module("next/headers", () => ({
 }));
 
 mock.module("@/lib/auth", () => ({
+  ...actualAuth,
   auth: {
     api: {
       getSession: () => Promise.resolve({ user: { id: currentUserId } }),
@@ -48,6 +54,7 @@ mock.module("@/lib/auth", () => ({
 }));
 
 mock.module("@octopus/db", () => ({
+  ...actualDb,
   prisma: {
     organizationMember: {
       findFirst: () => Promise.resolve({ role: "owner" }),

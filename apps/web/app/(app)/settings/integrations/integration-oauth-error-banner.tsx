@@ -11,6 +11,11 @@ const OAUTH_ERROR_MESSAGES = {
     description:
       "Start the integration connection again from this page in the same browser.",
   },
+  forbidden: {
+    title: "Connection flow changed accounts",
+    description:
+      "Sign in with the account that started the integration connection, then try again.",
+  },
 } as const;
 
 type OAuthErrorCode = keyof typeof OAUTH_ERROR_MESSAGES;

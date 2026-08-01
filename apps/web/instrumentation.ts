@@ -1,6 +1,13 @@
 export async function register() {
   // Only start queue workers on the server (not during build or edge runtime)
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    // Fail before queue startup if retention is misconfigured; otherwise the
+    // daily cleanup could remain broken while delivery telemetry keeps growing.
+    const { resolveWebhookDeliveryRetentionDays } = await import(
+      "./lib/webhook-tenant"
+    );
+    resolveWebhookDeliveryRetentionDays();
+
     const { reconcileStaleRepoStates } = await import("./lib/boot-reconciler");
     await reconcileStaleRepoStates();
 

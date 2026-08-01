@@ -8,6 +8,7 @@ const {
   enforceWebhookDeliveryRetention,
   observeGithubWebhookDelivery,
   observeGithubWebhookDeliveryInShadowMode,
+  resolveWebhookDeliveryRetentionDays,
   resolveWebhookTenant,
 } = await import("@/lib/webhook-tenant");
 
@@ -406,9 +407,35 @@ describe("GitHub webhook boundary wiring", () => {
     expect(payloadParse).toBeGreaterThan(signatureGuard);
     expect(observationCall).toBeGreaterThan(payloadParse);
   });
+
+  it("validates delivery retention before queue startup", async () => {
+    const instrumentationSource = await Bun.file(
+      new URL("../../instrumentation.ts", import.meta.url),
+    ).text();
+    const validationCall = instrumentationSource.indexOf(
+      "resolveWebhookDeliveryRetentionDays();",
+    );
+    const queueStart = instrumentationSource.indexOf("await startQueue()");
+
+    expect(validationCall).toBeGreaterThan(-1);
+    expect(queueStart).toBeGreaterThan(validationCall);
+  });
 });
 
 describe("enforceWebhookDeliveryRetention", () => {
+  it("defaults an unset retention window to 30 days", () => {
+    const previous = process.env.WEBHOOK_DELIVERY_RETENTION_DAYS;
+
+    try {
+      delete process.env.WEBHOOK_DELIVERY_RETENTION_DAYS;
+      expect(resolveWebhookDeliveryRetentionDays()).toBe(30);
+    } finally {
+      if (previous !== undefined) {
+        process.env.WEBHOOK_DELIVERY_RETENTION_DAYS = previous;
+      }
+    }
+  });
+
   it("deletes rows whose last delivery attempt is outside the window", async () => {
     const store = createStore();
     store.webhookDelivery.deleteMany.mockResolvedValue({ count: 4 });

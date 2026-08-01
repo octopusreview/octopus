@@ -181,6 +181,31 @@ export interface WebhookDeliveryRetentionStore {
 export const WEBHOOK_DELIVERY_DEFAULT_RETENTION_DAYS = 30;
 export const WEBHOOK_DELIVERY_MAX_RETENTION_DAYS = 365;
 
+export function resolveWebhookDeliveryRetentionDays(
+  retentionDays?: number,
+): number {
+  const envOverride = process.env.WEBHOOK_DELIVERY_RETENTION_DAYS?.trim();
+  let days = retentionDays;
+  if (days === undefined) {
+    if (!envOverride) {
+      days = WEBHOOK_DELIVERY_DEFAULT_RETENTION_DAYS;
+    } else {
+      days = /^\d+$/.test(envOverride) ? Number(envOverride) : Number.NaN;
+    }
+  }
+  if (
+    !Number.isFinite(days) ||
+    !Number.isInteger(days) ||
+    days <= 0 ||
+    days > WEBHOOK_DELIVERY_MAX_RETENTION_DAYS
+  ) {
+    throw new Error(
+      `Invalid webhook delivery retention window; expected an integer from 1 to ${WEBHOOK_DELIVERY_MAX_RETENTION_DAYS} days`,
+    );
+  }
+  return days;
+}
+
 function boundedString(value: unknown, maxLength: number): string | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim();
@@ -460,25 +485,7 @@ export async function enforceWebhookDeliveryRetention(
   store: WebhookDeliveryRetentionStore = prisma,
   logger: WebhookObservationLogger = console,
 ): Promise<number> {
-  const envOverride = process.env.WEBHOOK_DELIVERY_RETENTION_DAYS?.trim();
-  const configuredDays = envOverride && /^\d+$/.test(envOverride)
-    ? Number(envOverride)
-    : Number.NaN;
-  const days = retentionDays ?? (
-    !envOverride
-      ? WEBHOOK_DELIVERY_DEFAULT_RETENTION_DAYS
-      : configuredDays
-  );
-  if (
-    !Number.isFinite(days) ||
-    !Number.isInteger(days) ||
-    days <= 0 ||
-    days > WEBHOOK_DELIVERY_MAX_RETENTION_DAYS
-  ) {
-    throw new Error(
-      `Invalid webhook delivery retention window; expected an integer from 1 to ${WEBHOOK_DELIVERY_MAX_RETENTION_DAYS} days`,
-    );
-  }
+  const days = resolveWebhookDeliveryRetentionDays(retentionDays);
 
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   const { count } = await store.webhookDelivery.deleteMany({

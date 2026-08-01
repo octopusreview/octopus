@@ -9,6 +9,7 @@ import { BitbucketDebugBanner } from "./bitbucket-debug-banner";
 import { GitlabIntegrationCard } from "./gitlab-integration-card";
 import { LinearIntegrationCard } from "./linear-integration-card";
 import { JiraIntegrationCard } from "./jira-integration-card";
+import { IntegrationOAuthErrorBanner } from "./integration-oauth-error-banner";
 import { getGithubAppConfig } from "@/lib/github-app-config";
 import { isSelfHosted } from "@/lib/self-hosted";
 
@@ -142,6 +143,7 @@ export default async function IntegrationsPage({
 
   return (
     <div className="space-y-6">
+      <IntegrationOAuthErrorBanner error={rawError} />
       {bbDebug && <BitbucketDebugBanner debugJson={bbDebug} />}
       {glDebug && <BitbucketDebugBanner debugJson={glDebug} title="GitLab Connect Debug" />}
       <GitHubIntegrationCard

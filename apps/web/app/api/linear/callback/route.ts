@@ -1,16 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { getLinearViewer } from "@/lib/linear";
 import { writeAuditLog } from "@/lib/audit";
 import { encryptString } from "@/lib/crypto";
+import {
+  integrationOAuthStateCookie,
+  verifyIntegrationOAuthState,
+} from "@/lib/integration-oauth-state";
 
 export async function GET(request: NextRequest) {
   const baseUrl = process.env.BETTER_AUTH_URL || request.url;
   const code = request.nextUrl.searchParams.get("code");
   const stateParam = request.nextUrl.searchParams.get("state");
   const error = request.nextUrl.searchParams.get("error");
+  const cookieStore = await cookies();
+  const stateCookie = integrationOAuthStateCookie("linear");
+  const cookieNonce = cookieStore.get(stateCookie)?.value;
+  cookieStore.delete(stateCookie);
 
   if (error) {
     console.error("[linear-callback] OAuth error:", error);
@@ -25,23 +33,28 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  let orgId: string;
-  try {
-    const parsed = JSON.parse(
-      Buffer.from(stateParam, "base64url").toString("utf-8"),
-    );
-    orgId = parsed.orgId;
-  } catch {
+  const verified = verifyIntegrationOAuthState({
+    state: stateParam,
+    cookieNonce,
+    provider: "linear",
+  });
+  if (!verified.ok) {
     return NextResponse.redirect(
-      new URL("/settings/integrations?error=invalid_state", baseUrl),
+      new URL(`/settings/integrations?error=${verified.error}`, baseUrl),
     );
   }
+  const { orgId, userId } = verified.state;
 
   // Verify the authenticated user is an admin of the org referenced in state
   // to prevent a crafted callback from binding attacker tokens to a victim org.
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return NextResponse.redirect(new URL("/login", baseUrl));
+  }
+  if (session.user.id !== userId) {
+    return NextResponse.redirect(
+      new URL("/settings/integrations?error=forbidden", baseUrl),
+    );
   }
   const member = await prisma.organizationMember.findFirst({
     where: { userId: session.user.id, organizationId: orgId, deletedAt: null },

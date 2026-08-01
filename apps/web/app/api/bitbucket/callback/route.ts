@@ -1,16 +1,24 @@
 import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { prisma } from "@octopus/db";
 import { auth } from "@/lib/auth";
 import { listWorkspaceRepos, createWebhook } from "@/lib/bitbucket";
 import { encryptString } from "@/lib/crypto";
+import {
+  integrationOAuthStateCookie,
+  verifyIntegrationOAuthState,
+} from "@/lib/integration-oauth-state";
 
 export async function GET(request: NextRequest) {
   const baseUrl = process.env.BETTER_AUTH_URL || request.url;
   const code = request.nextUrl.searchParams.get("code");
   const stateParam = request.nextUrl.searchParams.get("state");
   const error = request.nextUrl.searchParams.get("error");
+  const cookieStore = await cookies();
+  const stateCookie = integrationOAuthStateCookie("bitbucket");
+  const cookieNonce = cookieStore.get(stateCookie)?.value;
+  cookieStore.delete(stateCookie);
 
   if (error) {
     console.error("[bitbucket-callback] OAuth error:", error);
@@ -25,6 +33,24 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const verified = verifyIntegrationOAuthState({
+    state: stateParam,
+    cookieNonce,
+    provider: "bitbucket",
+  });
+  if (!verified.ok) {
+    return NextResponse.redirect(
+      new URL(`/settings/integrations?error=${verified.error}`, baseUrl),
+    );
+  }
+  const { orgId, userId } = verified.state;
+  const workspaceSlug = verified.state.context?.workspaceSlug;
+  if (!workspaceSlug) {
+    return NextResponse.redirect(
+      new URL("/settings/integrations?error=invalid_state", baseUrl),
+    );
+  }
+
   // Verify the user is authenticated
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
@@ -32,21 +58,9 @@ export async function GET(request: NextRequest) {
       new URL("/settings/integrations?error=unauthorized", baseUrl),
     );
   }
-
-  let orgId: string;
-  let stateNonce: string;
-  let workspaceSlug: string;
-  try {
-    const parsed = JSON.parse(
-      Buffer.from(stateParam, "base64url").toString("utf-8"),
-    );
-    orgId = parsed.orgId;
-    stateNonce = parsed.nonce;
-    workspaceSlug = parsed.workspaceSlug;
-    if (!orgId || !stateNonce || !workspaceSlug) throw new Error("Missing state fields");
-  } catch {
+  if (session.user.id !== userId) {
     return NextResponse.redirect(
-      new URL("/settings/integrations?error=invalid_state", baseUrl),
+      new URL("/settings/integrations?error=forbidden", baseUrl),
     );
   }
 

@@ -1,8 +1,12 @@
-import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { headers, cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
+import {
+  createIntegrationOAuthState,
+  integrationOAuthStateCookie,
+  integrationOAuthStateCookieOptions,
+} from "@/lib/integration-oauth-state";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -48,9 +52,12 @@ export async function GET(request: Request) {
     );
   }
 
-  // Include a CSRF nonce in the state to prevent state forgery
-  const nonce = crypto.randomBytes(16).toString("hex");
-  const state = Buffer.from(JSON.stringify({ orgId, nonce, workspaceSlug })).toString("base64url");
+  const { state, nonce } = createIntegrationOAuthState({
+    provider: "bitbucket",
+    orgId,
+    userId: session.user.id,
+    context: { workspaceSlug },
+  });
 
   const params = new URLSearchParams({
     client_id: clientId,
@@ -60,7 +67,13 @@ export async function GET(request: Request) {
     scope: "account repository pullrequest webhook",
   });
 
-  return NextResponse.redirect(
+  const response = NextResponse.redirect(
     `https://bitbucket.org/site/oauth2/authorize?${params.toString()}`,
   );
+  response.cookies.set(
+    integrationOAuthStateCookie("bitbucket"),
+    nonce,
+    integrationOAuthStateCookieOptions(),
+  );
+  return response;
 }

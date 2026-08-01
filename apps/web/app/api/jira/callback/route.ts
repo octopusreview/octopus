@@ -9,6 +9,10 @@ import {
 } from "@/lib/jira";
 import { encryptJson } from "@/lib/crypto";
 import { writeAuditLog } from "@/lib/audit";
+import {
+  integrationOAuthStateCookie,
+  verifyIntegrationOAuthState,
+} from "@/lib/integration-oauth-state";
 
 const PENDING_MAX_AGE_SECONDS = 5 * 60;
 
@@ -17,6 +21,10 @@ export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
   const stateParam = request.nextUrl.searchParams.get("state");
   const error = request.nextUrl.searchParams.get("error");
+  const cookieStore = await cookies();
+  const stateCookie = integrationOAuthStateCookie("jira");
+  const cookieNonce = cookieStore.get(stateCookie)?.value;
+  cookieStore.delete(stateCookie);
 
   if (error) {
     console.error("[jira-callback] OAuth error:", error);
@@ -31,17 +39,17 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  let orgId: string;
-  try {
-    const parsed = JSON.parse(
-      Buffer.from(stateParam, "base64url").toString("utf-8"),
-    );
-    orgId = parsed.orgId;
-  } catch {
+  const verified = verifyIntegrationOAuthState({
+    state: stateParam,
+    cookieNonce,
+    provider: "jira",
+  });
+  if (!verified.ok) {
     return NextResponse.redirect(
-      new URL("/settings/integrations?error=invalid_state", baseUrl),
+      new URL(`/settings/integrations?error=${verified.error}`, baseUrl),
     );
   }
+  const { orgId, userId } = verified.state;
 
   // Verify the authenticated user is an admin of the org referenced in state.
   // Without this, a crafted callback URL could bind an attacker's Jira tokens
@@ -49,6 +57,11 @@ export async function GET(request: NextRequest) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return NextResponse.redirect(new URL("/login", baseUrl));
+  }
+  if (session.user.id !== userId) {
+    return NextResponse.redirect(
+      new URL("/settings/integrations?error=forbidden", baseUrl),
+    );
   }
   const member = await prisma.organizationMember.findFirst({
     where: { userId: session.user.id, organizationId: orgId, deletedAt: null },
@@ -172,7 +185,6 @@ export async function GET(request: NextRequest) {
     sites,
   });
 
-  const cookieStore = await cookies();
   cookieStore.set(JIRA_OAUTH_PENDING_COOKIE, payload, {
     httpOnly: true,
     sameSite: "lax",

@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { headers, cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
+import {
+  createIntegrationOAuthState,
+  integrationOAuthStateCookie,
+  integrationOAuthStateCookieOptions,
+} from "@/lib/integration-oauth-state";
 
 export async function GET() {
   const session = await auth.api.getSession({
@@ -36,7 +41,11 @@ export async function GET() {
     );
   }
 
-  const state = Buffer.from(JSON.stringify({ orgId })).toString("base64url");
+  const { state, nonce } = createIntegrationOAuthState({
+    provider: "jira",
+    orgId,
+    userId: session.user.id,
+  });
 
   const params = new URLSearchParams({
     audience: "api.atlassian.com",
@@ -48,7 +57,13 @@ export async function GET() {
     prompt: "consent",
   });
 
-  return NextResponse.redirect(
+  const response = NextResponse.redirect(
     `https://auth.atlassian.com/authorize?${params.toString()}`,
   );
+  response.cookies.set(
+    integrationOAuthStateCookie("jira"),
+    nonce,
+    integrationOAuthStateCookieOptions(),
+  );
+  return response;
 }

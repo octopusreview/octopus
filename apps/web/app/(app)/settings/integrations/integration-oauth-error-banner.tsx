@@ -16,6 +16,11 @@ const OAUTH_ERROR_MESSAGES = {
     description:
       "Sign in with the account that started the integration connection, then try again.",
   },
+  insufficient_role: {
+    title: "Permission required",
+    description:
+      "Only organization owners and admins can connect integrations. Ask an admin to connect it, or try again once your role is updated.",
+  },
 } as const;
 
 type OAuthErrorCode = keyof typeof OAUTH_ERROR_MESSAGES;

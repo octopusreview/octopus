@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
   });
   if (!member || (member.role !== "owner" && member.role !== "admin")) {
     return NextResponse.redirect(
-      new URL("/settings/integrations?error=forbidden", baseUrl),
+      new URL("/settings/integrations?error=insufficient_role", baseUrl),
     );
   }
 

@@ -195,6 +195,11 @@ octp agent serve --verbose`}</CodeBlock>
           relevant repo. Results are merged with RAG context for more accurate
           answers.
         </Paragraph>
+        <Paragraph>
+          Use a distinct organization API token for each agent that needs an
+          independent security boundary. Agents configured with the same token
+          intentionally share task and repository authority.
+        </Paragraph>
 
         <div className="mb-3 space-y-1.5">
           <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-2.5">

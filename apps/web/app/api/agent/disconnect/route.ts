@@ -1,3 +1,5 @@
+import "server-only";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
@@ -9,10 +11,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const { agentId } = body;
+  const body = await request.json().catch(() => null);
+  const agentId =
+    body && typeof body === "object" && !Array.isArray(body)
+      ? (body as Record<string, unknown>).agentId
+      : undefined;
 
-  if (!agentId) {
+  if (typeof agentId !== "string" || agentId.length === 0) {
     return NextResponse.json({ error: "agentId is required" }, { status: 400 });
   }
 
@@ -20,6 +25,7 @@ export async function POST(request: Request) {
     where: {
       id: agentId,
       organizationId: auth.org.id,
+      apiTokenId: auth.token.id,
     },
   });
 
@@ -27,10 +33,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Agent not found" }, { status: 404 });
   }
 
-  await prisma.localAgent.update({
-    where: { id: agentId },
+  const updated = await prisma.localAgent.updateMany({
+    where: {
+      id: agentId,
+      organizationId: auth.org.id,
+      apiTokenId: auth.token.id,
+    },
     data: { status: "offline" },
   });
+
+  if (updated.count === 0) {
+    return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+  }
 
   // Notify org that agent went offline
   pubby

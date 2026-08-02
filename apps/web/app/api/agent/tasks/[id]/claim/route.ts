@@ -1,3 +1,5 @@
+import "server-only";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
@@ -12,19 +14,45 @@ export async function POST(
   }
 
   const { id } = await params;
-  const body = await request.json();
-  const { agentId } = body;
+  const body = await request.json().catch(() => null);
+  const agentId =
+    body && typeof body === "object" && !Array.isArray(body)
+      ? (body as Record<string, unknown>).agentId
+      : undefined;
 
-  if (!agentId) {
+  if (typeof agentId !== "string" || agentId.trim().length === 0) {
     return NextResponse.json({ error: "agentId is required" }, { status: 400 });
   }
 
-  // Atomic claim: only if status is still "pending"
+  // The agent id is caller-controlled. Bind it to both the authenticated API
+  // token and organization before using its repository scope.
+  const agent = await prisma.localAgent.findFirst({
+    where: {
+      id: agentId,
+      organizationId: auth.org.id,
+      apiTokenId: auth.token.id,
+    },
+    select: { repoFullNames: true },
+  });
+
+  if (!agent) {
+    return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+  }
+
+  const repoFullNames = Array.isArray(agent.repoFullNames)
+    ? agent.repoFullNames.filter(
+        (repo): repo is string => typeof repo === "string",
+      )
+    : [];
+
+  // Atomic claim: only while pending and only for a repository the
+  // authenticated agent declared that it watches.
   const result = await prisma.agentSearchTask.updateMany({
     where: {
       id,
       organizationId: auth.org.id,
       status: "pending",
+      repoFullName: { in: repoFullNames },
     },
     data: {
       status: "claimed",
@@ -41,8 +69,13 @@ export async function POST(
   }
 
   // Return full task details for the agent to execute
-  const task = await prisma.agentSearchTask.findUnique({
-    where: { id },
+  const task = await prisma.agentSearchTask.findFirst({
+    where: {
+      id,
+      organizationId: auth.org.id,
+      agentId,
+      status: "claimed",
+    },
   });
 
   return NextResponse.json({ task });

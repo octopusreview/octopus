@@ -1,3 +1,5 @@
+import "server-only";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
@@ -31,7 +33,11 @@ export async function GET(request: Request) {
   }
 
   const agent = await prisma.localAgent.findFirst({
-    where: { id: agentId, organizationId: auth.org.id },
+    where: {
+      id: agentId,
+      organizationId: auth.org.id,
+      apiTokenId: auth.token.id,
+    },
   });
   if (!agent) {
     return NextResponse.json({ error: "Agent not found" }, { status: 404 });
@@ -73,7 +79,11 @@ export async function GET(request: Request) {
   // is how many rows WE claimed; if it's zero, the other agent got every
   // pending task in our batch.
   const claimed = await prisma.agentLlmTask.updateMany({
-    where: { id: { in: ids }, status: "pending" },
+    where: {
+      id: { in: ids },
+      organizationId: auth.org.id,
+      status: "pending",
+    },
     data: { status: "claimed", agentId, claimedAt: now },
   });
   if (claimed.count === 0) {
@@ -85,7 +95,12 @@ export async function GET(request: Request) {
   // to this caller. (Without this filter, the /complete endpoint's
   // status-only check would let a non-owning agent overwrite results.)
   const tasks = await prisma.agentLlmTask.findMany({
-    where: { id: { in: ids }, agentId, status: "claimed" },
+    where: {
+      id: { in: ids },
+      organizationId: auth.org.id,
+      agentId,
+      status: "claimed",
+    },
     select: {
       id: true,
       modelId: true,

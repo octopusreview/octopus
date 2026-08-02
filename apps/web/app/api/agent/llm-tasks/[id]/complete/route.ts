@@ -3,7 +3,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
-import { readBoundedJson } from "@/lib/bounded-json";
+import { readBoundedJson, truncateStringSafe } from "@/lib/bounded-json";
 
 /**
  * POST /api/agent/llm-tasks/<id>/complete
@@ -175,7 +175,7 @@ export async function POST(
       where: ownershipWhere,
       data: {
         status: "failed",
-        errorMessage: body.error.slice(0, 1000),
+        errorMessage: truncateStringSafe(body.error, 1000),
         completedAt: new Date(),
       },
     });

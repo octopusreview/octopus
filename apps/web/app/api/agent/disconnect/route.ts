@@ -3,7 +3,10 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
+import { readBoundedJson } from "@/lib/bounded-json";
 import { pubby } from "@/lib/pubby";
+
+const MAX_DISCONNECT_BODY_BYTES = 16 * 1024;
 
 export async function POST(request: Request) {
   const auth = await authenticateApiToken(request);
@@ -11,7 +14,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => null);
+  const parsedBody = await readBoundedJson(request, MAX_DISCONNECT_BODY_BYTES);
+  if (!parsedBody.ok && parsedBody.reason === "too_large") {
+    return NextResponse.json(
+      { error: "Request body too large" },
+      { status: 413 },
+    );
+  }
+  const body = parsedBody.ok ? parsedBody.value : null;
   const agentId =
     body && typeof body === "object" && !Array.isArray(body)
       ? (body as Record<string, unknown>).agentId
@@ -19,18 +29,6 @@ export async function POST(request: Request) {
 
   if (typeof agentId !== "string" || agentId.length === 0) {
     return NextResponse.json({ error: "agentId is required" }, { status: 400 });
-  }
-
-  const agent = await prisma.localAgent.findFirst({
-    where: {
-      id: agentId,
-      organizationId: auth.org.id,
-      apiTokenId: auth.token.id,
-    },
-  });
-
-  if (!agent) {
-    return NextResponse.json({ error: "Agent not found" }, { status: 404 });
   }
 
   const updated = await prisma.localAgent.updateMany({
@@ -46,11 +44,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Agent not found" }, { status: 404 });
   }
 
+  const agent = await prisma.localAgent.findFirst({
+    where: {
+      id: agentId,
+      organizationId: auth.org.id,
+      apiTokenId: auth.token.id,
+    },
+    select: { name: true },
+  });
+
   // Notify org that agent went offline
   pubby
     .trigger(`presence-org-${auth.org.id}`, "agent-offline", {
-      agentId: agent.id,
-      name: agent.name,
+      agentId,
+      name: agent?.name ?? null,
     })
     .catch(() => {});
 

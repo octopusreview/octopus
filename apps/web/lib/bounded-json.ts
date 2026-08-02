@@ -3,6 +3,38 @@ import "server-only";
 export type BoundedJsonResult =
   { ok: true; value: unknown } | { ok: false; reason: "invalid" | "too_large" };
 
+export const MAX_REPO_FULL_NAMES = 500;
+export const MAX_REPO_FULL_NAME_LENGTH = 256;
+
+export function isBoundedStringArray(
+  value: unknown,
+  maxItems: number,
+  maxItemLength: number,
+): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= maxItems &&
+    value.every(
+      (item) => typeof item === "string" && item.length <= maxItemLength,
+    )
+  );
+}
+
+/**
+ * Cap a string at maxLength UTF-16 code units without leaving a split
+ * surrogate pair at the cut — a trailing lone high surrogate serializes as an
+ * unpaired \uXXXX escape, which Prisma's JSON protocol and Postgres jsonb
+ * reject.
+ */
+export function truncateStringSafe(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  const sliced = value.slice(0, maxLength);
+  const lastCode = sliced.charCodeAt(sliced.length - 1);
+  return lastCode >= 0xd800 && lastCode <= 0xdbff
+    ? sliced.slice(0, -1)
+    : sliced;
+}
+
 /**
  * Read and parse a JSON request without buffering more than maxBytes.
  * Content-Length is only an early rejection hint; the stream limit remains

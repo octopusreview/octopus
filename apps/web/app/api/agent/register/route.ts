@@ -1,9 +1,21 @@
 import "server-only";
 
 import { NextResponse } from "next/server";
-import { prisma } from "@octopus/db";
+import { prisma, type Prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
+import {
+  isBoundedStringArray,
+  MAX_REPO_FULL_NAME_LENGTH,
+  MAX_REPO_FULL_NAMES,
+  readBoundedJson,
+} from "@/lib/bounded-json";
 import { pubby } from "@/lib/pubby";
+
+const MAX_REGISTER_BODY_BYTES = 256 * 1024;
+const MAX_NAME_LENGTH = 200;
+const MAX_CAPABILITIES = 50;
+const MAX_CAPABILITY_LENGTH = 100;
+const MAX_MACHINE_INFO_BYTES = 8 * 1024;
 
 export async function POST(request: Request) {
   const auth = await authenticateApiToken(request);
@@ -11,7 +23,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => null);
+  const parsedBody = await readBoundedJson(request, MAX_REGISTER_BODY_BYTES);
+  if (!parsedBody.ok) {
+    const tooLarge = parsedBody.reason === "too_large";
+    return NextResponse.json(
+      { error: tooLarge ? "Request body too large" : "Invalid request body" },
+      { status: tooLarge ? 413 : 400 },
+    );
+  }
+
+  const body = parsedBody.value;
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return NextResponse.json(
       { error: "Invalid request body" },
@@ -19,19 +40,50 @@ export async function POST(request: Request) {
     );
   }
 
-  const { name, repoFullNames, capabilities, machineInfo } = body;
+  const { name, repoFullNames, capabilities, machineInfo } = body as Record<
+    string,
+    unknown
+  >;
 
   if (
     typeof name !== "string" ||
     name.trim().length === 0 ||
-    !Array.isArray(repoFullNames) ||
-    !repoFullNames.every((repo) => typeof repo === "string") ||
+    name.length > MAX_NAME_LENGTH ||
+    !isBoundedStringArray(
+      repoFullNames,
+      MAX_REPO_FULL_NAMES,
+      MAX_REPO_FULL_NAME_LENGTH,
+    ) ||
     (capabilities !== undefined &&
-      (!Array.isArray(capabilities) ||
-        !capabilities.every((capability) => typeof capability === "string")))
+      !isBoundedStringArray(
+        capabilities,
+        MAX_CAPABILITIES,
+        MAX_CAPABILITY_LENGTH,
+      ))
   ) {
     return NextResponse.json(
       { error: "name, repoFullNames, and capabilities must be valid" },
+      { status: 400 },
+    );
+  }
+
+  let machineInfoValid = machineInfo == null;
+  if (!machineInfoValid) {
+    try {
+      machineInfoValid =
+        typeof machineInfo === "object" &&
+        !Array.isArray(machineInfo) &&
+        new TextEncoder().encode(JSON.stringify(machineInfo)).byteLength <=
+          MAX_MACHINE_INFO_BYTES;
+    } catch {
+      machineInfoValid = false;
+    }
+  }
+  if (!machineInfoValid) {
+    return NextResponse.json(
+      {
+        error: `machineInfo must be a JSON object of at most ${MAX_MACHINE_INFO_BYTES} bytes`,
+      },
       { status: 400 },
     );
   }
@@ -42,7 +94,7 @@ export async function POST(request: Request) {
     lastSeenAt: now,
     repoFullNames,
     capabilities: capabilities ?? [],
-    machineInfo: machineInfo ?? null,
+    machineInfo: (machineInfo ?? null) as Prisma.InputJsonValue,
     apiTokenId: auth.token.id,
   };
   const registrationWhere = {

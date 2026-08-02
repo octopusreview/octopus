@@ -3,6 +3,9 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
+import { readBoundedJson } from "@/lib/bounded-json";
+
+const MAX_CLAIM_BODY_BYTES = 16 * 1024;
 
 export async function POST(
   request: Request,
@@ -14,7 +17,14 @@ export async function POST(
   }
 
   const { id } = await params;
-  const body = await request.json().catch(() => null);
+  const parsedBody = await readBoundedJson(request, MAX_CLAIM_BODY_BYTES);
+  if (!parsedBody.ok && parsedBody.reason === "too_large") {
+    return NextResponse.json(
+      { error: "Request body too large" },
+      { status: 413 },
+    );
+  }
+  const body = parsedBody.ok ? parsedBody.value : null;
   const agentId =
     body && typeof body === "object" && !Array.isArray(body)
       ? (body as Record<string, unknown>).agentId

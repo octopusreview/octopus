@@ -3,6 +3,14 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
+import {
+  isBoundedStringArray,
+  MAX_REPO_FULL_NAME_LENGTH,
+  MAX_REPO_FULL_NAMES,
+  readBoundedJson,
+} from "@/lib/bounded-json";
+
+const MAX_HEARTBEAT_BODY_BYTES = 256 * 1024;
 
 export async function POST(request: Request) {
   const auth = await authenticateApiToken(request);
@@ -10,7 +18,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => null);
+  const parsedBody = await readBoundedJson(request, MAX_HEARTBEAT_BODY_BYTES);
+  if (!parsedBody.ok) {
+    const tooLarge = parsedBody.reason === "too_large";
+    return NextResponse.json(
+      { error: tooLarge ? "Request body too large" : "Invalid request body" },
+      { status: tooLarge ? 413 : 400 },
+    );
+  }
+
+  const body = parsedBody.value;
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return NextResponse.json(
       { error: "Invalid request body" },
@@ -18,18 +35,23 @@ export async function POST(request: Request) {
     );
   }
 
-  const { agentId, repoFullNames } = body;
+  const { agentId, repoFullNames } = body as Record<string, unknown>;
 
   if (typeof agentId !== "string" || agentId.length === 0) {
     return NextResponse.json({ error: "agentId is required" }, { status: 400 });
   }
   if (
     repoFullNames !== undefined &&
-    (!Array.isArray(repoFullNames) ||
-      !repoFullNames.every((repo) => typeof repo === "string"))
+    !isBoundedStringArray(
+      repoFullNames,
+      MAX_REPO_FULL_NAMES,
+      MAX_REPO_FULL_NAME_LENGTH,
+    )
   ) {
     return NextResponse.json(
-      { error: "repoFullNames must be an array of strings" },
+      {
+        error: `repoFullNames must be an array of at most ${MAX_REPO_FULL_NAMES} strings`,
+      },
       { status: 400 },
     );
   }
@@ -43,7 +65,7 @@ export async function POST(request: Request) {
     data: {
       lastSeenAt: new Date(),
       status: "online",
-      ...(Array.isArray(repoFullNames) ? { repoFullNames } : {}),
+      ...(repoFullNames !== undefined ? { repoFullNames } : {}),
     },
   });
 

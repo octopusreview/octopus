@@ -588,6 +588,73 @@ describe("agent registration ownership", () => {
       }),
     );
   });
+
+  it("rejects a register body larger than 256 KiB before database access", async () => {
+    const response = await registerAgent(
+      request("/api/agent/register", {
+        name: fakeAgent!.name,
+        repoFullNames: ["octopus/octopus"],
+        machineInfo: { blob: "x".repeat(257 * 1024) },
+      }),
+    );
+
+    expect(response.status).toBe(413);
+    expect(localAgentCreate).not.toHaveBeenCalled();
+    expect(localAgentUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects registration inputs exceeding the field caps", async () => {
+    const oversizedBodies = [
+      { name: "n".repeat(201), repoFullNames: ["octopus/octopus"] },
+      {
+        name: fakeAgent!.name,
+        repoFullNames: Array.from(
+          { length: 501 },
+          (_, i) => `octopus/repo-${i}`,
+        ),
+      },
+      {
+        name: fakeAgent!.name,
+        repoFullNames: [`octopus/${"r".repeat(300)}`],
+      },
+      {
+        name: fakeAgent!.name,
+        repoFullNames: ["octopus/octopus"],
+        capabilities: Array.from({ length: 51 }, () => "cap"),
+      },
+    ];
+
+    for (const body of oversizedBodies) {
+      const response = await registerAgent(
+        request("/api/agent/register", body),
+      );
+      expect(response.status).toBe(400);
+    }
+    expect(localAgentCreate).not.toHaveBeenCalled();
+    expect(localAgentUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-object or oversized machineInfo", async () => {
+    const invalidMachineInfos = [
+      "darwin",
+      [1, 2],
+      { blob: "x".repeat(9 * 1024) },
+    ];
+
+    for (const machineInfo of invalidMachineInfos) {
+      const response = await registerAgent(
+        request("/api/agent/register", {
+          name: fakeAgent!.name,
+          repoFullNames: ["octopus/octopus"],
+          machineInfo,
+        }),
+      );
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toContain("machineInfo");
+    }
+    expect(localAgentCreate).not.toHaveBeenCalled();
+    expect(localAgentUpdateMany).not.toHaveBeenCalled();
+  });
 });
 
 describe("agent lifecycle ownership", () => {
@@ -639,6 +706,70 @@ describe("agent lifecycle ownership", () => {
     expect(response.status).toBe(404);
     expect(fakeAgent.status).toBe("online");
     expect(localAgentUpdate).not.toHaveBeenCalled();
+    expect(localAgentFindFirst).not.toHaveBeenCalled();
+    expect(localAgentUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: fakeAgent.id,
+          organizationId: AUTH.org.id,
+          apiTokenId: AUTH.token.id,
+        }),
+      }),
+    );
+    expect(pubbyTrigger).not.toHaveBeenCalled();
+  });
+
+  it("disconnects an owned agent atomically and publishes it offline", async () => {
+    const response = await disconnectAgent(
+      request("/api/agent/disconnect", { agentId: fakeAgent!.id }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fakeAgent!.status).toBe("offline");
+    expect(localAgentUpdateMany).toHaveBeenCalledTimes(1);
+    expect(pubbyTrigger).toHaveBeenCalledWith(
+      `presence-org-${AUTH.org.id}`,
+      "agent-offline",
+      { agentId: fakeAgent!.id, name: fakeAgent!.name },
+    );
+  });
+
+  it("rejects an oversized heartbeat repository scope", async () => {
+    const response = await heartbeatAgent(
+      request("/api/agent/heartbeat", {
+        agentId: fakeAgent!.id,
+        repoFullNames: Array.from(
+          { length: 501 },
+          (_, i) => `octopus/repo-${i}`,
+        ),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(localAgentUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects a heartbeat body larger than 256 KiB", async () => {
+    const response = await heartbeatAgent(
+      request("/api/agent/heartbeat", {
+        agentId: fakeAgent!.id,
+        padding: "x".repeat(257 * 1024),
+      }),
+    );
+
+    expect(response.status).toBe(413);
+    expect(localAgentUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects a disconnect body larger than 16 KiB", async () => {
+    const response = await disconnectAgent(
+      request("/api/agent/disconnect", {
+        agentId: fakeAgent!.id,
+        padding: "x".repeat(17 * 1024),
+      }),
+    );
+
+    expect(response.status).toBe(413);
     expect(localAgentUpdateMany).not.toHaveBeenCalled();
     expect(pubbyTrigger).not.toHaveBeenCalled();
   });
@@ -890,6 +1021,77 @@ describe("agent search task ownership", () => {
     expect(pubbyTrigger).not.toHaveBeenCalled();
   });
 
+  it("rejects a claim body larger than 16 KiB", async () => {
+    const response = await claimTask(
+      request("/api/agent/tasks/task_1/claim", {
+        agentId: "x".repeat(17 * 1024),
+      }),
+      params(),
+    );
+
+    expect(response.status).toBe(413);
+    expect(localAgentFindFirst).not.toHaveBeenCalled();
+    expect(taskUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("strips a split surrogate pair when capping an answer summary", async () => {
+    fakeTask = claimedTask({ searchType: "answer" });
+    const summary = `x${"😀".repeat(60_000)}`;
+
+    const response = await submitResult(
+      request("/api/agent/tasks/task_1/result", {
+        results: [],
+        resultSummary: summary,
+      }),
+      params(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fakeTask.resultSummary).toBe(summary.slice(0, 100 * 1024 - 1));
+    expect(fakeTask.resultSummary?.endsWith("😀")).toBeTrue();
+  });
+
+  it("strips a split surrogate pair when capping an error message", async () => {
+    fakeTask = claimedTask();
+    const errorMessage = `x${"😀".repeat(600)}`;
+
+    const response = await submitResult(
+      request("/api/agent/tasks/task_1/result", {
+        results: [],
+        errorMessage,
+      }),
+      params(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, status: "failed" });
+    expect(fakeTask.errorMessage).toBe(errorMessage.slice(0, 999));
+    expect(fakeTask.errorMessage?.endsWith("😀")).toBeTrue();
+  });
+
+  it("keeps an emoji-heavy oversized result preview well-formed", async () => {
+    fakeTask = claimedTask();
+
+    const response = await submitResult(
+      request("/api/agent/tasks/task_1/result", {
+        results: { m: `xxx${"😀".repeat(20_000)}` },
+        resultSummary: "emoji",
+      }),
+      params(),
+    );
+
+    expect(response.status).toBe(200);
+    const transition = taskUpdateMany.mock.calls.at(-1)?.[0] as {
+      data: { result: { truncated: boolean; preview: string } };
+    };
+    expect(transition.data.result.truncated).toBeTrue();
+    expect(transition.data.result.preview).not.toMatch(/[\uD800-\uDBFF]$/);
+    expect(
+      new TextEncoder().encode(JSON.stringify(transition.data.result))
+        .byteLength,
+    ).toBeLessThanOrEqual(50 * 1024);
+  });
+
   it("accepts the existing result payload without agentId for its owning token", async () => {
     fakeTask = claimedTask();
     const results = [
@@ -1071,6 +1273,24 @@ describe("agent LLM task ownership", () => {
       }),
     );
     expect(fakeLlmTask.status).toBe("completed");
+  });
+
+  it("strips a split surrogate pair from a capped LLM error message", async () => {
+    fakeLlmTask = claimedLlmTask();
+    const error = `x${"😀".repeat(600)}`;
+
+    const response = await completeLlmTask(
+      request("/api/agent/llm-tasks/llm_task_1/complete", {
+        agentId: fakeLlmTask.agentId,
+        error,
+      }),
+      params(fakeLlmTask.id),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fakeLlmTask.status).toBe("failed");
+    expect(fakeLlmTask.errorMessage).toBe(error.slice(0, 999));
+    expect(fakeLlmTask.errorMessage?.endsWith("😀")).toBeTrue();
   });
 
   it("truncates multibyte result text on a complete UTF-8 code-point boundary", async () => {

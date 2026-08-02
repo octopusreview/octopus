@@ -3,7 +3,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { prisma, type Prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
-import { readBoundedJson } from "@/lib/bounded-json";
+import { readBoundedJson, truncateStringSafe } from "@/lib/bounded-json";
 import { pubby } from "@/lib/pubby";
 
 const MAX_RESULT_BODY_SIZE = 1024 * 1024; // 1MB
@@ -48,7 +48,7 @@ function truncateJsonResult(value: unknown): Prisma.InputJsonValue {
     }
   }
 
-  return envelope(serialized.slice(0, low));
+  return envelope(truncateStringSafe(serialized, low));
 }
 
 export async function POST(
@@ -158,13 +158,13 @@ export async function POST(
   }
 
   const truncatedSummary =
-    typeof resultSummary === "string" && resultSummary.length > summaryLimit
-      ? resultSummary.slice(0, summaryLimit)
+    typeof resultSummary === "string"
+      ? truncateStringSafe(resultSummary, summaryLimit)
       : resultSummary;
 
   const truncatedError =
-    typeof errorMessage === "string" && errorMessage.length > MAX_ERROR_SIZE
-      ? errorMessage.slice(0, MAX_ERROR_SIZE)
+    typeof errorMessage === "string"
+      ? truncateStringSafe(errorMessage, MAX_ERROR_SIZE)
       : errorMessage;
   const status = errorMessage ? "failed" : "completed";
 

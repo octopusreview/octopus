@@ -56,7 +56,8 @@ Octopus analyzes pull and merge requests via GitHub, GitLab, and Bitbucket webho
 ```
 octopus/
 ├── apps/
-│   └── web/              # Next.js web application
+│   ├── web/              # Next.js web application
+│   └── cli/              # octp CLI (@octp/cli)
 ├── packages/
 │   └── db/               # Prisma schema & shared DB client
 └── tools/

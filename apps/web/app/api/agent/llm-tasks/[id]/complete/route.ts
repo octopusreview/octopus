@@ -132,8 +132,6 @@ export async function POST(
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
 
-  // Bind both the stored claimant id and its owning token. A caller cannot
-  // borrow an agent id registered by another organization credential.
   if (!task.agentId) {
     return NextResponse.json(
       { error: "Task not in claimed state" },
@@ -141,6 +139,8 @@ export async function POST(
     );
   }
 
+  // Bind both the stored claimant id and its owning token. A caller cannot
+  // borrow an agent id registered by another organization credential.
   if (
     task.agentId !== body.agentId ||
     !task.agent ||

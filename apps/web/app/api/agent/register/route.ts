@@ -11,6 +11,7 @@ import {
   MAX_REPO_FULL_NAMES,
   readBoundedJson,
 } from "@/lib/bounded-json";
+import { PRISMA_DB_NULL } from "@/lib/prisma-json-null";
 import { pubby } from "@/lib/pubby";
 
 const MAX_REGISTER_BODY_BYTES = 256 * 1024;
@@ -91,6 +92,10 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+  const storedMachineInfo =
+    machineInfo == null
+      ? PRISMA_DB_NULL
+      : (machineInfo as Prisma.InputJsonObject);
 
   const now = new Date();
   const updateData = {
@@ -98,7 +103,7 @@ export async function POST(request: Request) {
     lastSeenAt: now,
     repoFullNames,
     capabilities: capabilities ?? [],
-    machineInfo: (machineInfo ?? null) as Prisma.InputJsonValue,
+    machineInfo: storedMachineInfo,
     apiTokenId: auth.token.id,
   };
   // apiTokenId is NOT NULL and its foreign key uses ON DELETE CASCADE, so a

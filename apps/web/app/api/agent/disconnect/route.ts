@@ -15,13 +15,14 @@ export async function POST(request: Request) {
   }
 
   const parsedBody = await readBoundedJson(request, MAX_DISCONNECT_BODY_BYTES);
-  if (!parsedBody.ok && parsedBody.reason === "too_large") {
+  if (!parsedBody.ok) {
+    const tooLarge = parsedBody.reason === "too_large";
     return NextResponse.json(
-      { error: "Request body too large" },
-      { status: 413 },
+      { error: tooLarge ? "Request body too large" : "Invalid request body" },
+      { status: tooLarge ? 413 : 400 },
     );
   }
-  const body = parsedBody.ok ? parsedBody.value : null;
+  const body = parsedBody.value;
   const agentId =
     body && typeof body === "object" && !Array.isArray(body)
       ? (body as Record<string, unknown>).agentId

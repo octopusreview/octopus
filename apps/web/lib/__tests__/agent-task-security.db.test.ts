@@ -147,6 +147,17 @@ async function resultIsDatabaseNull(taskId: string): Promise<boolean> {
   return row?.isDatabaseNull ?? false;
 }
 
+async function machineInfoIsDatabaseNull(
+  localAgentId: string,
+): Promise<boolean> {
+  const [row] = await prisma.$queryRaw<Array<{ isDatabaseNull: boolean }>>`
+    SELECT "machineInfo" IS NULL AS "isDatabaseNull"
+    FROM "local_agents"
+    WHERE "id" = ${localAgentId}
+  `;
+  return row?.isDatabaseNull ?? false;
+}
+
 describeDb("agent ownership routes with PostgreSQL", () => {
   beforeAll(async () => {
     await prisma.user.create({
@@ -260,6 +271,7 @@ describeDb("agent ownership routes with PostgreSQL", () => {
     });
     expect(replacementAgent.apiTokenId).toBe(replacementApiToken.id);
     expect(replacementAgent.name).toBe(name);
+    expect(await machineInfoIsDatabaseNull(replacementAgent.id)).toBe(true);
   });
 
   it("completes an owned task through real auth and nested relation filters", async () => {

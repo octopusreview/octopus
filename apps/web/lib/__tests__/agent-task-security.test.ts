@@ -197,6 +197,17 @@ function request(path: string, body: unknown): Request {
   });
 }
 
+function malformedRequest(path: string): Request {
+  return new Request(`https://app.test${path}`, {
+    method: "POST",
+    headers: {
+      authorization: "Bearer oct_test",
+      "content-type": "application/json",
+    },
+    body: "{",
+  });
+}
+
 function params(id = "task_1") {
   return { params: Promise.resolve({ id }) };
 }
@@ -398,6 +409,32 @@ describe("agent registration ownership", () => {
     );
   });
 
+  it("stores omitted or explicit-null machineInfo as database NULL", async () => {
+    const refreshedAgent = ownedAgent({ machineInfo: null });
+    localAgentUpdateManyResponses = [{ count: 1 }, { count: 1 }];
+    localAgentFindUniqueResponses = [refreshedAgent, refreshedAgent];
+
+    for (const machineInfo of [undefined, null]) {
+      const response = await registerAgent(
+        request("/api/agent/register", {
+          name: agentFixture!.name,
+          repoFullNames: agentFixture!.repoFullNames,
+          ...(machineInfo === null ? { machineInfo } : {}),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+    }
+
+    for (const call of localAgentUpdateMany.mock.calls) {
+      expect(call[0]).toEqual(
+        expect.objectContaining({
+          data: expect.objectContaining({ machineInfo: PRISMA_DB_NULL }),
+        }),
+      );
+    }
+  });
+
   it("lets a new token reclaim an agent name after the old token is soft-deleted", async () => {
     agentFixture = ownedAgent({
       apiTokenId: "token_deleted",
@@ -574,6 +611,16 @@ describe("agent registration ownership", () => {
 });
 
 describe("agent lifecycle ownership", () => {
+  it("reports malformed disconnect JSON before database access", async () => {
+    const response = await disconnectAgent(
+      malformedRequest("/api/agent/disconnect"),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Invalid request body" });
+    expect(localAgentUpdateMany).not.toHaveBeenCalled();
+  });
+
   it("rejects PostgreSQL-invalid lifecycle agent IDs before database access", async () => {
     for (const agentId of ["agent\u0000id", "agent\uD800id"]) {
       const heartbeatResponse = await heartbeatAgent(
@@ -733,6 +780,18 @@ describe("agent lifecycle ownership", () => {
 });
 
 describe("agent search task ownership", () => {
+  it("reports malformed claim JSON before database access", async () => {
+    const response = await claimTask(
+      malformedRequest("/api/agent/tasks/task_1/claim"),
+      params(),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Invalid request body" });
+    expect(localAgentFindFirst).not.toHaveBeenCalled();
+    expect(taskUpdateMany).not.toHaveBeenCalled();
+  });
+
   it("rejects PostgreSQL-invalid search agent IDs before database access", async () => {
     const claimResponse = await claimTask(
       request("/api/agent/tasks/task_1/claim", {

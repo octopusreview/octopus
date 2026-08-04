@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Every GitHub App installation entry point — the dashboard "Grant Access" button, the indexing-log recovery link, and the hosted CLI's repo wizard — now starts from the server-signed `/api/github/install` route instead of linking straight to GitHub, so all installs carry the browser- and user-bound signed state. Starting an install while signed out resumes the install after login, and starting one before a GitHub App is configured redirects to the integrations settings page with an explanation instead of a raw API error. A repository-wide test now enforces that raw `github.com/apps/…` install URLs appear only in the two server-owned redirect routes.
+
 ## [1.0.94] - 2026-08-04
 
 ### Security

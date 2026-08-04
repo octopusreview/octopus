@@ -1508,6 +1508,29 @@ describe("agent search task ownership", () => {
 });
 
 describe("agent LLM task ownership", () => {
+  it("returns 409 for an LLM completion posted against an unclaimed task", async () => {
+    llmTaskFixture = claimedLlmTask({
+      status: "pending",
+      agentId: null,
+      agent: null,
+    });
+    llmTaskFindFirstResponses = [llmTaskClaimProjection(llmTaskFixture)];
+
+    const response = await completeLlmTask(
+      request("/api/agent/llm-tasks/llm_task_1/complete", {
+        agentId: "agent_owner",
+        text: "done",
+      }),
+      params("llm_task_1"),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "Task not in claimed state",
+    });
+    expect(llmTaskUpdateMany).not.toHaveBeenCalled();
+  });
+
   it("rejects PostgreSQL-invalid LLM agent IDs before database access", async () => {
     const completeResponse = await completeLlmTask(
       request("/api/agent/llm-tasks/llm_task_1/complete", {

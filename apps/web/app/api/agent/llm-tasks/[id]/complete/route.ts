@@ -134,8 +134,14 @@ export async function POST(
 
   // Bind both the stored claimant id and its owning token. A caller cannot
   // borrow an agent id registered by another organization credential.
+  if (!task.agentId) {
+    return NextResponse.json(
+      { error: "Task not in claimed state" },
+      { status: 409 },
+    );
+  }
+
   if (
-    !task.agentId ||
     task.agentId !== body.agentId ||
     !task.agent ||
     task.agent.organizationId !== auth.org.id ||

@@ -5,6 +5,8 @@ import { prisma, type Prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
 import {
   isBoundedStringArray,
+  isPostgresSafeJson,
+  isPostgresSafeText,
   MAX_REPO_FULL_NAME_CODE_UNITS,
   MAX_REPO_FULL_NAMES,
   readBoundedJson,
@@ -49,6 +51,7 @@ export async function POST(request: Request) {
     typeof name !== "string" ||
     name.trim().length === 0 ||
     name.length > MAX_NAME_CODE_UNITS ||
+    !isPostgresSafeText(name) ||
     !isBoundedStringArray(
       repoFullNames,
       MAX_REPO_FULL_NAMES,
@@ -73,6 +76,7 @@ export async function POST(request: Request) {
       machineInfoValid =
         typeof machineInfo === "object" &&
         !Array.isArray(machineInfo) &&
+        isPostgresSafeJson(machineInfo) &&
         new TextEncoder().encode(JSON.stringify(machineInfo)).byteLength <=
           MAX_MACHINE_INFO_BYTES;
     } catch {

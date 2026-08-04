@@ -88,5 +88,12 @@ export async function POST(
     },
   });
 
+  if (!task) {
+    return NextResponse.json(
+      { error: "Task changed state before it could be returned" },
+      { status: 409 },
+    );
+  }
+
   return NextResponse.json({ task });
 }

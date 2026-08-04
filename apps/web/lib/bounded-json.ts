@@ -17,7 +17,10 @@ export function isBoundedStringArray(
     Array.isArray(value) &&
     value.length <= maxItems &&
     value.every(
-      (item) => typeof item === "string" && item.length <= maxItemCodeUnits,
+      (item) =>
+        typeof item === "string" &&
+        item.length <= maxItemCodeUnits &&
+        isPostgresSafeText(item),
     )
   );
 }
@@ -44,6 +47,31 @@ export function truncateStringSafe(value: string, maxCodeUnits: number): string 
  */
 export function sanitizePostgresText(value: string): string {
   return stripLoneSurrogates(value).replaceAll("\u0000", "\uFFFD");
+}
+
+export function isPostgresSafeText(value: string): boolean {
+  return sanitizePostgresText(value) === value;
+}
+
+/** Check parsed JSON iteratively so hostile nesting cannot overflow the stack. */
+export function isPostgresSafeJson(value: unknown): boolean {
+  const pending: unknown[] = [value];
+
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (typeof current === "string") {
+      if (!isPostgresSafeText(current)) return false;
+    } else if (Array.isArray(current)) {
+      for (const item of current) pending.push(item);
+    } else if (current && typeof current === "object") {
+      for (const [key, nested] of Object.entries(current)) {
+        if (!isPostgresSafeText(key)) return false;
+        pending.push(nested);
+      }
+    }
+  }
+
+  return true;
 }
 
 /** Sanitize every string and object key in parsed JSON before jsonb storage. */

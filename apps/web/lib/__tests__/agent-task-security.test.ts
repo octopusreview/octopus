@@ -539,6 +539,38 @@ describe("agent registration ownership", () => {
     expect(localAgentCreate).not.toHaveBeenCalled();
     expect(localAgentUpdateMany).not.toHaveBeenCalled();
   });
+
+  it("rejects PostgreSQL-invalid registration strings before database access", async () => {
+    const invalidBodies = [
+      {
+        name: "owner\u0000workstation",
+        repoFullNames: ["octopus/octopus"],
+      },
+      {
+        name: agentFixture!.name,
+        repoFullNames: ["octopus/bad\u0000repo"],
+      },
+      {
+        name: agentFixture!.name,
+        repoFullNames: ["octopus/octopus"],
+        capabilities: ["bad\uD800capability"],
+      },
+      {
+        name: agentFixture!.name,
+        repoFullNames: ["octopus/octopus"],
+        machineInfo: { "bad\u0000key": "value" },
+      },
+    ];
+
+    for (const body of invalidBodies) {
+      const response = await registerAgent(
+        request("/api/agent/register", body),
+      );
+      expect(response.status).toBe(400);
+    }
+    expect(localAgentCreate).not.toHaveBeenCalled();
+    expect(localAgentUpdateMany).not.toHaveBeenCalled();
+  });
 });
 
 describe("agent lifecycle ownership", () => {
@@ -573,6 +605,18 @@ describe("agent lifecycle ownership", () => {
 
     expect(response.status).toBe(400);
     expect(localAgentUpdate).not.toHaveBeenCalled();
+    expect(localAgentUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects PostgreSQL-invalid heartbeat repository strings", async () => {
+    const response = await heartbeatAgent(
+      request("/api/agent/heartbeat", {
+        agentId: agentFixture!.id,
+        repoFullNames: ["octopus/bad\u0000repo"],
+      }),
+    );
+
+    expect(response.status).toBe(400);
     expect(localAgentUpdateMany).not.toHaveBeenCalled();
   });
 
@@ -736,6 +780,26 @@ describe("agent search task ownership", () => {
         },
       }),
     );
+  });
+
+  it("returns 409 when a claimed task changes state before the re-fetch", async () => {
+    localAgentFindFirstResponses = [
+      { repoFullNames: agentFixture!.repoFullNames },
+    ];
+    taskUpdateManyResponses = [{ count: 1 }];
+    taskFindFirstResponses = [null];
+
+    const response = await claimTask(
+      request("/api/agent/tasks/task_1/claim", {
+        agentId: agentFixture!.id,
+      }),
+      params(),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "Task changed state before it could be returned",
+    });
   });
 
   it("does not expose the queue through an agent owned by another token", async () => {
@@ -936,6 +1000,31 @@ describe("agent search task ownership", () => {
       "bad�key": ["high�end", "nul�end", { low: "�" }],
     });
     expect(transition.data.resultSummary).toBe("summary��");
+  });
+
+  it("stores an error-only result with the explicit database-null sentinel", async () => {
+    taskFixture = claimedTask();
+    taskFindFirstResponses = [searchTaskClaimProjection(taskFixture)];
+    taskUpdateManyResponses = [{ count: 1 }];
+
+    const response = await submitResult(
+      request("/api/agent/tasks/task_1/result", {
+        errorMessage: "agent failed",
+      }),
+      params(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, status: "failed" });
+    expect(taskUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "failed",
+          result: PRISMA_DB_NULL,
+          errorMessage: "agent failed",
+        }),
+      }),
+    );
   });
 
   it("terminalizes an owned result larger than 1 MiB and publishes once", async () => {

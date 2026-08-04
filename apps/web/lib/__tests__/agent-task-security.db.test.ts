@@ -138,6 +138,15 @@ async function createClaimedTask(label: string) {
   });
 }
 
+async function resultIsDatabaseNull(taskId: string): Promise<boolean> {
+  const [row] = await prisma.$queryRaw<Array<{ isDatabaseNull: boolean }>>`
+    SELECT "result" IS NULL AS "isDatabaseNull"
+    FROM "agent_search_tasks"
+    WHERE "id" = ${taskId}
+  `;
+  return row?.isDatabaseNull ?? false;
+}
+
 describeDb("agent ownership routes with PostgreSQL", () => {
   beforeAll(async () => {
     await prisma.user.create({
@@ -314,6 +323,23 @@ describeDb("agent ownership routes with PostgreSQL", () => {
     expect(stored.completedAt).toBeNull();
   });
 
+  it("stores an error-only submission with a database-NULL result", async () => {
+    const task = await createClaimedTask("error-only");
+
+    const response = await submitResult(task.id, ownerToken, {
+      agentId,
+      errorMessage: "agent failed",
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, status: "failed" });
+    const stored = await prisma.agentSearchTask.findUniqueOrThrow({
+      where: { id: task.id },
+    });
+    expect(stored.errorMessage).toBe("agent failed");
+    expect(await resultIsDatabaseNull(task.id)).toBeTrue();
+  });
+
   it("terminally fails an owned task when its request body is too large", async () => {
     const task = await createClaimedTask("oversized");
     await prisma.agentSearchTask.update({
@@ -342,12 +368,7 @@ describeDb("agent ownership routes with PostgreSQL", () => {
     expect(stored.result).toBeNull();
     expect(stored.resultSummary).toBeNull();
     expect(stored.completedAt).toBeInstanceOf(Date);
-    const [databaseNull] = await prisma.$queryRaw<
-      Array<{ isDatabaseNull: boolean }>
-    >`SELECT "result" IS NULL AS "isDatabaseNull"
-      FROM "agent_search_tasks"
-      WHERE "id" = ${task.id}`;
-    expect(databaseNull?.isDatabaseNull).toBeTrue();
+    expect(await resultIsDatabaseNull(task.id)).toBeTrue();
   });
 
   it("keeps opaque stored results out of the application outcome contract", async () => {

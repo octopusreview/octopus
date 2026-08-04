@@ -318,7 +318,7 @@ export async function POST(
     where: ownershipWhere,
     data: {
       status,
-      result: truncatedResult ?? null,
+      result: truncatedResult ?? PRISMA_DB_NULL,
       resultSummary: truncatedSummary ?? null,
       errorMessage: truncatedError ?? null,
       completedAt: new Date(),

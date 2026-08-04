@@ -48,284 +48,89 @@ const AUTH = {
   user: null,
 };
 
-let fakeAgent: FakeAgent | null;
-let fakeTask: FakeTask | null;
-let fakeLlmTask: FakeLlmTask | null;
-let forceTerminalRace: boolean;
 let currentAuth: typeof AUTH;
+let agentFixture: FakeAgent;
+let taskFixture: FakeTask;
+let llmTaskFixture: FakeLlmTask;
 
-function matchesValue(actual: unknown, expected: unknown): boolean {
-  if (
-    expected !== null &&
-    typeof expected === "object" &&
-    !Array.isArray(expected)
-  ) {
-    const condition = expected as Record<string, unknown>;
-    if (Array.isArray(condition.in)) {
-      return condition.in.includes(actual);
-    }
-    if ("not" in condition) {
-      return actual !== condition.not;
-    }
-    if (condition.lt instanceof Date) {
-      return actual instanceof Date && actual < condition.lt;
-    }
-    if ("equals" in condition) {
-      return actual === condition.equals;
-    }
+// Every Prisma call consumes an explicitly scripted, projection-shaped
+// response. These mocks deliberately do not interpret `where` or `select`:
+// tests assert the security-critical query object separately, so they cannot
+// pass because a homemade evaluator happened to mimic Prisma incorrectly.
+type ScriptedResponse = unknown | Error;
+
+let localAgentFindFirstResponses: ScriptedResponse[];
+let localAgentFindUniqueResponses: ScriptedResponse[];
+let localAgentUpdateResponses: ScriptedResponse[];
+let localAgentUpdateManyResponses: ScriptedResponse[];
+let localAgentCreateResponses: ScriptedResponse[];
+let localAgentUpsertResponses: ScriptedResponse[];
+let taskFindFirstResponses: ScriptedResponse[];
+let taskFindUniqueResponses: ScriptedResponse[];
+let taskFindManyResponses: ScriptedResponse[];
+let taskUpdateManyResponses: ScriptedResponse[];
+let llmTaskFindFirstResponses: ScriptedResponse[];
+let llmTaskFindUniqueResponses: ScriptedResponse[];
+let llmTaskFindManyResponses: ScriptedResponse[];
+let llmTaskUpdateManyResponses: ScriptedResponse[];
+
+async function nextResponse(
+  operation: string,
+  responses: ScriptedResponse[],
+): Promise<unknown> {
+  if (responses.length === 0) {
+    throw new Error(`No scripted response for prisma.${operation}`);
   }
-  return actual === expected;
-}
-
-function matchesAgent(
-  agent: FakeAgent | null,
-  where: Record<string, unknown> | undefined,
-): agent is FakeAgent {
-  if (!agent || !where) return false;
-  return Object.entries(where).every(([field, expected]) => {
-    if (field === "OR") {
-      return (expected as Record<string, unknown>[]).some((condition) =>
-        matchesAgent(agent, condition),
-      );
-    }
-    if (field === "organizationId_name") {
-      const compound = expected as {
-        organizationId?: unknown;
-        name?: unknown;
-      };
-      return (
-        matchesValue(agent.organizationId, compound.organizationId) &&
-        matchesValue(agent.name, compound.name)
-      );
-    }
-    if (field === "repoFullNames") {
-      const condition = expected as { array_contains?: unknown[] };
-      return (
-        !condition.array_contains ||
-        condition.array_contains.every((repo) =>
-          agent.repoFullNames.includes(String(repo)),
-        )
-      );
-    }
-    if (field === "apiToken") {
-      const relation = expected as {
-        is?: Record<string, unknown>;
-      };
-      const condition = relation.is ?? relation;
-      return Object.entries(condition).every(([key, value]) =>
-        matchesValue(
-          agent.apiToken[key as keyof FakeAgent["apiToken"]],
-          value,
-        ),
-      );
-    }
-    return matchesValue(agent[field as keyof FakeAgent], expected);
-  });
-}
-
-function matchesTask(
-  task: FakeTask | null,
-  where: Record<string, unknown> | undefined,
-): task is FakeTask {
-  if (!task || !where) return false;
-  return Object.entries(where).every(([field, expected]) => {
-    if (field === "agent") {
-      const relation = expected as {
-        is?: Record<string, unknown>;
-        apiTokenId?: unknown;
-      };
-      const condition = relation.is ?? relation;
-      return (
-        task.agent !== null &&
-        Object.entries(condition).every(([key, value]) =>
-          matchesValue(
-            task.agent?.[key as keyof NonNullable<FakeTask["agent"]>],
-            value,
-          ),
-        )
-      );
-    }
-    return matchesValue(task[field as keyof FakeTask], expected);
-  });
-}
-
-function matchesLlmTask(
-  task: FakeLlmTask | null,
-  where: Record<string, unknown> | undefined,
-): task is FakeLlmTask {
-  if (!task || !where) return false;
-  return Object.entries(where).every(([field, expected]) => {
-    if (field === "agent") {
-      const relation = expected as { is?: Record<string, unknown> };
-      const condition = relation.is ?? relation;
-      return (
-        task.agent !== null &&
-        Object.entries(condition).every(([key, value]) =>
-          matchesValue(
-            task.agent?.[key as keyof NonNullable<FakeLlmTask["agent"]>],
-            value,
-          ),
-        )
-      );
-    }
-    return matchesValue(task[field as keyof FakeLlmTask], expected);
-  });
-}
-
-function applyAgentData(data: Partial<FakeAgent>) {
-  Object.assign(fakeAgent!, data);
-  if (typeof data.apiTokenId === "string") {
-    fakeAgent!.apiToken = { deletedAt: null, expiresAt: null };
-  }
+  const response = responses.shift();
+  if (response instanceof Error) throw response;
+  return response;
 }
 
 const authenticateApiToken = mock(() => Promise.resolve(currentAuth));
-const localAgentFindFirst = mock(
-  ({ where }: { where?: Record<string, unknown> }) =>
-    Promise.resolve(matchesAgent(fakeAgent, where) ? fakeAgent : null),
+const localAgentFindFirst = mock(() =>
+  nextResponse("localAgent.findFirst", localAgentFindFirstResponses),
 );
-const localAgentFindUnique = mock(
-  ({ where }: { where?: Record<string, unknown> }) =>
-    Promise.resolve(matchesAgent(fakeAgent, where) ? fakeAgent : null),
+const localAgentFindUnique = mock(() =>
+  nextResponse("localAgent.findUnique", localAgentFindUniqueResponses),
 );
-const localAgentUpdate = mock(
-  ({
-    where,
-    data,
-  }: {
-    where?: Record<string, unknown>;
-    data: Partial<FakeAgent>;
-  }) => {
-    if (!matchesAgent(fakeAgent, where)) {
-      throw new Error("Agent not found");
-    }
-    applyAgentData(data);
-    return Promise.resolve(fakeAgent);
-  },
+const localAgentUpdate = mock(() =>
+  nextResponse("localAgent.update", localAgentUpdateResponses),
 );
-const localAgentUpdateMany = mock(
-  ({
-    where,
-    data,
-  }: {
-    where?: Record<string, unknown>;
-    data: Partial<FakeAgent>;
-  }) => {
-    if (!matchesAgent(fakeAgent, where)) {
-      return Promise.resolve({ count: 0 });
-    }
-    applyAgentData(data);
-    return Promise.resolve({ count: 1 });
-  },
+const localAgentUpdateMany = mock(() =>
+  nextResponse("localAgent.updateMany", localAgentUpdateManyResponses),
 );
-const localAgentCreate = mock(
-  ({ data }: { data: Omit<FakeAgent, "id" | "status"> }) => {
-    if (
-      fakeAgent &&
-      fakeAgent.organizationId === data.organizationId &&
-      fakeAgent.name === data.name
-    ) {
-      return Promise.reject(new Error("Unique constraint failed"));
-    }
-    fakeAgent = {
-      id: "agent_created",
-      status: "online",
-      ...data,
-    };
-    return Promise.resolve(fakeAgent);
-  },
+const localAgentCreate = mock(() =>
+  nextResponse("localAgent.create", localAgentCreateResponses),
 );
-const localAgentUpsert = mock(
-  ({
-    where,
-    update,
-    create,
-  }: {
-    where?: Record<string, unknown>;
-    update: Partial<FakeAgent>;
-    create: Omit<FakeAgent, "id" | "status">;
-  }) => {
-    if (matchesAgent(fakeAgent, where)) {
-      applyAgentData(update);
-      return Promise.resolve(fakeAgent);
-    }
-    fakeAgent = {
-      id: "agent_created",
-      status: "online",
-      ...create,
-    };
-    return Promise.resolve(fakeAgent);
-  },
+const localAgentUpsert = mock(() =>
+  nextResponse("localAgent.upsert", localAgentUpsertResponses),
 );
-const taskFindFirst = mock(({ where }: { where?: Record<string, unknown> }) =>
-  Promise.resolve(matchesTask(fakeTask, where) ? fakeTask : null),
+const taskFindFirst = mock(() =>
+  nextResponse("agentSearchTask.findFirst", taskFindFirstResponses),
 );
-const taskFindUnique = mock(({ where }: { where?: Record<string, unknown> }) =>
-  Promise.resolve(matchesTask(fakeTask, where) ? fakeTask : null),
+const taskFindUnique = mock(() =>
+  nextResponse("agentSearchTask.findUnique", taskFindUniqueResponses),
 );
-const taskFindMany = mock(() => Promise.resolve([]));
-const taskUpdateMany = mock(
-  ({
-    where,
-    data,
-  }: {
-    where?: Record<string, unknown>;
-    data: Record<string, unknown>;
-  }) => {
-    if (forceTerminalRace && data.status !== "claimed" && fakeTask) {
-      fakeTask.status = "timeout";
-      return Promise.resolve({ count: 0 });
-    }
-
-    if (!matchesTask(fakeTask, where)) {
-      return Promise.resolve({ count: 0 });
-    }
-
-    Object.assign(fakeTask, data);
-    if (typeof data.agentId === "string" && fakeAgent) {
-      fakeTask!.agent = {
-        organizationId: fakeAgent.organizationId,
-        apiTokenId: fakeAgent.apiTokenId,
-      };
-    }
-    return Promise.resolve({ count: 1 });
-  },
+const taskFindMany = mock(() =>
+  nextResponse("agentSearchTask.findMany", taskFindManyResponses),
+);
+const taskUpdateMany = mock(() =>
+  nextResponse("agentSearchTask.updateMany", taskUpdateManyResponses),
 );
 const taskUpdate = mock(() => {
   throw new Error("Agent task terminal transitions must use updateMany");
 });
-const llmTaskFindFirst = mock(
-  ({ where }: { where?: Record<string, unknown> }) =>
-    Promise.resolve(matchesLlmTask(fakeLlmTask, where) ? fakeLlmTask : null),
+const llmTaskFindFirst = mock(() =>
+  nextResponse("agentLlmTask.findFirst", llmTaskFindFirstResponses),
 );
-const llmTaskFindUnique = mock(
-  ({ where }: { where?: Record<string, unknown> }) =>
-    Promise.resolve(matchesLlmTask(fakeLlmTask, where) ? fakeLlmTask : null),
+const llmTaskFindUnique = mock(() =>
+  nextResponse("agentLlmTask.findUnique", llmTaskFindUniqueResponses),
 );
-const llmTaskFindMany = mock(
-  ({ where }: { where?: Record<string, unknown> }) =>
-    Promise.resolve(matchesLlmTask(fakeLlmTask, where) ? [fakeLlmTask] : []),
+const llmTaskFindMany = mock(() =>
+  nextResponse("agentLlmTask.findMany", llmTaskFindManyResponses),
 );
-const llmTaskUpdateMany = mock(
-  ({
-    where,
-    data,
-  }: {
-    where?: Record<string, unknown>;
-    data: Record<string, unknown>;
-  }) => {
-    if (!matchesLlmTask(fakeLlmTask, where)) {
-      return Promise.resolve({ count: 0 });
-    }
-    Object.assign(fakeLlmTask, data);
-    if (typeof data.agentId === "string" && fakeAgent) {
-      fakeLlmTask!.agent = {
-        organizationId: fakeAgent.organizationId,
-        apiTokenId: fakeAgent.apiTokenId,
-      };
-    }
-    return Promise.resolve({ count: 1 });
-  },
+const llmTaskUpdateMany = mock(() =>
+  nextResponse("agentLlmTask.updateMany", llmTaskUpdateManyResponses),
 );
 const pubbyTrigger = mock(() => Promise.resolve());
 
@@ -422,6 +227,15 @@ function claimedTask(overrides: Partial<FakeTask> = {}): FakeTask {
   };
 }
 
+function searchTaskClaimProjection(task = claimedTask()) {
+  return {
+    agentId: task.agentId,
+    searchType: task.searchType,
+    status: task.status,
+    agent: task.agent,
+  };
+}
+
 function claimedLlmTask(
   overrides: Partial<FakeLlmTask> = {},
 ): FakeLlmTask {
@@ -441,12 +255,34 @@ function claimedLlmTask(
   };
 }
 
+function llmTaskClaimProjection(task = claimedLlmTask()) {
+  return {
+    agentId: task.agentId,
+    status: task.status,
+    agent: task.agent,
+  };
+}
+
 beforeEach(() => {
   currentAuth = AUTH;
-  fakeAgent = ownedAgent();
-  fakeTask = claimedTask({ status: "pending", agentId: null, agent: null });
-  fakeLlmTask = claimedLlmTask();
-  forceTerminalRace = false;
+  agentFixture = ownedAgent();
+  taskFixture = claimedTask({ status: "pending", agentId: null, agent: null });
+  llmTaskFixture = claimedLlmTask();
+
+  localAgentFindFirstResponses = [];
+  localAgentFindUniqueResponses = [];
+  localAgentUpdateResponses = [];
+  localAgentUpdateManyResponses = [];
+  localAgentCreateResponses = [];
+  localAgentUpsertResponses = [];
+  taskFindFirstResponses = [];
+  taskFindUniqueResponses = [];
+  taskFindManyResponses = [];
+  taskUpdateManyResponses = [];
+  llmTaskFindFirstResponses = [];
+  llmTaskFindUniqueResponses = [];
+  llmTaskFindManyResponses = [];
+  llmTaskUpdateManyResponses = [];
 
   authenticateApiToken.mockClear();
   localAgentFindFirst.mockClear();
@@ -469,20 +305,17 @@ beforeEach(() => {
 
 describe("agent registration ownership", () => {
   it("does not let another same-org API token take over an existing agent name", async () => {
-    const original = {
-      apiTokenId: fakeAgent!.apiTokenId,
-      repoFullNames: [...fakeAgent!.repoFullNames],
-      capabilities: [...fakeAgent!.capabilities],
-      machineInfo: fakeAgent!.machineInfo,
-    };
     currentAuth = {
       ...AUTH,
       token: { id: "token_other" },
     };
+    localAgentUpdateManyResponses = [{ count: 0 }, { count: 0 }];
+    localAgentCreateResponses = [new Error("Unique constraint failed")];
+    localAgentFindUniqueResponses = [agentFixture];
 
     const response = await registerAgent(
       request("/api/agent/register", {
-        name: fakeAgent!.name,
+        name: agentFixture!.name,
         repoFullNames: ["private/stolen"],
         capabilities: ["claude-cli"],
         machineInfo: { os: "attacker" },
@@ -493,17 +326,37 @@ describe("agent registration ownership", () => {
     expect(await response.json()).toEqual({
       error: "Agent name is already registered to another active token",
     });
-    expect(fakeAgent).toEqual(expect.objectContaining(original));
+    expect(localAgentUpdateMany).toHaveBeenCalledTimes(2);
+    expect(localAgentUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organizationId: AUTH.org.id,
+          name: agentFixture.name,
+          OR: expect.arrayContaining([
+            { apiTokenId: "token_other" },
+            { apiToken: { is: { deletedAt: { not: null } } } },
+            { apiToken: { is: { expiresAt: { lt: expect.any(Date) } } } },
+          ]),
+        }),
+      }),
+    );
     expect(pubbyTrigger).not.toHaveBeenCalled();
   });
 
   it("lets the owning API token safely refresh its existing registration", async () => {
     const updatedRepos = ["octopus/octopus", "octopus/docs"];
     const updatedCapabilities = ["ripgrep", "claude-cli"];
+    const refreshedAgent = ownedAgent({
+      repoFullNames: updatedRepos,
+      capabilities: updatedCapabilities,
+      machineInfo: { os: "darwin", hostname: "owner-host" },
+    });
+    localAgentUpdateManyResponses = [{ count: 1 }];
+    localAgentFindUniqueResponses = [refreshedAgent];
 
     const response = await registerAgent(
       request("/api/agent/register", {
-        name: fakeAgent!.name,
+        name: agentFixture!.name,
         repoFullNames: updatedRepos,
         capabilities: updatedCapabilities,
         machineInfo: { os: "darwin", hostname: "owner-host" },
@@ -512,24 +365,31 @@ describe("agent registration ownership", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
-      agentId: fakeAgent!.id,
+      agentId: refreshedAgent.id,
       channel: `private-agent-org-${AUTH.org.id}`,
       orgId: AUTH.org.id,
     });
-    expect(fakeAgent).toEqual(
+    expect(localAgentUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        apiTokenId: AUTH.token.id,
-        repoFullNames: updatedRepos,
-        capabilities: updatedCapabilities,
-        machineInfo: { os: "darwin", hostname: "owner-host" },
+        where: expect.objectContaining({
+          organizationId: AUTH.org.id,
+          name: agentFixture.name,
+          OR: expect.arrayContaining([{ apiTokenId: AUTH.token.id }]),
+        }),
+        data: expect.objectContaining({
+          apiTokenId: AUTH.token.id,
+          repoFullNames: updatedRepos,
+          capabilities: updatedCapabilities,
+          machineInfo: { os: "darwin", hostname: "owner-host" },
+        }),
       }),
     );
     expect(pubbyTrigger).toHaveBeenCalledWith(
       `presence-org-${AUTH.org.id}`,
       "agent-online",
       {
-        agentId: fakeAgent!.id,
-        name: fakeAgent!.name,
+        agentId: refreshedAgent.id,
+        name: refreshedAgent.name,
         repos: updatedRepos,
         capabilities: updatedCapabilities,
       },
@@ -537,32 +397,41 @@ describe("agent registration ownership", () => {
   });
 
   it("lets a new token reclaim an agent name after the old token is deleted", async () => {
-    fakeAgent = ownedAgent({
+    agentFixture = ownedAgent({
       apiTokenId: "token_deleted",
       apiToken: { deletedAt: new Date(Date.now() - 60_000), expiresAt: null },
     });
     const updatedRepos = ["octopus/reclaimed"];
+    const reclaimedAgent = ownedAgent({ repoFullNames: updatedRepos });
+    localAgentUpdateManyResponses = [{ count: 1 }];
+    localAgentFindUniqueResponses = [reclaimedAgent];
 
     const response = await registerAgent(
       request("/api/agent/register", {
-        name: fakeAgent.name,
+        name: agentFixture.name,
         repoFullNames: updatedRepos,
         capabilities: ["ripgrep"],
       }),
     );
 
     expect(response.status).toBe(200);
-    expect(fakeAgent).toEqual(
+    expect(localAgentUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        apiTokenId: AUTH.token.id,
-        repoFullNames: updatedRepos,
-        apiToken: { deletedAt: null, expiresAt: null },
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            { apiToken: { is: { deletedAt: { not: null } } } },
+          ]),
+        }),
+        data: expect.objectContaining({
+          apiTokenId: AUTH.token.id,
+          repoFullNames: updatedRepos,
+        }),
       }),
     );
   });
 
   it("lets a new token reclaim an agent name after the old token expires", async () => {
-    fakeAgent = ownedAgent({
+    agentFixture = ownedAgent({
       apiTokenId: "token_expired",
       apiToken: {
         deletedAt: null,
@@ -570,21 +439,34 @@ describe("agent registration ownership", () => {
       },
     });
     const updatedRepos = ["octopus/reclaimed"];
+    const reclaimedAgent = ownedAgent({ repoFullNames: updatedRepos });
+    localAgentUpdateManyResponses = [{ count: 1 }];
+    localAgentFindUniqueResponses = [reclaimedAgent];
 
     const response = await registerAgent(
       request("/api/agent/register", {
-        name: fakeAgent.name,
+        name: agentFixture.name,
         repoFullNames: updatedRepos,
         capabilities: ["ripgrep"],
       }),
     );
 
     expect(response.status).toBe(200);
-    expect(fakeAgent).toEqual(
+    expect(localAgentUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        apiTokenId: AUTH.token.id,
-        repoFullNames: updatedRepos,
-        apiToken: { deletedAt: null, expiresAt: null },
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            {
+              apiToken: {
+                is: { expiresAt: { lt: expect.any(Date) } },
+              },
+            },
+          ]),
+        }),
+        data: expect.objectContaining({
+          apiTokenId: AUTH.token.id,
+          repoFullNames: updatedRepos,
+        }),
       }),
     );
   });
@@ -592,7 +474,7 @@ describe("agent registration ownership", () => {
   it("rejects a register body larger than 256 KiB before database access", async () => {
     const response = await registerAgent(
       request("/api/agent/register", {
-        name: fakeAgent!.name,
+        name: agentFixture!.name,
         repoFullNames: ["octopus/octopus"],
         machineInfo: { blob: "x".repeat(257 * 1024) },
       }),
@@ -607,18 +489,18 @@ describe("agent registration ownership", () => {
     const oversizedBodies = [
       { name: "n".repeat(201), repoFullNames: ["octopus/octopus"] },
       {
-        name: fakeAgent!.name,
+        name: agentFixture!.name,
         repoFullNames: Array.from(
           { length: 501 },
           (_, i) => `octopus/repo-${i}`,
         ),
       },
       {
-        name: fakeAgent!.name,
+        name: agentFixture!.name,
         repoFullNames: [`octopus/${"r".repeat(300)}`],
       },
       {
-        name: fakeAgent!.name,
+        name: agentFixture!.name,
         repoFullNames: ["octopus/octopus"],
         capabilities: Array.from({ length: 51 }, () => "cap"),
       },
@@ -644,7 +526,7 @@ describe("agent registration ownership", () => {
     for (const machineInfo of invalidMachineInfos) {
       const response = await registerAgent(
         request("/api/agent/register", {
-          name: fakeAgent!.name,
+          name: agentFixture!.name,
           repoFullNames: ["octopus/octopus"],
           machineInfo,
         }),
@@ -659,20 +541,19 @@ describe("agent registration ownership", () => {
 
 describe("agent lifecycle ownership", () => {
   it("rejects heartbeat for an agent registered by another token", async () => {
-    fakeAgent = ownedAgent({ apiTokenId: "token_other" });
-    const originalStatus = fakeAgent.status;
+    agentFixture = ownedAgent({ apiTokenId: "token_other" });
+    localAgentUpdateManyResponses = [{ count: 0 }];
 
     const response = await heartbeatAgent(
-      request("/api/agent/heartbeat", { agentId: fakeAgent.id }),
+      request("/api/agent/heartbeat", { agentId: agentFixture.id }),
     );
 
     expect(response.status).toBe(404);
-    expect(fakeAgent.status).toBe(originalStatus);
     expect(localAgentUpdate).not.toHaveBeenCalled();
     expect(localAgentUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          id: fakeAgent.id,
+          id: agentFixture.id,
           organizationId: AUTH.org.id,
           apiTokenId: AUTH.token.id,
         }),
@@ -681,36 +562,33 @@ describe("agent lifecycle ownership", () => {
   });
 
   it("rejects heartbeat repository scopes containing non-string entries", async () => {
-    const originalRepos = [...fakeAgent!.repoFullNames];
-
     const response = await heartbeatAgent(
       request("/api/agent/heartbeat", {
-        agentId: fakeAgent!.id,
+        agentId: agentFixture!.id,
         repoFullNames: ["octopus/octopus", 42],
       }),
     );
 
     expect(response.status).toBe(400);
-    expect(fakeAgent!.repoFullNames).toEqual(originalRepos);
     expect(localAgentUpdate).not.toHaveBeenCalled();
     expect(localAgentUpdateMany).not.toHaveBeenCalled();
   });
 
   it("rejects disconnect for an agent registered by another token", async () => {
-    fakeAgent = ownedAgent({ apiTokenId: "token_other" });
+    agentFixture = ownedAgent({ apiTokenId: "token_other" });
+    localAgentUpdateManyResponses = [{ count: 0 }];
 
     const response = await disconnectAgent(
-      request("/api/agent/disconnect", { agentId: fakeAgent.id }),
+      request("/api/agent/disconnect", { agentId: agentFixture.id }),
     );
 
     expect(response.status).toBe(404);
-    expect(fakeAgent.status).toBe("online");
     expect(localAgentUpdate).not.toHaveBeenCalled();
     expect(localAgentFindFirst).not.toHaveBeenCalled();
     expect(localAgentUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          id: fakeAgent.id,
+          id: agentFixture.id,
           organizationId: AUTH.org.id,
           apiTokenId: AUTH.token.id,
         }),
@@ -720,24 +598,41 @@ describe("agent lifecycle ownership", () => {
   });
 
   it("disconnects an owned agent atomically and publishes it offline", async () => {
+    localAgentUpdateManyResponses = [{ count: 1 }];
+    localAgentFindFirstResponses = [{ name: agentFixture.name }];
+
     const response = await disconnectAgent(
-      request("/api/agent/disconnect", { agentId: fakeAgent!.id }),
+      request("/api/agent/disconnect", { agentId: agentFixture!.id }),
     );
 
     expect(response.status).toBe(200);
-    expect(fakeAgent!.status).toBe("offline");
-    expect(localAgentUpdateMany).toHaveBeenCalledTimes(1);
+    expect(localAgentUpdateMany).toHaveBeenCalledWith({
+      where: {
+        id: agentFixture.id,
+        organizationId: AUTH.org.id,
+        apiTokenId: AUTH.token.id,
+      },
+      data: { status: "offline" },
+    });
+    expect(localAgentFindFirst).toHaveBeenCalledWith({
+      where: {
+        id: agentFixture.id,
+        organizationId: AUTH.org.id,
+        apiTokenId: AUTH.token.id,
+      },
+      select: { name: true },
+    });
     expect(pubbyTrigger).toHaveBeenCalledWith(
       `presence-org-${AUTH.org.id}`,
       "agent-offline",
-      { agentId: fakeAgent!.id, name: fakeAgent!.name },
+      { agentId: agentFixture!.id, name: agentFixture!.name },
     );
   });
 
   it("rejects an oversized heartbeat repository scope", async () => {
     const response = await heartbeatAgent(
       request("/api/agent/heartbeat", {
-        agentId: fakeAgent!.id,
+        agentId: agentFixture!.id,
         repoFullNames: Array.from(
           { length: 501 },
           (_, i) => `octopus/repo-${i}`,
@@ -752,7 +647,7 @@ describe("agent lifecycle ownership", () => {
   it("rejects a heartbeat body larger than 256 KiB", async () => {
     const response = await heartbeatAgent(
       request("/api/agent/heartbeat", {
-        agentId: fakeAgent!.id,
+        agentId: agentFixture!.id,
         padding: "x".repeat(257 * 1024),
       }),
     );
@@ -764,7 +659,7 @@ describe("agent lifecycle ownership", () => {
   it("rejects a disconnect body larger than 16 KiB", async () => {
     const response = await disconnectAgent(
       request("/api/agent/disconnect", {
-        agentId: fakeAgent!.id,
+        agentId: agentFixture!.id,
         padding: "x".repeat(17 * 1024),
       }),
     );
@@ -789,11 +684,12 @@ describe("agent search task ownership", () => {
   });
 
   it("rejects an agent owned by another API token", async () => {
-    fakeAgent = ownedAgent({ apiTokenId: "token_other" });
+    agentFixture = ownedAgent({ apiTokenId: "token_other" });
+    localAgentFindFirstResponses = [null];
 
     const response = await claimTask(
       request("/api/agent/tasks/task_1/claim", {
-        agentId: fakeAgent.id,
+        agentId: agentFixture.id,
       }),
       params(),
     );
@@ -801,36 +697,50 @@ describe("agent search task ownership", () => {
     expect(response.status).toBe(404);
     expect((await response.json()).error).toBe("Agent not found");
     expect(localAgentFindFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          id: fakeAgent.id,
+      {
+        where: {
+          id: agentFixture.id,
           organizationId: AUTH.org.id,
           apiTokenId: AUTH.token.id,
-        }),
-      }),
+        },
+        select: { repoFullNames: true },
+      },
     );
     expect(taskUpdateMany).not.toHaveBeenCalled();
   });
 
   it("does not let an owned agent claim a task for an unwatched repository", async () => {
-    fakeAgent = ownedAgent({ repoFullNames: ["octopus/other"] });
+    agentFixture = ownedAgent({ repoFullNames: ["octopus/other"] });
+    localAgentFindFirstResponses = [
+      { repoFullNames: agentFixture.repoFullNames },
+    ];
+    taskUpdateManyResponses = [{ count: 0 }];
 
     const response = await claimTask(
       request("/api/agent/tasks/task_1/claim", {
-        agentId: fakeAgent.id,
+        agentId: agentFixture.id,
       }),
       params(),
     );
 
     expect(response.status).toBe(409);
-    expect(fakeTask?.status).toBe("pending");
-    expect(fakeTask?.agentId).toBeNull();
+    expect(taskUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: taskFixture.id,
+          organizationId: AUTH.org.id,
+          status: "pending",
+          repoFullName: { in: agentFixture.repoFullNames },
+        },
+      }),
+    );
   });
 
   it("does not expose the queue through an agent owned by another token", async () => {
-    fakeAgent = ownedAgent({ apiTokenId: "token_other" });
+    agentFixture = ownedAgent({ apiTokenId: "token_other" });
+    localAgentFindFirstResponses = [null];
     const response = await pollTasks(
-      new Request(`https://app.test/api/agent/tasks?agentId=${fakeAgent.id}`, {
+      new Request(`https://app.test/api/agent/tasks?agentId=${agentFixture.id}`, {
         headers: { authorization: "Bearer oct_test" },
       }),
     );
@@ -839,7 +749,7 @@ describe("agent search task ownership", () => {
     expect(localAgentFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          id: fakeAgent.id,
+          id: agentFixture.id,
           organizationId: AUTH.org.id,
           apiTokenId: AUTH.token.id,
         }),
@@ -849,9 +759,10 @@ describe("agent search task ownership", () => {
   });
 
   it("rejects a result from a token that does not own the claiming agent", async () => {
-    fakeTask = claimedTask({
+    taskFixture = claimedTask({
       agent: { organizationId: AUTH.org.id, apiTokenId: "token_other" },
     });
+    taskFindFirstResponses = [searchTaskClaimProjection(taskFixture)];
 
     const response = await submitResult(
       request("/api/agent/tasks/task_1/result", {
@@ -867,7 +778,8 @@ describe("agent search task ownership", () => {
   });
 
   it("rejects an optional agentId that differs from the stored claimant", async () => {
-    fakeTask = claimedTask();
+    taskFixture = claimedTask();
+    taskFindFirstResponses = [searchTaskClaimProjection(taskFixture)];
 
     const response = await submitResult(
       request("/api/agent/tasks/task_1/result", {
@@ -884,8 +796,12 @@ describe("agent search task ownership", () => {
   });
 
   it("keeps a concurrently-terminal task unchanged and does not publish", async () => {
-    fakeTask = claimedTask();
-    forceTerminalRace = true;
+    taskFixture = claimedTask();
+    taskFindFirstResponses = [
+      searchTaskClaimProjection(taskFixture),
+      { status: "timeout" },
+    ];
+    taskUpdateManyResponses = [{ count: 0 }];
 
     const response = await submitResult(
       request("/api/agent/tasks/task_1/result", {
@@ -897,23 +813,38 @@ describe("agent search task ownership", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, status: "timeout" });
-    expect(fakeTask.status).toBe("timeout");
     expect(taskUpdate).not.toHaveBeenCalled();
     expect(taskUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          id: fakeTask.id,
+          id: taskFixture.id,
           organizationId: AUTH.org.id,
-          agentId: fakeTask.agentId,
+          agentId: taskFixture.agentId,
           status: "claimed",
         }),
       }),
     );
+    expect(taskFindFirst).toHaveBeenLastCalledWith({
+      where: {
+        id: taskFixture.id,
+        organizationId: AUTH.org.id,
+        agentId: taskFixture.agentId,
+        agent: {
+          is: {
+            organizationId: AUTH.org.id,
+            apiTokenId: AUTH.token.id,
+          },
+        },
+      },
+      select: { status: true },
+    });
     expect(pubbyTrigger).not.toHaveBeenCalled();
   });
 
-  it("stores an oversized structured result as bounded valid JSON", async () => {
-    fakeTask = claimedTask();
+  it("truncates a valid under-1MiB structured result to bounded JSON", async () => {
+    taskFixture = claimedTask();
+    taskFindFirstResponses = [searchTaskClaimProjection(taskFixture)];
+    taskUpdateManyResponses = [{ count: 1 }];
     const oversized = {
       matches: [
         {
@@ -945,8 +876,10 @@ describe("agent search task ownership", () => {
     );
   });
 
-  it("rejects a result request larger than 1 MiB before database access", async () => {
-    fakeTask = claimedTask();
+  it("terminalizes an owned result larger than 1 MiB and publishes once", async () => {
+    taskFixture = claimedTask();
+    taskFindFirstResponses = [searchTaskClaimProjection(taskFixture)];
+    taskUpdateManyResponses = [{ count: 1 }];
     const serialized = JSON.stringify({
       results: { content: "x".repeat(1025 * 1024) },
       resultSummary: "too large",
@@ -965,13 +898,140 @@ describe("agent search task ownership", () => {
     );
 
     expect(response.status).toBe(413);
-    expect(taskFindFirst).not.toHaveBeenCalled();
+    expect(await response.json()).toEqual({
+      error: "Agent result exceeded the 1 MiB transport limit",
+      status: "failed",
+    });
+    expect(taskFindFirst).toHaveBeenCalledWith({
+      where: { id: taskFixture.id, organizationId: AUTH.org.id },
+      select: {
+        agentId: true,
+        searchType: true,
+        status: true,
+        agent: {
+          select: { organizationId: true, apiTokenId: true },
+        },
+      },
+    });
+    expect(taskUpdateMany).toHaveBeenCalledWith({
+      where: {
+        id: taskFixture.id,
+        organizationId: AUTH.org.id,
+        agentId: taskFixture.agentId,
+        status: "claimed",
+        agent: {
+          is: {
+            organizationId: AUTH.org.id,
+            apiTokenId: AUTH.token.id,
+          },
+        },
+      },
+      data: {
+        status: "failed",
+        result: {
+          truncated: true,
+          reason: "transport_limit",
+          limitBytes: 1024 * 1024,
+        },
+        resultSummary: null,
+        errorMessage: "Agent result exceeded the 1 MiB transport limit",
+        completedAt: expect.any(Date),
+      },
+    });
+    expect(pubbyTrigger).toHaveBeenCalledTimes(1);
+    expect(pubbyTrigger).toHaveBeenCalledWith(
+      `private-agent-org-${AUTH.org.id}`,
+      "agent-search-complete",
+      { taskId: taskFixture.id, status: "failed" },
+    );
+  });
+
+  it("rejects another token's oversized result without mutation", async () => {
+    taskFixture = claimedTask({
+      agent: { organizationId: AUTH.org.id, apiTokenId: "token_other" },
+    });
+    taskFindFirstResponses = [searchTaskClaimProjection(taskFixture)];
+    const serialized = JSON.stringify({
+      results: { content: "x".repeat(1025 * 1024) },
+    });
+
+    const response = await submitResult(
+      new Request("https://app.test/api/agent/tasks/task_1/result", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer oct_test",
+          "content-type": "application/json",
+          "content-length": String(
+            new TextEncoder().encode(serialized).length,
+          ),
+        },
+        body: serialized,
+      }),
+      params(),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: "Task is claimed by a different agent",
+    });
+    expect(taskUpdateMany).not.toHaveBeenCalled();
+    expect(pubbyTrigger).not.toHaveBeenCalled();
+  });
+
+  it("returns a concurrent timeout when oversized terminalization loses the race", async () => {
+    taskFixture = claimedTask();
+    taskFindFirstResponses = [
+      searchTaskClaimProjection(taskFixture),
+      { status: "timeout" },
+    ];
+    taskUpdateManyResponses = [{ count: 0 }];
+    const serialized = JSON.stringify({
+      results: { content: "x".repeat(1025 * 1024) },
+    });
+
+    const response = await submitResult(
+      new Request("https://app.test/api/agent/tasks/task_1/result", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer oct_test",
+          "content-type": "application/json",
+          "content-length": String(
+            new TextEncoder().encode(serialized).length,
+          ),
+        },
+        body: serialized,
+      }),
+      params(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, status: "timeout" });
+    expect(taskUpdateMany).toHaveBeenCalledTimes(1);
+    expect(taskFindFirst).toHaveBeenCalledTimes(2);
+    expect(pubbyTrigger).not.toHaveBeenCalled();
+  });
+
+  it("returns an already-failed retry without reading or publishing", async () => {
+    taskFixture = claimedTask({ status: "failed" });
+    taskFindFirstResponses = [searchTaskClaimProjection(taskFixture)];
+
+    const response = await submitResult(
+      request("/api/agent/tasks/task_1/result", {
+        results: { content: "retry" },
+      }),
+      params(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, status: "failed" });
     expect(taskUpdateMany).not.toHaveBeenCalled();
     expect(pubbyTrigger).not.toHaveBeenCalled();
   });
 
   it("accepts a multibyte answer summary below 1 MiB and applies its character cap", async () => {
-    fakeTask = claimedTask({ searchType: "answer" });
+    taskFixture = claimedTask({ searchType: "answer" });
+    taskFindFirstResponses = [searchTaskClaimProjection(taskFixture)];
+    taskUpdateManyResponses = [{ count: 1 }];
     const summary = "😀".repeat(100_000);
     const serialized = JSON.stringify({ results: [], resultSummary: summary });
     expect(new TextEncoder().encode(serialized).byteLength).toBeLessThan(
@@ -992,12 +1052,18 @@ describe("agent search task ownership", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(fakeTask.resultSummary).toBe(summary.slice(0, 100 * 1024));
-    expect(fakeTask.resultSummary?.length).toBe(100 * 1024);
+    const transition = taskUpdateMany.mock.calls.at(-1)?.[0] as {
+      data: { resultSummary: string };
+    };
+    expect(transition.data.resultSummary).toBe(
+      summary.slice(0, 100 * 1024),
+    );
+    expect(transition.data.resultSummary.length).toBe(100 * 1024);
   });
 
   it("rejects deeply nested valid JSON without throwing or transitioning the task", async () => {
-    fakeTask = claimedTask();
+    taskFixture = claimedTask();
+    taskFindFirstResponses = [searchTaskClaimProjection(taskFixture)];
     // Bun's parser accepts this depth, while re-serialization exceeds its
     // call stack. The complete request remains below the 1 MiB body cap.
     const depth = 80_000;
@@ -1035,7 +1101,9 @@ describe("agent search task ownership", () => {
   });
 
   it("strips a split surrogate pair when capping an answer summary", async () => {
-    fakeTask = claimedTask({ searchType: "answer" });
+    taskFixture = claimedTask({ searchType: "answer" });
+    taskFindFirstResponses = [searchTaskClaimProjection(taskFixture)];
+    taskUpdateManyResponses = [{ count: 1 }];
     const summary = `x${"😀".repeat(60_000)}`;
 
     const response = await submitResult(
@@ -1047,12 +1115,19 @@ describe("agent search task ownership", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(fakeTask.resultSummary).toBe(summary.slice(0, 100 * 1024 - 1));
-    expect(fakeTask.resultSummary?.endsWith("😀")).toBeTrue();
+    const transition = taskUpdateMany.mock.calls.at(-1)?.[0] as {
+      data: { resultSummary: string };
+    };
+    expect(transition.data.resultSummary).toBe(
+      summary.slice(0, 100 * 1024 - 1),
+    );
+    expect(transition.data.resultSummary.endsWith("😀")).toBeTrue();
   });
 
   it("strips a split surrogate pair when capping an error message", async () => {
-    fakeTask = claimedTask();
+    taskFixture = claimedTask();
+    taskFindFirstResponses = [searchTaskClaimProjection(taskFixture)];
+    taskUpdateManyResponses = [{ count: 1 }];
     const errorMessage = `x${"😀".repeat(600)}`;
 
     const response = await submitResult(
@@ -1065,12 +1140,17 @@ describe("agent search task ownership", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, status: "failed" });
-    expect(fakeTask.errorMessage).toBe(errorMessage.slice(0, 999));
-    expect(fakeTask.errorMessage?.endsWith("😀")).toBeTrue();
+    const transition = taskUpdateMany.mock.calls.at(-1)?.[0] as {
+      data: { errorMessage: string };
+    };
+    expect(transition.data.errorMessage).toBe(errorMessage.slice(0, 999));
+    expect(transition.data.errorMessage.endsWith("😀")).toBeTrue();
   });
 
   it("keeps an emoji-heavy oversized result preview well-formed", async () => {
-    fakeTask = claimedTask();
+    taskFixture = claimedTask();
+    taskFindFirstResponses = [searchTaskClaimProjection(taskFixture)];
+    taskUpdateManyResponses = [{ count: 1 }];
 
     const response = await submitResult(
       request("/api/agent/tasks/task_1/result", {
@@ -1093,7 +1173,9 @@ describe("agent search task ownership", () => {
   });
 
   it("accepts the existing result payload without agentId for its owning token", async () => {
-    fakeTask = claimedTask();
+    taskFixture = claimedTask();
+    taskFindFirstResponses = [searchTaskClaimProjection(taskFixture)];
+    taskUpdateManyResponses = [{ count: 1 }];
     const results = [
       { file: "safe.ts", line: 7, content: "const safe = true" },
     ];
@@ -1108,14 +1190,32 @@ describe("agent search task ownership", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, status: "completed" });
-    expect(fakeTask.status).toBe("completed");
-    expect(fakeTask.result).toEqual(results);
-    expect(fakeTask.resultSummary).toBe("one safe match");
+    expect(taskUpdateMany).toHaveBeenCalledWith({
+      where: {
+        id: taskFixture.id,
+        organizationId: AUTH.org.id,
+        agentId: taskFixture.agentId,
+        status: "claimed",
+        agent: {
+          is: {
+            organizationId: AUTH.org.id,
+            apiTokenId: AUTH.token.id,
+          },
+        },
+      },
+      data: {
+        status: "completed",
+        result: results,
+        resultSummary: "one safe match",
+        errorMessage: null,
+        completedAt: expect.any(Date),
+      },
+    });
     expect(taskUpdate).not.toHaveBeenCalled();
     expect(pubbyTrigger).toHaveBeenCalledWith(
       `private-agent-org-${AUTH.org.id}`,
       "agent-search-complete",
-      { taskId: fakeTask.id, status: "completed" },
+      { taskId: taskFixture.id, status: "completed" },
     );
   });
 });
@@ -1165,11 +1265,12 @@ describe("agent LLM task ownership", () => {
   });
 
   it("does not expose the LLM queue through an agent owned by another token", async () => {
-    fakeAgent = ownedAgent({ apiTokenId: "token_other" });
+    agentFixture = ownedAgent({ apiTokenId: "token_other" });
+    localAgentFindFirstResponses = [null];
 
     const response = await pollLlmTasks(
       new Request(
-        `https://app.test/api/agent/llm-tasks?agentId=${fakeAgent.id}`,
+        `https://app.test/api/agent/llm-tasks?agentId=${agentFixture.id}`,
         { headers: { authorization: "Bearer oct_test" } },
       ),
     );
@@ -1180,29 +1281,43 @@ describe("agent LLM task ownership", () => {
   });
 
   it("keeps the LLM claim transition and re-fetch scoped to the organization", async () => {
-    fakeLlmTask = claimedLlmTask({
+    llmTaskFixture = claimedLlmTask({
       status: "pending",
       agentId: null,
       agent: null,
       claimedAt: null,
     });
+    localAgentFindFirstResponses = [agentFixture];
+    llmTaskUpdateManyResponses = [{ count: 0 }, { count: 1 }];
+    llmTaskFindManyResponses = [
+      [{ id: llmTaskFixture.id }],
+      [
+        {
+          id: llmTaskFixture.id,
+          modelId: llmTaskFixture.modelId,
+          system: llmTaskFixture.system,
+          messages: llmTaskFixture.messages,
+          maxTokens: llmTaskFixture.maxTokens,
+          createdAt: llmTaskFixture.createdAt,
+        },
+      ],
+    ];
 
     const response = await pollLlmTasks(
       new Request(
-        `https://app.test/api/agent/llm-tasks?agentId=${fakeAgent!.id}`,
+        `https://app.test/api/agent/llm-tasks?agentId=${agentFixture!.id}`,
         { headers: { authorization: "Bearer oct_test" } },
       ),
     );
 
     expect(response.status).toBe(200);
-    expect(fakeLlmTask.status).toBe("claimed");
     const claimTransition = llmTaskUpdateMany.mock.calls.find(
-      ([input]) => input.data.agentId === fakeAgent!.id,
+      ([input]) => input.data.agentId === agentFixture!.id,
     )?.[0];
     expect(claimTransition).toEqual(
       expect.objectContaining({
         where: expect.objectContaining({
-          id: { in: [fakeLlmTask.id] },
+          id: { in: [llmTaskFixture.id] },
           organizationId: AUTH.org.id,
           status: "pending",
         }),
@@ -1210,14 +1325,14 @@ describe("agent LLM task ownership", () => {
     );
 
     const claimedFetch = llmTaskFindMany.mock.calls.find(
-      ([input]) => input.where?.agentId === fakeAgent!.id,
+      ([input]) => input.where?.agentId === agentFixture!.id,
     )?.[0];
     expect(claimedFetch).toEqual(
       expect.objectContaining({
         where: expect.objectContaining({
-          id: { in: [fakeLlmTask.id] },
+          id: { in: [llmTaskFixture.id] },
           organizationId: AUTH.org.id,
-          agentId: fakeAgent!.id,
+          agentId: agentFixture!.id,
           status: "claimed",
         }),
       }),
@@ -1225,33 +1340,35 @@ describe("agent LLM task ownership", () => {
   });
 
   it("rejects completion when the stored claimant belongs to another token", async () => {
-    fakeLlmTask = claimedLlmTask({
+    llmTaskFixture = claimedLlmTask({
       agent: { organizationId: AUTH.org.id, apiTokenId: "token_other" },
     });
+    llmTaskFindFirstResponses = [llmTaskClaimProjection(llmTaskFixture)];
 
     const response = await completeLlmTask(
       request("/api/agent/llm-tasks/llm_task_1/complete", {
-        agentId: fakeLlmTask.agentId,
+        agentId: llmTaskFixture.agentId,
         text: "untrusted completion",
       }),
-      params(fakeLlmTask.id),
+      params(llmTaskFixture.id),
     );
 
     expect([403, 404]).toContain(response.status);
-    expect(fakeLlmTask.status).toBe("claimed");
     expect(llmTaskUpdateMany).not.toHaveBeenCalled();
   });
 
   it("atomically completes through the full org, agent, and token boundary", async () => {
-    fakeLlmTask = claimedLlmTask();
+    llmTaskFixture = claimedLlmTask();
+    llmTaskFindFirstResponses = [llmTaskClaimProjection(llmTaskFixture)];
+    llmTaskUpdateManyResponses = [{ count: 1 }];
 
     const response = await completeLlmTask(
       request("/api/agent/llm-tasks/llm_task_1/complete", {
-        agentId: fakeLlmTask.agentId,
+        agentId: llmTaskFixture.agentId,
         text: "trusted completion",
         usage: { inputTokens: 10, outputTokens: 5 },
       }),
-      params(fakeLlmTask.id),
+      params(llmTaskFixture.id),
     );
 
     expect(response.status).toBe(200);
@@ -1259,9 +1376,9 @@ describe("agent LLM task ownership", () => {
     expect(llmTaskUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          id: fakeLlmTask.id,
+          id: llmTaskFixture.id,
           organizationId: AUTH.org.id,
-          agentId: fakeLlmTask.agentId,
+          agentId: llmTaskFixture.agentId,
           status: "claimed",
           agent: {
             is: {
@@ -1272,37 +1389,42 @@ describe("agent LLM task ownership", () => {
         }),
       }),
     );
-    expect(fakeLlmTask.status).toBe("completed");
   });
 
   it("strips a split surrogate pair from a capped LLM error message", async () => {
-    fakeLlmTask = claimedLlmTask();
+    llmTaskFixture = claimedLlmTask();
+    llmTaskFindFirstResponses = [llmTaskClaimProjection(llmTaskFixture)];
+    llmTaskUpdateManyResponses = [{ count: 1 }];
     const error = `x${"😀".repeat(600)}`;
 
     const response = await completeLlmTask(
       request("/api/agent/llm-tasks/llm_task_1/complete", {
-        agentId: fakeLlmTask.agentId,
+        agentId: llmTaskFixture.agentId,
         error,
       }),
-      params(fakeLlmTask.id),
+      params(llmTaskFixture.id),
     );
 
     expect(response.status).toBe(200);
-    expect(fakeLlmTask.status).toBe("failed");
-    expect(fakeLlmTask.errorMessage).toBe(error.slice(0, 999));
-    expect(fakeLlmTask.errorMessage?.endsWith("😀")).toBeTrue();
+    const transition = llmTaskUpdateMany.mock.calls.at(-1)?.[0] as {
+      data: { errorMessage: string };
+    };
+    expect(transition.data.errorMessage).toBe(error.slice(0, 999));
+    expect(transition.data.errorMessage.endsWith("😀")).toBeTrue();
   });
 
   it("truncates multibyte result text on a complete UTF-8 code-point boundary", async () => {
-    fakeLlmTask = claimedLlmTask();
+    llmTaskFixture = claimedLlmTask();
+    llmTaskFindFirstResponses = [llmTaskClaimProjection(llmTaskFixture)];
+    llmTaskUpdateManyResponses = [{ count: 1 }];
     const text = `a${"😀".repeat(600_000)}`;
 
     const response = await completeLlmTask(
       request("/api/agent/llm-tasks/llm_task_1/complete", {
-        agentId: fakeLlmTask.agentId,
+        agentId: llmTaskFixture.agentId,
         text,
       }),
-      params(fakeLlmTask.id),
+      params(llmTaskFixture.id),
     );
 
     expect(response.status).toBe(200);

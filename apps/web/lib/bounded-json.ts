@@ -48,6 +48,7 @@ export async function readBoundedJson(
   if (contentLength) {
     const declaredBytes = Number(contentLength);
     if (Number.isFinite(declaredBytes) && declaredBytes > maxBytes) {
+      await request.body?.cancel().catch(() => {});
       return { ok: false, reason: "too_large" };
     }
   }

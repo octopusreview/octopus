@@ -38,3 +38,46 @@ jobs:
         env:
           DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
           BETTER_AUTH_SECRET: "build-time-dummy-secret"
+
+  agent-task-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: octopus
+          POSTGRES_PASSWORD: octopus
+          POSTGRES_DB: octopus_agent_task_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U octopus -d octopus_agent_task_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: "postgresql://octopus:octopus@localhost:5432/octopus_agent_task_test"
+      RUN_AGENT_TASK_DB_TESTS: "1"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: bun run db:generate
+
+      - name: Create isolated test schema
+        run: bun run db:push
+
+      - name: Test agent task result unit coverage
+        run: bun test lib/__tests__/agent-task-security.test.ts
+        working-directory: apps/web
+
+      - name: Test agent task ownership against PostgreSQL
+        run: bun test lib/__tests__/agent-task-security.db.test.ts
+        working-directory: apps/web

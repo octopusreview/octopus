@@ -11,6 +11,13 @@ const MAX_RESULT_SIZE = 50 * 1024; // 50KB
 const MAX_SUMMARY_SIZE = 15 * 1024; // 15KB
 const MAX_ANSWER_SUMMARY_SIZE = 100 * 1024; // 100KB for answer tasks
 const MAX_ERROR_SIZE = 1_000;
+const OVERSIZED_RESULT_ERROR =
+  "Agent result exceeded the 1 MiB transport limit";
+const OVERSIZED_RESULT = {
+  truncated: true,
+  reason: "transport_limit",
+  limitBytes: MAX_RESULT_BODY_SIZE,
+} satisfies Prisma.InputJsonObject;
 const TERMINAL_STATUSES = new Set(["completed", "failed", "timeout"]);
 
 function jsonByteLength(value: unknown): number {
@@ -51,6 +58,70 @@ function truncateJsonResult(value: unknown): Prisma.InputJsonValue {
   return envelope(truncateStringSafe(serialized, low));
 }
 
+function ownedClaimedTaskWhere(
+  id: string,
+  organizationId: string,
+  agentId: string,
+  apiTokenId: string,
+): Prisma.AgentSearchTaskWhereInput {
+  return {
+    id,
+    organizationId,
+    agentId,
+    status: "claimed",
+    agent: {
+      is: {
+        organizationId,
+        apiTokenId,
+      },
+    },
+  };
+}
+
+async function terminalRaceResponse(
+  id: string,
+  organizationId: string,
+  agentId: string,
+  apiTokenId: string,
+) {
+  const current = await prisma.agentSearchTask.findFirst({
+    where: {
+      id,
+      organizationId,
+      agentId,
+      agent: {
+        is: {
+          organizationId,
+          apiTokenId,
+        },
+      },
+    },
+    select: { status: true },
+  });
+
+  if (current && TERMINAL_STATUSES.has(current.status)) {
+    return NextResponse.json({ ok: true, status: current.status });
+  }
+
+  return NextResponse.json(
+    { error: "Task result could not be recorded" },
+    { status: 409 },
+  );
+}
+
+function publishCompletion(
+  organizationId: string,
+  taskId: string,
+  status: "completed" | "failed",
+) {
+  pubby
+    .trigger(`private-agent-org-${organizationId}`, "agent-search-complete", {
+      taskId,
+      status,
+    })
+    .catch(() => {});
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -61,12 +132,100 @@ export async function POST(
   }
 
   const { id } = await params;
+  // Resolve the stored claimant before reading the result stream. This lets an
+  // oversized submission be terminalized through the same credential-owned,
+  // atomic transition as a normal result instead of leaving the task claimed.
+  const task = await prisma.agentSearchTask.findFirst({
+    where: {
+      id,
+      organizationId: auth.org.id,
+    },
+    select: {
+      agentId: true,
+      searchType: true,
+      status: true,
+      agent: {
+        select: {
+          organizationId: true,
+          apiTokenId: true,
+        },
+      },
+    },
+  });
+
+  if (!task) {
+    await request.body?.cancel().catch(() => {});
+    return NextResponse.json(
+      { error: "Task not found" },
+      { status: 404 },
+    );
+  }
+
+  if (
+    !task.agentId ||
+    !task.agent ||
+    task.agent.organizationId !== auth.org.id ||
+    task.agent.apiTokenId !== auth.token.id
+  ) {
+    await request.body?.cancel().catch(() => {});
+    return NextResponse.json(
+      { error: "Task is claimed by a different agent" },
+      { status: 403 },
+    );
+  }
+
+  if (TERMINAL_STATUSES.has(task.status)) {
+    await request.body?.cancel().catch(() => {});
+    return NextResponse.json({ ok: true, status: task.status });
+  }
+
+  if (task.status !== "claimed") {
+    await request.body?.cancel().catch(() => {});
+    return NextResponse.json(
+      { error: "Task not in claimed state" },
+      { status: 409 },
+    );
+  }
+
+  const ownershipWhere = ownedClaimedTaskWhere(
+    id,
+    auth.org.id,
+    task.agentId,
+    auth.token.id,
+  );
   const parsedBody = await readBoundedJson(request, MAX_RESULT_BODY_SIZE);
   if (!parsedBody.ok) {
-    const tooLarge = parsedBody.reason === "too_large";
+    if (parsedBody.reason !== "too_large") {
+      return NextResponse.json(
+        { error: "Invalid request body" },
+        { status: 400 },
+      );
+    }
+
+    const failed = await prisma.agentSearchTask.updateMany({
+      where: ownershipWhere,
+      data: {
+        status: "failed",
+        result: OVERSIZED_RESULT,
+        resultSummary: null,
+        errorMessage: OVERSIZED_RESULT_ERROR,
+        completedAt: new Date(),
+      },
+    });
+
+    if (failed.count === 0) {
+      return terminalRaceResponse(
+        id,
+        auth.org.id,
+        task.agentId,
+        auth.token.id,
+      );
+    }
+
+    publishCompletion(auth.org.id, id, "failed");
     return NextResponse.json(
-      { error: tooLarge ? "Request body too large" : "Invalid request body" },
-      { status: tooLarge ? 413 : 400 },
+      { error: OVERSIZED_RESULT_ERROR, status: "failed" },
+      { status: 413 },
     );
   }
 
@@ -89,6 +248,12 @@ export async function POST(
       { status: 400 },
     );
   }
+  if (typeof agentId === "string" && agentId !== task.agentId) {
+    return NextResponse.json(
+      { error: "Task is claimed by a different agent" },
+      { status: 403 },
+    );
+  }
   if (resultSummary != null && typeof resultSummary !== "string") {
     return NextResponse.json(
       { error: "resultSummary must be a string" },
@@ -99,47 +264,6 @@ export async function POST(
     return NextResponse.json(
       { error: "errorMessage must be a string" },
       { status: 400 },
-    );
-  }
-
-  // Bind result delivery to the credential that registered the stored
-  // claimant. agentId remains optional for backwards-compatible clients, but
-  // when present it must name that same claimant.
-  const task = await prisma.agentSearchTask.findFirst({
-    where: {
-      id,
-      organizationId: auth.org.id,
-      status: "claimed",
-    },
-    select: {
-      agentId: true,
-      searchType: true,
-      agent: {
-        select: {
-          organizationId: true,
-          apiTokenId: true,
-        },
-      },
-    },
-  });
-
-  if (!task) {
-    return NextResponse.json(
-      { error: "Task not found or not in claimed state" },
-      { status: 404 },
-    );
-  }
-
-  if (
-    !task.agentId ||
-    !task.agent ||
-    task.agent.organizationId !== auth.org.id ||
-    task.agent.apiTokenId !== auth.token.id ||
-    (typeof agentId === "string" && agentId !== task.agentId)
-  ) {
-    return NextResponse.json(
-      { error: "Task is claimed by a different agent" },
-      { status: 403 },
     );
   }
 
@@ -169,18 +293,7 @@ export async function POST(
   const status = errorMessage ? "failed" : "completed";
 
   const updated = await prisma.agentSearchTask.updateMany({
-    where: {
-      id,
-      organizationId: auth.org.id,
-      agentId: task.agentId,
-      status: "claimed",
-      agent: {
-        is: {
-          organizationId: auth.org.id,
-          apiTokenId: auth.token.id,
-        },
-      },
-    },
+    where: ownershipWhere,
     data: {
       status,
       result: truncatedResult ?? null,
@@ -191,32 +304,16 @@ export async function POST(
   });
 
   if (updated.count === 0) {
-    const current = await prisma.agentSearchTask.findFirst({
-      where: {
-        id,
-        organizationId: auth.org.id,
-        agentId: task.agentId,
-      },
-      select: { status: true },
-    });
-
-    if (current && TERMINAL_STATUSES.has(current.status)) {
-      return NextResponse.json({ ok: true, status: current.status });
-    }
-
-    return NextResponse.json(
-      { error: "Task result could not be recorded" },
-      { status: 409 },
+    return terminalRaceResponse(
+      id,
+      auth.org.id,
+      task.agentId,
+      auth.token.id,
     );
   }
 
   // Signal completion via Pubby so the chat route can pick up results
-  pubby
-    .trigger(`private-agent-org-${auth.org.id}`, "agent-search-complete", {
-      taskId: id,
-      status,
-    })
-    .catch(() => {});
+  publishCompletion(auth.org.id, id, status);
 
   return NextResponse.json({ ok: true, status });
 }

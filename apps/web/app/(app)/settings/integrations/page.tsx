@@ -25,6 +25,7 @@ const ALLOWED_GITHUB_ERRORS = [
   "session_required",
   "state_user_mismatch",
   "state_browser_mismatch",
+  "github_app_not_configured",
   "github_verification_not_configured",
   "github_authorization_denied",
   "github_authorization_failed",

@@ -42,6 +42,7 @@ type GitHubError =
   | "session_required"
   | "state_user_mismatch"
   | "state_browser_mismatch"
+  | "github_app_not_configured"
   | "github_verification_not_configured"
   | "github_authorization_denied"
   | "github_authorization_failed"
@@ -66,6 +67,7 @@ const ERROR_TITLES: Record<Exclude<GitHubError, null>, string> = {
   session_required: "Sign-in required",
   state_user_mismatch: "Install session changed",
   state_browser_mismatch: "Install browser could not be verified",
+  github_app_not_configured: "GitHub App not configured",
   github_verification_not_configured: "GitHub verification needs configuration",
   github_authorization_denied: "GitHub authorization declined",
   github_authorization_failed: "GitHub authorization failed",
@@ -100,6 +102,8 @@ const ERROR_MESSAGES: Record<Exclude<GitHubError, null>, string> = {
     "The signed-in user is not the user who started this installation. Restart the install from Octopus.",
   state_browser_mismatch:
     "This browser did not start the installation, or its install cookie expired. Start again from Octopus.",
+  github_app_not_configured:
+    "No GitHub App is configured for this instance yet. Create the GitHub App below, then start the install again.",
   github_verification_not_configured:
     "Add the GitHub App client ID, client secret, and Octopus callback URL, then restart the install.",
   github_authorization_denied:

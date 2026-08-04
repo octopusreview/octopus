@@ -318,7 +318,14 @@ describe("GitHub installation UI entry points", () => {
 
   function sourceFiles(directory: string): string[] {
     return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-      if (entry.name.startsWith(".") || entry.name === "node_modules") return [];
+      if (
+        entry.name.startsWith(".") ||
+        entry.name === "node_modules" ||
+        entry.name === "__tests__" ||
+        /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(entry.name)
+      ) {
+        return [];
+      }
       const path = join(directory, entry.name);
       if (entry.isDirectory()) return sourceFiles(path);
       return /\.[cm]?[jt]sx?$/.test(entry.name) ? [path] : [];
@@ -331,11 +338,7 @@ describe("GitHub installation UI entry points", () => {
       "apps/web/app/api/github/install/route.ts",
       "apps/web/app/api/github/app-manifest/callback/route.ts",
     ]);
-    const sourceRoots = [
-      join(repoRoot, "apps/web/app"),
-      join(repoRoot, "apps/web/components"),
-      join(repoRoot, "apps/cli/src"),
-    ];
+    const sourceRoots = [join(repoRoot, "apps/web"), join(repoRoot, "apps/cli/src")];
 
     const violations = sourceRoots
       .flatMap(sourceFiles)
@@ -354,27 +357,32 @@ describe("GitHub installation UI entry points", () => {
 
   it("routes web and CLI recovery links through the signed install-start endpoint", () => {
     expect(repoTableSource).toContain(
-      'href="/api/github/install?returnTo=/dashboard"',
+      'href={`/api/github/install?orgId=${encodeURIComponent(orgId)}&returnTo=${encodeURIComponent("/dashboard")}`}',
     );
     expect(indexingLogsSource).toContain(
-      "href={`/api/github/install?returnTo=${encodeURIComponent(`/repositories?repo=${repoId}`)}`}",
+      "href={`/api/github/install?orgId=${encodeURIComponent(orgId)}&returnTo=${encodeURIComponent(`/repositories?repo=${repoId}`)}`}",
     );
     expect(cliRepoStepSource).toContain(
-      "`${creds.baseUrl}/api/github/install?returnTo=${encodeURIComponent(\"/repositories\")}`",
+      "`${creds.baseUrl}/api/github/install?orgId=${encodeURIComponent(creds.orgId)}&returnTo=${encodeURIComponent(\"/repositories\")}`",
     );
+  });
+
+  it("does not hide signed recovery links behind a public app-slug gate", () => {
+    expect(repoTableSource).not.toContain("githubAppSlug");
+    expect(indexingLogsSource).not.toContain("NEXT_PUBLIC_GITHUB_APP_SLUG");
   });
 
   it("resumes an unauthenticated install-start request after login", async () => {
     currentSession = null;
 
     const response = await GET_INSTALL(
-      installRequest({ returnTo: "/repositories" }),
+      installRequest({ orgId: "org_victim", returnTo: "/repositories" }),
     );
     const location = new URL(response.headers.get("location")!);
 
     expect(location.pathname).toBe("/login");
     expect(location.searchParams.get("callbackUrl")).toBe(
-      "/api/github/install?returnTo=%2Frepositories",
+      "/api/github/install?orgId=org_victim&returnTo=%2Frepositories",
     );
   });
 });

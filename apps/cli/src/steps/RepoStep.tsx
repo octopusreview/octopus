@@ -75,7 +75,7 @@ export function RepoStep({ onNext }: RepoStepProps) {
       }
 
       setInstallUrl(
-        `${creds.baseUrl}/api/github/install?returnTo=${encodeURIComponent("/repositories")}`,
+        `${creds.baseUrl}/api/github/install?orgId=${encodeURIComponent(creds.orgId)}&returnTo=${encodeURIComponent("/repositories")}`,
       );
 
       const res = await getJson<{ repos: Repo[] }>(`${creds.baseUrl}/api/cli/repos`, {

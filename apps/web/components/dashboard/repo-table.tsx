@@ -101,16 +101,16 @@ function formatDate(dateStr: string): string {
 function IndexBadge({
   status,
   repoId,
+  orgId,
   indexedAt: _indexedAt,
   needsAccess,
-  githubAppSlug,
   onIndexStart,
 }: {
   status: string;
   repoId: string;
+  orgId: string;
   indexedAt: string | null;
   needsAccess: boolean;
-  githubAppSlug: string | null;
   onIndexStart: () => void;
 }) {
   const [pending, startTransition] = useTransition();
@@ -189,7 +189,7 @@ function IndexBadge({
           <IconAlertTriangle className="mr-1 size-3" />
           Failed
         </Badge>
-        {needsAccess && githubAppSlug ? (
+        {needsAccess ? (
           <Button
             size="sm"
             variant="outline"
@@ -197,7 +197,7 @@ function IndexBadge({
             asChild
           >
             <a
-              href="/api/github/install?returnTo=/dashboard"
+              href={`/api/github/install?orgId=${encodeURIComponent(orgId)}&returnTo=${encodeURIComponent("/dashboard")}`}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -372,11 +372,9 @@ function PullRequestList({ pullRequests }: { pullRequests: PullRequestItem[] }) 
 export function RepoTable({
   repos,
   orgId,
-  githubAppSlug,
 }: {
   repos: Repo[];
   orgId: string;
-  githubAppSlug: string | null;
 }) {
   const [expandedRepo, setExpandedRepo] = useState<string | null>(null);
   const [statuses, setStatuses] = useState<Record<string, string>>(() =>
@@ -538,9 +536,9 @@ export function RepoTable({
                       <IndexBadge
                         status={status}
                         repoId={repo.id}
+                        orgId={orgId}
                         indexedAt={repo.indexedAt}
                         needsAccess={accessErrors[repo.id] ?? false}
-                        githubAppSlug={githubAppSlug}
                         onIndexStart={() => handleIndexStart(repo.id)}
                       />
                     </td>
@@ -659,9 +657,9 @@ export function RepoTable({
                   <IndexBadge
                     status={status}
                     repoId={repo.id}
+                    orgId={orgId}
                     indexedAt={repo.indexedAt}
                     needsAccess={accessErrors[repo.id] ?? false}
-                    githubAppSlug={githubAppSlug}
                     onIndexStart={() => handleIndexStart(repo.id)}
                   />
                 </span>

@@ -639,7 +639,6 @@ export default async function DashboardPage({
             })),
           }))}
           orgId={org.id}
-          githubAppSlug={githubAppSlug ?? null}
         />
       </div>
     </div>

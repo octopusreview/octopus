@@ -166,6 +166,13 @@ export function IndexingLogs({
 
   const isComplete = status === "indexed" || status === "failed";
   const displayLogs = mergeProgressLogs(logs);
+  const needsInstall =
+    status === "failed" &&
+    logs.some(
+      (log) =>
+        log.message.toLowerCase().includes("access") ||
+        log.message.toLowerCase().includes("not found"),
+    );
 
   // Find the index of the last info log to determine which one should spin
   let lastInfoIndex = -1;
@@ -235,21 +242,19 @@ export function IndexingLogs({
           );
         })}
 
-        {status === "failed" &&
-          logs.some((l) => l.message.toLowerCase().includes("access") || l.message.toLowerCase().includes("not found")) &&
-          process.env.NEXT_PUBLIC_GITHUB_APP_SLUG && (
-            <div className="mt-3 border-t border-zinc-800 pt-3">
-              <a
-                href={`/api/github/install?returnTo=${encodeURIComponent(`/repositories?repo=${repoId}`)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-700"
-              >
-                <IconExternalLink className="size-3" />
-                Grant Access on GitHub
-              </a>
-            </div>
-          )}
+        {needsInstall && (
+          <div className="mt-3 border-t border-zinc-800 pt-3">
+            <a
+              href={`/api/github/install?orgId=${encodeURIComponent(orgId)}&returnTo=${encodeURIComponent(`/repositories?repo=${repoId}`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-700"
+            >
+              <IconExternalLink className="size-3" />
+              Grant Access on GitHub
+            </a>
+          </div>
+        )}
       </div>
     </div>
   );

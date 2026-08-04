@@ -133,11 +133,13 @@ const llmTaskUpdateMany = mock(() =>
   nextResponse("agentLlmTask.updateMany", llmTaskUpdateManyResponses),
 );
 const pubbyTrigger = mock(() => Promise.resolve());
+const PRISMA_DB_NULL = Symbol("Prisma.DbNull");
 
 mock.module("@/lib/api-auth", () => ({ authenticateApiToken }));
 mock.module("@/lib/pubby", () => ({
   pubby: { trigger: pubbyTrigger },
 }));
+mock.module("@/lib/prisma-json-null", () => ({ PRISMA_DB_NULL }));
 mock.module("server-only", () => ({}));
 mock.module("@octopus/db", () => ({
   prisma: {
@@ -396,7 +398,7 @@ describe("agent registration ownership", () => {
     );
   });
 
-  it("lets a new token reclaim an agent name after the old token is deleted", async () => {
+  it("lets a new token reclaim an agent name after the old token is soft-deleted", async () => {
     agentFixture = ownedAgent({
       apiTokenId: "token_deleted",
       apiToken: { deletedAt: new Date(Date.now() - 60_000), expiresAt: null },
@@ -841,19 +843,15 @@ describe("agent search task ownership", () => {
     expect(pubbyTrigger).not.toHaveBeenCalled();
   });
 
-  it("truncates a valid under-1MiB structured result to bounded JSON", async () => {
+  it("truncates a valid under-1MiB result to a whole-element array prefix", async () => {
     taskFixture = claimedTask();
     taskFindFirstResponses = [searchTaskClaimProjection(taskFixture)];
     taskUpdateManyResponses = [{ count: 1 }];
-    const oversized = {
-      matches: [
-        {
-          file: "large.ts",
-          line: 1,
-          content: "x".repeat(60 * 1024),
-        },
-      ],
-    };
+    const oversized = Array.from({ length: 80 }, (_, index) => ({
+      file: `large-${index}.ts`,
+      line: index + 1,
+      content: "x".repeat(1024),
+    }));
 
     const response = await submitResult(
       request("/api/agent/tasks/task_1/result", {
@@ -865,15 +863,79 @@ describe("agent search task ownership", () => {
 
     expect(response.status).toBe(200);
     const transition = taskUpdateMany.mock.calls.at(-1)?.[0] as {
-      data: { result: unknown };
+      data: { result: typeof oversized };
     };
-    expect(() => JSON.stringify(transition.data.result)).not.toThrow();
-    expect(JSON.stringify(transition.data.result).length).toBeLessThanOrEqual(
-      50 * 1024,
-    );
+    expect(Array.isArray(transition.data.result)).toBeTrue();
+    expect(transition.data.result.length).toBeGreaterThan(0);
+    expect(transition.data.result.length).toBeLessThan(oversized.length);
     expect(transition.data.result).toEqual(
-      expect.objectContaining({ truncated: true }),
+      oversized.slice(0, transition.data.result.length),
     );
+    expect(
+      new TextEncoder().encode(JSON.stringify(transition.data.result))
+        .byteLength,
+    ).toBeLessThanOrEqual(50 * 1024);
+  });
+
+  it("preserves an oversized result's object root while truncating entries", async () => {
+    taskFixture = claimedTask();
+    taskFindFirstResponses = [searchTaskClaimProjection(taskFixture)];
+    taskUpdateManyResponses = [{ count: 1 }];
+    const oversized = Object.fromEntries(
+      Array.from({ length: 80 }, (_, index) => [
+        `match_${index}`,
+        { file: `large-${index}.ts`, content: "x".repeat(1024) },
+      ]),
+    );
+
+    const response = await submitResult(
+      request("/api/agent/tasks/task_1/result", {
+        results: oversized,
+        resultSummary: "large object result",
+      }),
+      params(),
+    );
+
+    expect(response.status).toBe(200);
+    const transition = taskUpdateMany.mock.calls.at(-1)?.[0] as {
+      data: { result: Record<string, unknown> };
+    };
+    expect(Array.isArray(transition.data.result)).toBeFalse();
+    const storedKeys = Object.keys(transition.data.result);
+    expect(storedKeys.length).toBeGreaterThan(0);
+    expect(storedKeys.length).toBeLessThan(Object.keys(oversized).length);
+    expect(transition.data.result).toEqual(
+      Object.fromEntries(Object.entries(oversized).slice(0, storedKeys.length)),
+    );
+    expect(
+      new TextEncoder().encode(JSON.stringify(transition.data.result))
+        .byteLength,
+    ).toBeLessThanOrEqual(50 * 1024);
+  });
+
+  it("sanitizes PostgreSQL-incompatible strings throughout stored results", async () => {
+    taskFixture = claimedTask();
+    taskFindFirstResponses = [searchTaskClaimProjection(taskFixture)];
+    taskUpdateManyResponses = [{ count: 1 }];
+
+    const response = await submitResult(
+      request("/api/agent/tasks/task_1/result", {
+        results: {
+          "bad\u0000key": ["high\uD800end", "nul\u0000end", { low: "\uDC00" }],
+        },
+        resultSummary: "summary\u0000\uD800",
+      }),
+      params(),
+    );
+
+    expect(response.status).toBe(200);
+    const transition = taskUpdateMany.mock.calls.at(-1)?.[0] as {
+      data: { result: unknown; resultSummary: string };
+    };
+    expect(transition.data.result).toEqual({
+      "bad�key": ["high�end", "nul�end", { low: "�" }],
+    });
+    expect(transition.data.resultSummary).toBe("summary��");
   });
 
   it("terminalizes an owned result larger than 1 MiB and publishes once", async () => {
@@ -928,11 +990,7 @@ describe("agent search task ownership", () => {
       },
       data: {
         status: "failed",
-        result: {
-          truncated: true,
-          reason: "transport_limit",
-          limitBytes: 1024 * 1024,
-        },
+        result: PRISMA_DB_NULL,
         resultSummary: null,
         errorMessage: "Agent result exceeded the 1 MiB transport limit",
         completedAt: expect.any(Date),
@@ -1147,14 +1205,14 @@ describe("agent search task ownership", () => {
     expect(transition.data.errorMessage.endsWith("😀")).toBeTrue();
   });
 
-  it("keeps an emoji-heavy oversized result preview well-formed", async () => {
+  it("keeps an emoji-heavy truncated string result well-formed", async () => {
     taskFixture = claimedTask();
     taskFindFirstResponses = [searchTaskClaimProjection(taskFixture)];
     taskUpdateManyResponses = [{ count: 1 }];
 
     const response = await submitResult(
       request("/api/agent/tasks/task_1/result", {
-        results: { m: `xxx${"😀".repeat(20_000)}` },
+        results: `xxx${"😀".repeat(20_000)}`,
         resultSummary: "emoji",
       }),
       params(),
@@ -1162,10 +1220,10 @@ describe("agent search task ownership", () => {
 
     expect(response.status).toBe(200);
     const transition = taskUpdateMany.mock.calls.at(-1)?.[0] as {
-      data: { result: { truncated: boolean; preview: string } };
+      data: { result: string };
     };
-    expect(transition.data.result.truncated).toBeTrue();
-    expect(transition.data.result.preview).not.toMatch(/[\uD800-\uDBFF]$/);
+    expect(typeof transition.data.result).toBe("string");
+    expect(transition.data.result).not.toMatch(/[\uD800-\uDBFF]$/);
     expect(
       new TextEncoder().encode(JSON.stringify(transition.data.result))
         .byteLength,
@@ -1389,6 +1447,26 @@ describe("agent LLM task ownership", () => {
         }),
       }),
     );
+  });
+
+  it("sanitizes PostgreSQL-incompatible LLM result text", async () => {
+    llmTaskFixture = claimedLlmTask();
+    llmTaskFindFirstResponses = [llmTaskClaimProjection(llmTaskFixture)];
+    llmTaskUpdateManyResponses = [{ count: 1 }];
+
+    const response = await completeLlmTask(
+      request("/api/agent/llm-tasks/llm_task_1/complete", {
+        agentId: llmTaskFixture.agentId,
+        text: "safe\u0000\uD800",
+      }),
+      params(llmTaskFixture.id),
+    );
+
+    expect(response.status).toBe(200);
+    const transition = llmTaskUpdateMany.mock.calls.at(-1)?.[0] as {
+      data: { resultText: string };
+    };
+    expect(transition.data.resultText).toBe("safe��");
   });
 
   it("strips a split surrogate pair from a capped LLM error message", async () => {

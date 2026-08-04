@@ -5,16 +5,16 @@ import { prisma, type Prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
 import {
   isBoundedStringArray,
-  MAX_REPO_FULL_NAME_LENGTH,
+  MAX_REPO_FULL_NAME_CODE_UNITS,
   MAX_REPO_FULL_NAMES,
   readBoundedJson,
 } from "@/lib/bounded-json";
 import { pubby } from "@/lib/pubby";
 
 const MAX_REGISTER_BODY_BYTES = 256 * 1024;
-const MAX_NAME_LENGTH = 200;
+const MAX_NAME_CODE_UNITS = 200;
 const MAX_CAPABILITIES = 50;
-const MAX_CAPABILITY_LENGTH = 100;
+const MAX_CAPABILITY_CODE_UNITS = 100;
 const MAX_MACHINE_INFO_BYTES = 8 * 1024;
 
 export async function POST(request: Request) {
@@ -48,17 +48,17 @@ export async function POST(request: Request) {
   if (
     typeof name !== "string" ||
     name.trim().length === 0 ||
-    name.length > MAX_NAME_LENGTH ||
+    name.length > MAX_NAME_CODE_UNITS ||
     !isBoundedStringArray(
       repoFullNames,
       MAX_REPO_FULL_NAMES,
-      MAX_REPO_FULL_NAME_LENGTH,
+      MAX_REPO_FULL_NAME_CODE_UNITS,
     ) ||
     (capabilities !== undefined &&
       !isBoundedStringArray(
         capabilities,
         MAX_CAPABILITIES,
-        MAX_CAPABILITY_LENGTH,
+        MAX_CAPABILITY_CODE_UNITS,
       ))
   ) {
     return NextResponse.json(
@@ -97,6 +97,10 @@ export async function POST(request: Request) {
     machineInfo: (machineInfo ?? null) as Prisma.InputJsonValue,
     apiTokenId: auth.token.id,
   };
+  // apiTokenId is NOT NULL and its foreign key uses ON DELETE CASCADE, so a
+  // hard-deleted token removes this row and frees (organizationId, name).
+  // Persisted names are reclaimable only through the owned, soft-deleted, or
+  // expired-token cases below; an active foreign token remains protected.
   const registrationWhere = {
     organizationId: auth.org.id,
     name,

@@ -47,15 +47,21 @@ if (RUN_DB_TESTS) {
 
 type DbModule = typeof import("@octopus/db");
 type ResultRoute = typeof import("@/app/api/agent/tasks/[id]/result/route");
+type RegisterRoute = typeof import("@/app/api/agent/register/route");
+type AgentSearchModule = typeof import("@/lib/agent-search");
 
 let prisma: DbModule["prisma"];
 let postResult: ResultRoute["POST"];
+let postRegister: RegisterRoute["POST"];
+let readAgentSearchTaskOutcome: AgentSearchModule["readAgentSearchTaskOutcome"];
 
 if (RUN_DB_TESTS) {
   ({ prisma } = await import("@octopus/db"));
   ({ POST: postResult } = await import(
     "@/app/api/agent/tasks/[id]/result/route"
   ));
+  ({ POST: postRegister } = await import("@/app/api/agent/register/route"));
+  ({ readAgentSearchTaskOutcome } = await import("@/lib/agent-search"));
 }
 
 const describeDb = RUN_DB_TESTS ? describe : describe.skip;
@@ -89,6 +95,25 @@ function resultRequest(
   );
 }
 
+function registerRequest(
+  token: string,
+  name: string,
+  repos = [repoFullName],
+): Request {
+  return new Request("http://localhost/api/agent/register", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      name,
+      repoFullNames: repos,
+      capabilities: ["grep"],
+    }),
+  });
+}
+
 async function submitResult(
   taskId: string,
   token: string,
@@ -113,7 +138,7 @@ async function createClaimedTask(label: string) {
   });
 }
 
-describeDb("agent task result route with PostgreSQL", () => {
+describeDb("agent ownership routes with PostgreSQL", () => {
   beforeAll(async () => {
     await prisma.user.create({
       data: {
@@ -173,6 +198,61 @@ describeDb("agent task result route with PostgreSQL", () => {
     }
   });
 
+  it("protects an active agent name and releases it after token hard-delete cascade", async () => {
+    const oldToken = `oct_${randomUUID().replaceAll("-", "")}`;
+    const replacementToken = `oct_${randomUUID().replaceAll("-", "")}`;
+    const name = `agent-db-reclaim-${randomUUID().replaceAll("-", "")}`;
+    const [oldApiToken, replacementApiToken] = await Promise.all([
+      prisma.orgApiToken.create({
+        data: {
+          name: "hard-delete owner token",
+          tokenHash: sha256(oldToken),
+          tokenPrefix: `${oldToken.slice(0, 8)}...`,
+          organizationId,
+          createdById: userId,
+        },
+      }),
+      prisma.orgApiToken.create({
+        data: {
+          name: "hard-delete replacement token",
+          tokenHash: sha256(replacementToken),
+          tokenPrefix: `${replacementToken.slice(0, 8)}...`,
+          organizationId,
+          createdById: userId,
+        },
+      }),
+    ]);
+    const oldAgent = await prisma.localAgent.create({
+      data: {
+        name,
+        status: "online",
+        repoFullNames: [repoFullName],
+        capabilities: ["grep"],
+        organizationId,
+        apiTokenId: oldApiToken.id,
+      },
+    });
+
+    const blocked = await postRegister(registerRequest(replacementToken, name));
+    expect(blocked.status).toBe(409);
+
+    await prisma.orgApiToken.delete({ where: { id: oldApiToken.id } });
+    expect(
+      await prisma.localAgent.findUnique({ where: { id: oldAgent.id } }),
+    ).toBeNull();
+
+    const registered = await postRegister(
+      registerRequest(replacementToken, name),
+    );
+    expect(registered.status).toBe(200);
+    const body = (await registered.json()) as { agentId: string };
+    const replacementAgent = await prisma.localAgent.findUniqueOrThrow({
+      where: { id: body.agentId },
+    });
+    expect(replacementAgent.apiTokenId).toBe(replacementApiToken.id);
+    expect(replacementAgent.name).toBe(name);
+  });
+
   it("completes an owned task through real auth and nested relation filters", async () => {
     const task = await createClaimedTask("owner");
     const results = { files: ["apps/web/app/api/agent/tasks/route.ts"] };
@@ -195,6 +275,28 @@ describeDb("agent task result route with PostgreSQL", () => {
     expect(stored.completedAt).toBeInstanceOf(Date);
   });
 
+  it("stores escaped lone surrogates and NUL as PostgreSQL-safe JSON", async () => {
+    const task = await createClaimedTask("postgres-text");
+
+    const response = await submitResult(task.id, ownerToken, {
+      agentId,
+      results: {
+        "bad\u0000key": ["high\uD800end", "nul\u0000end", { low: "\uDC00" }],
+      },
+      resultSummary: "summary\u0000\uD800",
+    });
+
+    expect(response.status).toBe(200);
+    const stored = await prisma.agentSearchTask.findUniqueOrThrow({
+      where: { id: task.id },
+    });
+    expect(stored.status).toBe("completed");
+    expect(stored.result).toEqual({
+      "bad�key": ["high�end", "nul�end", { low: "�" }],
+    });
+    expect(stored.resultSummary).toBe("summary��");
+  });
+
   it("does not let another token in the organization mutate the claimed task", async () => {
     const task = await createClaimedTask("other-token");
 
@@ -214,6 +316,10 @@ describeDb("agent task result route with PostgreSQL", () => {
 
   it("terminally fails an owned task when its request body is too large", async () => {
     const task = await createClaimedTask("oversized");
+    await prisma.agentSearchTask.update({
+      where: { id: task.id },
+      data: { result: { stale: "must be cleared" } },
+    });
     const oversizedBody = {
       agentId,
       results: { output: "x".repeat(1024 * 1024) },
@@ -233,13 +339,40 @@ describeDb("agent task result route with PostgreSQL", () => {
     });
     expect(stored.status).toBe("failed");
     expect(stored.errorMessage).toBe(responseBody.error);
-    expect(stored.result).toEqual({
-      truncated: true,
-      reason: "transport_limit",
-      limitBytes: 1024 * 1024,
-    });
+    expect(stored.result).toBeNull();
     expect(stored.resultSummary).toBeNull();
     expect(stored.completedAt).toBeInstanceOf(Date);
+    const [databaseNull] = await prisma.$queryRaw<
+      Array<{ isDatabaseNull: boolean }>
+    >`SELECT "result" IS NULL AS "isDatabaseNull"
+      FROM "agent_search_tasks"
+      WHERE "id" = ${task.id}`;
+    expect(databaseNull?.isDatabaseNull).toBeTrue();
+  });
+
+  it("keeps opaque stored results out of the application outcome contract", async () => {
+    const task = await prisma.agentSearchTask.create({
+      data: {
+        id: `agent_db_task_reader_${randomUUID().replaceAll("-", "")}`,
+        query: "consumer contract",
+        repoFullName,
+        organizationId,
+        agentId,
+        status: "failed",
+        result: { legacyOrDiagnosticShape: ["opaque"] },
+        resultSummary: null,
+        errorMessage: "bounded failure",
+        completedAt: new Date(),
+      },
+    });
+
+    const outcome = await readAgentSearchTaskOutcome(task.id, organizationId);
+    expect(outcome).toEqual({
+      status: "failed",
+      resultSummary: null,
+      agent: { name: `agent-db-${fixtureId}` },
+    });
+    expect(outcome).not.toHaveProperty("result");
   });
 
   it("allows only one guarded terminal update when results race", async () => {

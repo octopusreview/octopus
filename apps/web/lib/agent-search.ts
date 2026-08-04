@@ -1,4 +1,6 @@
-import { prisma } from "@octopus/db";
+import "server-only";
+
+import { prisma, type Prisma } from "@octopus/db";
 import { pubby } from "@/lib/pubby";
 
 const STALE_THRESHOLD_MS = 90_000; // 90s
@@ -15,6 +17,27 @@ interface AgentSearchResult {
   summary: string;
   taskId: string;
   agentName: string | null;
+}
+
+const AGENT_SEARCH_TASK_OUTCOME_SELECT = {
+  status: true,
+  resultSummary: true,
+  agent: { select: { name: true } },
+} satisfies Prisma.AgentSearchTaskSelect;
+
+/**
+ * Stable application-reader contract for agent search results. The raw
+ * `result` column is opaque, bounded diagnostic storage; user-facing search
+ * and answer flows intentionally consume only status and resultSummary.
+ */
+export function readAgentSearchTaskOutcome(
+  taskId: string,
+  organizationId: string,
+) {
+  return prisma.agentSearchTask.findFirst({
+    where: { id: taskId, organizationId },
+    select: AGENT_SEARCH_TASK_OUTCOME_SELECT,
+  });
 }
 
 /**
@@ -90,14 +113,7 @@ export async function requestAgentSearch(
   while (Date.now() < deadline) {
     await sleep(POLL_INTERVAL_MS);
 
-    const updated = await prisma.agentSearchTask.findUnique({
-      where: { id: task.id },
-      select: {
-        status: true,
-        resultSummary: true,
-        agent: { select: { name: true } },
-      },
-    });
+    const updated = await readAgentSearchTaskOutcome(task.id, orgId);
 
     if (!updated) break;
 
@@ -208,14 +224,7 @@ export async function requestAgentAnswer(
   while (Date.now() < deadline) {
     await sleep(POLL_INTERVAL_MS);
 
-    const updated = await prisma.agentSearchTask.findUnique({
-      where: { id: task.id },
-      select: {
-        status: true,
-        resultSummary: true,
-        agent: { select: { name: true } },
-      },
-    });
+    const updated = await readAgentSearchTaskOutcome(task.id, orgId);
 
     if (!updated) break;
 

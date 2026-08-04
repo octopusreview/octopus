@@ -3,7 +3,11 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
-import { readBoundedJson, truncateStringSafe } from "@/lib/bounded-json";
+import {
+  readBoundedJson,
+  sanitizePostgresText,
+  truncateStringSafe,
+} from "@/lib/bounded-json";
 
 /**
  * POST /api/agent/llm-tasks/<id>/complete
@@ -36,6 +40,7 @@ type CompleteBody = {
 const TERMINAL_STATUSES = new Set(["completed", "failed", "timeout"]);
 const MAX_REQUEST_BODY_BYTES = 8 * 1024 * 1024;
 const MAX_RESULT_TEXT_BYTES = 2_000_000;
+const MAX_ERROR_MESSAGE_CODE_UNITS = 1_000;
 
 function truncateUtf8(value: string, maxBytes: number): string {
   const bytes = new TextEncoder().encode(value);
@@ -175,7 +180,10 @@ export async function POST(
       where: ownershipWhere,
       data: {
         status: "failed",
-        errorMessage: truncateStringSafe(body.error, 1000),
+        errorMessage: truncateStringSafe(
+          sanitizePostgresText(body.error),
+          MAX_ERROR_MESSAGE_CODE_UNITS,
+        ),
         completedAt: new Date(),
       },
     });
@@ -206,7 +214,10 @@ export async function POST(
   // schema cap) would otherwise bloat the DB indefinitely. usage is
   // typed-narrowed so non-number values can't poison the int columns
   // logAiUsage writes downstream.
-  const cappedText = truncateUtf8(body.text, MAX_RESULT_TEXT_BYTES);
+  const cappedText = truncateUtf8(
+    sanitizePostgresText(body.text),
+    MAX_RESULT_TEXT_BYTES,
+  );
   const usage = body.usage as Record<string, unknown> | null | undefined;
   const sanitizedUsage = usage
     ? {

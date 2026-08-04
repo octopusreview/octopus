@@ -3,21 +3,22 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { prisma, type Prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
-import { readBoundedJson, truncateStringSafe } from "@/lib/bounded-json";
+import {
+  readBoundedJson,
+  sanitizePostgresJson,
+  sanitizePostgresText,
+  truncateStringSafe,
+} from "@/lib/bounded-json";
+import { PRISMA_DB_NULL } from "@/lib/prisma-json-null";
 import { pubby } from "@/lib/pubby";
 
-const MAX_RESULT_BODY_SIZE = 1024 * 1024; // 1MB
-const MAX_RESULT_SIZE = 50 * 1024; // 50KB
-const MAX_SUMMARY_SIZE = 15 * 1024; // 15KB
-const MAX_ANSWER_SUMMARY_SIZE = 100 * 1024; // 100KB for answer tasks
-const MAX_ERROR_SIZE = 1_000;
+const MAX_RESULT_BODY_BYTES = 1024 * 1024; // 1 MiB
+const MAX_STORED_RESULT_BYTES = 50 * 1024; // 50 KiB
+const MAX_SUMMARY_CODE_UNITS = 15 * 1024;
+const MAX_ANSWER_SUMMARY_CODE_UNITS = 100 * 1024;
+const MAX_ERROR_CODE_UNITS = 1_000;
 const OVERSIZED_RESULT_ERROR =
   "Agent result exceeded the 1 MiB transport limit";
-const OVERSIZED_RESULT = {
-  truncated: true,
-  reason: "transport_limit",
-  limitBytes: MAX_RESULT_BODY_SIZE,
-} satisfies Prisma.InputJsonObject;
 const TERMINAL_STATUSES = new Set(["completed", "failed", "timeout"]);
 
 function jsonByteLength(value: unknown): number {
@@ -25,37 +26,50 @@ function jsonByteLength(value: unknown): number {
 }
 
 function truncateJsonResult(value: unknown): Prisma.InputJsonValue {
-  const normalized = value ?? null;
+  const normalized = (sanitizePostgresJson(value) ??
+    null) as Prisma.InputJsonValue;
   const serialized = JSON.stringify(normalized) ?? "null";
   const originalSizeBytes = new TextEncoder().encode(serialized).byteLength;
 
-  if (originalSizeBytes <= MAX_RESULT_SIZE) {
-    return normalized as Prisma.InputJsonValue;
+  if (originalSizeBytes <= MAX_STORED_RESULT_BYTES) {
+    return normalized;
   }
 
-  const envelope = (preview: string) => ({
-    truncated: true,
-    originalSizeBytes,
-    preview,
-  });
+  // Preserve the caller's top-level JSON type: array/object payloads keep the
+  // largest whole-member prefix that fits, and string payloads keep the
+  // largest surrogate-safe prefix. This avoids introducing a wrapper shape
+  // that a future diagnostic reader could mistake for the agent's result.
+  let length: number;
+  let candidate: (end: number) => Prisma.InputJsonValue;
 
-  // Keep the stored value valid JSON. Slicing serialized JSON and parsing it
-  // can split an object, string, escape sequence, or multibyte character.
-  // Binary-search the largest preview whose complete envelope stays bounded.
+  if (typeof normalized === "string") {
+    length = normalized.length;
+    candidate = (end) => truncateStringSafe(normalized, end);
+  } else if (Array.isArray(normalized)) {
+    length = normalized.length;
+    candidate = (end) => normalized.slice(0, end) as Prisma.InputJsonArray;
+  } else if (typeof normalized === "object" && normalized !== null) {
+    const entries = Object.entries(normalized);
+    length = entries.length;
+    candidate = (end) =>
+      Object.fromEntries(entries.slice(0, end)) as Prisma.InputJsonObject;
+  } else {
+    // JSON scalars are always well below the storage cap.
+    return normalized;
+  }
+
   let low = 0;
-  let high = serialized.length;
+  let high = length;
   while (low < high) {
     const midpoint = Math.ceil((low + high) / 2);
-    if (
-      jsonByteLength(envelope(serialized.slice(0, midpoint))) <= MAX_RESULT_SIZE
-    ) {
+    if (jsonByteLength(candidate(midpoint)) <= MAX_STORED_RESULT_BYTES) {
       low = midpoint;
     } else {
       high = midpoint - 1;
     }
   }
 
-  return envelope(truncateStringSafe(serialized, low));
+  return candidate(low);
 }
 
 function ownedClaimedTaskWhere(
@@ -193,7 +207,7 @@ export async function POST(
     task.agentId,
     auth.token.id,
   );
-  const parsedBody = await readBoundedJson(request, MAX_RESULT_BODY_SIZE);
+  const parsedBody = await readBoundedJson(request, MAX_RESULT_BODY_BYTES);
   if (!parsedBody.ok) {
     if (parsedBody.reason !== "too_large") {
       return NextResponse.json(
@@ -206,7 +220,7 @@ export async function POST(
       where: ownershipWhere,
       data: {
         status: "failed",
-        result: OVERSIZED_RESULT,
+        result: PRISMA_DB_NULL,
         resultSummary: null,
         errorMessage: OVERSIZED_RESULT_ERROR,
         completedAt: new Date(),
@@ -268,8 +282,10 @@ export async function POST(
   }
 
   // Truncate results if too large — answer tasks get a higher limit
-  const summaryLimit =
-    task.searchType === "answer" ? MAX_ANSWER_SUMMARY_SIZE : MAX_SUMMARY_SIZE;
+  const summaryLimitCodeUnits =
+    task.searchType === "answer"
+      ? MAX_ANSWER_SUMMARY_CODE_UNITS
+      : MAX_SUMMARY_CODE_UNITS;
 
   let truncatedResult: Prisma.InputJsonValue;
   try {
@@ -283,12 +299,18 @@ export async function POST(
 
   const truncatedSummary =
     typeof resultSummary === "string"
-      ? truncateStringSafe(resultSummary, summaryLimit)
+      ? truncateStringSafe(
+          sanitizePostgresText(resultSummary),
+          summaryLimitCodeUnits,
+        )
       : resultSummary;
 
   const truncatedError =
     typeof errorMessage === "string"
-      ? truncateStringSafe(errorMessage, MAX_ERROR_SIZE)
+      ? truncateStringSafe(
+          sanitizePostgresText(errorMessage),
+          MAX_ERROR_CODE_UNITS,
+        )
       : errorMessage;
   const status = errorMessage ? "failed" : "completed";
 

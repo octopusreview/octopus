@@ -5,7 +5,7 @@ import { prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
 import {
   isBoundedStringArray,
-  MAX_REPO_FULL_NAME_LENGTH,
+  MAX_REPO_FULL_NAME_CODE_UNITS,
   MAX_REPO_FULL_NAMES,
   readBoundedJson,
 } from "@/lib/bounded-json";
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     !isBoundedStringArray(
       repoFullNames,
       MAX_REPO_FULL_NAMES,
-      MAX_REPO_FULL_NAME_LENGTH,
+      MAX_REPO_FULL_NAME_CODE_UNITS,
     )
   ) {
     return NextResponse.json(

@@ -74,7 +74,9 @@ bun run typecheck     # TypeScript type checking
 bun run build         # Full build
 ```
 
-The CI pipeline runs these checks automatically on every pull request.
+The CI pipeline runs these checks automatically on every pull request. It
+also runs the agent task security tests (`apps/web/lib/__tests__/`), including
+a job against a real PostgreSQL instance.
 
 ## Code Style
 

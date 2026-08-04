@@ -753,6 +753,51 @@ describe("agent search task ownership", () => {
     expect(taskUpdateMany).not.toHaveBeenCalled();
   });
 
+  it("rejects PostgreSQL-invalid search task ids before database access", async () => {
+    for (const id of ["task\u0000id", "task\uD800id"]) {
+      const claimResponse = await claimTask(
+        request("/api/agent/tasks/bad/claim", { agentId: "agent_owner" }),
+        params(id),
+      );
+      const resultResponse = await submitResult(
+        request("/api/agent/tasks/bad/result", {
+          results: [],
+          resultSummary: "safe",
+        }),
+        params(id),
+      );
+
+      expect(claimResponse.status).toBe(400);
+      expect(resultResponse.status).toBe(400);
+    }
+
+    expect(localAgentFindFirst).not.toHaveBeenCalled();
+    expect(taskFindFirst).not.toHaveBeenCalled();
+    expect(taskUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 for a result posted against an unclaimed task", async () => {
+    taskFixture = claimedTask({
+      status: "pending",
+      agentId: null,
+      agent: null,
+    });
+    taskFindFirstResponses = [searchTaskClaimProjection(taskFixture)];
+
+    const response = await submitResult(
+      request("/api/agent/tasks/task_1/result", {
+        results: [],
+        resultSummary: "safe",
+      }),
+      params(),
+    );
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toBe("Task not in claimed state");
+    expect(taskUpdateMany).not.toHaveBeenCalled();
+    expect(pubbyTrigger).not.toHaveBeenCalled();
+  });
+
   it("rejects a malformed claim agentId before database access", async () => {
     const response = await claimTask(
       request("/api/agent/tasks/task_1/claim", { agentId: 42 }),
@@ -1423,6 +1468,23 @@ describe("agent LLM task ownership", () => {
     expect(localAgentFindFirst).not.toHaveBeenCalled();
     expect(llmTaskFindFirst).not.toHaveBeenCalled();
     expect(llmTaskFindMany).not.toHaveBeenCalled();
+    expect(llmTaskUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects PostgreSQL-invalid LLM task ids before database access", async () => {
+    for (const id of ["llm\u0000task", "llm\uDC00task"]) {
+      const response = await completeLlmTask(
+        request("/api/agent/llm-tasks/bad/complete", {
+          agentId: "agent_owner",
+          text: "done",
+        }),
+        params(id),
+      );
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: "Invalid task id" });
+    }
+    expect(llmTaskFindFirst).not.toHaveBeenCalled();
     expect(llmTaskUpdateMany).not.toHaveBeenCalled();
   });
 

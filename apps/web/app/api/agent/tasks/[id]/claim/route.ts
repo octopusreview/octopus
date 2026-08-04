@@ -17,6 +17,11 @@ export async function POST(
   }
 
   const { id } = await params;
+  if (!isPostgresSafeText(id)) {
+    await request.body?.cancel().catch(() => {});
+    return NextResponse.json({ error: "Invalid task id" }, { status: 400 });
+  }
+
   const parsedBody = await readBoundedJson(request, MAX_CLAIM_BODY_BYTES);
   if (!parsedBody.ok && parsedBody.reason === "too_large") {
     return NextResponse.json(

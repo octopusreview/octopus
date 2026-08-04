@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { prisma, type Prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
 import {
+  isPostgresSafeText,
   readBoundedJson,
   sanitizePostgresJson,
   sanitizePostgresText,
@@ -146,6 +147,11 @@ export async function POST(
   }
 
   const { id } = await params;
+  if (!isPostgresSafeText(id)) {
+    await request.body?.cancel().catch(() => {});
+    return NextResponse.json({ error: "Invalid task id" }, { status: 400 });
+  }
+
   // Resolve the stored claimant before reading the result stream. This lets an
   // oversized submission be terminalized through the same credential-owned,
   // atomic transition as a normal result instead of leaving the task claimed.
@@ -175,8 +181,15 @@ export async function POST(
     );
   }
 
+  if (!task.agentId) {
+    await request.body?.cancel().catch(() => {});
+    return NextResponse.json(
+      { error: "Task not in claimed state" },
+      { status: 409 },
+    );
+  }
+
   if (
-    !task.agentId ||
     !task.agent ||
     task.agent.organizationId !== auth.org.id ||
     task.agent.apiTokenId !== auth.token.id

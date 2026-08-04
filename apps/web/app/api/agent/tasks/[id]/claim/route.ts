@@ -3,7 +3,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
-import { readBoundedJson } from "@/lib/bounded-json";
+import { isPostgresSafeText, readBoundedJson } from "@/lib/bounded-json";
 
 const MAX_CLAIM_BODY_BYTES = 16 * 1024;
 
@@ -30,7 +30,11 @@ export async function POST(
       ? (body as Record<string, unknown>).agentId
       : undefined;
 
-  if (typeof agentId !== "string" || agentId.trim().length === 0) {
+  if (
+    typeof agentId !== "string" ||
+    agentId.trim().length === 0 ||
+    !isPostgresSafeText(agentId)
+  ) {
     return NextResponse.json({ error: "agentId is required" }, { status: 400 });
   }
 

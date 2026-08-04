@@ -3,6 +3,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
+import { isPostgresSafeText } from "@/lib/bounded-json";
 
 /**
  * GET /api/agent/llm-tasks?agentId=<id>
@@ -28,7 +29,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const agentId = searchParams.get("agentId");
-  if (!agentId) {
+  if (!agentId || !isPostgresSafeText(agentId)) {
     return NextResponse.json({ error: "agentId is required" }, { status: 400 });
   }
 

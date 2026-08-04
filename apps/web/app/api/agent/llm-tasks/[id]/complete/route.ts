@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
 import {
+  isPostgresSafeText,
   readBoundedJson,
   sanitizePostgresText,
   truncateStringSafe,
@@ -92,7 +93,11 @@ export async function POST(
 
   const body = parsedBody.value as CompleteBody;
 
-  if (!body.agentId || typeof body.agentId !== "string") {
+  if (
+    !body.agentId ||
+    typeof body.agentId !== "string" ||
+    !isPostgresSafeText(body.agentId)
+  ) {
     return NextResponse.json(
       { error: "`agentId` is required in the request body" },
       { status: 400 },

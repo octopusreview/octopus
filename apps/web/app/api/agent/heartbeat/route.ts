@@ -5,6 +5,7 @@ import { prisma } from "@octopus/db";
 import { authenticateApiToken } from "@/lib/api-auth";
 import {
   isBoundedStringArray,
+  isPostgresSafeText,
   MAX_REPO_FULL_NAME_CODE_UNITS,
   MAX_REPO_FULL_NAMES,
   readBoundedJson,
@@ -37,7 +38,11 @@ export async function POST(request: Request) {
 
   const { agentId, repoFullNames } = body as Record<string, unknown>;
 
-  if (typeof agentId !== "string" || agentId.length === 0) {
+  if (
+    typeof agentId !== "string" ||
+    agentId.length === 0 ||
+    !isPostgresSafeText(agentId)
+  ) {
     return NextResponse.json({ error: "agentId is required" }, { status: 400 });
   }
   if (

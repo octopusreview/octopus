@@ -574,6 +574,22 @@ describe("agent registration ownership", () => {
 });
 
 describe("agent lifecycle ownership", () => {
+  it("rejects PostgreSQL-invalid lifecycle agent IDs before database access", async () => {
+    for (const agentId of ["agent\u0000id", "agent\uD800id"]) {
+      const heartbeatResponse = await heartbeatAgent(
+        request("/api/agent/heartbeat", { agentId }),
+      );
+      const disconnectResponse = await disconnectAgent(
+        request("/api/agent/disconnect", { agentId }),
+      );
+
+      expect(heartbeatResponse.status).toBe(400);
+      expect(disconnectResponse.status).toBe(400);
+    }
+    expect(localAgentUpdateMany).not.toHaveBeenCalled();
+    expect(localAgentFindFirst).not.toHaveBeenCalled();
+  });
+
   it("rejects heartbeat for an agent registered by another token", async () => {
     agentFixture = ownedAgent({ apiTokenId: "token_other" });
     localAgentUpdateManyResponses = [{ count: 0 }];
@@ -717,6 +733,26 @@ describe("agent lifecycle ownership", () => {
 });
 
 describe("agent search task ownership", () => {
+  it("rejects PostgreSQL-invalid search agent IDs before database access", async () => {
+    const claimResponse = await claimTask(
+      request("/api/agent/tasks/task_1/claim", {
+        agentId: "agent\uD800id",
+      }),
+      params(),
+    );
+    const pollResponse = await pollTasks(
+      new Request("https://app.test/api/agent/tasks?agentId=agent%00id", {
+        headers: { authorization: "Bearer oct_test" },
+      }),
+    );
+
+    expect(claimResponse.status).toBe(400);
+    expect(pollResponse.status).toBe(400);
+    expect(localAgentFindFirst).not.toHaveBeenCalled();
+    expect(taskFindMany).not.toHaveBeenCalled();
+    expect(taskUpdateMany).not.toHaveBeenCalled();
+  });
+
   it("rejects a malformed claim agentId before database access", async () => {
     const response = await claimTask(
       request("/api/agent/tasks/task_1/claim", { agentId: 42 }),
@@ -1368,6 +1404,28 @@ describe("agent search task ownership", () => {
 });
 
 describe("agent LLM task ownership", () => {
+  it("rejects PostgreSQL-invalid LLM agent IDs before database access", async () => {
+    const completeResponse = await completeLlmTask(
+      request("/api/agent/llm-tasks/llm_task_1/complete", {
+        agentId: "agent\uD800id",
+        text: "safe",
+      }),
+      params("llm_task_1"),
+    );
+    const pollResponse = await pollLlmTasks(
+      new Request("https://app.test/api/agent/llm-tasks?agentId=agent%00id", {
+        headers: { authorization: "Bearer oct_test" },
+      }),
+    );
+
+    expect(completeResponse.status).toBe(400);
+    expect(pollResponse.status).toBe(400);
+    expect(localAgentFindFirst).not.toHaveBeenCalled();
+    expect(llmTaskFindFirst).not.toHaveBeenCalled();
+    expect(llmTaskFindMany).not.toHaveBeenCalled();
+    expect(llmTaskUpdateMany).not.toHaveBeenCalled();
+  });
+
   it("rejects null and primitive JSON bodies before database access", async () => {
     for (const body of [null, "primitive", 17]) {
       const response = await completeLlmTask(

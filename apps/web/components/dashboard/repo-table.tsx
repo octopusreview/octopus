@@ -197,7 +197,7 @@ function IndexBadge({
             asChild
           >
             <a
-              href={`https://github.com/apps/${githubAppSlug}/installations/new?state=${encodeURIComponent(`${window.location.origin}/dashboard`)}`}
+              href="/api/github/install?returnTo=/dashboard"
               target="_blank"
               rel="noopener noreferrer"
             >

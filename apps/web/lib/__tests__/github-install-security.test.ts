@@ -1,5 +1,8 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import crypto from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 
 process.env.BETTER_AUTH_URL = "https://app.test";
 process.env.GITHUB_STATE_SECRET =
@@ -54,6 +57,7 @@ mock.module("@/lib/github-app-config", () => ({
   getGithubAppConfig: () =>
     Promise.resolve({
       appId: "123",
+      slug: "octopus-review",
       privateKey: TEST_PRIVATE_KEY,
       clientId: "github-app-client-id",
       clientSecret: "github-app-client-secret",
@@ -107,9 +111,18 @@ const {
   signInstallState,
 } = await import("@/lib/github-install-state");
 const { GET } = await import("@/app/api/github/callback/route");
+const { GET: GET_INSTALL } = await import("@/app/api/github/install/route");
 
 function callbackRequest(params: Record<string, string>) {
   const url = new URL("https://app.test/api/github/callback");
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, value);
+  }
+  return Object.assign(new Request(url), { nextUrl: url }) as never;
+}
+
+function installRequest(params: Record<string, string>) {
+  const url = new URL("https://app.test/api/github/install");
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }
@@ -285,5 +298,83 @@ describe("safeReturnPath", () => {
     expect(safeReturnPath("/\r/evil.com")).toBe("/settings/integrations");
     expect(safeReturnPath("/\x00evil")).toBe("/settings/integrations");
     expect(safeReturnPath("/\x7fevil")).toBe("/settings/integrations");
+  });
+});
+
+describe("GitHub installation UI entry points", () => {
+  const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
+  const repoTableSource = readFileSync(
+    new URL("../../components/dashboard/repo-table.tsx", import.meta.url),
+    "utf8",
+  );
+  const indexingLogsSource = readFileSync(
+    new URL("../../components/indexing-logs.tsx", import.meta.url),
+    "utf8",
+  );
+  const cliRepoStepSource = readFileSync(
+    join(repoRoot, "apps/cli/src/steps/RepoStep.tsx"),
+    "utf8",
+  );
+
+  function sourceFiles(directory: string): string[] {
+    return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      if (entry.name.startsWith(".") || entry.name === "node_modules") return [];
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) return sourceFiles(path);
+      return /\.[cm]?[jt]sx?$/.test(entry.name) ? [path] : [];
+    });
+  }
+
+  it("keeps raw GitHub App URLs inside the two server-owned redirect boundaries", () => {
+    const rawInstallUrl = "https://github.com/apps/";
+    const allowed = new Set([
+      "apps/web/app/api/github/install/route.ts",
+      "apps/web/app/api/github/app-manifest/callback/route.ts",
+    ]);
+    const sourceRoots = [
+      join(repoRoot, "apps/web/app"),
+      join(repoRoot, "apps/web/components"),
+      join(repoRoot, "apps/cli/src"),
+    ];
+
+    const violations = sourceRoots
+      .flatMap(sourceFiles)
+      .map((file) => ({
+        file: relative(repoRoot, file).replaceAll("\\", "/"),
+        source: readFileSync(file, "utf8"),
+      }))
+      .filter(({ file, source }) => source.includes(rawInstallUrl) && !allowed.has(file))
+      .map(({ file }) => file);
+
+    expect(violations).toEqual([]);
+    for (const file of allowed) {
+      expect(readFileSync(join(repoRoot, file), "utf8")).toContain(rawInstallUrl);
+    }
+  });
+
+  it("routes web and CLI recovery links through the signed install-start endpoint", () => {
+    expect(repoTableSource).toContain(
+      'href="/api/github/install?returnTo=/dashboard"',
+    );
+    expect(indexingLogsSource).toContain(
+      "href={`/api/github/install?returnTo=${encodeURIComponent(`/repositories?repo=${repoId}`)}`}",
+    );
+    expect(cliRepoStepSource).toContain(
+      "`${creds.baseUrl}/api/github/install?returnTo=${encodeURIComponent(\"/repositories\")}`",
+    );
+  });
+
+  it("resumes an unauthenticated install-start request after login", async () => {
+    currentSession = null;
+
+    const response = await GET_INSTALL(
+      installRequest({ returnTo: "/repositories" }),
+    );
+    const location = new URL(response.headers.get("location")!);
+
+    expect(location.pathname).toBe("/login");
+    expect(location.searchParams.get("callbackUrl")).toBe(
+      "/api/github/install?returnTo=%2Frepositories",
+    );
   });
 });

@@ -240,7 +240,7 @@ export function IndexingLogs({
           process.env.NEXT_PUBLIC_GITHUB_APP_SLUG && (
             <div className="mt-3 border-t border-zinc-800 pt-3">
               <a
-                href={`https://github.com/apps/${process.env.NEXT_PUBLIC_GITHUB_APP_SLUG}/installations/new?state=${encodeURIComponent(`${window.location.origin}/repositories?repo=${repoId}`)}`}
+                href={`/api/github/install?returnTo=${encodeURIComponent(`/repositories?repo=${repoId}`)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-700"

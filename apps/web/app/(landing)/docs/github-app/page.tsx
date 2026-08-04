@@ -176,8 +176,9 @@ GITHUB_APP_CLIENT_SECRET=<the GitHub App client secret>
 NEXT_PUBLIC_GITHUB_APP_SLUG=<the slug from the App's URL>`}</CodeBlock>
         <P>
           Restart the server. The &quot;Install GitHub App&quot; button on{" "}
-          <Mono>/settings/integrations</Mono> should now appear and link to{" "}
-          <Mono>https://github.com/apps/&lt;slug&gt;/installations/new</Mono>.
+          <Mono>/settings/integrations</Mono> should now appear and start the
+          signed installation flow through <Mono>/api/github/install</Mono>,
+          which redirects to GitHub.
         </P>
       </Section>
 

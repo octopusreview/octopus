@@ -21,7 +21,10 @@ export async function GET(request: NextRequest) {
 
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
-    return NextResponse.redirect(new URL("/login", baseUrl));
+    const resume = `${request.nextUrl.pathname}${request.nextUrl.search}`;
+    return NextResponse.redirect(
+      new URL(`/login?callbackUrl=${encodeURIComponent(resume)}`, baseUrl),
+    );
   }
 
   const cookieStore = await cookies();

@@ -5,8 +5,6 @@ import { loadCredentials } from "../lib/credentials.js";
 import { getJson } from "../lib/api.js";
 import { openBrowser } from "../lib/auth.js";
 
-const GITHUB_APP_SLUG = process.env.OCTOPUS_GITHUB_APP_SLUG ?? "octopus-review";
-
 export type RepoStepProps = {
   onNext: () => void;
 };
@@ -28,8 +26,9 @@ type Phase = "loading" | "no-creds" | "loaded" | "failed";
  *
  * Today's scope: list the org's already-connected repos (via /api/cli/repos)
  * with their index/review status. If the user wants to add a new repo we
- * link them to the GitHub App install page; we don't fetch their GitHub
- * repo list (that needs a different OAuth scope and is a separate epic).
+ * link them through the signed GitHub App install-start route; we don't fetch
+ * their GitHub repo list (that needs a different OAuth scope and is a separate
+ * epic).
  *
  * Self-hosted: skipped — repos there are added via the web UI's GitHub
  * integration page, not via this wizard.
@@ -45,10 +44,10 @@ export function RepoStep({ onNext }: RepoStepProps) {
     if (key.escape && phase !== "loading") onNext();
   });
 
-  // Open the GitHub App install page in the system browser (reusing the same
-  // shell-free helper the PKCE auth step uses). The URL stays on screen as a
-  // fallback, so a spawn failure is non-fatal — we just tell the user to open
-  // it themselves rather than claiming success.
+  // Open the signed GitHub App install-start route in the system browser
+  // (reusing the same shell-free helper the PKCE auth step uses). The URL stays
+  // on screen as a fallback, so a spawn failure is non-fatal — we just tell the
+  // user to open it themselves rather than claiming success.
   const handleSelect = async (value: string) => {
     if (value === "install") {
       const opened = await openBrowser(installUrl);
@@ -75,7 +74,9 @@ export function RepoStep({ onNext }: RepoStepProps) {
         return;
       }
 
-      setInstallUrl(`https://github.com/apps/${GITHUB_APP_SLUG}/installations/new`);
+      setInstallUrl(
+        `${creds.baseUrl}/api/github/install?returnTo=${encodeURIComponent("/repositories")}`,
+      );
 
       const res = await getJson<{ repos: Repo[] }>(`${creds.baseUrl}/api/cli/repos`, {
         headers: { authorization: `Bearer ${creds.token}` },

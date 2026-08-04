@@ -53,15 +53,21 @@ mock.module("@/lib/redis", () => ({
   getRedis: () => ({ set: redisSet }),
 }));
 
+let githubAppConfigured = true;
+
 mock.module("@/lib/github-app-config", () => ({
   getGithubAppConfig: () =>
-    Promise.resolve({
-      appId: "123",
-      slug: "octopus-review",
-      privateKey: TEST_PRIVATE_KEY,
-      clientId: "github-app-client-id",
-      clientSecret: "github-app-client-secret",
-    }),
+    Promise.resolve(
+      githubAppConfigured
+        ? {
+            appId: "123",
+            slug: "octopus-review",
+            privateKey: TEST_PRIVATE_KEY,
+            clientId: "github-app-client-id",
+            clientSecret: "github-app-client-secret",
+          }
+        : null,
+    ),
 }));
 
 const originalFetch = globalThis.fetch;
@@ -130,6 +136,7 @@ function installRequest(params: Record<string, string>) {
 }
 
 beforeEach(() => {
+  githubAppConfigured = true;
   currentSession = { user: { id: "user_victim" } };
   boundInstallationId = null;
   requestCookies = new Map();
@@ -370,6 +377,18 @@ describe("GitHub installation UI entry points", () => {
   it("does not hide signed recovery links behind a public app-slug gate", () => {
     expect(repoTableSource).not.toContain("githubAppSlug");
     expect(indexingLogsSource).not.toContain("NEXT_PUBLIC_GITHUB_APP_SLUG");
+  });
+
+  it("redirects to integrations settings when no GitHub App is configured", async () => {
+    githubAppConfigured = false;
+
+    const response = await GET_INSTALL(
+      installRequest({ orgId: "org_victim", returnTo: "/repositories" }),
+    );
+    const location = new URL(response.headers.get("location")!);
+
+    expect(location.pathname).toBe("/settings/integrations");
+    expect(location.searchParams.get("error")).toBe("github_app_not_configured");
   });
 
   it("resumes an unauthenticated install-start request after login", async () => {

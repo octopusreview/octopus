@@ -16,7 +16,9 @@ const baseUrl = process.env.BETTER_AUTH_URL || "http://localhost:3000";
 export async function GET(request: NextRequest) {
   const appSlug = (await getGithubAppConfig())?.slug;
   if (!appSlug) {
-    return NextResponse.json({ error: "github_app_not_configured" }, { status: 500 });
+    return NextResponse.redirect(
+      new URL("/settings/integrations?error=github_app_not_configured", baseUrl),
+    );
   }
 
   const session = await auth.api.getSession({ headers: await headers() });

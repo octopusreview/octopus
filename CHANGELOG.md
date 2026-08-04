@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Local agent API endpoints now treat the organization API token as the security boundary: a registered agent name held by an active token can no longer be taken over or acted on by a different token in the same organization, and task claims, results, and LLM-task completions are bound to the token that registered the agent. Deleting a token frees its agent names for reuse. Agents that intentionally share one token keep sharing authority — use separate tokens for separate boundaries.
+- Agent task results larger than the 1 MiB transport limit are now rejected with HTTP 413 and the task is marked failed instead of staying stuck in a claimed state. Stored results remain capped at 50 KiB, now truncated to a bounded prefix that preserves the result's JSON type, and text is sanitized so PostgreSQL-incompatible characters can no longer poison result storage.
+
 ## [1.0.93] - 2026-08-02
 
 ### Security

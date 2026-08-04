@@ -20,12 +20,11 @@ bun run build
 
 ```
 apps/web/                     Next.js 16 web app + API routes (the bulk of the code)
+apps/cli/                     octp CLI (onboarding, review, agent serve, doctor)
 packages/db/                  Prisma schema, migrations, and shared client
 packages/package-analyzer/    Package metadata + safety analyzer
 tools/{tsconfig,eslint-config}/  Shared dev config
 ```
-
-The `@octp/cli` package referenced in the README lives in a separate repository; changes targeting the CLI do not belong in this repo.
 
 ## Conventions that matter for AI-suggested changes
 

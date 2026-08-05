@@ -126,8 +126,8 @@ export async function POST(request: NextRequest) {
           where: { repositoryId: repo.id, number: mrIid },
           data: { mergedAt: new Date() },
         }),
-        prisma.repository.update({
-          where: { id: repo.id },
+        prisma.repository.updateMany({
+          where: { id: repo.id, indexStatus: "indexed" },
           data: { indexStatus: "stale" },
         }),
       ]);

@@ -73,6 +73,10 @@ mock.module("@octopus/db", () => ({
         mutationCalls.push({ kind: "repository.update", args });
         return Promise.resolve({});
       },
+      updateMany: (args: Record<string, unknown>) => {
+        mutationCalls.push({ kind: "repository.updateMany", args });
+        return Promise.resolve({ count: 1 });
+      },
     },
     gitlabIntegration: {
       // Legacy route control: the stale repository selects the wrong secret.
@@ -199,6 +203,14 @@ try {
           "repo_current",
     ),
     "merged MR did not mutate only the resolved repository",
+  );
+  assert(
+    mutationCalls.some((call) => {
+      if (call.kind !== "repository.updateMany") return false;
+      const where = call.args.where as { id?: string; indexStatus?: string };
+      return where?.id === "repo_current" && where?.indexStatus === "indexed";
+    }),
+    "merged MR stale marking was not scoped to an indexed resolved repository",
   );
 
   const noteResponse = await POST(

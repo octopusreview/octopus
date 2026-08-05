@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- AWS Terraform deployments now identify the application with a dedicated data-access security group, so RDS and optional Redis no longer trust every workload in the VPC. Existing stacks have a documented two-stage cutover that attaches the identity before removing legacy CIDR ingress. SSH stays unreachable unless an operator both configures a key pair and explicitly supplies trusted CIDRs; internet-wide SSH CIDRs are rejected.
+
 ## [1.0.96] - 2026-08-05
 
 ### Security

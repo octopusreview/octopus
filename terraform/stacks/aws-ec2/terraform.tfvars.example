@@ -78,8 +78,9 @@ environment = "production"
 name_prefix = "octopus"
 
 # ── Networking ────────────────────────────────────────────────────────────────
-vpc_cidr           = "10.0.0.0/16"
-enable_nat_gateway = false
+vpc_cidr                    = "10.0.0.0/16"
+enable_nat_gateway          = false
+restrict_data_access_to_app = true
 
 # ── EC2 ───────────────────────────────────────────────────────────────────────
 instance_type       = "t3.xlarge"  # min 4 vCPU / 16 GB for small teams
@@ -88,7 +89,7 @@ create_eip          = true
 
 # SSH access — leave null to disable entirely (use SSM Session Manager instead)
 key_name        = null
-ssh_cidr_blocks = ["0.0.0.0/0"]  # Restrict to your IP: ["1.2.3.4/32"]
+ssh_cidr_blocks = [] # When enabling SSH, explicitly allow trusted IPs: ["1.2.3.4/32"]
 
 # ── Container Registry ────────────────────────────────────────────────────────
 # Only needed for private AWS ECR images. Leave empty for GHCR / Docker Hub.

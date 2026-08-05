@@ -77,6 +77,12 @@ variable "ingress_rules" {
   ]
 }
 
+variable "additional_security_group_ids" {
+  description = "Additional security group IDs to attach to the application instance, such as identity-only groups for private service access."
+  type        = list(string)
+  default     = []
+}
+
 variable "docker_compose_content" {
   description = "Contents of the docker-compose.yml to be written on the instance."
   type        = string

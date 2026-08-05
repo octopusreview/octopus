@@ -81,7 +81,7 @@ resource "aws_instance" "this" {
   ami                    = coalesce(var.ami_id, data.aws_ami.ubuntu.id)
   instance_type          = var.instance_type
   subnet_id              = var.subnet_id
-  vpc_security_group_ids = [aws_security_group.this.id]
+  vpc_security_group_ids = concat([aws_security_group.this.id], var.additional_security_group_ids)
   iam_instance_profile   = aws_iam_instance_profile.this.name
   key_name               = var.key_name
 

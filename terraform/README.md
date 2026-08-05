@@ -183,6 +183,26 @@ terraform plan
 terraform apply
 ```
 
+### Existing deployments: stage the data-access cutover
+
+Deployments created before the dedicated application identity must attach it before removing the legacy VPC-wide database/cache rule. For the first apply after upgrading, keep both paths temporarily:
+
+Before planning, replace any legacy `ssh_cidr_blocks = ["0.0.0.0/0"]` value with trusted CIDRs (for example, one administrator `/32`) or `[]`; internet-wide SSH now fails validation.
+
+```bash
+terraform plan -var='restrict_data_access_to_app=false'
+terraform apply -var='restrict_data_access_to_app=false'
+```
+
+Verify the running application can still reach PostgreSQL and Redis (when enabled). Then remove the temporary compatibility rule with the secure default:
+
+```bash
+terraform plan
+terraform apply
+```
+
+The first plan must add the data-access security group and attach it to EC2 without replacing EC2, RDS, or Redis. The second must remove only the VPC-CIDR ingress rules. Stop if either plan proposes a managed data-resource replacement.
+
 When `apply` finishes, you'll see output like:
 
 ```
@@ -371,6 +391,8 @@ The `backend.conf.example` file includes the AWS CLI commands to create the buck
 ## Security Notes
 
 - RDS is in private subnets — not reachable from the internet
+- RDS and Redis (when enabled) accept traffic only from the identity-only data-access security group attached to the EC2 application, not the full VPC CIDR
+- SSH is disabled by default; setting a key pair still requires explicit trusted CIDRs in `ssh_cidr_blocks`
 - IMDSv2 enforced on EC2 (prevents SSRF credential theft)
 - Root EBS volume encrypted at rest
 - `.env` file on the instance is `chmod 600`

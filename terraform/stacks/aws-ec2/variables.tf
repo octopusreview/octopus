@@ -35,6 +35,12 @@ variable "enable_nat_gateway" {
   default     = false
 }
 
+variable "restrict_data_access_to_app" {
+  description = "Restrict RDS and Redis ingress to the EC2 application identity. Keep true for new deployments. Existing deployments must perform the documented two-stage cutover before their first restricted apply."
+  type        = bool
+  default     = true
+}
+
 # ── EC2 ───────────────────────────────────────────────────────────────────────
 variable "instance_type" {
   description = "EC2 instance type. Minimum recommended: t3.xlarge (4 vCPU, 16 GB)."
@@ -126,9 +132,17 @@ variable "db_deletion_protection" {
 
 # ── SSH ───────────────────────────────────────────────────────────────────────
 variable "ssh_cidr_blocks" {
-  description = "CIDR blocks allowed to reach port 22. Ignored when key_name is null. Restrict to your IP for security (e.g. [\"203.0.113.5/32\"])."
+  description = "CIDR blocks allowed to reach port 22 when key_name is set. Leave empty to keep SSH unreachable; explicitly restrict access to trusted IPs (e.g. [\"203.0.113.5/32\"])."
   type        = list(string)
-  default     = ["0.0.0.0/0"]
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for cidr in var.ssh_cidr_blocks :
+      try(cidrnetmask(cidr) != "" && cidrsubnet(cidr, 0, 0) != "0.0.0.0/0", false)
+    ])
+    error_message = "Every ssh_cidr_blocks entry must be a valid IPv4 CIDR narrower than 0.0.0.0/0. Public SSH from the entire internet is not supported."
+  }
 }
 
 # ── Registry ──────────────────────────────────────────────────────────────────

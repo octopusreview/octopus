@@ -179,7 +179,7 @@ locals {
     },
   ]
 
-  ssh_ingress_rule = var.key_name != null ? [
+  ssh_ingress_rule = var.key_name != null && length(var.ssh_cidr_blocks) > 0 ? [
     {
       description     = "SSH"
       from_port       = 22
@@ -203,22 +203,37 @@ module "vpc" {
   tags               = var.tags
 }
 
+# Identity-only security group for application access to private data services.
+# It intentionally grants no ingress or egress by itself; the EC2 app security
+# group retains the workload's network rules, while this group is only a stable
+# source identity for RDS and Redis ingress.
+resource "aws_security_group" "app_data_access" {
+  name_prefix = "${var.name_prefix}-app-data-"
+  description = "Octopus application identity for private data-service access"
+  vpc_id      = module.vpc.vpc_id
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = merge({ Name = "${var.name_prefix}-app-data-sg" }, var.tags)
+}
+
 # ── RDS PostgreSQL ────────────────────────────────────────────────────────────
-# Using VPC CIDR (not EC2 SG) to avoid a circular dependency between rds and ec2 modules.
-# Only EC2 instances within this VPC can reach the RDS instance.
 module "rds" {
   source = "../../modules/aws/rds-postgres"
 
-  name_prefix          = var.name_prefix
-  vpc_id               = module.vpc.vpc_id
-  subnet_ids           = module.vpc.private_subnet_ids
-  allowed_cidr_blocks  = [var.vpc_cidr]
-  db_password          = local.db_password
-  instance_class       = var.db_instance_class
-  allocated_storage_gb = var.db_allocated_storage_gb
-  multi_az             = var.db_multi_az
-  deletion_protection  = var.db_deletion_protection
-  tags                 = var.tags
+  name_prefix                = var.name_prefix
+  vpc_id                     = module.vpc.vpc_id
+  subnet_ids                 = module.vpc.private_subnet_ids
+  allowed_security_group_ids = [aws_security_group.app_data_access.id]
+  allowed_cidr_blocks        = var.restrict_data_access_to_app ? [] : [var.vpc_cidr]
+  db_password                = local.db_password
+  instance_class             = var.db_instance_class
+  allocated_storage_gb       = var.db_allocated_storage_gb
+  multi_az                   = var.db_multi_az
+  deletion_protection        = var.db_deletion_protection
+  tags                       = var.tags
 }
 
 # ── ElastiCache Redis (optional) ──────────────────────────────────────────────
@@ -226,12 +241,13 @@ module "redis" {
   count  = var.enable_redis ? 1 : 0
   source = "../../modules/aws/elasticache-redis"
 
-  name_prefix         = var.name_prefix
-  vpc_id              = module.vpc.vpc_id
-  subnet_ids          = module.vpc.private_subnet_ids
-  allowed_cidr_blocks = [var.vpc_cidr]
-  node_type           = var.redis_node_type
-  tags                = var.tags
+  name_prefix                = var.name_prefix
+  vpc_id                     = module.vpc.vpc_id
+  subnet_ids                 = module.vpc.private_subnet_ids
+  allowed_security_group_ids = [aws_security_group.app_data_access.id]
+  allowed_cidr_blocks        = var.restrict_data_access_to_app ? [] : [var.vpc_cidr]
+  node_type                  = var.redis_node_type
+  tags                       = var.tags
 }
 
 # ── EC2 Application ───────────────────────────────────────────────────────────
@@ -253,7 +269,8 @@ module "ec2" {
   nginx_conf_content     = local.nginx_conf
   proxy_params_content   = local.proxy_params
 
-  ingress_rules = local.ingress_rules
+  ingress_rules                 = local.ingress_rules
+  additional_security_group_ids = [aws_security_group.app_data_access.id]
 
   tags = var.tags
 }

@@ -252,7 +252,7 @@ Alternatively:
 
 On first deploy, run Prisma migrations before the app serves traffic.
 
-**If you enabled SSH** (`key_name` is set in tfvars):
+**If you enabled SSH** (`key_name` and trusted `ssh_cidr_blocks` are set in tfvars):
 ```bash
 ssh -i your-key.pem ubuntu@<public_ip>
 cd /opt/octopus

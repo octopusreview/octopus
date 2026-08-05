@@ -111,6 +111,7 @@ export async function POST(request: NextRequest) {
       });
 
       console.log(`[gitlab-webhook] Auto-review triggered for ${repoFullName}!${mrIid}`);
+      return NextResponse.json({ ok: true });
     }
   }
 

@@ -156,6 +156,7 @@ try {
   assert(reviewCalls.length === 1, "valid webhook did not start one review");
   assert(reviewCalls[0]?.orgId === "org_current", "wrong GitLab tenant selected");
   assert(reviewCalls[0]?.repoId === "repo_current", "wrong GitLab repository selected");
+  assert(mutationCalls.length === 0, "open MR fell through into merge mutations");
 
   let unauthenticatedBodyRead = false;
   const guardedInvalidRequest = {

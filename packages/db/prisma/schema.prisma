@@ -632,6 +632,7 @@ model GitlabIntegration {
   organizationId String       @unique
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  @@index([webhookSecret])
   @@map("gitlab_integrations")
 }
 

@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security
-- Webhook tenant isolation is now enforced (previously shadow-mode observation only). GitHub repository events route solely through the signed installation ID and the organization-scoped repository lookup, and events whose repository does not belong to that installation's organization are dropped. GitLab webhooks authenticate the per-organization hook token before the request body is read and fail closed on unknown, ambiguous, inactive, or dismissed project mappings. GitHub delivery IDs and retry telemetry remain observation-only and never influence routing. No schema change.
+- Webhook tenant isolation is now enforced (previously shadow-mode observation only). GitHub repository events route solely through the signed installation ID and the organization-scoped repository lookup, and events whose repository does not belong to that installation's organization are dropped. GitLab webhooks authenticate the per-organization hook token before the request body is read and fail closed on unknown, ambiguous, inactive, or dismissed project mappings. GitHub delivery IDs and retry telemetry remain observation-only and never influence routing. No schema behavior change beyond a new index on the GitLab webhook token lookup.
 
 ## [1.0.95] - 2026-08-04
 

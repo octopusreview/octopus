@@ -15,10 +15,26 @@ import {
 import { startReviewFlow } from "@/lib/webhook-shared";
 import { getGithubAppConfig } from "@/lib/github-app-config";
 import {
-  observeGithubWebhookDeliveryInShadowMode,
-  type LegacyWebhookRepository,
+  observeGithubWebhookDeliveryBestEffort,
+  resolveGithubWebhookTenant,
   type GithubWebhookTenantResolution,
 } from "@/lib/webhook-tenant";
+
+type ResolvedGithubWebhookTenant = GithubWebhookTenantResolution & {
+  status: "resolved";
+  organizationId: string;
+  repositoryId: string;
+};
+
+function isResolvedRepositoryTenant(
+  resolution: GithubWebhookTenantResolution,
+): resolution is ResolvedGithubWebhookTenant {
+  return (
+    resolution.status === "resolved" &&
+    resolution.organizationId !== null &&
+    resolution.repositoryId !== null
+  );
+}
 
 async function verifySignature(payload: string, signature: string | null): Promise<boolean> {
   if (!signature) return false;
@@ -48,25 +64,38 @@ export async function POST(request: NextRequest) {
   const deliveryId = request.headers.get("x-github-delivery");
   const payloadSha256 = crypto.createHash("sha256").update(body).digest("hex");
   const payload = JSON.parse(body);
-  let legacyRepository: LegacyWebhookRepository | null | undefined;
-  let tenantResolution: GithubWebhookTenantResolution | undefined;
+  const tenantResolution = await resolveGithubWebhookTenant({
+    provider: "github",
+    installationId: payload.installation?.id,
+    repositoryExternalId: payload.repository?.id,
+  });
+  const resolvedRepositoryTenant = isResolvedRepositoryTenant(tenantResolution)
+    ? tenantResolution
+    : null;
 
-  // SEC-06 shadow mode: observe only signature-verified delivery metadata and
-  // compare the installation-scoped result with the route's existing lookup.
-  // The callback runs after the response and never changes routing or rejects a
-  // duplicate; enforcement follows only after production mismatches are understood.
+  // Record only after signature verification. Telemetry remains best-effort:
+  // retries and GitHub's unsigned delivery ID never influence routing.
   after(async () => {
-    await observeGithubWebhookDeliveryInShadowMode({
+    await observeGithubWebhookDeliveryBestEffort({
       deliveryId,
       eventType: event,
       action: payload.action,
       payloadSha256,
       installationId: payload.installation?.id,
       repositoryExternalId: payload.repository?.id,
-      legacyRepository,
       tenantResolution,
     });
   });
+
+  // A signature proves the GitHub App emitted the body; the installation ID
+  // inside that signed body selects the tenant. Never route a repository event
+  // through a provider/external-ID lookup that omits the selected organization.
+  if (payload.repository?.id !== undefined && !resolvedRepositoryTenant) {
+    console.warn(
+      `[webhook] Dropping GitHub repository event: ${tenantResolution.status}`,
+    );
+    return NextResponse.json({ ok: true });
+  }
 
   if (event === "installation" || event === "installation_repositories") {
     const installationId = payload.installation?.id as number | undefined;
@@ -74,23 +103,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // Find the org linked to this installation
-    const org = await prisma.organization.findUnique({
-      where: { githubInstallationId: installationId },
-      select: { id: true },
-    });
-
-    if (!org) {
+    if (!tenantResolution.organizationId) {
       return NextResponse.json({ ok: true });
     }
-
-    // Snapshot before an `installation.deleted` event clears the binding below.
-    tenantResolution = {
-      provider: "github",
-      status: "installation_only",
-      organizationId: org.id,
-      repositoryId: null,
-    };
+    const org = { id: tenantResolution.organizationId };
 
     // Sync repos from GitHub
     try {
@@ -233,6 +249,9 @@ export async function POST(request: NextRequest) {
     if (!installationId) {
       return NextResponse.json({ ok: true });
     }
+    if (!resolvedRepositoryTenant) {
+      return NextResponse.json({ ok: true });
+    }
 
     const repoFullName: string = payload.repository?.full_name ?? "";
     const repoExternalId = String(payload.repository?.id ?? "");
@@ -247,15 +266,12 @@ export async function POST(request: NextRequest) {
     console.log(`[webhook] pull_request ${payload.action} — ${repoFullName}#${prNumber}`);
 
     // Find repository in DB and check autoReview
-    const repo = await prisma.repository.findFirst({
-      where: { provider: "github", externalId: repoExternalId },
+    const repo = await prisma.repository.findUnique({
+      where: { id: resolvedRepositoryTenant.repositoryId },
       select: { id: true, organizationId: true, autoReview: true, installationId: true },
     });
-    legacyRepository = repo
-      ? { id: repo.id, organizationId: repo.organizationId }
-      : null;
 
-    if (!repo) {
+    if (!repo || repo.organizationId !== resolvedRepositoryTenant.organizationId) {
       console.warn(`[webhook] Repo not found in DB — externalId: ${repoExternalId}`);
       return NextResponse.json({ ok: true });
     }
@@ -349,19 +365,19 @@ export async function POST(request: NextRequest) {
     payload.action === "closed" &&
     payload.pull_request?.merged === true
   ) {
-    const repoExternalId = String(payload.repository?.id ?? "");
     const prNumber: number = payload.pull_request?.number;
     const installationId = payload.installation?.id as number | undefined;
 
-    const repo = await prisma.repository.findFirst({
-      where: { provider: "github", externalId: repoExternalId },
+    if (!resolvedRepositoryTenant) {
+      return NextResponse.json({ ok: true });
+    }
+
+    const repo = await prisma.repository.findUnique({
+      where: { id: resolvedRepositoryTenant.repositoryId },
       select: { id: true, fullName: true, defaultBranch: true, indexStatus: true, organizationId: true },
     });
-    legacyRepository = repo
-      ? { id: repo.id, organizationId: repo.organizationId }
-      : null;
 
-    if (repo) {
+    if (repo && repo.organizationId === resolvedRepositoryTenant.organizationId) {
       await prisma.pullRequest.updateMany({
         where: { repositoryId: repo.id, number: prNumber },
         data: { mergedAt: new Date() },
@@ -461,6 +477,9 @@ export async function POST(request: NextRequest) {
         console.warn("[webhook] No installationId found, skipping");
         return NextResponse.json({ ok: true });
       }
+      if (!resolvedRepositoryTenant) {
+        return NextResponse.json({ ok: true });
+      }
 
       const repoFullName: string = payload.repository?.full_name ?? "";
       const repoExternalId = String(payload.repository?.id ?? "");
@@ -470,15 +489,12 @@ export async function POST(request: NextRequest) {
       console.log(`[webhook] @octopus mention detected — repo: ${repoFullName}, PR #${prNumber}, commentId: ${commentId}, installationId: ${installationId}`);
 
       // Find repository in DB
-      const repo = await prisma.repository.findFirst({
-        where: { provider: "github", externalId: repoExternalId },
+      const repo = await prisma.repository.findUnique({
+        where: { id: resolvedRepositoryTenant.repositoryId },
         select: { id: true, organizationId: true, installationId: true },
       });
-      legacyRepository = repo
-        ? { id: repo.id, organizationId: repo.organizationId }
-        : null;
 
-      if (!repo) {
+      if (!repo || repo.organizationId !== resolvedRepositoryTenant.organizationId) {
         console.warn(`[webhook] Repo not found in DB — externalId: ${repoExternalId}, fullName: ${repoFullName}`);
         return NextResponse.json({ ok: true });
       }

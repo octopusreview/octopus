@@ -28,7 +28,7 @@ export default function SecurityOverviewPage() {
           customer&apos;s own infrastructure (self-hosted Octopus).
         </P>
         <UL>
-          <li><strong>Webhook</strong> — GitHub, GitLab, or Bitbucket POSTs a PR/MR event; we verify the HMAC signature before processing.</li>
+          <li><strong>Webhook</strong> — GitHub, GitLab, or Bitbucket POSTs a PR/MR event; we verify GitHub and Bitbucket HMAC signatures or GitLab&apos;s per-organisation hook token before processing.</li>
           <li><strong>Clone</strong> — we clone the repository into a per-job temporary directory; never persisted beyond the job.</li>
           <li><strong>Index</strong> — file contents are chunked and embedded into Qdrant for vector search. Source files are not stored as plaintext outside the indexing window.</li>
           <li><strong>Review</strong> — relevant chunks plus the diff are sent to the configured LLM provider. Provider choice and BYOK key live on the organisation.</li>

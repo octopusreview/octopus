@@ -1,11 +1,13 @@
 import "server-only";
 
+import crypto from "node:crypto";
 import { prisma } from "@octopus/db";
 
 const MAX_DELIVERY_ID_LENGTH = 255;
 const MAX_EVENT_TYPE_LENGTH = 100;
 const MAX_ACTION_LENGTH = 100;
 const MAX_PROVIDER_REPOSITORY_ID_LENGTH = 32;
+const MAX_WEBHOOK_TOKEN_LENGTH = 512;
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 const POSITIVE_DECIMAL = /^[1-9]\d*$/;
 
@@ -51,6 +53,51 @@ export interface GithubWebhookTenantResolution {
   repositoryId: string | null;
 }
 
+export const GITLAB_WEBHOOK_TENANT_RESOLUTION_STATUSES = [
+  "resolved",
+  "missing_token",
+  "unmapped_token",
+  "ambiguous_token",
+  "repository_not_owned",
+  "repository_inactive",
+] as const;
+
+export type GitlabWebhookTenantResolutionStatus =
+  (typeof GITLAB_WEBHOOK_TENANT_RESOLUTION_STATUSES)[number];
+
+export interface GitlabWebhookIntegrationInput {
+  provider: "gitlab";
+  token: unknown;
+}
+
+export interface GitlabWebhookIntegrationResolution {
+  provider: "gitlab";
+  status: "resolved" | "missing_token" | "unmapped_token" | "ambiguous_token";
+  organizationId: string | null;
+}
+
+export interface GitlabWebhookTenantInput {
+  provider: "gitlab";
+  organizationId: string;
+  repositoryExternalId: unknown;
+}
+
+export interface GitlabWebhookRepository {
+  id: string;
+  organizationId: string;
+  autoReview: boolean;
+  fullName: string;
+  isActive: boolean;
+  dismissedAt: Date | null;
+}
+
+export interface GitlabWebhookTenantResolution {
+  provider: "gitlab";
+  status: GitlabWebhookTenantResolutionStatus;
+  organizationId: string | null;
+  repository: GitlabWebhookRepository | null;
+}
+
 interface OrganizationLookup {
   findUnique(args: {
     where: { githubInstallationId: number };
@@ -74,6 +121,35 @@ interface RepositoryLookup {
 export interface WebhookTenantStore {
   organization: OrganizationLookup;
   repository: RepositoryLookup;
+}
+
+export interface GitlabWebhookTenantStore {
+  gitlabIntegration: {
+    findMany(args: {
+      where: { webhookSecret: string };
+      select: { organizationId: true; webhookSecret: true };
+      take: 2;
+    }): Promise<Array<{ organizationId: string; webhookSecret: string | null }>>;
+  };
+  repository: {
+    findUnique(args: {
+      where: {
+        provider_externalId_organizationId: {
+          provider: "gitlab";
+          externalId: string;
+          organizationId: string;
+        };
+      };
+      select: {
+        id: true;
+        organizationId: true;
+        autoReview: true;
+        fullName: true;
+        isActive: true;
+        dismissedAt: true;
+      };
+    }): Promise<GitlabWebhookRepository | null>;
+  };
 }
 
 interface WebhookDeliveryUpsertArgs {
@@ -150,7 +226,7 @@ export interface GithubWebhookObservationInput {
   repositoryExternalId: unknown;
   // `undefined` means the legacy route did not perform a repository lookup.
   // `null` means it performed the lookup but found no row.
-  legacyRepository: LegacyWebhookRepository | null | undefined;
+  legacyRepository?: LegacyWebhookRepository | null;
   // Installation lifecycle routes already resolve the binding before a delete
   // mutation. Passing that snapshot prevents post-response observation from
   // misclassifying a successful uninstall as an unmapped installation.
@@ -213,6 +289,13 @@ function boundedString(value: unknown, maxLength: number): string | null {
   return normalized;
 }
 
+function boundedSecret(value: unknown, maxLength: number): string | null {
+  if (typeof value !== "string" || value.length === 0 || value.length > maxLength) {
+    return null;
+  }
+  return value;
+}
+
 function normalizeInstallationId(value: unknown): number | null {
   if (typeof value === "number") {
     return Number.isSafeInteger(value) && value > 0 ? value : null;
@@ -230,7 +313,16 @@ function normalizeRepositoryExternalId(value: unknown): string | null {
   return normalized && POSITIVE_DECIMAL.test(normalized) ? normalized : null;
 }
 
-export async function resolveWebhookTenant(
+function secretsMatch(expected: string, actual: string): boolean {
+  const expectedBuffer = Buffer.from(expected, "utf8");
+  const actualBuffer = Buffer.from(actual, "utf8");
+  return (
+    expectedBuffer.length === actualBuffer.length &&
+    crypto.timingSafeEqual(expectedBuffer, actualBuffer)
+  );
+}
+
+export async function resolveGithubWebhookTenant(
   input: GithubWebhookTenantInput,
   store: WebhookTenantStore = prisma,
 ): Promise<GithubWebhookTenantResolution> {
@@ -298,6 +390,109 @@ export async function resolveWebhookTenant(
   };
 }
 
+export async function resolveGitlabWebhookIntegration(
+  input: GitlabWebhookIntegrationInput,
+  store: GitlabWebhookTenantStore = prisma,
+): Promise<GitlabWebhookIntegrationResolution> {
+  const token = boundedSecret(input.token, MAX_WEBHOOK_TOKEN_LENGTH);
+  if (token === null) {
+    return {
+      provider: "gitlab",
+      status: "missing_token",
+      organizationId: null,
+    };
+  }
+
+  const integrations = await store.gitlabIntegration.findMany({
+    where: { webhookSecret: token },
+    select: { organizationId: true, webhookSecret: true },
+    take: 2,
+  });
+  if (integrations.length === 0) {
+    return {
+      provider: "gitlab",
+      status: "unmapped_token",
+      organizationId: null,
+    };
+  }
+  if (
+    integrations.length !== 1 ||
+    !integrations[0]?.webhookSecret ||
+    !secretsMatch(integrations[0].webhookSecret, token)
+  ) {
+    return {
+      provider: "gitlab",
+      status: "ambiguous_token",
+      organizationId: null,
+    };
+  }
+
+  return {
+    provider: "gitlab",
+    status: "resolved",
+    organizationId: integrations[0].organizationId,
+  };
+}
+
+export async function resolveGitlabWebhookTenant(
+  input: GitlabWebhookTenantInput,
+  store: GitlabWebhookTenantStore = prisma,
+): Promise<GitlabWebhookTenantResolution> {
+  const organizationId = input.organizationId;
+  const repositoryExternalId = normalizeRepositoryExternalId(
+    input.repositoryExternalId,
+  );
+  if (repositoryExternalId === null) {
+    return {
+      provider: "gitlab",
+      status: "repository_not_owned",
+      organizationId,
+      repository: null,
+    };
+  }
+
+  const repository = await store.repository.findUnique({
+    where: {
+      provider_externalId_organizationId: {
+        provider: "gitlab",
+        externalId: repositoryExternalId,
+        organizationId,
+      },
+    },
+    select: {
+      id: true,
+      organizationId: true,
+      autoReview: true,
+      fullName: true,
+      isActive: true,
+      dismissedAt: true,
+    },
+  });
+  if (!repository) {
+    return {
+      provider: "gitlab",
+      status: "repository_not_owned",
+      organizationId,
+      repository: null,
+    };
+  }
+  if (!repository.isActive || repository.dismissedAt !== null) {
+    return {
+      provider: "gitlab",
+      status: "repository_inactive",
+      organizationId,
+      repository: null,
+    };
+  }
+
+  return {
+    provider: "gitlab",
+    status: "resolved",
+    organizationId,
+    repository,
+  };
+}
+
 export function compareWebhookTenantResolution(
   resolution: GithubWebhookTenantResolution,
   legacyRepository: LegacyWebhookRepository | null | undefined,
@@ -348,7 +543,7 @@ export async function observeGithubWebhookDelivery(
   const [resolution, legacyCandidateCount] = await Promise.all([
     input.tenantResolution
       ? Promise.resolve(input.tenantResolution)
-      : resolveWebhookTenant(
+      : resolveGithubWebhookTenant(
           {
             provider: "github",
             installationId,
@@ -434,10 +629,10 @@ export async function observeGithubWebhookDelivery(
 }
 
 /**
- * Best-effort shadow wrapper. Delivery storage and comparison must never alter
- * the legacy webhook response until the enforcement rollout is explicitly enabled.
+ * Best-effort telemetry wrapper. Delivery storage, retry counting, and provider
+ * delivery IDs are observational only and must never become routing authority.
  */
-export async function observeGithubWebhookDeliveryInShadowMode(
+export async function observeGithubWebhookDeliveryBestEffort(
   input: GithubWebhookObservationInput,
   store: WebhookObservationStore = prisma,
   logger: WebhookObservationLogger = console,
@@ -451,17 +646,17 @@ export async function observeGithubWebhookDeliveryInShadowMode(
       observation.comparisonStatus === "shadow_only"
     ) {
       logger.warn(
-        `[webhook] GitHub tenant shadow comparison: ${observation.comparisonStatus} (resolution=${observation.resolutionStatus})`,
+        `[webhook] GitHub tenant comparison: ${observation.comparisonStatus} (resolution=${observation.resolutionStatus})`,
       );
     }
     if (observation.attemptCount > 1) {
       logger.info(
-        `[webhook] GitHub delivery observed ${observation.attemptCount} times; shadow mode continues legacy processing`,
+        `[webhook] GitHub delivery observed ${observation.attemptCount} times; telemetry remains observation-only`,
       );
     }
     if (observation.payloadHashCollision) {
       logger.warn(
-        "[webhook] GitHub delivery ID payload collision detected; shadow mode continues legacy processing",
+        "[webhook] GitHub delivery ID payload collision detected; telemetry remains observation-only",
       );
     }
     return observation;
@@ -470,7 +665,7 @@ export async function observeGithubWebhookDeliveryInShadowMode(
     // this boundary must never copy provider payload data into operational logs.
     const errorType = error instanceof Error ? error.name : "UnknownError";
     logger.warn(
-      `[webhook] GitHub delivery observation failed; legacy routing continued (${errorType})`,
+      `[webhook] GitHub delivery observation failed; enforced routing continued (${errorType})`,
     );
     return null;
   }

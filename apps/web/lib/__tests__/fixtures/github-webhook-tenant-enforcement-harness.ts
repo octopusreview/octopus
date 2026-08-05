@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { mock } from "bun:test";
 
-const WEBHOOK_SECRET = "github-webhook-shadow-test-secret";
+const WEBHOOK_SECRET = "github-webhook-enforcement-test-secret";
 
 type AfterCallback = () => void | Promise<void>;
 type DeliveryUpsertArgs = {
@@ -13,11 +13,12 @@ type DeliveryUpsertArgs = {
 };
 
 const afterCallbacks: AfterCallback[] = [];
-const deliveryAttempts = new Map<string, number>();
-const deliveryPayloadHashes = new Map<string, string>();
 const deliveryWrites: DeliveryUpsertArgs[] = [];
 const reviewCalls: Array<Record<string, unknown>> = [];
+const mutationCalls: Array<{ kind: string; args: Record<string, unknown> }> = [];
 let failNextLedgerWrite = false;
+let installationBindingCleared = false;
+let legacyRepositoryLookups = 0;
 
 const webhookDeliveryStore = {
   upsert: (args: DeliveryUpsertArgs) => {
@@ -26,13 +27,10 @@ const webhookDeliveryStore = {
       return Promise.reject(new Error("ledger unavailable"));
     }
     deliveryWrites.push(args);
-    const key = `${args.where.provider_deliveryId.provider}:${args.where.provider_deliveryId.deliveryId}`;
-    const attemptCount = (deliveryAttempts.get(key) ?? 0) + 1;
-    deliveryAttempts.set(key, attemptCount);
-    const payloadSha256 = deliveryPayloadHashes.get(key) ??
-      String(args.create.payloadSha256);
-    deliveryPayloadHashes.set(key, payloadSha256);
-    return Promise.resolve({ attemptCount, payloadSha256 });
+    return Promise.resolve({
+      attemptCount: 1,
+      payloadSha256: String(args.create.payloadSha256),
+    });
   },
   update: () => Promise.resolve({ payloadHashCollisionCount: 1 }),
 };
@@ -71,29 +69,68 @@ mock.module("@octopus/db", () => ({
         where: { githubInstallationId?: number; id?: string };
       }) => {
         if (args.where.githubInstallationId === 222) {
+          if (installationBindingCleared) return Promise.resolve(null);
           return Promise.resolve({ id: "org_b" });
         }
-        if (args.where.id === "org_a") {
+        if (args.where.id === "org_b") {
           return Promise.resolve({ blockedAuthors: [] });
         }
         return Promise.resolve(null);
       },
-      updateMany: () => Promise.resolve({ count: 1 }),
+      updateMany: () => {
+        installationBindingCleared = true;
+        return Promise.resolve({ count: 1 });
+      },
     },
     repository: {
-      findFirst: () =>
-        Promise.resolve({
+      findFirst: () => {
+        legacyRepositoryLookups += 1;
+        return Promise.resolve({
           id: "repo_a",
           organizationId: "org_a",
           autoReview: true,
           installationId: 222,
-        }),
-      findUnique: () =>
-        Promise.resolve({ id: "repo_b", organizationId: "org_b" }),
+        });
+      },
+      findUnique: (args: {
+        where: {
+          id?: string;
+          provider_externalId_organizationId?: {
+            provider: string;
+            externalId: string;
+            organizationId: string;
+          };
+        };
+      }) => {
+        if (args.where.provider_externalId_organizationId) {
+          return Promise.resolve({ id: "repo_b", organizationId: "org_b" });
+        }
+        if (args.where.id === "repo_b") {
+          return Promise.resolve({
+            id: "repo_b",
+            organizationId: "org_b",
+            autoReview: true,
+            installationId: 222,
+            fullName: "shared/repository",
+            defaultBranch: "main",
+            indexStatus: "pending",
+          });
+        }
+        return Promise.resolve(null);
+      },
       findMany: () => Promise.resolve([]),
       count: () => Promise.resolve(2),
-      update: () => Promise.resolve({}),
+      update: (args: Record<string, unknown>) => {
+        mutationCalls.push({ kind: "repository.update", args });
+        return Promise.resolve({});
+      },
       upsert: () => Promise.resolve({}),
+    },
+    pullRequest: {
+      updateMany: (args: Record<string, unknown>) => {
+        mutationCalls.push({ kind: "pullRequest.updateMany", args });
+        return Promise.resolve({ count: 1 });
+      },
     },
     systemConfig: {
       findUnique: () => Promise.resolve({ blockedAuthors: [] }),
@@ -121,6 +158,38 @@ function pullRequestBody() {
       user: { login: "contributor" },
       head: { sha: "abc123" },
       draft: false,
+    },
+  });
+}
+
+function mergedPullRequestBody() {
+  return JSON.stringify({
+    action: "closed",
+    installation: { id: 222 },
+    repository: { id: 9001, full_name: "shared/repository" },
+    pull_request: {
+      number: 18,
+      merged: true,
+    },
+  });
+}
+
+function issueCommentBody() {
+  return JSON.stringify({
+    action: "created",
+    installation: { id: 222 },
+    repository: { id: 9001, full_name: "shared/repository" },
+    issue: {
+      number: 19,
+      title: "Mention review",
+      html_url: "https://github.test/shared/repository/pull/19",
+      user: { login: "contributor" },
+      pull_request: {},
+    },
+    comment: {
+      id: 88,
+      body: "@octopus review this",
+      user: { type: "User", login: "contributor" },
     },
   });
 }
@@ -180,30 +249,67 @@ try {
 
   const collisionResponse = await POST(webhookRequest(pullRequestBody()));
   assert(collisionResponse.status === 200, "valid collision response failed");
-  assert(reviewCalls[0]?.orgId === "org_a", "shadow mode changed legacy routing");
+  assert(reviewCalls[0]?.orgId === "org_b", "signed installation did not select tenant");
+  assert(reviewCalls[0]?.repoId === "repo_b", "compound tenant/repository lookup was not enforced");
   await runAfterCallbacks();
   const collision = deliveryWrites.at(-1)?.create;
   assert(collision?.resolvedOrganizationId === "org_b", "trusted tenant was not recorded");
-  assert(collision?.legacyOrganizationId === "org_a", "legacy tenant was not recorded");
-  assert(collision?.comparisonStatus === "ambiguous", "collision was not marked ambiguous");
+  assert(
+    collision?.legacyOrganizationId === null,
+    "legacy repository unexpectedly remained routing input",
+  );
+  assert(
+    collision?.comparisonStatus === "not_applicable",
+    "post-enforcement telemetry unexpectedly compared legacy routing",
+  );
 
-  const reviewsBeforeReplay = reviewCalls.length;
-  await POST(
-    webhookRequest(pullRequestBody(), { deliveryId: "delivery-replayed" }),
+  const reviewsBeforeUnmapped = reviewCalls.length;
+  const unmappedBody = JSON.stringify({
+    ...JSON.parse(pullRequestBody()),
+    installation: { id: 999 },
+  });
+  const unmappedResponse = await POST(
+    webhookRequest(unmappedBody, { deliveryId: "delivery-unmapped" }),
   );
   await runAfterCallbacks();
-  await POST(
-    webhookRequest(pullRequestBody(), { deliveryId: "delivery-replayed" }),
+  assert(unmappedResponse.status === 200, "unmapped installation response failed");
+  assert(
+    reviewCalls.length === reviewsBeforeUnmapped,
+    "unmapped installation was not dropped",
+  );
+
+  const mergedResponse = await POST(
+    webhookRequest(mergedPullRequestBody(), {
+      deliveryId: "delivery-merged",
+    }),
   );
   await runAfterCallbacks();
+  assert(mergedResponse.status === 200, "merged PR response failed");
   assert(
-    reviewCalls.length === reviewsBeforeReplay + 2,
-    "duplicate delivery was incorrectly suppressed in shadow mode",
+    mutationCalls.some(
+      (call) =>
+        call.kind === "pullRequest.updateMany" &&
+        (call.args.where as { repositoryId?: string })?.repositoryId === "repo_b",
+    ),
+    "merged PR did not mutate only the installation-owned repository",
   );
+
+  const reviewsBeforeMention = reviewCalls.length;
+  const mentionResponse = await POST(
+    webhookRequest(issueCommentBody(), {
+      deliveryId: "delivery-mention",
+      eventType: "issue_comment",
+    }),
+  );
+  await runAfterCallbacks();
+  assert(mentionResponse.status === 200, "issue comment response failed");
   assert(
-    deliveryAttempts.get("github:delivery-replayed") === 2,
-    "duplicate attempt count was not incremented",
+    reviewCalls.length === reviewsBeforeMention + 1 &&
+      reviewCalls.at(-1)?.orgId === "org_b" &&
+      reviewCalls.at(-1)?.repoId === "repo_b",
+    "issue comment did not route through the installation-owned repository",
   );
+  assert(legacyRepositoryLookups === 0, "legacy repository-only lookup was used");
 
   failNextLedgerWrite = true;
   const failureResponse = await POST(
@@ -230,11 +336,13 @@ try {
       uninstall?.resolutionStatus === "installation_only",
     "uninstall lost its pre-mutation tenant snapshot",
   );
+  assert(installationBindingCleared, "uninstall did not clear the installation binding");
 
   originalConsole.log(JSON.stringify({
     invalidSignatureRejected: true,
-    legacyRoutingPreserved: true,
-    duplicateAttemptCount: 2,
+    trustedRoutingEnforced: true,
+    unmappedInstallationDropped: true,
+    mergedAndMentionScoped: true,
     ledgerFailureNonFatal: true,
     uninstallTenantCaptured: true,
   }));

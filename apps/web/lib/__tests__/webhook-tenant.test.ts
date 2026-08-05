@@ -7,9 +7,11 @@ const {
   compareWebhookTenantResolution,
   enforceWebhookDeliveryRetention,
   observeGithubWebhookDelivery,
-  observeGithubWebhookDeliveryInShadowMode,
+  observeGithubWebhookDeliveryBestEffort,
+  resolveGitlabWebhookIntegration,
+  resolveGitlabWebhookTenant,
   resolveWebhookDeliveryRetentionDays,
-  resolveWebhookTenant,
+  resolveGithubWebhookTenant,
 } = await import("@/lib/webhook-tenant");
 
 const PAYLOAD_SHA = "a".repeat(64);
@@ -45,11 +47,42 @@ function createStore() {
   };
 }
 
-describe("resolveWebhookTenant", () => {
+function createGitlabStore() {
+  return {
+    gitlabIntegration: {
+      findMany: mock(() =>
+        Promise.resolve([
+          { organizationId: "org_current", webhookSecret: "current-secret" },
+        ]),
+      ),
+    },
+    repository: {
+      findUnique: mock(() =>
+        Promise.resolve({
+          id: "repo_current",
+          organizationId: "org_current",
+          autoReview: true,
+          fullName: "current/project",
+          isActive: true,
+          dismissedAt: null,
+        } as {
+          id: string;
+          organizationId: string;
+          autoReview: boolean;
+          fullName: string;
+          isActive: boolean;
+          dismissedAt: Date | null;
+        } | null),
+      ),
+    },
+  };
+}
+
+describe("resolveGithubWebhookTenant", () => {
   it("resolves a GitHub repository only inside the installation-owned organization", async () => {
     const store = createStore();
 
-    const result = await resolveWebhookTenant(
+    const result = await resolveGithubWebhookTenant(
       {
         provider: "github",
         installationId: 222,
@@ -84,7 +117,7 @@ describe("resolveWebhookTenant", () => {
     const store = createStore();
     store.organization.findUnique.mockResolvedValue(null);
 
-    const result = await resolveWebhookTenant(
+    const result = await resolveGithubWebhookTenant(
       {
         provider: "github",
         installationId: 999,
@@ -105,7 +138,7 @@ describe("resolveWebhookTenant", () => {
   it("supports installation events that do not carry a repository", async () => {
     const store = createStore();
 
-    const result = await resolveWebhookTenant(
+    const result = await resolveGithubWebhookTenant(
       { provider: "github", installationId: 222, repositoryExternalId: null },
       store,
     );
@@ -117,6 +150,162 @@ describe("resolveWebhookTenant", () => {
       repositoryId: null,
     });
     expect(store.repository.findUnique).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveGitlabWebhookTenant", () => {
+  it("selects the organization by hook secret before the compound repository lookup", async () => {
+    const store = createGitlabStore();
+
+    const integration = await resolveGitlabWebhookIntegration(
+      {
+        provider: "gitlab",
+        token: "current-secret",
+      },
+      store,
+    );
+    expect(integration).toEqual({
+      provider: "gitlab",
+      status: "resolved",
+      organizationId: "org_current",
+    });
+
+    const result = await resolveGitlabWebhookTenant(
+      {
+        provider: "gitlab",
+        organizationId: "org_current",
+        repositoryExternalId: 9001,
+      },
+      store,
+    );
+
+    expect(result).toEqual({
+      provider: "gitlab",
+      status: "resolved",
+      organizationId: "org_current",
+      repository: {
+        id: "repo_current",
+        organizationId: "org_current",
+        autoReview: true,
+        fullName: "current/project",
+        isActive: true,
+        dismissedAt: null,
+      },
+    });
+    expect(store.gitlabIntegration.findMany).toHaveBeenCalledWith({
+      where: { webhookSecret: "current-secret" },
+      select: { organizationId: true, webhookSecret: true },
+      take: 2,
+    });
+    expect(store.repository.findUnique).toHaveBeenCalledWith({
+      where: {
+        provider_externalId_organizationId: {
+          provider: "gitlab",
+          externalId: "9001",
+          organizationId: "org_current",
+        },
+      },
+      select: {
+        id: true,
+        organizationId: true,
+        autoReview: true,
+        fullName: true,
+        isActive: true,
+        dismissedAt: true,
+      },
+    });
+  });
+
+  it("rejects unknown and duplicated hook secrets before repository access", async () => {
+    const store = createGitlabStore();
+    store.gitlabIntegration.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { organizationId: "org_a", webhookSecret: "shared-secret" },
+        { organizationId: "org_b", webhookSecret: "shared-secret" },
+      ]);
+
+    await expect(
+      resolveGitlabWebhookIntegration(
+        { provider: "gitlab", token: "unknown" },
+        store,
+      ),
+    ).resolves.toMatchObject({ status: "unmapped_token", organizationId: null });
+    await expect(
+      resolveGitlabWebhookIntegration(
+        {
+          provider: "gitlab",
+          token: "shared-secret",
+        },
+        store,
+      ),
+    ).resolves.toMatchObject({ status: "ambiguous_token", organizationId: null });
+    expect(store.repository.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("requires the hook secret to match exactly", async () => {
+    const store = createGitlabStore();
+    store.gitlabIntegration.findMany.mockResolvedValue([]);
+
+    await expect(
+      resolveGitlabWebhookIntegration(
+        {
+          provider: "gitlab",
+          token: " current-secret ",
+        },
+        store,
+      ),
+    ).resolves.toMatchObject({ status: "unmapped_token" });
+    expect(store.gitlabIntegration.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { webhookSecret: " current-secret " } }),
+    );
+  });
+
+  it("never falls back to another tenant when the authenticated organization does not own the project", async () => {
+    const store = createGitlabStore();
+    store.repository.findUnique.mockResolvedValue(null);
+
+    const result = await resolveGitlabWebhookTenant(
+      {
+        provider: "gitlab",
+        organizationId: "org_current",
+        repositoryExternalId: 9001,
+      },
+      store,
+    );
+
+    expect(result).toMatchObject({
+      status: "repository_not_owned",
+      organizationId: "org_current",
+      repository: null,
+    });
+  });
+
+  it("rejects inactive or dismissed repositories", async () => {
+    const store = createGitlabStore();
+    store.repository.findUnique.mockResolvedValue({
+      id: "repo_current",
+      organizationId: "org_current",
+      autoReview: true,
+      fullName: "current/project",
+      isActive: false,
+      dismissedAt: new Date("2026-08-05T00:00:00Z"),
+    });
+
+    await expect(
+      resolveGitlabWebhookTenant(
+        {
+          provider: "gitlab",
+          organizationId: "org_current",
+          repositoryExternalId: 9001,
+        },
+        store,
+      ),
+    ).resolves.toMatchObject({
+      status: "repository_inactive",
+      organizationId: "org_current",
+      repository: null,
+    });
   });
 });
 
@@ -359,7 +548,7 @@ describe("observeGithubWebhookDelivery", () => {
       warn: mock((_message: string) => undefined),
     };
 
-    const result = await observeGithubWebhookDeliveryInShadowMode(
+    const result = await observeGithubWebhookDeliveryBestEffort(
       {
         deliveryId: "delivery-123",
         eventType: "pull_request",
@@ -375,7 +564,7 @@ describe("observeGithubWebhookDelivery", () => {
 
     expect(result).toBeNull();
     expect(logger.warn).toHaveBeenCalledWith(
-      "[webhook] GitHub delivery observation failed; legacy routing continued (Error)",
+      "[webhook] GitHub delivery observation failed; enforced routing continued (Error)",
     );
     expect(logger.warn.mock.calls[0]?.[0]).not.toContain("sensitive detail");
   });
@@ -399,7 +588,7 @@ describe("GitHub webhook boundary wiring", () => {
     );
     const payloadParse = routeSource.indexOf("const payload = JSON.parse(body)");
     const observationCall = routeSource.indexOf(
-      "observeGithubWebhookDeliveryInShadowMode({",
+      "observeGithubWebhookDeliveryBestEffort({",
       payloadParse,
     );
 

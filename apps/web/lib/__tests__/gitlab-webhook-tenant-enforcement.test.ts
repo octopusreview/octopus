@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { fileURLToPath } from "node:url";
 
-describe("GitHub webhook tenant shadow mode", () => {
-  it("preserves routing while observing verified collisions, retries, and uninstall", async () => {
+describe("GitLab webhook tenant enforcement", () => {
+  it("authenticates the integration before selecting its repository", async () => {
     const harnessPath = fileURLToPath(
-      new URL("./fixtures/github-webhook-shadow-harness.ts", import.meta.url),
+      new URL("./fixtures/gitlab-webhook-tenant-enforcement-harness.ts", import.meta.url),
     );
     const process = Bun.spawn([globalThis.process.execPath, harnessPath], {
       cwd: globalThis.process.cwd(),
@@ -25,11 +25,12 @@ describe("GitHub webhook tenant shadow mode", () => {
       .at(-1);
     expect(resultLine).toBeDefined();
     expect(JSON.parse(resultLine!)).toEqual({
-      invalidSignatureRejected: true,
-      legacyRoutingPreserved: true,
-      duplicateAttemptCount: 2,
-      ledgerFailureNonFatal: true,
-      uninstallTenantCaptured: true,
+      tenantSecretSelectedRepository: true,
+      tokenCheckedBeforeBody: true,
+      invalidTokenRejected: true,
+      ambiguousTokenRejected: true,
+      unownedAndInactiveDropped: true,
+      mergedAndNoteScoped: true,
     });
   });
 });

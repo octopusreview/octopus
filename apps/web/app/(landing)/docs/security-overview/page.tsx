@@ -75,7 +75,7 @@ export default function SecurityOverviewPage() {
           <li><strong>Session management</strong> — short-lived bearer tokens with refresh; sessions revocable from <code>/settings/sessions</code>.</li>
           <li><strong>Role-based access</strong> — per-organisation roles (owner / admin / member); the audit log records role transitions.</li>
           <li><strong>CLI tokens</strong> — issued via the device-code flow, scoped to one organisation, revocable per-token.</li>
-          <li><strong>Webhook secrets</strong> — set per-organisation; HMAC verification on every inbound payload.</li>
+          <li><strong>Webhook secrets</strong> — set per-organisation; every inbound payload is verified via HMAC signature (GitHub, Bitbucket) or constant-time hook-token comparison (GitLab).</li>
         </UL>
       </Section>
 

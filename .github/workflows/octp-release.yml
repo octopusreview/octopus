@@ -28,7 +28,7 @@ jobs:
       # install.ps1 then pipe directly onto user machines. The trailing
       # comment is the tag the SHA was resolved from at pin time.
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4
 
       - name: Install Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2

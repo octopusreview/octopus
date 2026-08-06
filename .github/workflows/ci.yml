@@ -39,6 +39,10 @@ jobs:
           DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
           BETTER_AUTH_SECRET: "build-time-dummy-secret"
 
+      - name: Test Terraform backend hardening regression
+        run: bun test lib/__tests__/terraform-backend-security.test.ts
+        working-directory: apps/web
+
   terraform:
     runs-on: ubuntu-latest
     steps:

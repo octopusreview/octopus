@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.11.0"
 
   required_providers {
     aws = {
@@ -12,8 +12,11 @@ terraform {
     }
   }
 
-  # Uncomment and configure after creating the S3 bucket and DynamoDB table.
-  # See backend.conf.example for setup instructions.
-  #
-  # backend "s3" {}
+  # Production state can contain generated credentials. Keep encryption and
+  # native S3 locking mandatory; supply only deployment-specific identifiers
+  # through backend.conf (see backend.conf.example).
+  backend "s3" {
+    encrypt      = true
+    use_lockfile = true
+  }
 }

@@ -31,9 +31,9 @@ Self-host Octopus on AWS with a single `terraform apply`. This sets up an EC2 in
 
 Install these before you start:
 
-- [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.5
+- [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.11
 - [Docker](https://docs.docker.com/get-docker/) (to build and push the app image)
-- [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html) — run `aws configure` with your access key and secret
+- [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html) — authenticate with an AWS SSO/profile session or an assigned role
 - A registered domain (you'll point its DNS to the server IP after deploy)
 - A GitHub account (to create the GitHub App and OAuth App)
 
@@ -172,10 +172,60 @@ The minimum you need to fill in:
 
 ## Step 4 — Deploy
 
-```bash
-# Initialize Terraform (downloads the AWS provider)
-terraform init
+### Configure encrypted remote state
 
+Production deployments require an existing private, versioned S3 bucket and a
+customer-managed KMS key. The bucket must block public access, deny non-TLS
+requests, and use the KMS key for default encryption. Give the Terraform
+operator only these permissions:
+
+- `s3:ListBucket` on the state bucket, restricted to the default state/lock
+  keys and workspace prefix
+- `s3:GetObject` and `s3:PutObject` on the default state object
+- `s3:GetObject`, `s3:PutObject`, and `s3:DeleteObject` on non-default
+  workspace state objects
+- `s3:GetObject`, `s3:PutObject`, and `s3:DeleteObject` on `.tflock` objects
+- `kms:Encrypt`, `kms:Decrypt`, `kms:GenerateDataKey`, and `kms:DescribeKey` on
+  the configured key
+
+Supply AWS credentials through a profile, environment, or role — never in the
+backend configuration.
+
+Create the boundary with the included bootstrap root. Its local state contains
+no application secrets, but keep and back it up on an encrypted filesystem
+because it controls the bucket and KMS key.
+
+```bash
+cd ../../bootstrap/aws-state
+cp terraform.tfvars.example terraform.tfvars
+# Set a globally unique bucket_name and the expected 12-digit AWS account ID.
+# Confirm the account and region before continuing.
+terraform init
+terraform plan -out=backend.tfplan
+terraform apply backend.tfplan
+
+# Attach this least-privilege policy to the application Terraform operator.
+terraform output -raw operator_iam_policy_json
+
+umask 077
+terraform output -raw backend_conf > ../../stacks/aws-ec2/backend.conf
+cd ../../stacks/aws-ec2
+```
+
+If you use an existing bucket and KMS key instead, verify every control and IAM
+permission above before copying `backend.conf.example`.
+
+```bash
+# The bootstrap generated backend.conf. If using an existing boundary, copy
+# backend.conf.example and set every required deployment-specific value.
+terraform init -backend-config=backend.conf
+```
+
+The backend block enforces encryption and native S3 state locking. The supplied
+configuration also pins KMS and the expected AWS account; keep both settings.
+Do not start an apply until initialization succeeds against that account.
+
+```bash
 # Preview what will be created
 terraform plan
 
@@ -235,16 +285,22 @@ The app responds on port 80 immediately after the EC2 instance finishes booting 
 
 ## Step 6 — Set up HTTPS
 
-The server listens on HTTP (port 80). To serve HTTPS, the easiest option is **Cloudflare** (free plan):
+The default stack listens on HTTP (port 80). Before putting it into production,
+add HTTPS at the origin using an AWS ALB with ACM, Caddy, or an nginx
+certificate. Then configure Cloudflare for **Full (strict)** so both the
+browser-to-edge and edge-to-origin connections are encrypted.
 
-1. Add your domain to Cloudflare (free plan is fine)
-2. Create the DNS A record in Cloudflare (same as Step 5) — make sure the cloud icon is **orange** (proxied)
-3. In Cloudflare: **SSL/TLS** → set mode to **Full** (not Full Strict, since nginx uses plain HTTP)
-4. Done — Cloudflare terminates TLS for you at no cost
+Cloudflare **Full** and **Full (strict)** require the origin to accept HTTPS;
+they do not encrypt a plaintext HTTP origin. Cloudflare **Flexible** can proxy
+this stack before origin TLS is installed, but the edge-to-origin connection
+remains plaintext and is not recommended for production.
 
-Alternatively:
-- **AWS ALB + ACM**: more involved, requires a separate load balancer module
-- **Caddy sidecar**: add a Caddy container to the docker-compose template with a volume for certs
+After origin HTTPS is configured:
+
+1. Add the domain to Cloudflare and create the proxied DNS A record.
+2. Select **SSL/TLS → Full (strict)**.
+3. Verify the public URL and GitHub webhook delivery before removing any
+   temporary HTTP compatibility path.
 
 ---
 
@@ -374,17 +430,81 @@ The web container is allocated 5 GB RAM (4 GB for the Node.js heap). With Qdrant
 
 ---
 
-## Remote State (optional)
+## Migrating an existing local state
 
-For team use, store Terraform state in S3:
+The repository previously defaulted to local state. Before checking out this
+backend change, capture the authoritative inventory and backup in an exclusive
+maintenance window. Do not allow concurrent Terraform operations until the
+migration is verified.
 
 ```bash
-cp backend.conf.example backend.conf
-# Edit backend.conf with your S3 bucket and DynamoDB table
-terraform init -backend-config=backend.conf
+# Run on the old configuration. Record every workspace, select each one, and
+# repeat workspace show, state list, and state pull.
+set -e
+terraform workspace list
+terraform workspace show
+terraform state list
+umask 077
+OCTOPUS_STATE_WORKSPACE=$(terraform workspace show)
+OCTOPUS_STATE_TEMP=$(mktemp "/encrypted/offline/path/octopus-${OCTOPUS_STATE_WORKSPACE}-XXXXXX")
+OCTOPUS_STATE_BACKUP="${OCTOPUS_STATE_TEMP}.tfstate"
+terraform state pull > "${OCTOPUS_STATE_TEMP}"
+test -s "${OCTOPUS_STATE_TEMP}"
+terraform show -json "${OCTOPUS_STATE_TEMP}" > /dev/null
+mv "${OCTOPUS_STATE_TEMP}" "${OCTOPUS_STATE_BACKUP}"
+shasum -a 256 "${OCTOPUS_STATE_BACKUP}"
 ```
 
-The `backend.conf.example` file includes the AWS CLI commands to create the bucket and lock table.
+After the backups and inventories are recorded, check out the new version and
+run from `terraform/stacks/aws-ec2`:
+
+```bash
+# Generate backend.conf from the bootstrap root above, or copy the example and
+# populate every value for a separately verified existing boundary.
+test -s backend.conf
+# If the old S3 backend uses DynamoDB locking and the old and new configurations
+# have the identical bucket, key, and workspace prefix, keep its dynamodb_table
+# setting here temporarily so old and upgraded clients share both locks.
+terraform init -migrate-state -backend-config=backend.conf
+
+# Confirm the migrated inventory, then require a non-destructive plan.
+terraform workspace list
+terraform workspace show
+terraform state list
+terraform plan
+```
+
+Create backups only on an encrypted filesystem outside the repository; set
+`umask 077` before each file is created. If the authoritative state is
+already remote, use that backend's documented recovery process. Compare every
+workspace's pre-migration inventory with its migrated inventory. Select and
+repeat `workspace show`, `state list`, and `plan` for every workspace. Stop if
+initialization shows an empty or different state, or if any plan proposes an
+unexpected create, destroy, or replacement. Do not use `-reconfigure` for the
+first migration: it can select the new backend without copying the existing
+state.
+
+If the old backend used DynamoDB locking and the migration keeps the identical
+bucket, key, and workspace prefix, keep `dynamodb_table` alongside the new
+native S3 lock until every operator and automation client uses Terraform 1.11+
+and this configuration. After confirming there are no old or active DynamoDB
+locks, remove the setting, reinitialize the same S3 backend, verify all
+workspace inventories and no-change plans again, and only then retire the lock
+table.
+
+If the bucket, key, or workspace prefix changes, the DynamoDB and native S3
+locks do not coordinate. Drain every operator and automation client, then
+revoke write and lock permissions for the old backend before migrating. Do not
+restore those permissions or let an old configuration resume after cutover.
+
+Keep the restricted backup until the remote state and a no-change plan are
+verified. Then account for and securely remove obsolete local states, backups,
+and saved plan files. Do not resume from a stale local copy. Prior S3 versions
+are intentionally unavailable to the day-to-day operator: a bootstrap
+administrator must temporarily attach the generated break-glass recovery
+policy to retrieve a known-good version, then remove it. Rotate credentials
+only if an old copy was exposed or cannot be accounted for, or as part of the
+later secret-delivery cutover.
 
 ---
 
@@ -397,6 +517,12 @@ The `backend.conf.example` file includes the AWS CLI commands to create the buck
 - Root EBS volume encrypted at rest
 - `.env` file on the instance is `chmod 600`
 - Never commit `terraform.tfvars` — it's gitignored
+- Production state uses an encrypted, versioned S3 backend with native locking;
+  backend credentials must never be stored in `backend.conf`
+- Saved Terraform plans can contain plaintext secrets; always use a `.tfplan`
+  filename so the repository ignore rules apply
+- The default HTTP origin is not end-to-end encrypted; add origin TLS before
+  using Cloudflare Full (strict) in production
 
 ---
 
@@ -404,6 +530,7 @@ The `backend.conf.example` file includes the AWS CLI commands to create the buck
 
 ```
 terraform/
+├── bootstrap/aws-state/   # one-time hardened S3/KMS state boundary
 ├── modules/aws/
 │   ├── vpc/               # VPC, subnets, IGW, optional NAT
 │   ├── ec2-app/           # EC2, security group, IAM, EIP, userdata

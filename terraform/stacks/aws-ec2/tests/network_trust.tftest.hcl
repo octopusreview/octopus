@@ -1,5 +1,6 @@
 # SEC-10 network-trust regression tests.
 # Runs entirely against mocked providers — no AWS credentials required:
+#   terraform -chdir=terraform/stacks/aws-ec2 init -backend=false
 #   terraform -chdir=terraform/stacks/aws-ec2 test
 #
 # terraform test cannot address resources inside child modules (only their

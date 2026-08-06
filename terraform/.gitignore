@@ -2,17 +2,28 @@
 *.tfvars
 *.tfvars.json
 
-# Backend config (may contain bucket names / credentials)
+# Backend config (deployment-specific identifiers; credentials are forbidden)
 *.conf
 
 # Local state
 *.tfstate
-*.tfstate.backup
+*.tfstate.*
 .terraform.tfstate.lock.info
+
+# Saved plans can contain plaintext secrets
+tfplan
+tfplan.*
+*.tfplan
+*.tfplan.*
+*.plan
+*.plan.*
 
 # Terraform working directories
 **/.terraform/
 **/.terraform.lock.hcl
+
+# The security-boundary bootstrap pins its reviewed provider checksums.
+!bootstrap/aws-state/.terraform.lock.hcl
 
 # Crash log files
 crash.log

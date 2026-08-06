@@ -39,6 +39,37 @@ jobs:
           DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
           BETTER_AUTH_SECRET: "build-time-dummy-secret"
 
+      - name: Test Terraform backend hardening regression
+        run: bun test lib/__tests__/terraform-backend-security.test.ts
+        working-directory: apps/web
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.15.8"
+          terraform_wrapper: false
+
+      - name: Check Terraform formatting
+        run: |
+          terraform fmt -check -recursive terraform/bootstrap/aws-state
+          terraform fmt -check terraform/stacks/aws-ec2/versions.tf
+
+      - name: Test state-backend bootstrap
+        run: |
+          terraform -chdir=terraform/bootstrap/aws-state init -backend=false -input=false
+          terraform -chdir=terraform/bootstrap/aws-state validate
+          terraform -chdir=terraform/bootstrap/aws-state test
+
+      - name: Test AWS application stack
+        run: |
+          terraform -chdir=terraform/stacks/aws-ec2 init -backend=false -input=false
+          terraform -chdir=terraform/stacks/aws-ec2 validate
+          terraform -chdir=terraform/stacks/aws-ec2 test
+
   agent-task-postgres:
     runs-on: ubuntu-latest
     services:

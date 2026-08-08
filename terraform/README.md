@@ -121,8 +121,8 @@ You need two separate GitHub apps: one for PR reviews and one for user login.
 9. Scroll down → **Generate a private key** → a `.pem` file downloads. Keep it
    for the Secrets Manager application secret created in Step 3; never place it
    in Terraform variables.
-11. Find your app's **slug** from the URL: `github.com/apps/your-slug` → the slug is `your-slug`
-12. After deployment, start installation from Octopus → **Settings → Integrations**
+10. Find your app's **slug** from the URL: `github.com/apps/your-slug` → the slug is `your-slug`
+11. After deployment, start installation from Octopus → **Settings → Integrations**
 
 ### Part B — GitHub OAuth App (user login)
 

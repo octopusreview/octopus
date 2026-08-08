@@ -28,17 +28,6 @@ apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 systemctl enable docker
 systemctl start docker
 
-# ── Runtime configuration ────────────────────────────────────────────────────
-# This payload contains only non-secret configuration and secret ARNs. Secret
-# values are fetched with the instance role and rendered atomically under /run.
-runtime_installer=$(mktemp /tmp/octopus-runtime-install.XXXXXX)
-trap 'rm -f "$runtime_installer"' EXIT
-printf '%s' '${runtime_installer_base64}' | base64 --decode > "$runtime_installer"
-chmod 0700 "$runtime_installer"
-OCTOPUS_BOOTSTRAP=1 "$runtime_installer"
-rm -f "$runtime_installer"
-trap - EXIT
-
 # ── Registry authentication ───────────────────────────────────────────────────
 %{ if ecr_registry_url != "" ~}
 # Authenticate to AWS ECR using the attached IAM role (IMDSv2)
@@ -50,6 +39,17 @@ AWS_REGION=$(curl -sf \
 aws ecr get-login-password --region "$AWS_REGION" \
   | docker login --username AWS --password-stdin "${ecr_registry_url}"
 %{ endif ~}
+
+# ── Runtime configuration ────────────────────────────────────────────────────
+# This payload contains only non-secret configuration and secret ARNs. Secret
+# values are fetched with the instance role and rendered atomically under /run.
+runtime_installer=$(mktemp /tmp/octopus-runtime-install.XXXXXX)
+trap 'rm -f "$runtime_installer"' EXIT
+printf '%s' '${runtime_installer_base64}' | base64 --decode > "$runtime_installer"
+chmod 0700 "$runtime_installer"
+OCTOPUS_BOOTSTRAP=1 "$runtime_installer"
+rm -f "$runtime_installer"
+trap - EXIT
 
 # ── Pull & start ──────────────────────────────────────────────────────────────
 cd /opt/octopus

@@ -28,7 +28,7 @@ if ! command -v docker >/dev/null 2>&1 || ! command -v dpkg >/dev/null 2>&1; the
   exit 1
 fi
 
-compose_version=$(docker compose version --short 2>/dev/null)
+compose_version=$(docker compose version --short 2>/dev/null || true)
 compose_version=$${compose_version#v}
 if [ -z "$compose_version" ] || ! dpkg --compare-versions "$compose_version" ge 2.30.0; then
   echo "Octopus runtime secret refresh failed: Docker Compose 2.30.0 or newer is required" >&2
@@ -55,6 +55,7 @@ fetch_secret() {
   done
 
   echo "Octopus runtime secret retrieval failed" >&2
+  cat "$TEMP_DIRECTORY/aws-error" >&2 || true
   return 1
 }
 

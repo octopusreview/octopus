@@ -13,7 +13,7 @@ for command_name in aws base64 docker dpkg python3; do
   fi
 done
 
-compose_version=$(docker compose version --short 2>/dev/null)
+compose_version=$(docker compose version --short 2>/dev/null || true)
 compose_version=$${compose_version#v}
 if [ -z "$compose_version" ] || ! dpkg --compare-versions "$compose_version" ge 2.30.0; then
   echo "Octopus runtime secret preflight failed: Docker Compose 2.30.0 or newer is required" >&2
@@ -45,6 +45,7 @@ fetch_application_secret() {
   done
 
   echo "Octopus runtime secret preflight failed: application secret is unavailable" >&2
+  cat "$TEMP_DIRECTORY/aws-error" >&2 || true
   return 1
 }
 

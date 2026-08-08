@@ -89,17 +89,83 @@ variable "docker_compose_content" {
   default     = ""
 }
 
-variable "env_content" {
-  description = "Contents of the .env file to be written on the instance."
+variable "aws_region" {
+  description = "AWS region containing the runtime secrets."
   type        = string
-  sensitive   = true
-  default     = ""
 }
 
-variable "app_domain" {
-  description = "Public domain name for the application (used in TLS / caddy config)."
+variable "application_secret_arn" {
+  description = "Exact ARN of the pre-provisioned JSON secret containing Octopus application secrets."
+  type        = string
+
+  validation {
+    condition = try(
+      can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+$", var.application_secret_arn)) &&
+      split(":", var.application_secret_arn)[3] == var.aws_region,
+      false
+    )
+    error_message = "application_secret_arn must be a complete Secrets Manager secret ARN in aws_region."
+  }
+}
+
+variable "database_secret_arn" {
+  description = "Exact ARN of the RDS-managed master-user secret. May be empty only during runtime-secret preflight."
   type        = string
   default     = ""
+
+  validation {
+    condition = try(
+      var.runtime_secret_preflight_only ?
+      var.database_secret_arn == "" || (
+        can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.!@-]+$", var.database_secret_arn)) &&
+        split(":", var.database_secret_arn)[3] == var.aws_region
+        ) : (
+        can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.!@-]+$", var.database_secret_arn)) &&
+        split(":", var.database_secret_arn)[3] == var.aws_region
+      ),
+      false
+    )
+    error_message = "database_secret_arn must be a complete Secrets Manager secret ARN in aws_region unless runtime_secret_preflight_only is true."
+  }
+}
+
+variable "runtime_secret_preflight_only" {
+  description = "Run read-only application-secret and Compose compatibility checks without installing runtime secret delivery."
+  type        = bool
+  default     = false
+}
+
+variable "runtime_secret_kms_key_arns" {
+  description = "Exact customer-managed KMS key ARNs used by the runtime secrets. AWS-managed Secrets Manager keys need no entry."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for arn in var.runtime_secret_kms_key_arns :
+      try(
+        can(regex("^arn:[^:]+:kms:[^:]+:[0-9]{12}:key/[A-Za-z0-9-]+$", arn)) &&
+        split(":", arn)[3] == var.aws_region,
+        false
+      )
+    ])
+    error_message = "Every runtime_secret_kms_key_arns entry must be a customer-managed KMS key ARN."
+  }
+}
+
+variable "runtime_environment" {
+  description = "Non-secret environment values combined with runtime secrets on the instance."
+  type        = map(string)
+  default     = {}
+}
+
+variable "database_config" {
+  description = "Non-secret RDS connection metadata used to construct DATABASE_URL at runtime."
+  type = object({
+    host     = string
+    port     = number
+    database = string
+  })
 }
 
 variable "ecr_registry_url" {

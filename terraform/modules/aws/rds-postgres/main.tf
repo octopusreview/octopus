@@ -77,9 +77,12 @@ resource "aws_db_instance" "this" {
   engine_version = "17"
   instance_class = var.instance_class
 
-  db_name  = var.db_name
-  username = var.db_username
-  password = var.db_password
+  db_name                     = var.db_name
+  username                    = var.db_username
+  manage_master_user_password = var.manage_master_user_password
+  master_user_secret_kms_key_id = (
+    var.manage_master_user_password && var.master_user_secret_kms_key_arn != "" ? var.master_user_secret_kms_key_arn : null
+  )
 
   allocated_storage     = var.allocated_storage_gb
   max_allocated_storage = var.max_allocated_storage_gb > 0 ? var.max_allocated_storage_gb : null
@@ -90,10 +93,10 @@ resource "aws_db_instance" "this" {
   vpc_security_group_ids = [aws_security_group.this.id]
   parameter_group_name   = aws_db_parameter_group.this.name
 
-  multi_az               = var.multi_az
-  publicly_accessible    = false
-  deletion_protection    = var.deletion_protection
-  skip_final_snapshot    = var.skip_final_snapshot
+  multi_az                  = var.multi_az
+  publicly_accessible       = false
+  deletion_protection       = var.deletion_protection
+  skip_final_snapshot       = var.skip_final_snapshot
   final_snapshot_identifier = var.skip_final_snapshot ? null : "${var.name_prefix}-db-final-snapshot"
 
   backup_retention_period = var.backup_retention_days
@@ -104,4 +107,10 @@ resource "aws_db_instance" "this" {
   copy_tags_to_snapshot      = true
 
   tags = merge({ Name = "${var.name_prefix}-db" }, var.tags)
+
+  lifecycle {
+    # During an existing-stack preflight, retain the password already recorded
+    # in state without sending a replacement value to RDS.
+    ignore_changes = [password]
+  }
 }

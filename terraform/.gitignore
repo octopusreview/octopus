@@ -22,8 +22,9 @@ tfplan.*
 **/.terraform/
 **/.terraform.lock.hcl
 
-# The security-boundary bootstrap pins its reviewed provider checksums.
+# Production roots pin their reviewed provider checksums.
 !bootstrap/aws-state/.terraform.lock.hcl
+!stacks/aws-ec2/.terraform.lock.hcl
 
 # Crash log files
 crash.log

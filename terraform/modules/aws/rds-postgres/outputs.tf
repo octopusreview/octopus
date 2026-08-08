@@ -23,6 +23,11 @@ output "username" {
   value       = aws_db_instance.this.username
 }
 
+output "master_user_secret_arn" {
+  description = "ARN of the RDS-managed Secrets Manager secret containing the master credentials."
+  value       = try(one(aws_db_instance.this.master_user_secret).secret_arn, null)
+}
+
 output "security_group_id" {
   description = "ID of the RDS security group."
   value       = aws_security_group.this.id

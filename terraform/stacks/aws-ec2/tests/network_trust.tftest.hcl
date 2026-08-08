@@ -10,7 +10,6 @@
 # the ssh_cidr_blocks validation.
 
 mock_provider "aws" {}
-mock_provider "random" {}
 
 override_data {
   target = module.vpc.data.aws_availability_zones.available
@@ -26,9 +25,33 @@ override_data {
   }
 }
 
+override_resource {
+  target = module.rds.aws_db_instance.this
+  values = {
+    address  = "db.internal"
+    port     = 5432
+    db_name  = "octopus"
+    username = "octopus"
+    master_user_secret = [{
+      kms_key_id    = ""
+      secret_arn    = "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!db-ABC123"
+      secret_status = "active"
+    }]
+  }
+}
+
+override_resource {
+  target = module.ec2.aws_ssm_document.runtime_secrets
+  values = {
+    default_version = "1"
+  }
+}
+
 variables {
-  app_image  = "ghcr.io/example/octopus:test"
-  app_domain = "octopus.example.com"
+  app_image                    = "ghcr.io/example/octopus:test"
+  app_domain                   = "octopus.example.com"
+  application_secret_arn       = "arn:aws:secretsmanager:us-east-1:123456789012:secret:octopus/application-ABC123"
+  runtime_secret_cutover_stage = "enforced"
 }
 
 # ── Stack: the app identity SG exists and carries no rules of its own ─────────
@@ -54,12 +77,23 @@ run "rds_module_restricted_to_identity_sg" {
   }
 
   variables {
-    name_prefix                = "octopus"
-    vpc_id                     = "vpc-00000000000000000"
-    subnet_ids                 = ["subnet-00000000000000001", "subnet-00000000000000002"]
-    allowed_security_group_ids = ["sg-appdata0000000001"]
-    allowed_cidr_blocks        = []
-    db_password                = "mock-password-123456"
+    name_prefix                 = "octopus"
+    vpc_id                      = "vpc-00000000000000000"
+    subnet_ids                  = ["subnet-00000000000000001", "subnet-00000000000000002"]
+    allowed_security_group_ids  = ["sg-appdata0000000001"]
+    allowed_cidr_blocks         = []
+    manage_master_user_password = true
+  }
+
+  override_resource {
+    target = aws_db_instance.this
+    values = {
+      master_user_secret = [{
+        kms_key_id    = ""
+        secret_arn    = "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!db-ABC123"
+        secret_status = "active"
+      }]
+    }
   }
 
   assert {
@@ -81,10 +115,15 @@ run "rds_module_restricted_to_identity_sg" {
     ])
     error_message = "Restricted RDS must not allow any CIDR-based ingress (no VPC-wide trust)."
   }
+
+  assert {
+    condition     = aws_db_instance.this.manage_master_user_password && aws_db_instance.this.password == null
+    error_message = "RDS must use a Secrets Manager-managed master password and never receive a plaintext password."
+  }
 }
 
-# ── RDS module, compat inputs (stage-1 cutover): identity SG plus legacy CIDR ─
-run "rds_module_compat_keeps_cidr_and_identity" {
+# ── RDS preflight: retain legacy access and leave password management alone ───
+run "rds_module_preflight_keeps_cidr_and_password_unmanaged" {
   command = apply
 
   module {
@@ -92,12 +131,23 @@ run "rds_module_compat_keeps_cidr_and_identity" {
   }
 
   variables {
-    name_prefix                = "octopus"
-    vpc_id                     = "vpc-00000000000000000"
-    subnet_ids                 = ["subnet-00000000000000001", "subnet-00000000000000002"]
-    allowed_security_group_ids = ["sg-appdata0000000001"]
-    allowed_cidr_blocks        = ["10.0.0.0/16"]
-    db_password                = "mock-password-123456"
+    name_prefix                 = "octopus"
+    vpc_id                      = "vpc-00000000000000000"
+    subnet_ids                  = ["subnet-00000000000000001", "subnet-00000000000000002"]
+    allowed_security_group_ids  = ["sg-appdata0000000001"]
+    allowed_cidr_blocks         = ["10.0.0.0/16"]
+    manage_master_user_password = false
+  }
+
+  override_resource {
+    target = aws_db_instance.this
+    values = {
+      master_user_secret = [{
+        kms_key_id    = ""
+        secret_arn    = "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!db-ABC123"
+        secret_status = "active"
+      }]
+    }
   }
 
   assert {
@@ -117,6 +167,11 @@ run "rds_module_compat_keeps_cidr_and_identity" {
       for r in aws_security_group.this.ingress : try(contains(r.security_groups, "sg-appdata0000000001"), false)
     ])
     error_message = "Compat mode must already attach the app-identity ingress to RDS."
+  }
+
+  assert {
+    condition     = !aws_db_instance.this.manage_master_user_password
+    error_message = "Preflight must not switch RDS to a Secrets Manager-managed master password."
   }
 }
 
@@ -186,7 +241,50 @@ run "redis_module_compat_keeps_cidr_and_identity" {
   }
 }
 
-# ── EC2 module: the instance carries the extra identity SG ────────────────────
+# ── EC2 preflight: IAM can read only the pre-provisioned application secret ──
+run "ec2_module_preflight_reads_only_application_secret" {
+  command = apply
+
+  module {
+    source = "../../modules/aws/ec2-app"
+  }
+
+  variables {
+    name_prefix                   = "octopus"
+    vpc_id                        = "vpc-00000000000000000"
+    subnet_id                     = "subnet-00000000000000001"
+    ami_id                        = "ami-00000000000000000"
+    aws_region                    = "us-east-1"
+    docker_compose_content        = "services: {}"
+    application_secret_arn        = "arn:aws:secretsmanager:us-east-1:123456789012:secret:octopus/application-ABC123"
+    database_secret_arn           = ""
+    runtime_secret_preflight_only = true
+    runtime_environment           = { NEXT_PUBLIC_APP_URL = "https://octopus.example.com" }
+    database_config               = { host = "db.internal", port = 5432, database = "octopus" }
+    nginx_conf_content            = ""
+    proxy_params_content          = ""
+    additional_security_group_ids = ["sg-appdata0000000001"]
+  }
+
+  override_resource {
+    target = aws_ssm_document.runtime_secrets
+    values = {
+      default_version = "1"
+    }
+  }
+
+  assert {
+    condition = toset(one([
+      for statement in jsondecode(aws_iam_role_policy.runtime_secrets.policy).Statement : statement
+      if statement.Sid == "ReadRuntimeSecrets"
+      ]).Resource) == toset([
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:octopus/application-ABC123",
+    ])
+    error_message = "Preflight IAM must restrict GetSecretValue to the application secret and omit the unavailable RDS secret."
+  }
+}
+
+# ── EC2 enforced: the instance carries the identity SG and both secret ARNs ───
 run "ec2_module_attaches_additional_identity_sg" {
   command = apply
 
@@ -199,12 +297,24 @@ run "ec2_module_attaches_additional_identity_sg" {
     vpc_id                        = "vpc-00000000000000000"
     subnet_id                     = "subnet-00000000000000001"
     ami_id                        = "ami-00000000000000000"
-    app_domain                    = "octopus.example.com"
+    aws_region                    = "us-east-1"
     docker_compose_content        = "services: {}"
-    env_content                   = ""
+    application_secret_arn        = "arn:aws:secretsmanager:us-east-1:123456789012:secret:octopus/application-ABC123"
+    database_secret_arn           = "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!db-ABC123"
+    runtime_secret_preflight_only = false
+    runtime_secret_kms_key_arns   = ["arn:aws:kms:us-east-1:123456789012:key/11111111-2222-3333-4444-555555555555"]
+    runtime_environment           = { NEXT_PUBLIC_APP_URL = "https://octopus.example.com" }
+    database_config               = { host = "db.internal", port = 5432, database = "octopus" }
     nginx_conf_content            = ""
     proxy_params_content          = ""
     additional_security_group_ids = ["sg-appdata0000000001"]
+  }
+
+  override_resource {
+    target = aws_ssm_document.runtime_secrets
+    values = {
+      default_version = "1"
+    }
   }
 
   assert {
@@ -215,6 +325,43 @@ run "ec2_module_attaches_additional_identity_sg" {
   assert {
     condition     = contains(aws_instance.this.vpc_security_group_ids, aws_security_group.this.id)
     error_message = "Attaching the identity SG must not displace the app's own security group."
+  }
+
+  assert {
+    condition     = length(aws_instance.this.user_data_base64) <= 21848
+    error_message = "Compressed EC2 user data must stay within AWS's 16 KiB decoded limit."
+  }
+
+  assert {
+    condition     = length(aws_ssm_document.runtime_secrets.content) <= 65536
+    error_message = "The runtime installer must stay within the SSM document size limit."
+  }
+
+  assert {
+    condition = toset(one([
+      for statement in jsondecode(aws_iam_role_policy.runtime_secrets.policy).Statement : statement
+      if statement.Sid == "ReadRuntimeSecrets"
+    ]).Action) == toset(["secretsmanager:GetSecretValue"])
+    error_message = "The instance role must only read secret values; it must not list, create, update, or rotate secrets."
+  }
+
+  assert {
+    condition = toset(one([
+      for statement in jsondecode(aws_iam_role_policy.runtime_secrets.policy).Statement : statement
+      if statement.Sid == "ReadRuntimeSecrets"
+      ]).Resource) == toset([
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:octopus/application-ABC123",
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!db-ABC123",
+    ])
+    error_message = "The instance role must restrict GetSecretValue to the exact application and database secret ARNs."
+  }
+
+  assert {
+    condition = one([
+      for statement in jsondecode(aws_iam_role_policy.runtime_secrets.policy).Statement : statement
+      if statement.Sid == "DecryptRuntimeSecrets"
+    ]).Condition.StringEquals["kms:ViaService"] == "secretsmanager.us-east-1.amazonaws.com"
+    error_message = "Customer-managed KMS decrypt permission must be constrained to Secrets Manager in the deployment region."
   }
 }
 

@@ -88,14 +88,49 @@ variable "app_domain" {
   type        = string
 }
 
-# ── Database ──────────────────────────────────────────────────────────────────
-variable "db_password" {
-  description = "Master password for the RDS PostgreSQL instance. Leave empty to auto-generate."
+variable "application_secret_arn" {
+  description = "Exact ARN of a pre-provisioned Secrets Manager JSON secret containing application secret values. Terraform never reads its value."
   type        = string
-  sensitive   = true
-  default     = ""
+
+  validation {
+    condition = try(
+      can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+$", var.application_secret_arn)) &&
+      split(":", var.application_secret_arn)[3] == var.aws_region,
+      false
+    )
+    error_message = "application_secret_arn must be a complete Secrets Manager secret ARN in aws_region."
+  }
 }
 
+variable "application_secret_kms_key_arn" {
+  description = "Optional customer-managed KMS key ARN used by application_secret_arn. Leave empty when the secret uses the AWS managed key."
+  type        = string
+  default     = ""
+
+  validation {
+    condition = (
+      var.application_secret_kms_key_arn == "" ||
+      try(
+        can(regex("^arn:[^:]+:kms:[^:]+:[0-9]{12}:key/[A-Za-z0-9-]+$", var.application_secret_kms_key_arn)) &&
+        split(":", var.application_secret_kms_key_arn)[3] == var.aws_region,
+        false
+      )
+    )
+    error_message = "application_secret_kms_key_arn must be empty or a customer-managed KMS key ARN."
+  }
+}
+
+variable "runtime_secret_cutover_stage" {
+  description = "Runtime secret rollout stage. Existing stacks must apply preflight before enforced; new stacks use enforced."
+  type        = string
+
+  validation {
+    condition     = contains(["preflight", "enforced"], var.runtime_secret_cutover_stage)
+    error_message = "runtime_secret_cutover_stage must be either preflight or enforced."
+  }
+}
+
+# ── Database ──────────────────────────────────────────────────────────────────
 variable "db_instance_class" {
   description = "RDS instance class."
   type        = string
@@ -128,6 +163,24 @@ variable "db_deletion_protection" {
   description = "Prevent accidental deletion of the RDS instance."
   type        = bool
   default     = true
+}
+
+variable "db_secret_kms_key_arn" {
+  description = "Optional customer-managed KMS key ARN for the RDS-managed master-user secret. Leave empty to use the AWS managed key."
+  type        = string
+  default     = ""
+
+  validation {
+    condition = (
+      var.db_secret_kms_key_arn == "" ||
+      try(
+        can(regex("^arn:[^:]+:kms:[^:]+:[0-9]{12}:key/[A-Za-z0-9-]+$", var.db_secret_kms_key_arn)) &&
+        split(":", var.db_secret_kms_key_arn)[3] == var.aws_region,
+        false
+      )
+    )
+    error_message = "db_secret_kms_key_arn must be empty or a customer-managed KMS key ARN."
+  }
 }
 
 # ── SSH ───────────────────────────────────────────────────────────────────────
@@ -165,32 +218,10 @@ variable "redis_node_type" {
   default     = "cache.t3.micro"
 }
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
-variable "better_auth_secret" {
-  description = "Secret key for Better Auth session signing. Leave empty to auto-generate."
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
 # ── GitHub App ────────────────────────────────────────────────────────────────
 variable "github_app_id" {
   description = "GitHub App ID."
   type        = string
-  default     = ""
-}
-
-variable "github_app_private_key" {
-  description = "GitHub App private key (PEM format)."
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "github_webhook_secret" {
-  description = "GitHub webhook secret for request validation."
-  type        = string
-  sensitive   = true
   default     = ""
 }
 
@@ -206,23 +237,9 @@ variable "github_app_client_id" {
   default     = ""
 }
 
-variable "github_app_client_secret" {
-  description = "GitHub App client secret used to verify the installing user."
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
 variable "github_client_id" {
   description = "GitHub OAuth App client ID."
   type        = string
-  default     = ""
-}
-
-variable "github_client_secret" {
-  description = "GitHub OAuth App client secret."
-  type        = string
-  sensitive   = true
   default     = ""
 }
 
@@ -233,43 +250,7 @@ variable "google_client_id" {
   default     = ""
 }
 
-variable "google_client_secret" {
-  description = "Google OAuth client secret."
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-# ── LLM ───────────────────────────────────────────────────────────────────────
-variable "openai_api_key" {
-  description = "OpenAI API key for embeddings and completions."
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "anthropic_api_key" {
-  description = "Anthropic API key for Claude models."
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "cohere_api_key" {
-  description = "Cohere API key for reranking."
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
 # ── Email ─────────────────────────────────────────────────────────────────────
-variable "resend_api_key" {
-  description = "Resend API key for transactional emails."
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
 variable "email_from" {
   description = "Default sender address for transactional emails."
   type        = string
@@ -286,13 +267,6 @@ variable "pubby_app_id" {
 variable "pubby_app_key" {
   description = "Pubby application key (NEXT_PUBLIC_PUBBY_KEY)."
   type        = string
-  default     = ""
-}
-
-variable "pubby_app_secret" {
-  description = "Pubby application secret."
-  type        = string
-  sensitive   = true
   default     = ""
 }
 

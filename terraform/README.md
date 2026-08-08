@@ -118,12 +118,9 @@ You need two separate GitHub apps: one for PR reviews and one for user login.
 8. Note the **Client ID**, then generate and save a **client secret**. These
    GitHub App credentials verify that the installing user can access the
    claimed installation; they are not the login OAuth App credentials.
-9. Scroll down → **Generate a private key** → a `.pem` file downloads
-10. Convert the key to a single-line string for Terraform:
-   ```bash
-   awk 'NF {printf "%s\\n", $0}' ~/Downloads/your-app-name.pem
-   ```
-   Copy the output — it should look like: `"-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n-----END RSA PRIVATE KEY-----\n"`
+9. Scroll down → **Generate a private key** → a `.pem` file downloads. Keep it
+   for the Secrets Manager application secret created in Step 3; never place it
+   in Terraform variables.
 11. Find your app's **slug** from the URL: `github.com/apps/your-slug` → the slug is `your-slug`
 12. After deployment, start installation from Octopus → **Settings → Integrations**
 
@@ -142,6 +139,44 @@ You need two separate GitHub apps: one for PR reviews and one for user login.
 
 ## Step 3 — Configure variables
 
+### Create the application secret
+
+Before running Terraform, create one Secrets Manager secret outside this
+Terraform state. Its `SecretString` must be a JSON object.
+`BETTER_AUTH_SECRET` and `GITHUB_STATE_SECRET` are required and must each be at
+least 32 characters. The other keys are optional; when present,
+`OCTOPUS_DATA_KEY` must be exactly 64 hexadecimal characters:
+
+```json
+{
+  "BETTER_AUTH_SECRET": "generate-with-openssl-rand-base64-48",
+  "GITHUB_STATE_SECRET": "generate-an-independent-secret-of-at-least-32-characters",
+  "OCTOPUS_DATA_KEY": "64 hex characters; see existing-deployment note below",
+  "GITHUB_APP_PRIVATE_KEY": "raw PEM or base64-encoded PEM",
+  "GITHUB_WEBHOOK_SECRET": "...",
+  "GITHUB_APP_CLIENT_SECRET": "...",
+  "GITHUB_CLIENT_SECRET": "...",
+  "GOOGLE_CLIENT_SECRET": "...",
+  "OPENAI_API_KEY": "...",
+  "ANTHROPIC_API_KEY": "...",
+  "COHERE_API_KEY": "...",
+  "RESEND_API_KEY": "...",
+  "PUBBY_APP_SECRET": "..."
+}
+```
+
+Generate the two required values independently; do not reuse one secret for
+both purposes. For a new deployment, generate the optional data key with
+`openssl rand -hex 32`. For an existing deployment with encrypted integration
+credentials, preserve its legacy-derived data key by following the cutover
+instructions below instead of generating a replacement.
+
+Save the JSON in a root-only file outside the repository and pass the file to
+`aws secretsmanager create-secret --secret-string file://...`. Do not put the
+JSON directly on the command line or in `terraform.tfvars`. Record the exact
+secret ARN, then securely remove the temporary file. Unknown JSON keys are
+rejected by the runtime loader.
+
 ```bash
 cd terraform/stacks/aws-ec2
 cp terraform.tfvars.example terraform.tfvars
@@ -155,18 +190,27 @@ The minimum you need to fill in:
 |----------|----------------|
 | `app_image` | The image URL from Step 1 |
 | `app_domain` | Your domain (e.g. `octopus.example.com`) |
-| `db_password` | Leave empty — auto-generated on first apply |
-| `better_auth_secret` | Leave empty — auto-generated on first apply |
+| `application_secret_arn` | Exact ARN of the JSON secret created above |
+| `runtime_secret_cutover_stage` | `enforced` for a new deployment; existing AWS deployments must start with `preflight` as documented below |
 | `github_app_id` | From Step 2A (the number) |
-| `github_app_private_key` | The single-line PEM from Step 2A |
-| `github_webhook_secret` | The secret you set in the GitHub App webhook |
 | `github_app_slug` | From Step 2A |
 | `github_app_client_id` | GitHub App client ID from Step 2A |
-| `github_app_client_secret` | GitHub App client secret from Step 2A |
 | `github_client_id` | From Step 2B |
-| `github_client_secret` | From Step 2B |
-| `openai_api_key` or `anthropic_api_key` | At least one LLM key required |
 | `admin_emails` | Your email — gets admin access on first login |
+
+In the `enforced` stage, RDS creates and manages its master password in Secrets
+Manager, and the EC2 role can read exactly the application and database secret
+ARNs. Secret values are fetched only on the instance, written atomically to
+`/run/octopus/runtime.env` with mode `0600`, and refreshed every five minutes.
+Docker Compose 2.30.0 or newer is required for the raw env-file format. Each
+refresh is transactional: it retries transient Secrets Manager reads,
+validates a candidate before normal promotion, and waits for container health.
+If validation or recreation fails after a database rotation, the refresher
+retains the current database candidate because RDS has already invalidated the
+prior password. An application-only recreation failure restores the last-good
+environment. Both paths exit unsuccessfully and leave a reconciliation stamp
+so the timer retries instead of accepting a partial update. If a boot-time
+refresh fails, the timer converges the complete Compose stack on recovery.
 
 ---
 
@@ -225,6 +269,10 @@ The backend block enforces encryption and native S3 state locking. The supplied
 configuration also pins KMS and the expected AWS account; keep both settings.
 Do not start an apply until initialization succeeds against that account.
 
+For a new deployment, set `runtime_secret_cutover_stage = "enforced"` before
+planning. The `preflight` stage is only for upgrading an existing AWS
+deployment.
+
 ```bash
 # Preview what will be created
 terraform plan
@@ -233,7 +281,62 @@ terraform plan
 terraform apply
 ```
 
-### Existing deployments: stage the data-access cutover
+### Existing AWS deployments: stage the runtime-secret cutover
+
+Existing AWS deployments also need a controlled runtime-secret cutover because
+EC2 does not rerun changed user data and enabling the RDS-managed password
+rotates the database credential immediately.
+
+Run the following two runtime-secret stages in order. Keep
+`restrict_data_access_to_app = false` during both stages so credential and
+network changes are verified separately.
+
+#### Stage 1 — preflight (no credential rotation)
+
+1. Schedule a maintenance window and create `application_secret_arn` with the
+   deployment's current application secret values, including both required
+   secrets. Before any future `BETTER_AUTH_SECRET` rotation, add the
+   legacy-equivalent `OCTOPUS_DATA_KEY` produced by
+   `apps/web/scripts/print-data-key.ts` using the current auth secret and verify
+   encrypted integrations still load.
+2. Confirm the instance is online in SSM and record a current health check.
+3. Set `runtime_secret_cutover_stage = "preflight"` and
+   `restrict_data_access_to_app = false`, then review and apply the plan.
+4. Confirm the SSM preflight succeeds. It checks the application-secret JSON
+   schema and Docker Compose version (2.30.0 or newer) without changing runtime
+   files or containers.
+
+The preflight stage leaves the existing RDS credential unchanged and grants
+EC2 read access only to the application secret and its configured KMS key.
+Stop if SSM is offline, the plan proposes replacement/destruction, the
+association fails, or the Compose version check fails. Upgrade Compose and
+rerun `preflight`; do not continue to `enforced` until every check passes.
+
+#### Stage 2 — enforced (activate managed runtime secrets)
+
+1. Change only `runtime_secret_cutover_stage` to `"enforced"`; keep
+   `restrict_data_access_to_app = false`.
+2. Review the plan. It must enable the RDS-managed master password in place,
+   add exact database-secret/KMS access for EC2, and replace the read-only
+   preflight with the full runtime loader. It must not replace EC2, RDS, or
+   Redis.
+3. Apply. Terraform waits for cloud-init, then for SSM to install the loader,
+   render and validate the candidate environment, and recreate the web
+   container, including its health check. An application-only recreation
+   failure restores the last-good environment. A database-credential
+   validation or recreation failure retains the new candidate because RDS has
+   invalidated the old password. Both leave the association failed and the
+   timer armed to converge the full stack on a safe retry.
+4. Verify `octopus-secrets.service`, `octopus-secrets.timer`, application
+   health/version, database migrations, encrypted integrations, and one real
+   review before continuing.
+
+After the enforced cutover is healthy, rotate every old application credential
+because prior state versions and old EC2 user data may retain the former
+values. Rotate `BETTER_AUTH_SECRET` only after the data-key step above; the
+rotation logs users out. Remove the unused legacy `/opt/octopus/.env` and clear
+old cloud-init user-data copies only after verification and according to your
+recovery policy.
 
 Deployments created before the dedicated application identity must attach it before removing the legacy VPC-wide database/cache rule. For the first apply after upgrading, keep both paths temporarily:
 
@@ -260,14 +363,9 @@ public_ip  = "54.123.45.67"
 app_url    = "https://octopus.example.com"
 ```
 
-If you left `db_password` and `better_auth_secret` empty (recommended), Terraform generated them automatically. To retrieve them:
-
-```bash
-terraform output -raw db_password
-terraform output -raw better_auth_secret
-```
-
-Save these somewhere safe — they are stored in your Terraform state file.
+Terraform outputs the database secret ARN, never the database password. Read
+or rotate secret values through Secrets Manager under your operational access
+policy, not through Terraform outputs.
 
 ---
 
@@ -414,7 +512,9 @@ sudo docker compose pull
 sudo docker compose up -d
 ```
 
-> Terraform re-apply does **not** replace the instance — the `ignore_changes` lifecycle rule on `user_data` prevents that. Only new deployments get updated userdata.
+> Terraform re-apply does **not** replace the instance — the lifecycle rule
+> ignores user-data drift. Runtime-loader changes still reach existing
+> instances through the managed SSM association.
 
 ---
 
@@ -515,7 +615,10 @@ later secret-delivery cutover.
 - SSH is disabled by default; setting a key pair still requires explicit trusted CIDRs in `ssh_cidr_blocks`
 - IMDSv2 enforced on EC2 (prevents SSRF credential theft)
 - Root EBS volume encrypted at rest
-- `.env` file on the instance is `chmod 600`
+- Terraform receives application secret ARNs, never application secret values
+- RDS manages and rotates its master password in Secrets Manager
+- Runtime values are fetched with exact IAM permissions and atomically written
+  to `/run/octopus/runtime.env` with mode `0600`
 - Never commit `terraform.tfvars` — it's gitignored
 - Production state uses an encrypted, versioned S3 backend with native locking;
   backend credentials must never be stored in `backend.conf`

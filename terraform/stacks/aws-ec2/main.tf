@@ -1,21 +1,4 @@
-resource "random_password" "db_password" {
-  count   = var.db_password == "" ? 1 : 0
-  length  = 24
-  special = false
-}
-
-resource "random_password" "better_auth_secret" {
-  count   = var.better_auth_secret == "" ? 1 : 0
-  length  = 64
-  special = false
-}
-
 locals {
-  db_password        = var.db_password != "" ? var.db_password : random_password.db_password[0].result
-  better_auth_secret = var.better_auth_secret != "" ? var.better_auth_secret : random_password.better_auth_secret[0].result
-
-  db_url = "postgresql://${module.rds.username}:${urlencode(local.db_password)}@${module.rds.endpoint}/${module.rds.db_name}?sslmode=require"
-
   redis_url = var.enable_redis ? module.redis[0].connection_url : ""
 
   # Production nginx.conf — both upstreams point to the web container.
@@ -97,62 +80,30 @@ locals {
     proxy_set_header X-Forwarded-Proto $scheme;
   PROXY
 
-  env_content = <<-ENV
-    # Database
-    DATABASE_URL=${local.db_url}
+  runtime_environment = merge({
+    BETTER_AUTH_URL             = "https://${var.app_domain}"
+    NEXT_PUBLIC_APP_URL         = "https://${var.app_domain}"
+    ADMIN_EMAILS                = var.admin_emails
+    QDRANT_URL                  = "http://qdrant:6333"
+    GITHUB_APP_ID               = var.github_app_id
+    GITHUB_APP_CLIENT_ID        = var.github_app_client_id
+    NEXT_PUBLIC_GITHUB_APP_SLUG = var.github_app_slug
+    GITHUB_CLIENT_ID            = var.github_client_id
+    GOOGLE_CLIENT_ID            = var.google_client_id
+    EMAIL_FROM                  = var.email_from
+    PUBBY_APP_ID                = var.pubby_app_id
+    PUBBY_APP_KEY               = var.pubby_app_key
+    NEXT_PUBLIC_PUBBY_KEY       = var.pubby_app_key
+    BITBUCKET_REDIRECT_URI      = "https://${var.app_domain}/api/bitbucket/callback"
+    LINEAR_REDIRECT_URI         = "https://${var.app_domain}/api/linear/callback"
+    SLACK_REDIRECT_URI          = "https://${var.app_domain}/api/slack/callback"
+  }, var.enable_redis ? { REDIS_URL = local.redis_url } : {})
 
-    # Better Auth
-    BETTER_AUTH_SECRET=${local.better_auth_secret}
-    BETTER_AUTH_URL=https://${var.app_domain}
-
-    # App
-    NEXT_PUBLIC_APP_URL=https://${var.app_domain}
-    ADMIN_EMAILS=${var.admin_emails}
-
-    # Qdrant (Vector DB) — internal Docker network
-    QDRANT_URL=http://qdrant:6333
-
-    %{~if var.enable_redis}
-    # Redis
-    REDIS_URL=${local.redis_url}
-    %{~endif}
-
-    # GitHub App
-    GITHUB_APP_ID=${var.github_app_id}
-    GITHUB_APP_PRIVATE_KEY=${var.github_app_private_key}
-    GITHUB_WEBHOOK_SECRET=${var.github_webhook_secret}
-    GITHUB_APP_CLIENT_ID=${var.github_app_client_id}
-    GITHUB_APP_CLIENT_SECRET=${var.github_app_client_secret}
-    NEXT_PUBLIC_GITHUB_APP_SLUG=${var.github_app_slug}
-
-    # GitHub OAuth
-    GITHUB_CLIENT_ID=${var.github_client_id}
-    GITHUB_CLIENT_SECRET=${var.github_client_secret}
-
-    # Google OAuth
-    GOOGLE_CLIENT_ID=${var.google_client_id}
-    GOOGLE_CLIENT_SECRET=${var.google_client_secret}
-
-    # LLM Providers
-    OPENAI_API_KEY=${var.openai_api_key}
-    ANTHROPIC_API_KEY=${var.anthropic_api_key}
-    COHERE_API_KEY=${var.cohere_api_key}
-
-    # Email
-    RESEND_API_KEY=${var.resend_api_key}
-    EMAIL_FROM=${var.email_from}
-
-    # Pubby (Real-time)
-    PUBBY_APP_ID=${var.pubby_app_id}
-    PUBBY_APP_KEY=${var.pubby_app_key}
-    PUBBY_APP_SECRET=${var.pubby_app_secret}
-    NEXT_PUBLIC_PUBBY_KEY=${var.pubby_app_key}
-
-    # OAuth redirect URIs
-    BITBUCKET_REDIRECT_URI=https://${var.app_domain}/api/bitbucket/callback
-    LINEAR_REDIRECT_URI=https://${var.app_domain}/api/linear/callback
-    SLACK_REDIRECT_URI=https://${var.app_domain}/api/slack/callback
-  ENV
+  database_config = {
+    host     = module.rds.host
+    port     = module.rds.port
+    database = module.rds.db_name
+  }
 
   docker_compose = templatefile("${path.module}/templates/docker-compose.yml.tpl", {
     app_image = var.app_image
@@ -223,17 +174,18 @@ resource "aws_security_group" "app_data_access" {
 module "rds" {
   source = "../../modules/aws/rds-postgres"
 
-  name_prefix                = var.name_prefix
-  vpc_id                     = module.vpc.vpc_id
-  subnet_ids                 = module.vpc.private_subnet_ids
-  allowed_security_group_ids = [aws_security_group.app_data_access.id]
-  allowed_cidr_blocks        = var.restrict_data_access_to_app ? [] : [var.vpc_cidr]
-  db_password                = local.db_password
-  instance_class             = var.db_instance_class
-  allocated_storage_gb       = var.db_allocated_storage_gb
-  multi_az                   = var.db_multi_az
-  deletion_protection        = var.db_deletion_protection
-  tags                       = var.tags
+  name_prefix                    = var.name_prefix
+  vpc_id                         = module.vpc.vpc_id
+  subnet_ids                     = module.vpc.private_subnet_ids
+  allowed_security_group_ids     = [aws_security_group.app_data_access.id]
+  allowed_cidr_blocks            = var.restrict_data_access_to_app ? [] : [var.vpc_cidr]
+  master_user_secret_kms_key_arn = var.db_secret_kms_key_arn
+  manage_master_user_password    = var.runtime_secret_cutover_stage == "enforced"
+  instance_class                 = var.db_instance_class
+  allocated_storage_gb           = var.db_allocated_storage_gb
+  multi_az                       = var.db_multi_az
+  deletion_protection            = var.db_deletion_protection
+  tags                           = var.tags
 }
 
 # ── ElastiCache Redis (optional) ──────────────────────────────────────────────
@@ -254,20 +206,28 @@ module "redis" {
 module "ec2" {
   source = "../../modules/aws/ec2-app"
 
-  name_prefix            = var.name_prefix
-  vpc_id                 = module.vpc.vpc_id
-  subnet_id              = module.vpc.public_subnet_ids[0]
-  instance_type          = var.instance_type
-  ami_id                 = var.ami_id
-  key_name               = var.key_name
-  root_volume_size_gb    = var.root_volume_size_gb
-  create_eip             = var.create_eip
-  app_domain             = var.app_domain
-  ecr_registry_url       = var.ecr_registry_url
-  docker_compose_content = local.docker_compose
-  env_content            = local.env_content
-  nginx_conf_content     = local.nginx_conf
-  proxy_params_content   = local.proxy_params
+  name_prefix                   = var.name_prefix
+  vpc_id                        = module.vpc.vpc_id
+  subnet_id                     = module.vpc.public_subnet_ids[0]
+  instance_type                 = var.instance_type
+  ami_id                        = var.ami_id
+  key_name                      = var.key_name
+  root_volume_size_gb           = var.root_volume_size_gb
+  create_eip                    = var.create_eip
+  aws_region                    = var.aws_region
+  ecr_registry_url              = var.ecr_registry_url
+  docker_compose_content        = local.docker_compose
+  nginx_conf_content            = local.nginx_conf
+  proxy_params_content          = local.proxy_params
+  application_secret_arn        = var.application_secret_arn
+  database_secret_arn           = var.runtime_secret_cutover_stage == "enforced" ? module.rds.master_user_secret_arn : ""
+  runtime_secret_preflight_only = var.runtime_secret_cutover_stage == "preflight"
+  runtime_secret_kms_key_arns = distinct(compact([
+    var.application_secret_kms_key_arn,
+    var.runtime_secret_cutover_stage == "enforced" ? var.db_secret_kms_key_arn : "",
+  ]))
+  runtime_environment = local.runtime_environment
+  database_config     = local.database_config
 
   ingress_rules                 = local.ingress_rules
   additional_security_group_ids = [aws_security_group.app_data_access.id]

@@ -3,18 +3,6 @@ output "public_ip" {
   value       = module.ec2.public_ip
 }
 
-output "db_password" {
-  description = "RDS master password (auto-generated if not provided). Retrieve with: terraform output -raw db_password"
-  value       = local.db_password
-  sensitive   = true
-}
-
-output "better_auth_secret" {
-  description = "Better Auth secret (auto-generated if not provided). Retrieve with: terraform output -raw better_auth_secret"
-  value       = local.better_auth_secret
-  sensitive   = true
-}
-
 output "instance_id" {
   description = "EC2 instance ID."
   value       = module.ec2.instance_id
@@ -23,6 +11,11 @@ output "instance_id" {
 output "db_endpoint" {
   description = "RDS PostgreSQL endpoint (host:port)."
   value       = module.rds.endpoint
+}
+
+output "database_secret_arn" {
+  description = "ARN of the RDS-managed master-user secret read by the EC2 instance role; null during preflight."
+  value       = module.rds.master_user_secret_arn
 }
 
 output "redis_url" {

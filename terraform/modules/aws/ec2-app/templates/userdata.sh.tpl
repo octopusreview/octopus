@@ -9,7 +9,7 @@ echo "=== Octopus setup started at $(date -u) ==="
 
 # ── System update ────────────────────────────────────────────────────────────
 apt-get update -y
-apt-get install -y ca-certificates curl gnupg lsb-release git unzip awscli
+apt-get install -y ca-certificates curl gnupg lsb-release git unzip awscli python3
 
 # ── Docker ───────────────────────────────────────────────────────────────────
 install -m 0755 -d /etc/apt/keyrings
@@ -28,32 +28,16 @@ apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 systemctl enable docker
 systemctl start docker
 
-# ── App directory ─────────────────────────────────────────────────────────────
-mkdir -p /opt/octopus
-cd /opt/octopus
-
-# Write docker-compose.yml
-cat > docker-compose.yml << 'COMPOSE_EOF'
-${docker_compose_content}
-COMPOSE_EOF
-
-# Write .env
-cat > .env << 'ENV_EOF'
-${env_content}
-ENV_EOF
-chmod 600 .env
-
-%{ if nginx_conf_content != "" ~}
-# Write nginx.conf
-cat > nginx.conf << 'NGINX_EOF'
-${nginx_conf_content}
-NGINX_EOF
-
-# Write proxy_params
-cat > proxy_params << 'PROXY_EOF'
-${proxy_params_content}
-PROXY_EOF
-%{ endif ~}
+# ── Runtime configuration ────────────────────────────────────────────────────
+# This payload contains only non-secret configuration and secret ARNs. Secret
+# values are fetched with the instance role and rendered atomically under /run.
+runtime_installer=$(mktemp /tmp/octopus-runtime-install.XXXXXX)
+trap 'rm -f "$runtime_installer"' EXIT
+printf '%s' '${runtime_installer_base64}' | base64 --decode > "$runtime_installer"
+chmod 0700 "$runtime_installer"
+OCTOPUS_BOOTSTRAP=1 "$runtime_installer"
+rm -f "$runtime_installer"
+trap - EXIT
 
 # ── Registry authentication ───────────────────────────────────────────────────
 %{ if ecr_registry_url != "" ~}
@@ -68,29 +52,8 @@ aws ecr get-login-password --region "$AWS_REGION" \
 %{ endif ~}
 
 # ── Pull & start ──────────────────────────────────────────────────────────────
+cd /opt/octopus
 docker compose pull
-docker compose up -d
-
-# ── systemd service to keep it running across reboots ────────────────────────
-cat > /etc/systemd/system/octopus.service << 'SERVICE_EOF'
-[Unit]
-Description=Octopus AI Code Review
-After=docker.service
-Requires=docker.service
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-WorkingDirectory=/opt/octopus
-ExecStart=/usr/bin/docker compose up -d
-ExecStop=/usr/bin/docker compose down
-TimeoutStartSec=300
-
-[Install]
-WantedBy=multi-user.target
-SERVICE_EOF
-
-systemctl daemon-reload
-systemctl enable octopus
+systemctl enable --now octopus
 
 echo "=== Octopus setup completed at $(date -u) ==="

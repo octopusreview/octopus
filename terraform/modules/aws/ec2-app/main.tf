@@ -13,6 +13,53 @@ data "aws_ami" "ubuntu" {
   }
 }
 
+locals {
+  refresh_secrets_script = templatefile("${path.module}/templates/refresh-secrets.sh.tpl", {
+    aws_region_base64             = base64encode(var.aws_region)
+    application_secret_arn_base64 = base64encode(var.application_secret_arn)
+    database_secret_arn_base64    = base64encode(var.database_secret_arn)
+    public_environment_base64     = base64encode(jsonencode(var.runtime_environment))
+    database_config_base64        = base64encode(jsonencode(var.database_config))
+  })
+
+  runtime_installer = templatefile("${path.module}/templates/runtime-installer.sh.tpl", {
+    renderer_base64       = base64encode(file("${path.module}/scripts/render_runtime_env.py"))
+    refresh_script_base64 = base64encode(local.refresh_secrets_script)
+    docker_compose_base64 = base64encode(var.docker_compose_content)
+    nginx_conf_base64     = var.nginx_conf_content != "" ? base64encode(var.nginx_conf_content) : ""
+    proxy_params_base64   = var.proxy_params_content != "" ? base64encode(var.proxy_params_content) : ""
+  })
+
+  runtime_secret_preflight = templatefile("${path.module}/templates/preflight-runtime-secrets.sh.tpl", {
+    aws_region_base64             = base64encode(var.aws_region)
+    application_secret_arn_base64 = base64encode(var.application_secret_arn)
+    renderer_base64               = base64encode(file("${path.module}/scripts/render_runtime_env.py"))
+    docker_compose_base64         = base64encode(var.docker_compose_content)
+  })
+
+  runtime_secret_payload = var.runtime_secret_preflight_only ? local.runtime_secret_preflight : local.runtime_installer
+
+  runtime_secret_policy_statements = concat(
+    [{
+      Sid      = "ReadRuntimeSecrets"
+      Effect   = "Allow"
+      Action   = ["secretsmanager:GetSecretValue"]
+      Resource = compact([var.application_secret_arn, var.database_secret_arn])
+    }],
+    length(var.runtime_secret_kms_key_arns) > 0 ? [{
+      Sid      = "DecryptRuntimeSecrets"
+      Effect   = "Allow"
+      Action   = ["kms:Decrypt"]
+      Resource = var.runtime_secret_kms_key_arns
+      Condition = {
+        StringEquals = {
+          "kms:ViaService" = "secretsmanager.${var.aws_region}.amazonaws.com"
+        }
+      }
+    }] : []
+  )
+}
+
 resource "aws_security_group" "this" {
   name_prefix = "${var.name_prefix}-app-"
   vpc_id      = var.vpc_id
@@ -70,6 +117,15 @@ resource "aws_iam_role_policy_attachment" "ecr_read" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
+resource "aws_iam_role_policy" "runtime_secrets" {
+  name_prefix = "${var.name_prefix}-runtime-secrets-"
+  role        = aws_iam_role.this.id
+  policy = jsonencode({
+    Version   = "2012-10-17"
+    Statement = local.runtime_secret_policy_statements
+  })
+}
+
 resource "aws_iam_instance_profile" "this" {
   name_prefix = "${var.name_prefix}-ec2-"
   role        = aws_iam_role.this.name
@@ -92,13 +148,9 @@ resource "aws_instance" "this" {
     encrypted             = true
   }
 
-  user_data = base64encode(templatefile("${path.module}/templates/userdata.sh.tpl", {
-    docker_compose_content = var.docker_compose_content
-    env_content            = var.env_content
-    app_domain             = var.app_domain
-    nginx_conf_content     = var.nginx_conf_content
-    proxy_params_content   = var.proxy_params_content
-    ecr_registry_url       = var.ecr_registry_url
+  user_data_base64 = base64gzip(templatefile("${path.module}/templates/userdata.sh.tpl", {
+    runtime_installer_base64 = base64encode(local.runtime_installer)
+    ecr_registry_url         = var.ecr_registry_url
   }))
 
   metadata_options {
@@ -110,8 +162,72 @@ resource "aws_instance" "this" {
   tags = merge({ Name = "${var.name_prefix}-app" }, var.tags)
 
   lifecycle {
-    ignore_changes = [ami, user_data]
+    # Ignore both forms so upgrading an instance created by the former
+    # user_data argument cannot trigger a stop/start. SSM performs the update.
+    ignore_changes = [ami, user_data, user_data_base64]
   }
+
+  # User data fetches secrets and may authenticate to ECR immediately. Ensure
+  # every required role permission is attached before the instance boots.
+  depends_on = [
+    aws_iam_role_policy.runtime_secrets,
+    aws_iam_role_policy_attachment.ssm,
+    aws_iam_role_policy_attachment.ecr_read,
+  ]
+}
+
+resource "aws_ssm_document" "runtime_secrets" {
+  name            = "${var.name_prefix}-install-runtime-secrets"
+  document_type   = "Command"
+  document_format = "JSON"
+
+  content = jsonencode({
+    schemaVersion = "2.2"
+    description = (
+      var.runtime_secret_preflight_only ?
+      "Preflight Octopus runtime secret delivery" :
+      "Install and refresh Octopus runtime secret delivery"
+    )
+    mainSteps = [{
+      action = "aws:runShellScript"
+      name   = "installRuntimeSecretDelivery"
+      inputs = {
+        timeoutSeconds = "900"
+        runCommand = [
+          "set -eu",
+          "umask 077",
+          "if command -v cloud-init >/dev/null 2>&1; then cloud-init status --wait; fi",
+          "installer_path=$(mktemp /run/octopus-runtime-installer.XXXXXX)",
+          "trap 'rm -f -- \"$installer_path\"' EXIT",
+          "printf '%s' '${base64encode(local.runtime_secret_payload)}' | base64 --decode > \"$installer_path\"",
+          "chmod 0700 \"$installer_path\"",
+          "/bin/bash \"$installer_path\"",
+        ]
+      }
+    }]
+  })
+
+  tags = merge({ Name = "${var.name_prefix}-runtime-secrets" }, var.tags)
+}
+
+# Updating EC2 user data does not rerun cloud-init on an existing instance. The
+# association installs the same runtime loader in place and waits for success.
+resource "aws_ssm_association" "runtime_secrets" {
+  name                             = aws_ssm_document.runtime_secrets.name
+  association_name                 = "${var.name_prefix}-runtime-secrets"
+  document_version                 = aws_ssm_document.runtime_secrets.default_version
+  wait_for_success_timeout_seconds = 900
+
+  targets {
+    key    = "InstanceIds"
+    values = [aws_instance.this.id]
+  }
+
+  depends_on = [
+    aws_iam_role_policy.runtime_secrets,
+    aws_iam_role_policy_attachment.ssm,
+    aws_iam_role_policy_attachment.ecr_read,
+  ]
 }
 
 resource "aws_eip" "this" {

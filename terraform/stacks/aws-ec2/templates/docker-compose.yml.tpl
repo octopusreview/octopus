@@ -12,7 +12,9 @@ services:
 
   web:
     image: ${app_image}
-    env_file: .env
+    env_file:
+      - path: $${OCTOPUS_RUNTIME_ENV_PATH:-/run/octopus/runtime.env}
+        format: raw
     depends_on:
       qdrant:
         condition: service_healthy

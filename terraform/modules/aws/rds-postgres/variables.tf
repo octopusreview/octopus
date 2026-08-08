@@ -38,10 +38,24 @@ variable "db_username" {
   default     = "octopus"
 }
 
-variable "db_password" {
-  description = "Master password for the RDS instance."
+variable "master_user_secret_kms_key_arn" {
+  description = "Optional customer-managed KMS key ARN for the RDS-managed master-user secret. Leave empty to use the AWS managed key."
   type        = string
-  sensitive   = true
+  default     = ""
+
+  validation {
+    condition = (
+      var.master_user_secret_kms_key_arn == "" ||
+      can(regex("^arn:[^:]+:kms:[^:]+:[0-9]{12}:key/[A-Za-z0-9-]+$", var.master_user_secret_kms_key_arn))
+    )
+    error_message = "master_user_secret_kms_key_arn must be empty or a customer-managed KMS key ARN."
+  }
+}
+
+variable "manage_master_user_password" {
+  description = "Let RDS manage and rotate the master-user password in Secrets Manager. Disable only during the documented existing-stack preflight stage."
+  type        = bool
+  default     = true
 }
 
 variable "instance_class" {

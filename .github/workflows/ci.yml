@@ -39,8 +39,13 @@ jobs:
           DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
           BETTER_AUTH_SECRET: "build-time-dummy-secret"
 
-      - name: Test Terraform backend hardening regression
-        run: bun test lib/__tests__/terraform-backend-security.test.ts
+      - name: Test Terraform security regressions
+        run: >-
+          bun test
+          lib/__tests__/terraform-backend-security.test.ts
+          lib/__tests__/terraform-runtime-secrets-security.test.ts
+          lib/__tests__/terraform-runtime-env-renderer.test.ts
+          lib/__tests__/terraform-runtime-secret-refresh.test.ts
         working-directory: apps/web
 
   terraform:
@@ -56,7 +61,9 @@ jobs:
       - name: Check Terraform formatting
         run: |
           terraform fmt -check -recursive terraform/bootstrap/aws-state
-          terraform fmt -check terraform/stacks/aws-ec2/versions.tf
+          terraform fmt -check terraform/modules/aws/ec2-app
+          terraform fmt -check terraform/modules/aws/rds-postgres
+          terraform fmt -check -recursive terraform/stacks/aws-ec2
 
       - name: Test state-backend bootstrap
         run: |

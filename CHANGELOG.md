@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- AWS Terraform deployments no longer keep application or database secret values in Terraform state or EC2 user data. Operators pre-provision one Secrets Manager application secret, RDS manages its own master password, and the instance fetches values at runtime with exact Secrets Manager and KMS permissions, writing them atomically to a root-only environment file. A five-minute refresh is transactional and health-gated: it preserves the existing `OCTOPUS_DATA_KEY`, keeps current database credentials working after RDS rotation, and retries safely after partial failures. Existing stacks upgrade through a documented preflight stage before the enforced cutover; Docker Compose 2.30.0 or newer is required.
+
 ## [1.0.102] - 2026-08-08
 
 ### Security

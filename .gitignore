@@ -7,6 +7,10 @@ out/
 dist/
 build/
 
+# python-generated artifacts
+__pycache__/
+*.py[cod]
+
 # turborepo
 .turbo/
 

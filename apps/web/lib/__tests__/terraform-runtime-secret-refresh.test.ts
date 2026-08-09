@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { gzipSync } from "node:zlib";
 
 const repoRoot = resolve(import.meta.dir, "../../../..");
 const renderer = resolve(
@@ -19,8 +20,13 @@ const refreshTemplate = readFileSync(
   resolve(repoRoot, "terraform/modules/aws/ec2-app/templates/refresh-secrets.sh.tpl"),
   "utf8",
 );
+const redisProbe = readFileSync(
+  resolve(repoRoot, "terraform/modules/aws/ec2-app/scripts/probe_redis.js"),
+  "utf8",
+);
 
 const encoded = (value: string) => Buffer.from(value).toString("base64");
+const gzipEncoded = (value: string) => gzipSync(value).toString("base64");
 const strongAuthSecret = "a".repeat(32);
 const strongGithubStateSecret = "g".repeat(32);
 
@@ -37,6 +43,7 @@ function createHarness() {
   const appDirectory = resolve(root, "opt/octopus");
   const applicationSecret = resolve(root, "application.json");
   const databaseSecret = resolve(root, "database.json");
+  const redisSecret = resolve(root, "redis.json");
   const dockerCalls = resolve(root, "docker-calls.log");
   const refreshScript = resolve(root, "refresh-secrets.sh");
   mkdirSync(bin, { recursive: true });
@@ -59,6 +66,8 @@ while [ "$#" -gt 0 ]; do
 done
 if [ "$secret_id" = "$FAKE_APPLICATION_SECRET_ARN" ]; then
   /bin/cat "$FAKE_APPLICATION_SECRET_FILE"
+elif [ "$secret_id" = "$FAKE_REDIS_SECRET_ARN" ]; then
+  /bin/cat "$FAKE_REDIS_SECRET_FILE"
 else
   /bin/cat "$FAKE_DATABASE_SECRET_FILE"
 fi
@@ -88,6 +97,9 @@ if [[ "$*" == *" ps "* ]] && [ "$FAKE_STACK_RUNNING" = "1" ]; then
   printf 'nginx\nqdrant\nweb\n'
 elif [[ "$*" == *" ps "* ]] && [ "$FAKE_WEB_RUNNING" = "1" ]; then
   printf 'web\n'
+fi
+if [[ "$*" == *" run "* ]] && [ "$FAKE_REDIS_PROBE_FAIL" = "1" ]; then
+  exit 45
 fi
 if [[ "$*" == *" up "* ]] && [ "$FAKE_DOCKER_UP_FAIL" = "1" ]; then
   exit 42
@@ -125,12 +137,23 @@ exit 1
     NEXT_PUBLIC_APP_URL: "https://octopus.example/${LITERAL}",
   };
   const databaseConfig = { host: "db.internal", port: 5432, database: "octopus" };
+  const redisConfig = {
+    enabled: true,
+    host: "redis.internal",
+    port: 6379,
+    username: "octopus-app",
+  };
+  writeFileSync(redisSecret, JSON.stringify({ password: "Redis9!&#$^<>-Token" }));
   const rendered = refreshTemplate
     .replaceAll("${aws_region_base64}", encoded("us-east-1"))
     .replaceAll("${application_secret_arn_base64}", encoded("arn:application"))
     .replaceAll("${database_secret_arn_base64}", encoded("arn:database"))
+    .replaceAll("${redis_secret_arn_base64}", encoded("arn:redis"))
     .replaceAll("${public_environment_base64}", encoded(JSON.stringify(publicEnvironment)))
     .replaceAll("${database_config_base64}", encoded(JSON.stringify(databaseConfig)))
+    .replaceAll("${redis_config_base64}", encoded(JSON.stringify(redisConfig)))
+    .replaceAll("${redis_probe_base64}", gzipEncoded(redisProbe))
+    .replaceAll("${redis_auth_enforced}", "0")
     .replaceAll("$${", "${")
     .replace("RUNTIME_DIRECTORY=/run/octopus", `RUNTIME_DIRECTORY=${runtimeDirectory}`)
     .replace("APP_DIRECTORY=/opt/octopus", `APP_DIRECTORY=${appDirectory}`)
@@ -143,12 +166,15 @@ exit 1
     FAKE_APPLICATION_SECRET_ARN: "arn:application",
     FAKE_APPLICATION_SECRET_FILE: applicationSecret,
     FAKE_DATABASE_SECRET_FILE: databaseSecret,
+    FAKE_REDIS_SECRET_ARN: "arn:redis",
+    FAKE_REDIS_SECRET_FILE: redisSecret,
     FAKE_DOCKER_CALLS: dockerCalls,
     FAKE_COMPOSE_VERSION: "2.30.0",
     FAKE_DOCKER_CONFIG_FAIL: "0",
     FAKE_DOCKER_FULL_WAIT_FAIL: "0",
     FAKE_DOCKER_UP_FAIL: "0",
     FAKE_DOCKER_WAIT_FAIL: "0",
+    FAKE_REDIS_PROBE_FAIL: "0",
     FAKE_STACK_RUNNING: "1",
     FAKE_WEB_RUNNING: "1",
   };
@@ -165,12 +191,70 @@ exit 1
     dockerCalls,
     environment,
     reconcileStamp: resolve(runtimeDirectory, "reconcile-required"),
+    redisSecret,
     run,
     runtimeEnv: resolve(runtimeDirectory, "runtime.env"),
   };
 }
 
 describe("Terraform runtime secret refresh", () => {
+  it("probes a rotated Redis credential before promoting and recreating web", () => {
+    const harness = createHarness();
+    const oldPassword = "Redis9!&#$^<>-Token";
+    const newPassword = "Redis9!&#$^<>-Rotated";
+    writeFileSync(harness.applicationSecret, JSON.stringify(validApplicationSecret()));
+    writeFileSync(
+      harness.databaseSecret,
+      JSON.stringify({ username: "octopus", password: "valid-database" }),
+    );
+    writeFileSync(harness.redisSecret, JSON.stringify({ password: oldPassword }));
+
+    expect(harness.bootstrap().exitCode).toBe(0);
+    expect(readFileSync(harness.runtimeEnv, "utf8")).toContain(
+      "REDIS_URL=rediss://octopus-app:Redis9%21%26%23%24%5E%3C%3E-Token@redis.internal:6379",
+    );
+
+    writeFileSync(harness.redisSecret, JSON.stringify({ password: newPassword }));
+    const rotated = harness.run();
+
+    expect(rotated.exitCode).toBe(0);
+    expect(rotated.stdout.toString()).not.toContain(newPassword);
+    expect(rotated.stderr.toString()).not.toContain(newPassword);
+    expect(readFileSync(harness.dockerCalls, "utf8")).toContain(
+      "run --rm --no-deps -T -e OCTOPUS_REDIS_PROBE_RUN=1 -e OCTOPUS_REDIS_AUTH_ENFORCED=0 web node -",
+    );
+    expect(readFileSync(harness.dockerCalls, "utf8")).toContain(
+      "up -d --no-deps --force-recreate --wait --wait-timeout 120 web",
+    );
+    expect(readFileSync(harness.runtimeEnv, "utf8")).toContain(
+      "REDIS_URL=rediss://octopus-app:Redis9%21%26%23%24%5E%3C%3E-Rotated@redis.internal:6379",
+    );
+  });
+
+  it("keeps the last-good Redis credential when the authenticated probe fails", () => {
+    const harness = createHarness();
+    const oldPassword = "Redis9!&#$^<>-Token";
+    const rejectedPassword = "Redis9!&#$^<>-Rejected";
+    writeFileSync(harness.applicationSecret, JSON.stringify(validApplicationSecret()));
+    writeFileSync(
+      harness.databaseSecret,
+      JSON.stringify({ username: "octopus", password: "valid-database" }),
+    );
+    writeFileSync(harness.redisSecret, JSON.stringify({ password: oldPassword }));
+    expect(harness.bootstrap().exitCode).toBe(0);
+    const lastGood = readFileSync(harness.runtimeEnv, "utf8");
+
+    writeFileSync(harness.redisSecret, JSON.stringify({ password: rejectedPassword }));
+    harness.environment.FAKE_REDIS_PROBE_FAIL = "1";
+    const failed = harness.run();
+
+    expect(failed.exitCode).not.toBe(0);
+    expect(failed.stderr.toString()).toContain("authenticated Redis probe failed");
+    expect(failed.stdout.toString()).not.toContain(rejectedPassword);
+    expect(failed.stderr.toString()).not.toContain(rejectedPassword);
+    expect(readFileSync(harness.runtimeEnv, "utf8")).toBe(lastGood);
+  });
+
   it("keeps values out of logs and recreates web only when values change", () => {
     const harness = createHarness();
     const applicationSentinel = `${"a".repeat(32)}-$#-\${NOT_EXPANDED}`;

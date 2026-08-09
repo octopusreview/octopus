@@ -16,7 +16,7 @@ install_base64_file() {
   local mode=$3
   local temporary_file
   temporary_file=$(mktemp "$(dirname "$destination")/.octopus-install.XXXXXX")
-  printf '%s' "$encoded_value" | base64 --decode > "$temporary_file"
+  printf '%s' "$encoded_value" | base64 --decode | gzip -d > "$temporary_file"
   chmod "$mode" "$temporary_file"
   mv -f "$temporary_file" "$destination"
 }
@@ -27,6 +27,8 @@ install_base64_file '${docker_compose_base64}' /opt/octopus/docker-compose.yml 0
 
 %{ if nginx_conf_base64 != "" ~}
 install_base64_file '${nginx_conf_base64}' /opt/octopus/nginx.conf 0644
+%{ endif ~}
+%{ if proxy_params_base64 != "" ~}
 install_base64_file '${proxy_params_base64}' /opt/octopus/proxy_params 0644
 %{ endif ~}
 

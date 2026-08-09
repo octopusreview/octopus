@@ -73,6 +73,7 @@ variables {
   app_domain                   = "octopus.example.com"
   application_secret_arn       = "arn:aws:secretsmanager:us-east-1:123456789012:secret:octopus/application-ABC123"
   runtime_secret_cutover_stage = "enforced"
+  redis_auth_cutover_stage     = "preflight"
 
   origin_tls_cutover_stage   = "preflight"
   origin_tls_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/11111111-2222-3333-4444-555555555555"
@@ -247,6 +248,7 @@ run "ec2_module_enforced_origin_is_alb_only" {
     docker_compose_content        = "services: {}"
     application_secret_arn        = "arn:aws:secretsmanager:us-east-1:123456789012:secret:octopus/application-ABC123"
     database_secret_arn           = "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!db-ABC123"
+    redis_auth_cutover_stage      = "preflight"
     runtime_secret_preflight_only = false
     runtime_environment           = { NEXT_PUBLIC_APP_URL = "https://octopus.example.com" }
     database_config               = { host = "db.internal", port = 5432, database = "octopus" }

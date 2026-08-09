@@ -143,6 +143,13 @@ describe("Terraform runtime-secret boundary", () => {
     );
     expect(retryTimerStart).toBeGreaterThan(-1);
     expect(immediateRefresh).toBeGreaterThan(retryTimerStart);
+
+    expect(ec2RuntimeInstaller).toMatch(
+      /%\{ if nginx_conf_base64 != "" ~\}[\s\S]*?nginx\.conf[\s\S]*?%\{ endif ~\}/,
+    );
+    expect(ec2RuntimeInstaller).toMatch(
+      /%\{ if proxy_params_base64 != "" ~\}[\s\S]*?proxy_params[\s\S]*?%\{ endif ~\}/,
+    );
   });
 
   it("stages existing-stack validation before enabling managed credentials", () => {

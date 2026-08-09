@@ -11,6 +11,9 @@ function buildClient(): Redis | null {
     lazyConnect: false,
     maxRetriesPerRequest: 2,
     enableOfflineQueue: false,
+    // Redis 7.1 does not support CLIENT SETINFO. Avoid the ignored handshake
+    // command so the restricted ElastiCache user never needs +client.
+    disableClientInfo: true,
     retryStrategy: (times) => Math.min(times * 200, 2000),
   };
 

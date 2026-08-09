@@ -1,5 +1,4 @@
 locals {
-  redis_url          = var.enable_redis ? module.redis[0].connection_url : ""
   origin_name_suffix = substr(sha256(var.name_prefix), 0, 12)
   origin_lb_name     = "oct-origin-${local.origin_name_suffix}"
   origin_tg_name     = "oct-app-${local.origin_name_suffix}"
@@ -96,7 +95,7 @@ locals {
     proxy_set_header X-Forwarded-Proto $forwarded_proto;
   PROXY
 
-  runtime_environment = merge({
+  runtime_environment = {
     BETTER_AUTH_URL             = "https://${var.app_domain}"
     NEXT_PUBLIC_APP_URL         = "https://${var.app_domain}"
     ADMIN_EMAILS                = var.admin_emails
@@ -113,7 +112,19 @@ locals {
     BITBUCKET_REDIRECT_URI      = "https://${var.app_domain}/api/bitbucket/callback"
     LINEAR_REDIRECT_URI         = "https://${var.app_domain}/api/linear/callback"
     SLACK_REDIRECT_URI          = "https://${var.app_domain}/api/slack/callback"
-  }, var.enable_redis ? { REDIS_URL = local.redis_url } : {})
+  }
+
+  redis_config = var.enable_redis ? {
+    enabled  = true
+    host     = module.redis[0].primary_endpoint_address
+    port     = module.redis[0].port
+    username = module.redis[0].application_username
+    } : {
+    enabled  = false
+    host     = ""
+    port     = 0
+    username = ""
+  }
 
   database_config = {
     host     = module.rds.host
@@ -335,17 +346,41 @@ module "rds" {
 }
 
 # ── ElastiCache Redis (optional) ──────────────────────────────────────────────
+resource "terraform_data" "redis_auth_cutover_guard" {
+  count = var.enable_redis ? 1 : 0
+  input = var.redis_auth_cutover_stage
+
+  lifecycle {
+    precondition {
+      condition = (
+        var.redis_auth_cutover_stage != "enforced" ||
+        (
+          var.runtime_secret_cutover_stage == "enforced" &&
+          var.redis_authenticated_runtime_ready
+        )
+      )
+      error_message = "Redis authentication cannot be enforced until runtime secret delivery was applied and its authenticated Redis probe passed; then set redis_authenticated_runtime_ready = true."
+    }
+  }
+}
+
 module "redis" {
   count  = var.enable_redis ? 1 : 0
   source = "../../modules/aws/elasticache-redis"
 
-  name_prefix                = var.name_prefix
-  vpc_id                     = module.vpc.vpc_id
-  subnet_ids                 = module.vpc.private_subnet_ids
-  allowed_security_group_ids = [aws_security_group.app_data_access.id]
-  allowed_cidr_blocks        = var.restrict_data_access_to_app ? [] : [var.vpc_cidr]
-  node_type                  = var.redis_node_type
-  tags                       = var.tags
+  name_prefix                   = var.name_prefix
+  vpc_id                        = module.vpc.vpc_id
+  subnet_ids                    = module.vpc.private_subnet_ids
+  allowed_security_group_ids    = [aws_security_group.app_data_access.id]
+  allowed_cidr_blocks           = var.restrict_data_access_to_app ? [] : [var.vpc_cidr]
+  node_type                     = var.redis_node_type
+  redis_auth_secret_arn         = var.redis_auth_secret_arn
+  redis_auth_secret_kms_key_arn = var.redis_auth_secret_kms_key_arn
+  redis_auth_secret_version_ids = var.redis_auth_secret_version_ids
+  redis_auth_cutover_stage      = var.redis_auth_cutover_stage
+  tags                          = var.tags
+
+  depends_on = [terraform_data.redis_auth_cutover_guard]
 }
 
 # ── EC2 Application ───────────────────────────────────────────────────────────
@@ -367,13 +402,17 @@ module "ec2" {
   proxy_params_content          = local.proxy_params
   application_secret_arn        = var.application_secret_arn
   database_secret_arn           = var.runtime_secret_cutover_stage == "enforced" ? module.rds.master_user_secret_arn : ""
+  redis_secret_arn              = var.enable_redis ? var.redis_auth_secret_arn : ""
+  redis_auth_cutover_stage      = var.redis_auth_cutover_stage
   runtime_secret_preflight_only = var.runtime_secret_cutover_stage == "preflight"
   runtime_secret_kms_key_arns = distinct(compact([
     var.application_secret_kms_key_arn,
     var.runtime_secret_cutover_stage == "enforced" ? var.db_secret_kms_key_arn : "",
+    var.enable_redis ? var.redis_auth_secret_kms_key_arn : "",
   ]))
   runtime_environment = local.runtime_environment
   database_config     = local.database_config
+  redis_config        = local.redis_config
 
   ingress_rules                 = local.ingress_rules
   additional_security_group_ids = [aws_security_group.app_data_access.id]

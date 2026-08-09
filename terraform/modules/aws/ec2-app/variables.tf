@@ -114,6 +114,62 @@ variable "database_secret_arn" {
   }
 }
 
+variable "redis_secret_arn" {
+  description = "Exact ARN of the dedicated Redis JSON secret. Empty only when Redis is disabled."
+  type        = string
+  default     = ""
+
+  validation {
+    condition = try(
+      var.redis_secret_arn == "" || (
+        can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+$", var.redis_secret_arn)) &&
+        split(":", var.redis_secret_arn)[3] == var.aws_region
+      ),
+      false
+    )
+    error_message = "redis_secret_arn must be empty or a complete Secrets Manager secret ARN in aws_region."
+  }
+}
+
+variable "redis_config" {
+  description = "Non-secret Redis connection metadata used to construct REDIS_URL at runtime."
+  type = object({
+    enabled  = bool
+    host     = string
+    port     = number
+    username = string
+  })
+  default = {
+    enabled  = false
+    host     = ""
+    port     = 0
+    username = ""
+  }
+
+  validation {
+    condition = var.redis_config.enabled ? (
+      var.redis_config.host != "" &&
+      var.redis_config.port >= 1 && var.redis_config.port <= 65535 &&
+      can(regex("^[A-Za-z][A-Za-z0-9-]{0,39}$", var.redis_config.username))
+      ) : (
+      var.redis_config.host == "" &&
+      var.redis_config.port == 0 &&
+      var.redis_config.username == ""
+    )
+    error_message = "redis_config must contain host, a valid port, and username when enabled, and empty values when disabled."
+  }
+}
+
+variable "redis_auth_cutover_stage" {
+  description = "Redis authentication stage used by the deployment probe to require anonymous rejection after enforcement."
+  type        = string
+
+  validation {
+    condition     = contains(["preflight", "enforced"], var.redis_auth_cutover_stage)
+    error_message = "redis_auth_cutover_stage must be either preflight or enforced."
+  }
+}
+
 variable "runtime_secret_preflight_only" {
   description = "Run read-only application-secret and Compose compatibility checks without installing runtime secret delivery."
   type        = bool

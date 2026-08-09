@@ -24,7 +24,8 @@ EC2: nginx + web + qdrant ─────▶ RDS PostgreSQL / optional Redis
 **What runs on EC2 (Docker Compose):** nginx + Octopus web app + Qdrant vector database
 
 **Managed AWS services:** Application Load Balancer · ACM certificate reference ·
-RDS PostgreSQL 17 (app database) · ElastiCache Redis (optional, for queues)
+RDS PostgreSQL 17 (app database) · ElastiCache Redis (optional, for rate limits,
+replay protection, presence, caches, and cancellation signals)
 
 ---
 
@@ -181,6 +182,29 @@ JSON directly on the command line or in `terraform.tfvars`. Record the exact
 secret ARN, then securely remove the temporary file. Unknown JSON keys are
 rejected by the runtime loader.
 
+### Create the dedicated Redis authentication secret
+
+Do this only when `enable_redis = true`. Keep the Redis password in a separate
+Secrets Manager secret so the CloudFormation execution role cannot read the
+application secret. The Redis secret must contain exactly one JSON key:
+
+```json
+{"password":"a 16-128 character ElastiCache password"}
+```
+
+Use a 64-character hexadecimal value from `openssl rand -hex 32`; it satisfies
+the supported character and length rules. Create the JSON in a root-only file
+outside the repository and use `aws secretsmanager create-secret
+--secret-string file://...`. Record the returned secret ARN and exact
+`VersionId`, then securely remove the file. Never put the password in a
+Terraform variable, saved plan, command argument, output, or user data.
+
+Terraform receives only `redis_auth_secret_arn` and one or two non-secret
+`redis_auth_secret_version_ids`. A dedicated CloudFormation execution role
+resolves exact secret versions directly into ElastiCache; the password is not
+stored in Terraform state or CloudFormation parameters. If the secret uses a
+customer-managed KMS key, also set `redis_auth_secret_kms_key_arn`.
+
 ```bash
 cd terraform/stacks/aws-ec2
 cp terraform.tfvars.example terraform.tfvars
@@ -199,6 +223,10 @@ The minimum you need to fill in:
 | `trusted_edge_ipv4_cidrs` | Explicit, operator-verified IPv4 origin ranges for Cloudflare or your trusted edge; never `0.0.0.0/0` |
 | `application_secret_arn` | Exact ARN of the JSON secret created above |
 | `runtime_secret_cutover_stage` | `enforced` for a new deployment; existing AWS deployments must start with `preflight` as documented below |
+| `redis_auth_secret_arn` | Required only with `enable_redis = true`; exact ARN of the dedicated Redis secret |
+| `redis_auth_secret_version_ids` | Required only with Redis; exact current version ID, plus the next ID temporarily during rotation |
+| `redis_auth_cutover_stage` | Start with `preflight`; use `enforced` only after the authenticated runtime probe passes |
+| `redis_authenticated_runtime_ready` | Keep `false` until runtime-secret enforcement is applied and its authenticated Redis probe passes; then acknowledge readiness before enforcing Redis auth |
 | `github_app_id` | From Step 2A (the number) |
 | `github_app_slug` | From Step 2A |
 | `github_app_client_id` | GitHub App client ID from Step 2A |
@@ -344,6 +372,73 @@ values. Rotate `BETTER_AUTH_SECRET` only after the data-key step above; the
 rotation logs users out. Remove the unused legacy `/opt/octopus/.env` and clear
 old cloud-init user-data copies only after verification and according to your
 recovery policy.
+
+### Redis authentication cutover
+
+Every Redis deployment, new or existing, uses these two stages. Complete the
+runtime-secret cutover first: `runtime_secret_cutover_stage` must be
+`"enforced"` before Redis authentication can be enforced. The current
+WDC/datacenter production does not use this AWS stack, so these steps require
+no action there. `redis_auth_cutover_stage` is deliberately required with no
+default, so removing it after enforcement cannot silently restore passwordless
+access.
+
+#### Stage 1 — preflight (prove authenticated clients)
+
+1. Create the dedicated Redis secret above. Set `enable_redis = true`, its
+   exact ARN and version ID, and `redis_auth_cutover_stage = "preflight"`.
+2. Review the plan. It must create the CloudFormation-managed app user,
+   disabled replacement default user, and stable user group; attach that group
+   to the existing replication group in place; and grant EC2 read access only
+   to the dedicated secret. Stop if EC2 or Redis is replaced.
+3. Apply. Preflight deliberately retains the built-in passwordless `default`
+   user alongside the authenticated app user. The SSM association fetches the
+   dedicated secret at runtime and runs an authenticated TLS probe before
+   promoting the environment or recreating web. The probe covers every
+   command family, key pattern, and pub/sub path used by Octopus and proves a
+   foreign key is denied.
+4. Require a successful `octopus-secrets.service`, healthy containers, login,
+   invitation rate limiting, GitHub installation callback, presence, and one
+   real review before enforcement.
+
+#### Stage 2 — enforced (disable anonymous access)
+
+1. After Stage 1 is applied and its authenticated probe passes, set
+   `redis_authenticated_runtime_ready = true`. This explicit acknowledgement
+   prevents runtime-secret delivery and Redis enforcement from being activated
+   together before the authenticated client is live.
+2. Change only `redis_auth_cutover_stage` to `"enforced"` and review the plan.
+   It must swap the built-in default group member for the stable disabled
+   default user without replacing the user group or replication group.
+3. Apply. The deployment probe repeats authenticated operations and uses a
+   fresh TLS connection without credentials to prove unauthenticated commands
+   are rejected before the association succeeds.
+4. Restart once more through `octopus-secrets.service`, then repeat application
+   health and one real review. This proves success comes from reconnecting with
+   the credential rather than a connection opened during preflight.
+
+#### Rollback
+
+Before enforcement, keep `preflight` and
+`redis_authenticated_runtime_ready = false` while correcting the authenticated
+runtime path. After enforcement, change back to `preflight`, apply, and wait
+until the built-in default is restored before reverting the application or
+secret configuration. Never remove the active app user, secret, or group first;
+that would terminate working connections without a recovery path.
+
+#### Rotate the Redis password
+
+1. Add a new secret version without moving `AWSCURRENT`; record its exact
+   version ID.
+2. Set `redis_auth_secret_version_ids = [old_version_id, new_version_id]` and
+   apply so ElastiCache accepts both passwords.
+3. Move `AWSCURRENT` to the new version in Secrets Manager. The runtime timer
+   fetches it, runs the authenticated and denial probes, and only then promotes
+   the new URL and recreates web.
+4. After the service and a real review pass, set
+   `redis_auth_secret_version_ids = [new_version_id]` and apply to retire the
+   old password. To roll back, re-add the old version to ElastiCache before
+   moving `AWSCURRENT` back.
 
 Deployments created before the dedicated application identity must attach it before removing the legacy VPC-wide database/cache rule. For the first apply after upgrading, keep both paths temporarily:
 
@@ -692,6 +787,9 @@ later secret-delivery cutover.
 - Root EBS volume encrypted at rest
 - Terraform receives application secret ARNs, never application secret values
 - RDS manages and rotates its master password in Secrets Manager
+- Redis uses a dedicated runtime-only secret, exact-version CloudFormation
+  dynamic references, a least-privilege app ACL, and a staged anonymous-access
+  cutover; Terraform never reads or outputs the password
 - Runtime values are fetched with exact IAM permissions and atomically written
   to `/run/octopus/runtime.env` with mode `0600`
 - Never commit `terraform.tfvars` — it's gitignored

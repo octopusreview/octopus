@@ -19,7 +19,12 @@ function getPublisher(): Redis | null {
   if (publisher) return publisher;
   const url = process.env.REDIS_URL;
   if (!url) return null;
-  publisher = new Redis(url, { lazyConnect: false, maxRetriesPerRequest: 2, enableOfflineQueue: false });
+  publisher = new Redis(url, {
+    lazyConnect: false,
+    maxRetriesPerRequest: 2,
+    enableOfflineQueue: false,
+    disableClientInfo: true,
+  });
   publisher.on("error", (err) => console.error("[cancel-bus] publisher error:", err.message));
   return publisher;
 }
@@ -29,7 +34,11 @@ function ensureSubscribed() {
   const url = process.env.REDIS_URL;
   if (!url) return;
   subscribing = true;
-  subscriber = new Redis(url, { lazyConnect: false, maxRetriesPerRequest: null });
+  subscriber = new Redis(url, {
+    lazyConnect: false,
+    maxRetriesPerRequest: null,
+    disableClientInfo: true,
+  });
   subscriber.on("error", (err) => console.error("[cancel-bus] subscriber error:", err.message));
   subscriber.on("message", (_channel, raw) => {
     try {

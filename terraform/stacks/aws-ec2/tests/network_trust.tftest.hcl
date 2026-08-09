@@ -9,7 +9,30 @@
 # stack wires up in main.tf. Stack-level runs cover the root identity SG and
 # the ssh_cidr_blocks validation.
 
-mock_provider "aws" {}
+mock_provider "aws" {
+  override_during = plan
+
+  mock_data "aws_caller_identity" {
+    defaults = {
+      account_id = "123456789012"
+      arn        = "arn:aws:iam::123456789012:user/test"
+      id         = "123456789012"
+    }
+  }
+
+  mock_data "aws_partition" {
+    defaults = {
+      dns_suffix = "amazonaws.com"
+      partition  = "aws"
+    }
+  }
+
+  mock_data "aws_region" {
+    defaults = {
+      name = "us-east-1"
+    }
+  }
+}
 
 override_data {
   target = module.vpc.data.aws_availability_zones.available
@@ -71,10 +94,13 @@ override_resource {
 }
 
 variables {
-  app_image                    = "ghcr.io/example/octopus:test"
-  app_domain                   = "octopus.example.com"
-  application_secret_arn       = "arn:aws:secretsmanager:us-east-1:123456789012:secret:octopus/application-ABC123"
-  runtime_secret_cutover_stage = "enforced"
+  app_image                     = "ghcr.io/example/octopus:test"
+  app_domain                    = "octopus.example.com"
+  application_secret_arn        = "arn:aws:secretsmanager:us-east-1:123456789012:secret:octopus/application-ABC123"
+  runtime_secret_cutover_stage  = "enforced"
+  redis_auth_secret_arn         = "arn:aws:secretsmanager:us-east-1:123456789012:secret:octopus/redis-auth-ABC123"
+  redis_auth_secret_version_ids = ["11111111-2222-3333-4444-555555555555"]
+  redis_auth_cutover_stage      = "preflight"
 
   origin_tls_cutover_stage   = "preflight"
   origin_tls_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/11111111-2222-3333-4444-555555555555"
@@ -214,11 +240,13 @@ run "redis_module_restricted_to_identity_sg" {
   }
 
   variables {
-    name_prefix                = "octopus"
-    vpc_id                     = "vpc-00000000000000000"
-    subnet_ids                 = ["subnet-00000000000000001", "subnet-00000000000000002"]
-    allowed_security_group_ids = ["sg-appdata0000000001"]
-    allowed_cidr_blocks        = []
+    name_prefix                   = "octopus"
+    vpc_id                        = "vpc-00000000000000000"
+    subnet_ids                    = ["subnet-00000000000000001", "subnet-00000000000000002"]
+    allowed_security_group_ids    = ["sg-appdata0000000001"]
+    allowed_cidr_blocks           = []
+    redis_auth_secret_arn         = "arn:aws:secretsmanager:us-east-1:123456789012:secret:octopus/redis-auth-ABC123"
+    redis_auth_secret_version_ids = ["11111111-2222-3333-4444-555555555555"]
   }
 
   assert {
@@ -251,11 +279,13 @@ run "redis_module_compat_keeps_cidr_and_identity" {
   }
 
   variables {
-    name_prefix                = "octopus"
-    vpc_id                     = "vpc-00000000000000000"
-    subnet_ids                 = ["subnet-00000000000000001", "subnet-00000000000000002"]
-    allowed_security_group_ids = ["sg-appdata0000000001"]
-    allowed_cidr_blocks        = ["10.0.0.0/16"]
+    name_prefix                   = "octopus"
+    vpc_id                        = "vpc-00000000000000000"
+    subnet_ids                    = ["subnet-00000000000000001", "subnet-00000000000000002"]
+    allowed_security_group_ids    = ["sg-appdata0000000001"]
+    allowed_cidr_blocks           = ["10.0.0.0/16"]
+    redis_auth_secret_arn         = "arn:aws:secretsmanager:us-east-1:123456789012:secret:octopus/redis-auth-ABC123"
+    redis_auth_secret_version_ids = ["11111111-2222-3333-4444-555555555555"]
   }
 
   assert {
@@ -288,6 +318,7 @@ run "ec2_module_preflight_reads_only_application_secret" {
     docker_compose_content        = "services: {}"
     application_secret_arn        = "arn:aws:secretsmanager:us-east-1:123456789012:secret:octopus/application-ABC123"
     database_secret_arn           = ""
+    redis_auth_cutover_stage      = "preflight"
     runtime_secret_preflight_only = true
     runtime_environment           = { NEXT_PUBLIC_APP_URL = "https://octopus.example.com" }
     database_config               = { host = "db.internal", port = 5432, database = "octopus" }
@@ -331,6 +362,9 @@ run "ec2_module_attaches_additional_identity_sg" {
     docker_compose_content        = "services: {}"
     application_secret_arn        = "arn:aws:secretsmanager:us-east-1:123456789012:secret:octopus/application-ABC123"
     database_secret_arn           = "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!db-ABC123"
+    redis_secret_arn              = "arn:aws:secretsmanager:us-east-1:123456789012:secret:octopus/redis-auth-ABC123"
+    redis_config                  = { enabled = true, host = "redis.internal", port = 6379, username = "oct-5633c9b8af6d-app" }
+    redis_auth_cutover_stage      = "enforced"
     runtime_secret_preflight_only = false
     runtime_secret_kms_key_arns   = ["arn:aws:kms:us-east-1:123456789012:key/11111111-2222-3333-4444-555555555555"]
     runtime_environment           = { NEXT_PUBLIC_APP_URL = "https://octopus.example.com" }
@@ -382,8 +416,9 @@ run "ec2_module_attaches_additional_identity_sg" {
       ]).Resource) == toset([
       "arn:aws:secretsmanager:us-east-1:123456789012:secret:octopus/application-ABC123",
       "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!db-ABC123",
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:octopus/redis-auth-ABC123",
     ])
-    error_message = "The instance role must restrict GetSecretValue to the exact application and database secret ARNs."
+    error_message = "The instance role must restrict GetSecretValue to the exact application, database, and Redis secret ARNs."
   }
 
   assert {
@@ -393,6 +428,31 @@ run "ec2_module_attaches_additional_identity_sg" {
     ]).Condition.StringEquals["kms:ViaService"] == "secretsmanager.us-east-1.amazonaws.com"
     error_message = "Customer-managed KMS decrypt permission must be constrained to Secrets Manager in the deployment region."
   }
+}
+
+run "redis_auth_enforcement_requires_runtime_secret_delivery" {
+  command = plan
+
+  variables {
+    enable_redis                 = true
+    redis_auth_cutover_stage     = "enforced"
+    runtime_secret_cutover_stage = "preflight"
+  }
+
+  expect_failures = [terraform_data.redis_auth_cutover_guard[0]]
+}
+
+run "redis_auth_enforcement_requires_authenticated_runtime_acknowledgement" {
+  command = plan
+
+  variables {
+    enable_redis                      = true
+    redis_auth_cutover_stage          = "enforced"
+    runtime_secret_cutover_stage      = "enforced"
+    redis_authenticated_runtime_ready = false
+  }
+
+  expect_failures = [terraform_data.redis_auth_cutover_guard[0]]
 }
 
 # ── SSH: internet-wide CIDR is rejected at validation time ────────────────────

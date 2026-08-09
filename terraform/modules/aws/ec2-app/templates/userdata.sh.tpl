@@ -9,7 +9,7 @@ echo "=== Octopus setup started at $(date -u) ==="
 
 # ── System update ────────────────────────────────────────────────────────────
 apt-get update -y
-apt-get install -y ca-certificates curl gnupg lsb-release git unzip awscli python3
+apt-get install -y ca-certificates curl gnupg lsb-release git gzip unzip awscli python3
 
 # ── Docker ───────────────────────────────────────────────────────────────────
 install -m 0755 -d /etc/apt/keyrings
@@ -45,7 +45,7 @@ aws ecr get-login-password --region "$AWS_REGION" \
 # values are fetched with the instance role and rendered atomically under /run.
 runtime_installer=$(mktemp /tmp/octopus-runtime-install.XXXXXX)
 trap 'rm -f "$runtime_installer"' EXIT
-printf '%s' '${runtime_installer_base64}' | base64 --decode > "$runtime_installer"
+printf '%s' '${runtime_installer_base64}' | base64 --decode | gzip -d > "$runtime_installer"
 chmod 0700 "$runtime_installer"
 OCTOPUS_BOOTSTRAP=1 "$runtime_installer"
 rm -f "$runtime_installer"

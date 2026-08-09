@@ -18,23 +18,28 @@ locals {
     aws_region_base64             = base64encode(var.aws_region)
     application_secret_arn_base64 = base64encode(var.application_secret_arn)
     database_secret_arn_base64    = base64encode(var.database_secret_arn)
+    redis_secret_arn_base64       = base64encode(var.redis_secret_arn)
     public_environment_base64     = base64encode(jsonencode(var.runtime_environment))
     database_config_base64        = base64encode(jsonencode(var.database_config))
+    redis_config_base64           = base64encode(jsonencode(var.redis_config))
+    redis_probe_base64            = base64gzip(file("${path.module}/scripts/probe_redis.js"))
+    redis_auth_enforced           = var.redis_auth_cutover_stage == "enforced" ? "1" : "0"
   })
 
   runtime_installer = templatefile("${path.module}/templates/runtime-installer.sh.tpl", {
-    renderer_base64       = base64encode(file("${path.module}/scripts/render_runtime_env.py"))
-    refresh_script_base64 = base64encode(local.refresh_secrets_script)
-    docker_compose_base64 = base64encode(var.docker_compose_content)
-    nginx_conf_base64     = var.nginx_conf_content != "" ? base64encode(var.nginx_conf_content) : ""
-    proxy_params_base64   = var.proxy_params_content != "" ? base64encode(var.proxy_params_content) : ""
+    renderer_base64       = base64gzip(file("${path.module}/scripts/render_runtime_env.py"))
+    refresh_script_base64 = base64gzip(local.refresh_secrets_script)
+    docker_compose_base64 = base64gzip(var.docker_compose_content)
+    nginx_conf_base64     = var.nginx_conf_content != "" ? base64gzip(var.nginx_conf_content) : ""
+    proxy_params_base64   = var.proxy_params_content != "" ? base64gzip(var.proxy_params_content) : ""
   })
 
   runtime_secret_preflight = templatefile("${path.module}/templates/preflight-runtime-secrets.sh.tpl", {
     aws_region_base64             = base64encode(var.aws_region)
     application_secret_arn_base64 = base64encode(var.application_secret_arn)
-    renderer_base64               = base64encode(file("${path.module}/scripts/render_runtime_env.py"))
-    docker_compose_base64         = base64encode(var.docker_compose_content)
+    redis_secret_arn_base64       = base64encode(var.redis_secret_arn)
+    renderer_base64               = base64gzip(file("${path.module}/scripts/render_runtime_env.py"))
+    docker_compose_base64         = base64gzip(var.docker_compose_content)
   })
 
   runtime_secret_payload = var.runtime_secret_preflight_only ? local.runtime_secret_preflight : local.runtime_installer
@@ -44,7 +49,7 @@ locals {
       Sid      = "ReadRuntimeSecrets"
       Effect   = "Allow"
       Action   = ["secretsmanager:GetSecretValue"]
-      Resource = compact([var.application_secret_arn, var.database_secret_arn])
+      Resource = compact([var.application_secret_arn, var.database_secret_arn, var.redis_secret_arn])
     }],
     length(var.runtime_secret_kms_key_arns) > 0 ? [{
       Sid      = "DecryptRuntimeSecrets"
@@ -124,6 +129,13 @@ resource "aws_iam_role_policy" "runtime_secrets" {
     Version   = "2012-10-17"
     Statement = local.runtime_secret_policy_statements
   })
+
+  lifecycle {
+    precondition {
+      condition     = var.redis_config.enabled == (var.redis_secret_arn != "")
+      error_message = "redis_secret_arn must be set exactly when redis_config.enabled is true."
+    }
+  }
 }
 
 resource "aws_iam_instance_profile" "this" {
@@ -149,7 +161,7 @@ resource "aws_instance" "this" {
   }
 
   user_data_base64 = base64gzip(templatefile("${path.module}/templates/userdata.sh.tpl", {
-    runtime_installer_base64 = base64encode(local.runtime_installer)
+    runtime_installer_base64 = base64gzip(local.runtime_installer)
     ecr_registry_url         = var.ecr_registry_url
   }))
 
@@ -199,7 +211,7 @@ resource "aws_ssm_document" "runtime_secrets" {
           "if command -v cloud-init >/dev/null 2>&1; then cloud-init status --wait; fi",
           "installer_path=$(mktemp /run/octopus-runtime-installer.XXXXXX)",
           "trap 'rm -f -- \"$installer_path\"' EXIT",
-          "printf '%s' '${base64encode(local.runtime_secret_payload)}' | base64 --decode > \"$installer_path\"",
+          "printf '%s' '${base64gzip(local.runtime_secret_payload)}' | base64 --decode | gzip -d > \"$installer_path\"",
           "chmod 0700 \"$installer_path\"",
           "/bin/bash \"$installer_path\"",
         ]

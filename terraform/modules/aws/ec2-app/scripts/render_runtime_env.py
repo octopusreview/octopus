@@ -32,6 +32,14 @@ APPLICATION_SECRET_KEYS = {
 }
 REQUIRED_APPLICATION_SECRET_KEYS = {"BETTER_AUTH_SECRET", "GITHUB_STATE_SECRET"}
 ENVIRONMENT_KEY = re.compile(r"^[A-Z][A-Z0-9_]*$")
+REDIS_AUTH_TOKEN = re.compile(r"[A-Za-z0-9!&#$^<>-]{16,128}", re.ASCII)
+REDIS_HOST = re.compile(
+    r"(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*"
+    r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?",
+    re.ASCII,
+)
+REDIS_USERNAME = re.compile(r"[A-Za-z][A-Za-z0-9-]{0,39}", re.ASCII)
+PROTECTED_RUNTIME_KEYS = {"DATABASE_URL", "REDIS_PASSWORD", "REDIS_URL"}
 
 
 def load_json_object(path: Path, label: str) -> dict[str, Any]:
@@ -52,6 +60,15 @@ def require_string(value: Any, label: str, *, allow_empty: bool = True) -> str:
     if "\x00" in value or "\r" in value or "\n" in value:
         raise ValueError(f"{label} contains a forbidden line break or NUL")
     return value
+
+
+def require_exact_keys(value: dict[str, Any], expected: set[str], label: str) -> None:
+    unknown = sorted(set(value) - expected)
+    if unknown:
+        raise ValueError(f"{label} contains unsupported key: {unknown[0]}")
+    missing = sorted(expected - set(value))
+    if missing:
+        raise ValueError(f"{label} is missing required key: {missing[0]}")
 
 
 def normalize_application_secrets(value: dict[str, Any]) -> dict[str, str]:
@@ -89,10 +106,62 @@ def normalize_public_environment(value: dict[str, Any]) -> dict[str, str]:
     for key, raw_value in value.items():
         if not ENVIRONMENT_KEY.fullmatch(key):
             raise ValueError(f"public environment contains invalid key: {key}")
-        if key == "DATABASE_URL" or key in APPLICATION_SECRET_KEYS:
+        if key in PROTECTED_RUNTIME_KEYS or key in APPLICATION_SECRET_KEYS:
             raise ValueError(f"public environment attempts to override protected key: {key}")
         normalized[key] = require_string(raw_value, f"public environment key {key}")
     return normalized
+
+
+def normalize_redis_secret(value: dict[str, Any]) -> str:
+    require_exact_keys(value, {"password"}, "Redis secret")
+    password = require_string(value["password"], "Redis password", allow_empty=False)
+    if not REDIS_AUTH_TOKEN.fullmatch(password):
+        raise ValueError(
+            "Redis password must be 16-128 characters using only letters, digits, and !&#$^<>-"
+        )
+    return password
+
+
+def redis_url(
+    redis_config: dict[str, Any] | None,
+    redis_secret: dict[str, Any] | None,
+) -> str | None:
+    if redis_config is None and redis_secret is None:
+        return None
+    if redis_config is None:
+        raise ValueError("Redis secret requires Redis config")
+
+    require_exact_keys(redis_config, {"enabled", "host", "port", "username"}, "Redis config")
+    enabled = redis_config["enabled"]
+    if not isinstance(enabled, bool):
+        raise ValueError("Redis config enabled must be a boolean")
+
+    host = require_string(redis_config["host"], "Redis host")
+    username = require_string(redis_config["username"], "Redis username")
+    raw_port = redis_config["port"]
+    if isinstance(raw_port, bool) or not isinstance(raw_port, int):
+        raise ValueError("Redis port must be an integer")
+
+    if not enabled:
+        if redis_secret is not None:
+            raise ValueError("Redis secret must not be supplied when Redis is disabled")
+        return None
+
+    if redis_secret is None:
+        raise ValueError("enabled Redis config requires Redis secret")
+    password = normalize_redis_secret(redis_secret)
+
+    if not REDIS_HOST.fullmatch(host):
+        raise ValueError("Redis host is not a valid DNS hostname")
+    if not REDIS_USERNAME.fullmatch(username):
+        raise ValueError("Redis username is not valid")
+    if raw_port < 1 or raw_port > 65535:
+        raise ValueError("Redis port is outside the valid range")
+
+    return (
+        f"rediss://{quote(username, safe='')}:{quote(password, safe='')}"
+        f"@{host}:{raw_port}"
+    )
 
 
 def database_url(database_secret: dict[str, Any], database_config: dict[str, Any]) -> str:
@@ -124,10 +193,16 @@ def render_environment(
     application_secret: dict[str, Any],
     database_secret: dict[str, Any],
     database_config: dict[str, Any],
+    redis_config: dict[str, Any] | None,
+    redis_secret: dict[str, Any] | None,
 ) -> str:
     values = normalize_public_environment(public_environment)
-    values.update(normalize_application_secrets(application_secret))
+    application_values = normalize_application_secrets(application_secret)
+    rendered_redis_url = redis_url(redis_config, redis_secret)
+    values.update(application_values)
     values["DATABASE_URL"] = database_url(database_secret, database_config)
+    if rendered_redis_url is not None:
+        values["REDIS_URL"] = rendered_redis_url
     return "".join(f"{key}={values[key]}\n" for key in sorted(values))
 
 
@@ -155,10 +230,13 @@ def atomic_write(path: Path, content: str) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--validate-application-secret-only", type=Path)
+    parser.add_argument("--validate-redis-secret-only", type=Path)
     parser.add_argument("--public-environment", type=Path)
     parser.add_argument("--application-secret", type=Path)
     parser.add_argument("--database-secret", type=Path)
     parser.add_argument("--database-config", type=Path)
+    parser.add_argument("--redis-config", type=Path)
+    parser.add_argument("--redis-secret", type=Path)
     parser.add_argument("--output", type=Path)
     return parser.parse_args()
 
@@ -166,9 +244,19 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
+        if (
+            args.validate_application_secret_only is not None
+            and args.validate_redis_secret_only is not None
+        ):
+            raise ValueError("choose only one validate-only mode")
         if args.validate_application_secret_only is not None:
             normalize_application_secrets(
                 load_json_object(args.validate_application_secret_only, "application secret")
+            )
+            return 0
+        if args.validate_redis_secret_only is not None:
+            normalize_redis_secret(
+                load_json_object(args.validate_redis_secret_only, "Redis secret")
             )
             return 0
         if any(
@@ -187,6 +275,12 @@ def main() -> int:
             load_json_object(args.application_secret, "application secret"),
             load_json_object(args.database_secret, "database secret"),
             load_json_object(args.database_config, "database config"),
+            load_json_object(args.redis_config, "Redis config")
+            if args.redis_config is not None
+            else None,
+            load_json_object(args.redis_secret, "Redis secret")
+            if args.redis_secret is not None
+            else None,
         )
         atomic_write(args.output, content)
     except ValueError as exc:

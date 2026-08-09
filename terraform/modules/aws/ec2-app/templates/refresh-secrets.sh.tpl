@@ -5,8 +5,12 @@ umask 077
 AWS_REGION=$(printf '%s' '${aws_region_base64}' | base64 --decode)
 APPLICATION_SECRET_ARN=$(printf '%s' '${application_secret_arn_base64}' | base64 --decode)
 DATABASE_SECRET_ARN=$(printf '%s' '${database_secret_arn_base64}' | base64 --decode)
+REDIS_SECRET_ARN=$(printf '%s' '${redis_secret_arn_base64}' | base64 --decode)
 PUBLIC_ENVIRONMENT_BASE64='${public_environment_base64}'
 DATABASE_CONFIG_BASE64='${database_config_base64}'
+REDIS_CONFIG_BASE64='${redis_config_base64}'
+REDIS_PROBE_BASE64='${redis_probe_base64}'
+REDIS_AUTH_ENFORCED='${redis_auth_enforced}'
 RUNTIME_DIRECTORY=/run/octopus
 RUNTIME_ENV=$RUNTIME_DIRECTORY/runtime.env
 RECONCILE_STAMP=$RUNTIME_DIRECTORY/reconcile-required
@@ -61,15 +65,25 @@ fetch_secret() {
 
 printf '%s' "$PUBLIC_ENVIRONMENT_BASE64" | base64 --decode > "$TEMP_DIRECTORY/public.json"
 printf '%s' "$DATABASE_CONFIG_BASE64" | base64 --decode > "$TEMP_DIRECTORY/database-config.json"
+printf '%s' "$REDIS_CONFIG_BASE64" | base64 --decode > "$TEMP_DIRECTORY/redis-config.json"
 fetch_secret "$APPLICATION_SECRET_ARN" "$TEMP_DIRECTORY/application.json"
 fetch_secret "$DATABASE_SECRET_ARN" "$TEMP_DIRECTORY/database.json"
+if [ -n "$REDIS_SECRET_ARN" ]; then
+  fetch_secret "$REDIS_SECRET_ARN" "$TEMP_DIRECTORY/redis.json"
+fi
 
-/usr/bin/python3 /usr/local/lib/octopus/render_runtime_env.py \
-  --public-environment "$TEMP_DIRECTORY/public.json" \
-  --application-secret "$TEMP_DIRECTORY/application.json" \
-  --database-secret "$TEMP_DIRECTORY/database.json" \
-  --database-config "$TEMP_DIRECTORY/database-config.json" \
+renderer_args=(
+  --public-environment "$TEMP_DIRECTORY/public.json"
+  --application-secret "$TEMP_DIRECTORY/application.json"
+  --database-secret "$TEMP_DIRECTORY/database.json"
+  --database-config "$TEMP_DIRECTORY/database-config.json"
+  --redis-config "$TEMP_DIRECTORY/redis-config.json"
   --output "$TEMP_DIRECTORY/runtime.env"
+)
+if [ -n "$REDIS_SECRET_ARN" ]; then
+  renderer_args+=(--redis-secret "$TEMP_DIRECTORY/redis.json")
+fi
+/usr/bin/python3 /usr/local/lib/octopus/render_runtime_env.py "$${renderer_args[@]}"
 
 had_runtime_env=0
 secrets_changed=1
@@ -104,6 +118,35 @@ if ! OCTOPUS_RUNTIME_ENV_PATH="$TEMP_DIRECTORY/runtime.env" \
     echo "Octopus Compose validation failed; the current database environment was retained for retry" >&2
   fi
   exit 1
+fi
+
+# The public health route intentionally excludes optional Redis. Before a
+# candidate is promoted or a stopped stack is recovered, prove the restricted
+# user can execute every command family and pub/sub path Octopus relies on.
+redis_probe_required=0
+if [ -n "$REDIS_SECRET_ARN" ] && [ "$${OCTOPUS_BOOTSTRAP:-0}" != "1" ]; then
+  if [ "$secrets_changed" -eq 1 ] || \
+    [ "$${OCTOPUS_FORCE_RECREATE:-0}" = "1" ] || \
+    [ -f "$RECONCILE_STAMP" ]; then
+    redis_probe_required=1
+  elif ! docker compose -f "$APP_DIRECTORY/docker-compose.yml" \
+    ps --status running --services 2>/dev/null | grep -qx web; then
+    redis_probe_required=1
+  fi
+fi
+
+if [ "$redis_probe_required" -eq 1 ]; then
+  if ! printf '%s' "$REDIS_PROBE_BASE64" | base64 --decode | gzip -d | \
+    OCTOPUS_RUNTIME_ENV_PATH="$TEMP_DIRECTORY/runtime.env" \
+    docker compose -f "$APP_DIRECTORY/docker-compose.yml" \
+      run --rm --no-deps -T \
+      -e OCTOPUS_REDIS_PROBE_RUN=1 \
+      -e OCTOPUS_REDIS_AUTH_ENFORCED="$REDIS_AUTH_ENFORCED" \
+      web node - \
+      > "$TEMP_DIRECTORY/redis-probe-output" 2>&1; then
+    echo "Octopus authenticated Redis probe failed" >&2
+    exit 1
+  fi
 fi
 
 if [ "$secrets_changed" -eq 1 ]; then

@@ -259,6 +259,71 @@ variable "redis_node_type" {
   default     = "cache.t3.micro"
 }
 
+variable "redis_auth_secret_arn" {
+  description = "Exact ARN of the dedicated Redis JSON secret containing only a password field. Required when Redis is enabled; Terraform never reads its value."
+  type        = string
+  default     = ""
+
+  validation {
+    condition = try(
+      var.redis_auth_secret_arn == "" || (
+        can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+$", var.redis_auth_secret_arn)) &&
+        split(":", var.redis_auth_secret_arn)[3] == var.aws_region
+      ),
+      false
+    )
+    error_message = "redis_auth_secret_arn must be empty or a complete Secrets Manager secret ARN in aws_region."
+  }
+}
+
+variable "redis_auth_secret_kms_key_arn" {
+  description = "Optional customer-managed KMS key ARN used by redis_auth_secret_arn."
+  type        = string
+  default     = ""
+
+  validation {
+    condition = (
+      var.redis_auth_secret_kms_key_arn == "" ||
+      try(
+        can(regex("^arn:[^:]+:kms:[^:]+:[0-9]{12}:key/[A-Za-z0-9-]+$", var.redis_auth_secret_kms_key_arn)) &&
+        split(":", var.redis_auth_secret_kms_key_arn)[3] == var.aws_region,
+        false
+      )
+    )
+    error_message = "redis_auth_secret_kms_key_arn must be empty or a customer-managed KMS key ARN in aws_region."
+  }
+}
+
+variable "redis_auth_secret_version_ids" {
+  description = "One or two exact Secrets Manager version IDs accepted by the Redis app user. Required when Redis is enabled and safe for Terraform state."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = length(var.redis_auth_secret_version_ids) <= 2 && alltrue([
+      for version_id in var.redis_auth_secret_version_ids :
+      can(regex("^[A-Za-z0-9-]{32,64}$", version_id))
+    ])
+    error_message = "redis_auth_secret_version_ids must contain at most two 32-64 character Secrets Manager version IDs."
+  }
+}
+
+variable "redis_auth_cutover_stage" {
+  description = "Redis authentication rollout stage. Use preflight until authenticated runtime probes pass, then enforced to disable anonymous access."
+  type        = string
+
+  validation {
+    condition     = contains(["preflight", "enforced"], var.redis_auth_cutover_stage)
+    error_message = "redis_auth_cutover_stage must be either preflight or enforced."
+  }
+}
+
+variable "redis_authenticated_runtime_ready" {
+  description = "Explicit operator acknowledgement that runtime-secret enforcement was applied and its authenticated Redis probe passed before Redis authentication enforcement."
+  type        = bool
+  default     = false
+}
+
 # ── GitHub App ────────────────────────────────────────────────────────────────
 variable "github_app_id" {
   description = "GitHub App ID."

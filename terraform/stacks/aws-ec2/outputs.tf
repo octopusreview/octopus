@@ -18,9 +18,12 @@ output "database_secret_arn" {
   value       = module.rds.master_user_secret_arn
 }
 
-output "redis_url" {
-  description = "Redis connection URL (empty if Redis is disabled)."
-  value       = var.enable_redis ? module.redis[0].connection_url : ""
+output "redis_endpoint" {
+  description = "Non-secret Redis endpoint (empty if Redis is disabled). Credentials are delivered only at runtime."
+  value = var.enable_redis ? {
+    host = module.redis[0].primary_endpoint_address
+    port = module.redis[0].port
+  } : null
 }
 
 output "app_url" {

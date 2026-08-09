@@ -47,11 +47,41 @@ override_resource {
   }
 }
 
+override_resource {
+  target = aws_lb.origin
+  values = {
+    arn      = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/octopus-origin/50dc6c495c0c9188"
+    dns_name = "octopus-origin-123456.us-east-1.elb.amazonaws.com"
+    zone_id  = "Z35SXDOTRQ7X7K"
+  }
+}
+
+override_resource {
+  target = aws_lb_target_group.app
+  values = {
+    arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/octopus-app/6d0ecf831eec9f09"
+  }
+}
+
+override_resource {
+  target = aws_lb_listener.https
+  values = {
+    arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/octopus-origin/50dc6c495c0c9188/f2f7dc8efc522ab2"
+  }
+}
+
 variables {
   app_image                    = "ghcr.io/example/octopus:test"
   app_domain                   = "octopus.example.com"
   application_secret_arn       = "arn:aws:secretsmanager:us-east-1:123456789012:secret:octopus/application-ABC123"
   runtime_secret_cutover_stage = "enforced"
+
+  origin_tls_cutover_stage   = "preflight"
+  origin_tls_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/11111111-2222-3333-4444-555555555555"
+  trusted_edge_ipv4_cidrs = [
+    "173.245.48.0/20",
+    "103.21.244.0/22",
+  ]
 }
 
 # ── Stack: the app identity SG exists and carries no rules of its own ─────────

@@ -46,6 +46,7 @@ jobs:
           lib/__tests__/terraform-runtime-secrets-security.test.ts
           lib/__tests__/terraform-runtime-env-renderer.test.ts
           lib/__tests__/terraform-runtime-secret-refresh.test.ts
+          lib/__tests__/terraform-origin-tls-security.test.ts
         working-directory: apps/web
 
   terraform:

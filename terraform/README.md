@@ -1,29 +1,30 @@
 # Octopus — Terraform
 
-Self-host Octopus on AWS with a single `terraform apply`. This sets up an EC2 instance running the Octopus app, an RDS PostgreSQL database, and optional ElastiCache Redis — all in a private VPC.
+Self-host Octopus on AWS. The stack creates an EC2 instance running the Octopus
+app, an RDS PostgreSQL database, optional ElastiCache Redis, and an Application
+Load Balancer that terminates origin HTTPS with an operator-provisioned ACM
+certificate.
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│  VPC (10.0.0.0/16)                                       │
-│                                                          │
-│  Public subnet          Private subnets                  │
-│  ┌────────────────┐     ┌───────────────────────────┐   │
-│  │  EC2 (t3.xlarge│     │  RDS PostgreSQL 17         │   │
-│  │                │────▶│  ElastiCache Redis (opt.)  │   │
-│  │  nginx         │     └───────────────────────────┘   │
-│  │  web (Next.js) │                                      │
-│  │  qdrant        │                                      │
-│  └────────┬───────┘                                      │
-└───────────┼──────────────────────────────────────────────┘
-            │ Elastic IP
-        Internet
+Internet
+   │
+   ▼
+Cloudflare or another trusted edge
+   │ HTTPS :443 (explicit trusted edge IPv4 CIDRs only)
+   ▼
+Application Load Balancer + ACM certificate
+   │ HTTP :80 (application security group only)
+   ▼
+EC2: nginx + web + qdrant ─────▶ RDS PostgreSQL / optional Redis
+   └── Elastic IP (diagnostic and pre-enforcement recovery only)
 ```
 
 **What runs on EC2 (Docker Compose):** nginx + Octopus web app + Qdrant vector database
 
-**Managed AWS services:** RDS PostgreSQL 17 (app database) · ElastiCache Redis (optional, for queues)
+**Managed AWS services:** Application Load Balancer · ACM certificate reference ·
+RDS PostgreSQL 17 (app database) · ElastiCache Redis (optional, for queues)
 
 ---
 
@@ -34,7 +35,10 @@ Install these before you start:
 - [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.11
 - [Docker](https://docs.docker.com/get-docker/) (to build and push the app image)
 - [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html) — authenticate with an AWS SSO/profile session or an assigned role
-- A registered domain (you'll point its DNS to the server IP after deploy)
+- A registered domain served through Cloudflare or another trusted edge
+- An issued ACM certificate in the deployment region that covers the public
+  application hostname and is trusted by the edge: a public ACM certificate,
+  or an imported Cloudflare Origin CA certificate when using Cloudflare
 - A GitHub account (to create the GitHub App and OAuth App)
 
 ---
@@ -190,6 +194,9 @@ The minimum you need to fill in:
 |----------|----------------|
 | `app_image` | The image URL from Step 1 |
 | `app_domain` | Your domain (e.g. `octopus.example.com`) |
+| `origin_tls_certificate_arn` | ARN of an issued, edge-trusted ACM certificate in `aws_region` that covers `app_domain`; use public ACM or imported Cloudflare Origin CA for Cloudflare Full (strict), not ACM Private CA |
+| `origin_tls_cutover_stage` | `enforced` for a fresh deployment; only an existing AWS stack starts with `preflight` for the Step 6 compatibility cutover |
+| `trusted_edge_ipv4_cidrs` | Explicit, operator-verified IPv4 origin ranges for Cloudflare or your trusted edge; never `0.0.0.0/0` |
 | `application_secret_arn` | Exact ARN of the JSON secret created above |
 | `runtime_secret_cutover_stage` | `enforced` for a new deployment; existing AWS deployments must start with `preflight` as documented below |
 | `github_app_id` | From Step 2A (the number) |
@@ -359,52 +366,26 @@ The first plan must add the data-access security group and attach it to EC2 with
 When `apply` finishes, you'll see output like:
 
 ```
-public_ip  = "54.123.45.67"
-app_url    = "https://octopus.example.com"
+origin_dns_name       = "octopus-production-origin-123456.us-east-1.elb.amazonaws.com"
+origin_hosted_zone_id = "Z35SXDOTRQ7X7K"
+public_ip             = "54.123.45.67"
+app_url               = "https://octopus.example.com"
 ```
 
 Terraform outputs the database secret ARN, never the database password. Read
 or rotate secret values through Secrets Manager under your operational access
-policy, not through Terraform outputs.
+policy, not through Terraform outputs. `public_ip` is diagnostic and
+pre-enforcement recovery information; after enforcement it is not a
+web-traffic destination.
 
 ---
 
-## Step 5 — Point DNS
+## Step 5 — Run database migrations
 
-Create an **A record** in your DNS provider:
-
-```
-octopus.example.com  →  A  →  <public_ip from apply output>
-```
-
-The app responds on port 80 immediately after the EC2 instance finishes booting (2–3 minutes after `apply`).
-
----
-
-## Step 6 — Set up HTTPS
-
-The default stack listens on HTTP (port 80). Before putting it into production,
-add HTTPS at the origin using an AWS ALB with ACM, Caddy, or an nginx
-certificate. Then configure Cloudflare for **Full (strict)** so both the
-browser-to-edge and edge-to-origin connections are encrypted.
-
-Cloudflare **Full** and **Full (strict)** require the origin to accept HTTPS;
-they do not encrypt a plaintext HTTP origin. Cloudflare **Flexible** can proxy
-this stack before origin TLS is installed, but the edge-to-origin connection
-remains plaintext and is not recommended for production.
-
-After origin HTTPS is configured:
-
-1. Add the domain to Cloudflare and create the proxied DNS A record.
-2. Select **SSL/TLS → Full (strict)**.
-3. Verify the public URL and GitHub webhook delivery before removing any
-   temporary HTTP compatibility path.
-
----
-
-## Step 7 — Run database migrations
-
-On first deploy, run Prisma migrations before the app serves traffic.
+Run Prisma migrations against the exact `app_image` before the application
+receives any canary or user traffic. `/api/health` proves database connectivity,
+not schema compatibility. Repeat this step after every image change and before
+moving traffic.
 
 **If you enabled SSH** (`key_name` and trusted `ssh_cidr_blocks` are set in tfvars):
 ```bash
@@ -428,9 +409,94 @@ sudo docker compose run --rm web sh -c "npx prisma migrate deploy"
 
 ---
 
-## Step 8 — Verify the deployment
+## Step 6 — Stage origin HTTPS and edge restriction
 
-1. Open `http://<public_ip>` (or `https://<domain>` if Cloudflare is set up) — you should see the login page
+This is an operator-controlled cutover. Terraform prepares the AWS origin, but
+does not change Cloudflare, DNS, or the current WDC/datacenter deployment. A
+code merge, tag, or Terraform plan is not a production traffic cutover.
+
+Complete these prerequisites before changing edge traffic:
+
+1. Verify the current WDC/datacenter origin has a certificate valid for
+   `app_domain`. Cloudflare **Full (strict)** applies to every origin serving
+   the hostname; do not enable it while a rollback origin is HTTP-only.
+2. Decide and test the database topology and migration path. This AWS stack
+   creates its own RDS database; do not assume it shares the WDC database.
+   Complete Step 5 against the exact application image before canary traffic.
+3. Push the intended application image and confirm `app_image` references that
+   exact deployable tag. A release tag alone does not update the EC2 image.
+4. Confirm `origin_tls_certificate_arn` is issued, is in `aws_region`, covers
+   `app_domain`, and chains to a CA accepted by the edge. Cloudflare Full
+   (strict) accepts public CA certificates and Cloudflare Origin CA
+   certificates; an ACM Private CA certificate is not trusted by Cloudflare.
+5. Compare `trusted_edge_ipv4_cidrs` with the edge provider's authoritative
+   origin IPv4 list. The stack deliberately does not fetch this list
+   dynamically; operators must review and update it when the provider changes
+   its ranges. Never use `0.0.0.0/0`.
+
+CIDR and Host restrictions reduce origin exposure but do not cryptographically
+authenticate a Cloudflare zone because Cloudflare's address ranges are shared.
+Deployments requiring exclusive edge-tenant authentication should add
+per-hostname custom Authenticated Origin Pulls/mTLS before enforcement; this
+stack does not provision that operator-owned certificate boundary.
+
+### Fresh deployment — enforced from first apply
+
+1. Set `origin_tls_cutover_stage = "enforced"` before the Step 4 apply. The
+   plan must expose EC2 port 80 only to the ALB security group; it must not add
+   public EC2 HTTP ingress.
+2. Complete Step 5 migrations, then wait for healthy ALB target health on
+   `/api/health`.
+3. Configure the Cloudflare/edge origin to use `origin_dns_name` on HTTPS port
+   443 with `app_domain` as the host name and certificate verification enabled.
+4. Enable Full (strict), send canary traffic, and verify health, login, GitHub
+   webhook delivery, and one real review before moving production traffic.
+
+### Existing AWS stack · Stage 1 — preflight
+
+1. Set `origin_tls_cutover_stage = "preflight"`, then run `terraform plan` and
+   `terraform apply`.
+2. The plan should add the Application Load Balancer, HTTPS listener, target
+   group, and security-group rules without replacing EC2, RDS, or Redis.
+   Preflight keeps direct EC2 HTTP available for diagnostics and
+   pre-enforcement recovery only; it is not a Full (strict) traffic rollback.
+3. Wait for healthy ALB target health on `/api/health`. Stop if the target is
+   unhealthy or the plan proposes an unexpected replacement or deletion.
+4. Configure the Cloudflare/edge AWS origin to use `origin_dns_name` on HTTPS
+   port 443 with `app_domain` as the host name. Use an HTTPS health monitor for
+   `/api/health` with certificate verification enabled.
+5. Confirm Step 5 migrations succeeded for the exact running image. After the
+   WDC/datacenter TLS prerequisite is verified, set Cloudflare to
+   **Full (strict)** and send only canary traffic to AWS.
+6. Verify target health, the public health endpoint, login, GitHub webhook
+   delivery, and one real review. Do not proceed on a partial pass.
+
+### Existing AWS stack · Stage 2 — enforced
+
+1. Change only `origin_tls_cutover_stage` to `"enforced"`.
+2. Review the plan. It should remove direct public EC2 HTTP ingress while
+   retaining the ALB-to-EC2 path and should not replace EC2, RDS, or Redis.
+3. Apply, repeat the health, login, webhook, and real-review checks, then move
+   production traffic only after all checks pass.
+
+The Elastic IP may remain for diagnostics, SSM/SSH operations, outbound access,
+and pre-enforcement HTTP recovery. Do not configure it as a Cloudflare origin
+or public DNS target under Full (strict).
+
+### Rollback
+
+If the ALB path fails, keep edge traffic on the last healthy TLS-capable origin.
+You may set `origin_tls_cutover_stage = "preflight"`, plan, and apply to restore
+direct HTTP for diagnostics, but do not route Full (strict) traffic to the
+Elastic IP. Move Cloudflare or DNS only to a verified TLS-capable
+WDC/datacenter origin whose database, migrations, and image are compatible.
+Keep the ALB and ACM certificate until the TLS rollback is verified.
+
+---
+
+## Step 7 — Verify the deployment
+
+1. Open `https://<domain>` through the configured edge — you should see the login page
 2. Click **Sign in with GitHub** and log in with the email in `admin_emails`
 3. Go to **Settings** → **Integrations** — confirm the GitHub App is installed
 4. Open a test PR in one of your repos and mention `@<github-app-slug>` in a comment — Octopus should post a review
@@ -491,11 +557,12 @@ Running on default settings in `us-east-1`:
 | Resource | Type | ~$/month |
 |----------|------|----------|
 | EC2 | t3.xlarge (on-demand) | $120 |
+| Application Load Balancer | base charge plus LCUs | ~$16 + usage |
 | RDS | db.t3.medium, single-AZ, 50 GB | $54 |
 | EBS | 100 GB gp3 | $8 |
 | Elastic IP | (always attached) | $0 |
 | Data transfer | ~50 GB out | $5 |
-| **Total** | | **~$187/mo** |
+| **Total** | | **~$203/mo + ALB usage** |
 
 > Switching to Reserved Instances (1-year, no upfront) saves ~35% — roughly $65/mo.
 
@@ -624,8 +691,8 @@ later secret-delivery cutover.
   backend credentials must never be stored in `backend.conf`
 - Saved Terraform plans can contain plaintext secrets; always use a `.tfplan`
   filename so the repository ignore rules apply
-- The default HTTP origin is not end-to-end encrypted; add origin TLS before
-  using Cloudflare Full (strict) in production
+- The managed origin terminates HTTPS on the ALB; enforced mode removes direct
+  public EC2 HTTP ingress, and Full (strict) must never target the Elastic IP
 
 ---
 

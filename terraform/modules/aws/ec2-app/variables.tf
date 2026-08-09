@@ -59,22 +59,7 @@ variable "ingress_rules" {
     cidr_blocks     = optional(list(string), [])
     security_groups = optional(list(string), [])
   }))
-  default = [
-    {
-      description = "HTTP"
-      from_port   = 80
-      to_port     = 80
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
-    },
-    {
-      description = "HTTPS"
-      from_port   = 443
-      to_port     = 443
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
-    },
-  ]
+  default = []
 }
 
 variable "additional_security_group_ids" {

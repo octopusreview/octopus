@@ -3,6 +3,8 @@ services:
     image: nginx:alpine
     ports:
       - "80:80"
+    labels:
+      octopus.nginx.config-sha256: "${nginx_config_sha256}"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./proxy_params:/etc/nginx/proxy_params:ro

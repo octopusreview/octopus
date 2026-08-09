@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- AWS self-hosted deployments now support a staged managed origin-TLS boundary using an Application Load Balancer, an operator-provisioned ACM certificate, and explicit operator-maintained trusted-edge IPv4 ranges. The documented `preflight` to `enforced` cutover is health-gated and keeps rollback ordering explicit. This repository change does not alter the current WDC/datacenter deployment or cut over production traffic; Full (strict), database/migration compatibility, and the intended application image must be verified separately before an operator changes traffic.
+
 ## [1.0.103] - 2026-08-09
 
 ### Security

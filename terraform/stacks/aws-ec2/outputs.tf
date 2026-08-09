@@ -1,5 +1,5 @@
 output "public_ip" {
-  description = "Public IP address of the Octopus server."
+  description = "EC2 public IP retained for diagnostics and pre-enforcement HTTP recovery; never use it as a Full (strict) origin."
   value       = module.ec2.public_ip
 }
 
@@ -24,8 +24,18 @@ output "redis_url" {
 }
 
 output "app_url" {
-  description = "Application URL. Point your DNS A record to public_ip."
+  description = "Application URL served through the managed HTTPS origin."
   value       = "https://${var.app_domain}"
+}
+
+output "origin_dns_name" {
+  description = "DNS name of the managed HTTPS origin load balancer."
+  value       = aws_lb.origin.dns_name
+}
+
+output "origin_hosted_zone_id" {
+  description = "Canonical hosted-zone ID of the managed HTTPS origin load balancer."
+  value       = aws_lb.origin.zone_id
 }
 
 output "vpc_id" {

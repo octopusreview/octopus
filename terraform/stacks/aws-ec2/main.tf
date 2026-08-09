@@ -1,5 +1,8 @@
 locals {
-  redis_url = var.enable_redis ? module.redis[0].connection_url : ""
+  redis_url          = var.enable_redis ? module.redis[0].connection_url : ""
+  origin_name_suffix = substr(sha256(var.name_prefix), 0, 12)
+  origin_lb_name     = "oct-origin-${local.origin_name_suffix}"
+  origin_tg_name     = "oct-app-${local.origin_name_suffix}"
 
   # Production nginx.conf — both upstreams point to the web container.
   # Webhook and heavy CLI routes keep their own location blocks so they
@@ -15,6 +18,19 @@ locals {
       proxy_connect_timeout 10s;
       proxy_read_timeout 900s;
       proxy_send_timeout 900s;
+
+      # The ALB is the only trusted proxy after origin enforcement. During the
+      # preflight compatibility window, direct internet clients can still reach
+      # nginx, so preserve X-Forwarded-Proto only for VPC-sourced requests.
+      geo $trusted_origin_proxy {
+        default 0;
+        ${var.vpc_cidr} 1;
+      }
+
+      map "$trusted_origin_proxy:$http_x_forwarded_proto" $forwarded_proto {
+        default $scheme;
+        "1:https" https;
+      }
 
       add_header X-Content-Type-Options "nosniff" always;
       add_header X-Frame-Options "SAMEORIGIN" always;
@@ -77,7 +93,7 @@ locals {
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Proto $forwarded_proto;
   PROXY
 
   runtime_environment = merge({
@@ -106,27 +122,32 @@ locals {
   }
 
   docker_compose = templatefile("${path.module}/templates/docker-compose.yml.tpl", {
-    app_image = var.app_image
+    app_image           = var.app_image
+    nginx_config_sha256 = sha256("${local.nginx_conf}\n${local.proxy_params}")
   })
 
-  # Ingress rules: always open 80 + 443; add SSH only when a key pair is configured.
-  # Defined as a local to keep types consistent for concat().
-  base_ingress_rules = [
+  # Existing stacks retain their direct HTTP compatibility path only during
+  # preflight. It is not a Full (strict) rollback origin: nginx has no local
+  # certificate. Enforcement removes it after the managed HTTPS origin is healthy.
+  legacy_origin_ingress_rules = var.origin_tls_cutover_stage == "preflight" ? [
     {
-      description     = "HTTP"
+      description     = "Legacy public HTTP during origin TLS preflight"
       from_port       = 80
       to_port         = 80
       protocol        = "tcp"
       cidr_blocks     = ["0.0.0.0/0"]
       security_groups = []
     },
+  ] : []
+
+  managed_origin_ingress_rule = [
     {
-      description     = "HTTPS"
-      from_port       = 443
-      to_port         = 443
+      description     = "HTTP from managed origin load balancer"
+      from_port       = 80
+      to_port         = 80
       protocol        = "tcp"
-      cidr_blocks     = ["0.0.0.0/0"]
-      security_groups = []
+      cidr_blocks     = []
+      security_groups = [aws_security_group.origin_edge.id]
     },
   ]
 
@@ -141,7 +162,11 @@ locals {
     }
   ] : []
 
-  ingress_rules = concat(local.base_ingress_rules, local.ssh_ingress_rule)
+  ingress_rules = concat(
+    local.legacy_origin_ingress_rules,
+    local.managed_origin_ingress_rule,
+    local.ssh_ingress_rule,
+  )
 }
 
 # ── VPC ───────────────────────────────────────────────────────────────────────
@@ -168,6 +193,116 @@ resource "aws_security_group" "app_data_access" {
   }
 
   tags = merge({ Name = "${var.name_prefix}-app-data-sg" }, var.tags)
+}
+
+# Dedicated public edge for authenticated TLS termination. The security group
+# has no implicit public rule: callers must originate from a configured trusted
+# edge CIDR, and egress is separately constrained to the application SG.
+resource "aws_security_group" "origin_edge" {
+  name_prefix = "${var.name_prefix}-origin-edge-"
+  description = "Trusted edge access to the Octopus HTTPS origin"
+  vpc_id      = module.vpc.vpc_id
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = merge({ Name = "${var.name_prefix}-origin-edge-sg" }, var.tags)
+}
+
+resource "aws_vpc_security_group_ingress_rule" "origin_https" {
+  for_each = toset(var.trusted_edge_ipv4_cidrs)
+
+  security_group_id = aws_security_group.origin_edge.id
+  description       = "HTTPS from trusted edge ${each.value}"
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = each.value
+}
+
+resource "aws_lb" "origin" {
+  name                       = local.origin_lb_name
+  internal                   = false
+  load_balancer_type         = "application"
+  security_groups            = [aws_security_group.origin_edge.id]
+  subnets                    = module.vpc.public_subnet_ids
+  ip_address_type            = "ipv4"
+  idle_timeout               = 900
+  preserve_host_header       = true
+  drop_invalid_header_fields = true
+
+  tags = merge({ Name = "${var.name_prefix}-origin" }, var.tags)
+
+  depends_on = [
+    module.vpc,
+    aws_vpc_security_group_ingress_rule.origin_https,
+  ]
+}
+
+resource "aws_lb_target_group" "app" {
+  name                 = local.origin_tg_name
+  port                 = 80
+  protocol             = "HTTP"
+  protocol_version     = "HTTP1"
+  target_type          = "instance"
+  vpc_id               = module.vpc.vpc_id
+  deregistration_delay = 900
+
+  health_check {
+    enabled             = true
+    path                = "/api/health"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    matcher             = "200"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+  }
+
+  tags = merge({ Name = "${var.name_prefix}-app-origin" }, var.tags)
+}
+
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.origin.arn
+  port              = 443
+  protocol          = "HTTPS"
+  certificate_arn   = var.origin_tls_certificate_arn
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+
+  default_action {
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Forbidden"
+      status_code  = "403"
+    }
+  }
+
+  tags = merge({ Name = "${var.name_prefix}-origin-https" }, var.tags)
+}
+
+# Cloudflare address ranges are shared across customers. This Host gate rejects
+# unintended virtual hosts but is not tenant authentication: deployments that
+# require cryptographic zone ownership must add per-hostname custom AOP/mTLS.
+resource "aws_lb_listener_rule" "app_host" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 100
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app.arn
+  }
+
+  condition {
+    host_header {
+      values = [var.app_domain]
+    }
+  }
+
+  tags = merge({ Name = "${var.name_prefix}-origin-app-host" }, var.tags)
 }
 
 # ── RDS PostgreSQL ────────────────────────────────────────────────────────────
@@ -233,4 +368,24 @@ module "ec2" {
   additional_security_group_ids = [aws_security_group.app_data_access.id]
 
   tags = var.tags
+}
+
+# Keep the load-balancer security group free of its default allow-all egress.
+# This separate rule avoids a dependency cycle while constraining the only
+# origin path to the EC2 application security group on HTTP port 80.
+resource "aws_vpc_security_group_egress_rule" "origin_to_app" {
+  security_group_id            = aws_security_group.origin_edge.id
+  description                  = "HTTP to Octopus application targets"
+  ip_protocol                  = "tcp"
+  from_port                    = 80
+  to_port                      = 80
+  referenced_security_group_id = module.ec2.security_group_id
+}
+
+resource "aws_lb_target_group_attachment" "app" {
+  target_group_arn = aws_lb_target_group.app.arn
+  target_id        = module.ec2.instance_id
+  port             = 80
+
+  depends_on = [aws_vpc_security_group_egress_rule.origin_to_app]
 }

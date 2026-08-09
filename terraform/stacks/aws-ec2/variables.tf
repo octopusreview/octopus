@@ -41,6 +41,47 @@ variable "restrict_data_access_to_app" {
   default     = true
 }
 
+variable "origin_tls_cutover_stage" {
+  description = "Origin TLS rollout stage. Existing stacks apply preflight before enforced; new stacks use enforced."
+  type        = string
+
+  validation {
+    condition     = contains(["preflight", "enforced"], var.origin_tls_cutover_stage)
+    error_message = "origin_tls_cutover_stage must be either preflight or enforced."
+  }
+}
+
+variable "origin_tls_certificate_arn" {
+  description = "Exact ARN of the pre-provisioned, edge-trusted ACM certificate for the public application domain."
+  type        = string
+
+  validation {
+    condition = try(
+      can(regex("^arn:[^:]+:acm:[^:]+:[0-9]{12}:certificate/[0-9A-Fa-f-]+$", var.origin_tls_certificate_arn)) &&
+      split(":", var.origin_tls_certificate_arn)[3] == var.aws_region,
+      false
+    )
+    error_message = "origin_tls_certificate_arn must be a complete ACM certificate ARN in aws_region."
+  }
+}
+
+variable "trusted_edge_ipv4_cidrs" {
+  description = "IPv4 CIDRs of the trusted edge permitted to reach the managed HTTPS origin."
+  type        = list(string)
+
+  validation {
+    condition = (
+      length(var.trusted_edge_ipv4_cidrs) > 0 &&
+      length(distinct(var.trusted_edge_ipv4_cidrs)) == length(var.trusted_edge_ipv4_cidrs) &&
+      alltrue([
+        for cidr in var.trusted_edge_ipv4_cidrs :
+        try(cidrnetmask(cidr) != "" && cidrsubnet(cidr, 0, 0) != "0.0.0.0/0", false)
+      ])
+    )
+    error_message = "trusted_edge_ipv4_cidrs must contain unique valid IPv4 CIDRs narrower than 0.0.0.0/0."
+  }
+}
+
 # ── EC2 ───────────────────────────────────────────────────────────────────────
 variable "instance_type" {
   description = "EC2 instance type. Minimum recommended: t3.xlarge (4 vCPU, 16 GB)."

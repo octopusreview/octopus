@@ -381,7 +381,9 @@ runtime-secret cutover first: `runtime_secret_cutover_stage` must be
 WDC/datacenter production does not use this AWS stack, so these steps require
 no action there. `redis_auth_cutover_stage` is deliberately required with no
 default, so removing it after enforcement cannot silently restore passwordless
-access.
+access. Existing stacks must already run Redis OSS 7.0 or newer (the ACL
+policy uses selectors) and use a lowercase, letter-led `name_prefix`; upgrade
+the engine or adjust the prefix first, or the plan fails validation.
 
 #### Stage 1 — preflight (prove authenticated clients)
 
@@ -391,8 +393,12 @@ access.
    disabled replacement default user, and stable user group; attach that group
    to the existing replication group in place; and grant EC2 read access only
    to the dedicated secret. Stop if EC2 or Redis is replaced.
-3. Apply. Preflight deliberately retains the built-in passwordless `default`
-   user alongside the authenticated app user. The SSM association fetches the
+3. Apply. If the first create of the `<name_prefix>-redis-rbac`
+   CloudFormation stack fails, it lands in `ROLLBACK_COMPLETE` outside
+   Terraform state; delete the stack in the CloudFormation console before
+   re-applying. Preflight deliberately retains the built-in passwordless
+   `default` user alongside the authenticated app user. The SSM association
+   fetches the
    dedicated secret at runtime and runs an authenticated TLS probe before
    promoting the environment or recreating web. The probe covers every
    command family, key pattern, and pub/sub path used by Octopus and proves a
@@ -428,13 +434,35 @@ that would terminate working connections without a recovery path.
 
 #### Rotate the Redis password
 
-1. Add a new secret version without moving `AWSCURRENT`; record its exact
-   version ID.
+1. Add a new secret version without moving `AWSCURRENT`. Attach a custom
+   staging label; a plain `put-secret-value` moves `AWSCURRENT` immediately,
+   and a version left with no staging label is deprecated and may be deleted
+   by Secrets Manager, breaking the exact-version CloudFormation reference.
+   Write the new `{"password":"..."}` JSON to a root-only file as when
+   creating the secret, then:
+
+   ```bash
+   aws secretsmanager put-secret-value \
+     --secret-id "$REDIS_AUTH_SECRET_ARN" \
+     --secret-string file:///root/redis-auth-next.json \
+     --version-stages PENDING
+   ```
+
+   Record the returned `VersionId` and securely remove the file.
 2. Set `redis_auth_secret_version_ids = [old_version_id, new_version_id]` and
    apply so ElastiCache accepts both passwords.
-3. Move `AWSCURRENT` to the new version in Secrets Manager. The runtime timer
-   fetches it, runs the authenticated and denial probes, and only then promotes
-   the new URL and recreates web.
+3. Move `AWSCURRENT` to the new version:
+
+   ```bash
+   aws secretsmanager update-secret-version-stage \
+     --secret-id "$REDIS_AUTH_SECRET_ARN" \
+     --version-stage AWSCURRENT \
+     --move-to-version-id "$NEW_VERSION_ID" \
+     --remove-from-version-id "$OLD_VERSION_ID"
+   ```
+
+   The runtime timer fetches it, runs the authenticated and denial probes,
+   and only then promotes the new URL and recreates web.
 4. After the service and a real review pass, set
    `redis_auth_secret_version_ids = [new_version_id]` and apply to retire the
    old password. To roll back, re-add the old version to ElastiCache before

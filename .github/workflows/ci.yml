@@ -63,6 +63,7 @@ jobs:
         run: |
           terraform fmt -check -recursive terraform/bootstrap/aws-state
           terraform fmt -check terraform/modules/aws/ec2-app
+          terraform fmt -check -recursive terraform/modules/aws/elasticache-redis
           terraform fmt -check terraform/modules/aws/rds-postgres
           terraform fmt -check -recursive terraform/stacks/aws-ec2
 
@@ -71,6 +72,12 @@ jobs:
           terraform -chdir=terraform/bootstrap/aws-state init -backend=false -input=false
           terraform -chdir=terraform/bootstrap/aws-state validate
           terraform -chdir=terraform/bootstrap/aws-state test
+
+      - name: Test ElastiCache Redis module
+        run: |
+          terraform -chdir=terraform/modules/aws/elasticache-redis init -backend=false -input=false
+          terraform -chdir=terraform/modules/aws/elasticache-redis validate
+          terraform -chdir=terraform/modules/aws/elasticache-redis test
 
       - name: Test AWS application stack
         run: |

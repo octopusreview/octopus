@@ -366,7 +366,7 @@ The first plan must add the data-access security group and attach it to EC2 with
 When `apply` finishes, you'll see output like:
 
 ```
-origin_dns_name       = "octopus-production-origin-123456.us-east-1.elb.amazonaws.com"
+origin_dns_name       = "oct-origin-5633c9b8af6d-123456789.us-east-1.elb.amazonaws.com"
 origin_hosted_zone_id = "Z35SXDOTRQ7X7K"
 public_ip             = "54.123.45.67"
 app_url               = "https://octopus.example.com"

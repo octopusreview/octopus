@@ -75,10 +75,10 @@ variable "trusted_edge_ipv4_cidrs" {
       length(distinct(var.trusted_edge_ipv4_cidrs)) == length(var.trusted_edge_ipv4_cidrs) &&
       alltrue([
         for cidr in var.trusted_edge_ipv4_cidrs :
-        try(cidrnetmask(cidr) != "" && cidrsubnet(cidr, 0, 0) != "0.0.0.0/0", false)
+        try(cidrnetmask(cidr) != "" && cidrsubnet(cidr, 0, 0) == cidr && cidr != "0.0.0.0/0", false)
       ])
     )
-    error_message = "trusted_edge_ipv4_cidrs must contain unique valid IPv4 CIDRs narrower than 0.0.0.0/0."
+    error_message = "trusted_edge_ipv4_cidrs must contain unique canonical IPv4 network CIDRs narrower than 0.0.0.0/0."
   }
 }
 

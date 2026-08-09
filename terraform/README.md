@@ -460,6 +460,11 @@ stack does not provision that operator-owned certificate boundary.
    group, and security-group rules without replacing EC2, RDS, or Redis.
    Preflight keeps direct EC2 HTTP available for diagnostics and
    pre-enforcement recovery only; it is not a Full (strict) traffic rollback.
+   Preflight also keeps the pre-existing public HTTPS ingress on the instance,
+   so a deployment that terminates TLS on EC2 (for example Caddy or an nginx
+   certificate) keeps serving while you stage the ALB. Stage 2 removes both
+   public ports, so move that edge origin to `origin_dns_name` before
+   enforcing.
 3. Wait for healthy ALB target health on `/api/health`. Stop if the target is
    unhealthy or the plan proposes an unexpected replacement or deletion.
 4. Configure the Cloudflare/edge AWS origin to use `origin_dns_name` on HTTPS
@@ -473,9 +478,12 @@ stack does not provision that operator-owned certificate boundary.
 
 ### Existing AWS stack · Stage 2 — enforced
 
-1. Change only `origin_tls_cutover_stage` to `"enforced"`.
-2. Review the plan. It should remove direct public EC2 HTTP ingress while
-   retaining the ALB-to-EC2 path and should not replace EC2, RDS, or Redis.
+1. Confirm no edge origin or DNS record still targets the Elastic IP or an
+   instance-terminated TLS listener, then change only `origin_tls_cutover_stage`
+   to `"enforced"`.
+2. Review the plan. It should remove direct public EC2 HTTP and HTTPS ingress
+   while retaining the ALB-to-EC2 path and should not replace EC2, RDS, or
+   Redis.
 3. Apply, repeat the health, login, webhook, and real-review checks, then move
    production traffic only after all checks pass.
 
@@ -692,7 +700,8 @@ later secret-delivery cutover.
 - Saved Terraform plans can contain plaintext secrets; always use a `.tfplan`
   filename so the repository ignore rules apply
 - The managed origin terminates HTTPS on the ALB; enforced mode removes direct
-  public EC2 HTTP ingress, and Full (strict) must never target the Elastic IP
+  public EC2 HTTP and HTTPS ingress, and Full (strict) must never target the
+  Elastic IP
 
 ---
 

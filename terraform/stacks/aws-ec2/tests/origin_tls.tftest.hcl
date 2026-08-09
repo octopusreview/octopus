@@ -103,21 +103,22 @@ run "preflight_provisions_managed_tls_without_removing_rollback_path" {
 
   assert {
     condition = (
-      length(local.legacy_origin_ingress_rules) == 1 &&
-      length(local.ingress_rules) == 2 &&
+      length(local.legacy_origin_ingress_rules) == 2 &&
+      length(local.ingress_rules) == 3 &&
       one([
         for rule in local.ingress_rules : rule
         if rule.from_port == 80 && contains(rule.cidr_blocks, "0.0.0.0/0")
       ]).to_port == 80 &&
       one([
         for rule in local.ingress_rules : rule
+        if rule.from_port == 443 && contains(rule.cidr_blocks, "0.0.0.0/0")
+      ]).to_port == 443 &&
+      one([
+        for rule in local.ingress_rules : rule
         if rule.from_port == 80 && contains(rule.security_groups, aws_security_group.origin_edge.id)
-      ]).to_port == 80 &&
-      alltrue([
-        for rule in local.ingress_rules : rule.from_port != 443
-      ])
+      ]).to_port == 80
     )
-    error_message = "Preflight must retain public HTTP compatibility and add ALB-to-EC2 port 80 without opening the inert EC2 HTTPS port."
+    error_message = "Preflight must retain the pre-cutover public HTTP and HTTPS compatibility ingress and add ALB-to-EC2 port 80."
   }
 
   assert {
@@ -343,6 +344,16 @@ run "malformed_edge_cidr_is_rejected" {
 
   variables {
     trusted_edge_ipv4_cidrs = ["173.245.48.1"]
+  }
+
+  expect_failures = [var.trusted_edge_ipv4_cidrs]
+}
+
+run "host_bits_edge_cidr_is_rejected" {
+  command = plan
+
+  variables {
+    trusted_edge_ipv4_cidrs = ["173.245.48.1/20"]
   }
 
   expect_failures = [var.trusted_edge_ipv4_cidrs]

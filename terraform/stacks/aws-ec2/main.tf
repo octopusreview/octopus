@@ -126,14 +126,25 @@ locals {
     nginx_config_sha256 = sha256("${local.nginx_conf}\n${local.proxy_params}")
   })
 
-  # Existing stacks retain their direct HTTP compatibility path only during
-  # preflight. It is not a Full (strict) rollback origin: nginx has no local
-  # certificate. Enforcement removes it after the managed HTTPS origin is healthy.
+  # Existing stacks retain their pre-cutover public ingress only during
+  # preflight: direct HTTP, plus HTTPS because operator-managed instance TLS
+  # (Caddy, an nginx certificate) may still be the live Full (strict) origin.
+  # The stack-managed nginx has no local certificate, so port 443 is inert
+  # unless the operator terminates TLS on the instance. Enforcement removes
+  # both after the managed HTTPS origin is healthy.
   legacy_origin_ingress_rules = var.origin_tls_cutover_stage == "preflight" ? [
     {
       description     = "Legacy public HTTP during origin TLS preflight"
       from_port       = 80
       to_port         = 80
+      protocol        = "tcp"
+      cidr_blocks     = ["0.0.0.0/0"]
+      security_groups = []
+    },
+    {
+      description     = "Legacy public HTTPS during origin TLS preflight"
+      from_port       = 443
+      to_port         = 443
       protocol        = "tcp"
       cidr_blocks     = ["0.0.0.0/0"]
       security_groups = []

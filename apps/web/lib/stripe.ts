@@ -1,5 +1,8 @@
+import "server-only";
+
 import Stripe from "stripe";
 import { prisma } from "@octopus/db";
+import { resolveOffSessionCardPaymentMethodId } from "./stripe-payment-method";
 
 let _stripe: Stripe | null = null;
 export function getStripe(): Stripe {
@@ -181,18 +184,7 @@ export async function createSubscriptionCheckoutSession(
 export async function getOffSessionPaymentMethodId(
   stripeCustomerId: string,
 ): Promise<string | null> {
-  const customer = await getStripe().customers.retrieve(stripeCustomerId);
-  if (!customer.deleted) {
-    const def = customer.invoice_settings?.default_payment_method;
-    if (typeof def === "string") return def;
-    if (def && typeof def === "object") return def.id;
-  }
-  const methods = await getStripe().paymentMethods.list({
-    customer: stripeCustomerId,
-    type: "card",
-    limit: 1,
-  });
-  return methods.data[0]?.id ?? null;
+  return resolveOffSessionCardPaymentMethodId(getStripe(), stripeCustomerId);
 }
 
 export async function createPortalSession(

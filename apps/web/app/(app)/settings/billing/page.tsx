@@ -3,6 +3,10 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { getOrgMonthlySpend } from "@/lib/cost";
+import {
+  formatBillingResetLabel,
+  getUtcMonthBounds,
+} from "@/lib/billing-period";
 import { getCustomerPaymentMethods } from "@/lib/stripe";
 import { BillingSettings } from "./billing-settings";
 
@@ -42,7 +46,7 @@ export default async function BillingPage() {
   if (!member) redirect("/dashboard");
 
   const org = member.organization;
-  const isOwner = member.role === "owner" || member.role === "admin";
+  const canManageBilling = member.role === "owner" || member.role === "admin";
 
   // Bracket notation on purpose: Next inlines `process.env.NEXT_PUBLIC_*`
   // dot-access at BUILD time (client and server), and the CI image is built
@@ -68,11 +72,12 @@ export default async function BillingPage() {
       ? getCustomerPaymentMethods(org.stripeCustomerId)
       : Promise.resolve([]),
   ]);
+  const { end: monthlyPeriodEnd } = getUtcMonthBounds();
 
   return (
     <BillingSettings
       key={org.id}
-      isOwner={isOwner}
+      canManageBilling={canManageBilling}
       orgId={org.id}
       creditBalance={Number(org.creditBalance)}
       freeCreditBalance={Number(org.freeCreditBalance)}
@@ -87,6 +92,7 @@ export default async function BillingPage() {
         autoReloadConfig
           ? {
               enabled: autoReloadConfig.enabled,
+              pausedForDurableUpgrade: autoReloadConfig.pausedForDurableUpgrade,
               thresholdAmount: Number(autoReloadConfig.thresholdAmount),
               reloadAmount: Number(autoReloadConfig.reloadAmount),
             }
@@ -103,6 +109,7 @@ export default async function BillingPage() {
       }))}
       totalTransactions={totalTransactions}
       monthlySpend={monthlySpend}
+      monthlyResetLabel={formatBillingResetLabel(monthlyPeriodEnd)}
       paymentMethods={paymentMethods}
     />
   );

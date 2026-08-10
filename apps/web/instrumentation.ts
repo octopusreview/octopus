@@ -83,6 +83,11 @@ export async function register() {
       // daily inside a grace window (see lib/subscription.ts).
       if (process.env.NEXT_PUBLIC_OCTOPUS_SELF_HOSTED !== "true") {
         await boss.schedule("subscription-renewals", "0 6 * * *");
+
+        // Reclaim durable auto-reload attempts without waiting for another
+        // deduction or page visit. pg-boss deduplicates this schedule across
+        // review-engine replicas; self-hosted installs have no billing path.
+        await boss.schedule("reconcile-auto-reloads", "* * * * *");
       }
     }
 

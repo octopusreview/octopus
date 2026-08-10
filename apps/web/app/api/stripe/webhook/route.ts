@@ -1,9 +1,113 @@
+import "server-only";
+
 import { NextRequest, NextResponse } from "next/server";
 import { constructWebhookEvent, getStripe } from "@/lib/stripe";
-import { addCredits, addFreeCredits, deductCredits, grantPurchaseFromPaymentIntent } from "@/lib/credits";
+import {
+  addCredits,
+  addFreeCredits,
+  applyAutoReloadPaymentIntent,
+  autoReloadPaymentIntentMatches,
+  deductCredits,
+  getOrgBalance,
+  grantAutoReloadFromPaymentIntent,
+  grantPurchaseFromPaymentIntent,
+} from "@/lib/credits";
 import { grantSubscriptionPeriod, addOneMonth } from "@/lib/subscription";
 import { isPaidPlanTier, volumeBonusUsd } from "@/lib/plans";
 import { prisma } from "@octopus/db";
+import type Stripe from "stripe";
+
+function stripeObjectId(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && "id" in value) {
+    const id = (value as { id?: unknown }).id;
+    return typeof id === "string" ? id : null;
+  }
+  return null;
+}
+
+async function getMatchingAutoReloadAttempt(
+  intent: Stripe.PaymentIntent,
+  requireReceivedAmount: boolean,
+) {
+  const orgId = intent.metadata?.orgId;
+  const attemptId = intent.metadata?.autoReloadAttemptId;
+  const idempotencyKey = intent.metadata?.autoReloadKey;
+  // Both durable fields absent means an old replica created this PI during the
+  // rolling deploy. Partial durable metadata is never accepted as legacy.
+  if (!attemptId && !idempotencyKey) return null;
+  if (!orgId || !attemptId || !idempotencyKey) {
+    throw new Error("Auto-reload PaymentIntent has incomplete durable metadata");
+  }
+
+  const attempt = await prisma.autoReloadAttempt.findFirst({
+    where: {
+      id: attemptId,
+      organizationId: orgId,
+      idempotencyKey,
+    },
+  });
+  if (!attempt) {
+    throw new Error("Auto-reload PaymentIntent has no matching durable attempt");
+  }
+
+  if (!autoReloadPaymentIntentMatches(intent, orgId, attempt, requireReceivedAmount)) {
+    throw new Error("Auto-reload PaymentIntent does not match its durable attempt");
+  }
+
+  return { attempt, orgId, attemptId, idempotencyKey };
+}
+
+const LEGACY_AUTO_RELOAD_MIN_CENTS = 500;
+const LEGACY_AUTO_RELOAD_MAX_CENTS = 100_000;
+
+/**
+ * Recover a succeeded PI created by an old replica during a rolling deploy.
+ * This deliberately accepts only the exact legacy shape, and the PI id remains
+ * the unique credit-ledger key. Newly formatted PIs always take the strict
+ * durable-attempt path above.
+ */
+async function grantValidatedLegacyAutoReload(intent: Stripe.PaymentIntent): Promise<void> {
+  const metadata = intent.metadata;
+  const orgId = metadata?.orgId;
+  const rawMetadataAmount = metadata?.amountUsd;
+  const metadataAmount = Number(rawMetadataAmount);
+  const metadataAmountCents = Math.round(metadataAmount * 100);
+
+  if (
+    !orgId
+    || metadata?.type !== "auto_reload"
+    || metadata?.autoReloadAttemptId
+    || metadata?.autoReloadKey
+    || intent.status !== "succeeded"
+    || intent.currency !== "usd"
+    || typeof rawMetadataAmount !== "string"
+    || !/^\d{1,4}(?:\.\d{1,2})?$/.test(rawMetadataAmount)
+    || !Number.isFinite(metadataAmount)
+    || metadataAmount <= 0
+    || intent.amount !== metadataAmountCents
+    || intent.amount_received !== intent.amount
+    || intent.amount < LEGACY_AUTO_RELOAD_MIN_CENTS
+    || intent.amount > LEGACY_AUTO_RELOAD_MAX_CENTS
+  ) {
+    throw new Error("Legacy auto-reload PaymentIntent failed validation");
+  }
+
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { stripeCustomerId: true },
+  });
+  if (!org?.stripeCustomerId || stripeObjectId(intent.customer) !== org.stripeCustomerId) {
+    throw new Error("Legacy auto-reload PaymentIntent customer does not match its organization");
+  }
+
+  await grantAutoReloadFromPaymentIntent(
+    orgId,
+    metadataAmount,
+    intent.id,
+    intent.latest_charge,
+  );
+}
 
 async function getReceiptUrl(paymentIntentId: string | null): Promise<string | null> {
   if (!paymentIntentId) return null;
@@ -172,25 +276,54 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Authoritative grant for off-session direct credit purchases. The server
-    // action grants inline for instant feedback, but if that process dies
-    // between charge and grant the customer would be charged with no credits —
-    // this webhook is the guarantee. Keyed on the PI id, so the inline grant
-    // and this one collapse to exactly one (P2002-idempotent). Only OUR direct
-    // off-session PIs carry metadata.type="credit_purchase"; Checkout PIs don't
-    // (their grant runs on checkout.session.completed), so no double-grant.
+    // Authoritative grant for our off-session PaymentIntents. Inline grants
+    // provide instant feedback, while this webhook recovers a process/DB
+    // failure after Stripe has charged the card. Both paths key the ledger on
+    // the PI id, so they collapse to exactly one grant (P2002-idempotent).
     if (event.type === "payment_intent.succeeded") {
       const intent = event.data.object;
       const orgId = intent.metadata?.orgId;
       const amountUsd = Number(intent.metadata?.amountUsd || 0);
       if (intent.metadata?.type === "credit_purchase" && orgId && amountUsd > 0) {
         await grantPurchaseFromPaymentIntent(orgId, amountUsd, intent.id, intent.latest_charge);
+      } else if (intent.metadata?.type === "auto_reload") {
+        const matched = await getMatchingAutoReloadAttempt(intent, true);
+        if (matched) {
+          const balance = await getOrgBalance(matched.orgId);
+          await applyAutoReloadPaymentIntent(
+            matched.orgId,
+            balance.total,
+            intent,
+            matched.attempt,
+          );
+        } else {
+          await grantValidatedLegacyAutoReload(intent);
+        }
       }
     }
 
     if (event.type === "payment_intent.payment_failed") {
       const intent = event.data.object;
       console.error("[stripe-webhook] Payment failed:", intent.id, intent.last_payment_error?.message);
+      if (intent.metadata?.type === "auto_reload") {
+        const matched = await getMatchingAutoReloadAttempt(intent, false);
+        if (matched) {
+          // Event delivery is unordered. Re-read Stripe's current PI before
+          // changing durable state so an older failure snapshot cannot demote
+          // a PI that has since succeeded (or emit a false owner alert).
+          const currentIntent = await getStripe().paymentIntents.retrieve(intent.id);
+          if (!autoReloadPaymentIntentMatches(currentIntent, matched.orgId, matched.attempt, false)) {
+            throw new Error("Current auto-reload PaymentIntent does not match its durable attempt");
+          }
+          const balance = await getOrgBalance(matched.orgId);
+          await applyAutoReloadPaymentIntent(
+            matched.orgId,
+            balance.total,
+            currentIntent,
+            matched.attempt,
+          );
+        }
+      }
     }
   } catch (err) {
     console.error("[stripe-webhook] Processing failed — returning 500 so Stripe retries:", err);

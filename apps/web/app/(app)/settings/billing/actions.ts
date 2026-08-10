@@ -8,11 +8,16 @@ import { prisma } from "@octopus/db";
 import {
   createCheckoutSession,
   createSubscriptionCheckoutSession,
+  getOffSessionPaymentMethodId,
   getOrCreateStripeCustomer,
   getStripe,
 } from "@/lib/stripe";
 import { SUBSCRIPTION_PLANS, isPaidPlanTier } from "@/lib/plans";
-import { chargeCreditsOffSession } from "@/lib/credits";
+import {
+  chargeCreditsOffSession,
+  rearmAutoReloadAfterPaymentMethodChange,
+  updateAutoReloadConfigDurably,
+} from "@/lib/credits";
 import { chargeSubscription, grantSubscriptionPeriod, addOneMonth } from "@/lib/subscription";
 
 async function getOwnerOrgId(): Promise<{ orgId: string } | { error: string }> {
@@ -42,7 +47,7 @@ async function getOwnerOrgId(): Promise<{ orgId: string } | { error: string }> {
 export async function purchaseCredits(
   amount: number,
 ): Promise<{ url?: string; success?: boolean; error?: string }> {
-  if (typeof amount !== "number" || amount < 5 || amount > 1000) {
+  if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 5 || amount > 1000) {
     return { error: "Amount must be between $5 and $1,000." };
   }
 
@@ -167,6 +172,15 @@ export async function finalizeCardSetup(
       console.error("[billing] finalizeCardSetup: detaching old cards failed (non-fatal):", err);
     }
 
+    try {
+      await rearmAutoReloadAfterPaymentMethodChange(result.orgId);
+    } catch (err) {
+      console.error("[billing] finalizeCardSetup: auto-reload rearm failed:", err);
+      return {
+        error: "Card saved, but auto-reload could not restart. Please save it again.",
+      };
+    }
+
     revalidatePath("/settings/billing");
     return { success: true };
   } catch (err) {
@@ -252,28 +266,54 @@ export async function updateAutoReload(
   const thresholdAmount = Number(formData.get("thresholdAmount"));
   const reloadAmount = Number(formData.get("reloadAmount"));
 
-  if (enabled && (isNaN(thresholdAmount) || thresholdAmount < 1)) {
-    return { error: "Threshold must be at least $1." };
+  if (enabled && (!Number.isFinite(thresholdAmount) || thresholdAmount < 1 || thresholdAmount > 1000)) {
+    return { error: "Threshold must be between $1 and $1,000." };
   }
 
-  if (enabled && (isNaN(reloadAmount) || reloadAmount < 5)) {
-    return { error: "Reload amount must be at least $5." };
+  if (enabled && (!Number.isFinite(reloadAmount) || reloadAmount < 5 || reloadAmount > 1000)) {
+    return { error: "Reload amount must be between $5 and $1,000." };
   }
 
-  await prisma.autoReloadConfig.upsert({
-    where: { organizationId: result.orgId },
-    create: {
-      organizationId: result.orgId,
+  if (enabled) {
+    const org = await prisma.organization.findUnique({
+      where: { id: result.orgId },
+      select: { stripeCustomerId: true },
+    });
+    if (!org?.stripeCustomerId) {
+      return { error: "Add a payment method before enabling auto-reload." };
+    }
+
+    try {
+      if (!(await getOffSessionPaymentMethodId(org.stripeCustomerId))) {
+        return { error: "Add a payment method before enabling auto-reload." };
+      }
+    } catch (err) {
+      console.error("[billing] could not verify auto-reload payment method:", err);
+      return { error: "Could not verify your payment method. Please try again." };
+    }
+  }
+
+  const savedThreshold = Number.isFinite(thresholdAmount)
+    && thresholdAmount >= 1
+    && thresholdAmount <= 1000
+    ? thresholdAmount
+    : 10;
+  const savedReload = Number.isFinite(reloadAmount)
+    && reloadAmount >= 5
+    && reloadAmount <= 1000
+    ? reloadAmount
+    : 50;
+  try {
+    await updateAutoReloadConfigDurably(
+      result.orgId,
       enabled,
-      thresholdAmount: thresholdAmount || 10,
-      reloadAmount: reloadAmount || 50,
-    },
-    update: {
-      enabled,
-      thresholdAmount: thresholdAmount || 10,
-      reloadAmount: reloadAmount || 50,
-    },
-  });
+      savedThreshold,
+      savedReload,
+    );
+  } catch (err) {
+    console.error("[billing] durable auto-reload update failed:", err);
+    return { error: "Could not update auto-reload. Please try again." };
+  }
 
   revalidatePath("/settings/billing");
   return { success: true };
@@ -319,7 +359,10 @@ export async function updateSpendLimit(
   const raw = formData.get("monthlySpendLimitUsd") as string;
   const monthlySpendLimitUsd = raw ? Number(raw) : null;
 
-  if (monthlySpendLimitUsd !== null && (isNaN(monthlySpendLimitUsd) || monthlySpendLimitUsd < 0)) {
+  if (
+    monthlySpendLimitUsd !== null &&
+    (!Number.isFinite(monthlySpendLimitUsd) || monthlySpendLimitUsd < 0)
+  ) {
     return { error: "Invalid spend limit." };
   }
 

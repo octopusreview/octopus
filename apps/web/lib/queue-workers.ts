@@ -10,6 +10,7 @@ import { enforceAuditLogRetention, enforceActivityEventRetention } from "./audit
 import { enforceWebhookDeliveryRetention } from "./webhook-tenant";
 import { refreshReleaseCache } from "./releases";
 import { renewDueSubscriptions } from "./subscription";
+import { reconcileAutoReloadAttempts } from "./credits";
 import { runOllamaPull } from "./ollama-admin";
 import { reapStuckReviews } from "./reap-stuck-reviews";
 import type { QueueConfig } from "./queue";
@@ -113,6 +114,24 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
     }
   });
 
+  // Hosted auto-reload reconciliation — scheduled every minute. The durable
+  // attempt lease and PI-keyed credit ledger make repeated runs race-safe.
+  await boss.work("reconcile-auto-reloads", async (jobs) => {
+    for (const job of jobs) {
+      try {
+        const result = await reconcileAutoReloadAttempts();
+        if (result.scanned || result.failed) {
+          console.log(
+            `[queue] reconcile-auto-reloads ${job.id}: scanned=${result.scanned} attempted=${result.attempted} failed=${result.failed}`,
+          );
+        }
+      } catch (err) {
+        console.error(`[queue] reconcile-auto-reloads failed (job ${job.id}):`, err);
+        throw err;
+      }
+    }
+  });
+
   // Daily ActivityEvent retention job — scheduled in instrumentation.ts via
   // boss.schedule(); idempotent deleteMany makes concurrent instances harmless.
   await boss.work("enforce-activity-retention", async (jobs) => {
@@ -193,5 +212,5 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
     }
   });
 
-  console.log("[queue] Workers registered: welcome-email, process-review, post-large-review-result, community-review, enforce-audit-retention, enforce-activity-retention, refresh-release-cache, reap-stuck-reviews, pull-ollama-model");
+  console.log("[queue] Workers registered: welcome-email, process-review, post-large-review-result, community-review, enforce-audit-retention, enforce-activity-retention, refresh-release-cache, reap-stuck-reviews, subscription-renewals, reconcile-auto-reloads, pull-ollama-model");
 }

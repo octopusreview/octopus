@@ -197,6 +197,7 @@ model Organization {
   daySummaries       DaySummary[]
   creditTransactions CreditTransaction[]
   autoReloadConfig   AutoReloadConfig?
+  autoReloadAttempts AutoReloadAttempt[]
   apiTokens          OrgApiToken[]
   localAgents        LocalAgent[]
   agentSearchTasks   AgentSearchTask[]
@@ -808,6 +809,10 @@ model CreditTransaction {
 model AutoReloadConfig {
   id              String   @id @default(cuid())
   enabled         Boolean  @default(false)
+  // One-time rollout marker: the durable-attempt migration pauses every
+  // previously enabled config so old and new replicas cannot charge in
+  // parallel. Cleared when an owner explicitly saves the setting again.
+  pausedForDurableUpgrade Boolean @default(false)
   thresholdAmount Decimal  @db.Decimal(12, 4) @default(10)
   reloadAmount    Decimal  @db.Decimal(12, 4) @default(50)
   createdAt       DateTime @default(now())
@@ -816,6 +821,36 @@ model AutoReloadConfig {
   organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("auto_reload_configs")
+}
+
+// Durable state for an automatic credit reload. Stripe retries must reuse the
+// exact customer, payment method, amount, and idempotency key from this row.
+// activeOrganizationId is populated only while an attempt is unresolved; its
+// unique constraint makes the database the concurrency boundary per org while
+// retaining completed/failed attempts for audit and webhook reconciliation.
+model AutoReloadAttempt {
+  id                    String   @id @default(cuid())
+  status                String   @default("initializing") // initializing | pending | submitting | processing | charged | completed | failed | uncertain | disabled
+  idempotencyKey        String   @unique
+  amountCents           Int
+  stripeCustomerId      String
+  stripePaymentMethodId String?
+  stripePaymentIntentId String?  @unique
+  leaseExpiresAt        DateTime
+  retryUntil            DateTime
+  lastSubmittedAt       DateTime?
+  failureReason         String?
+  completedAt           DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  organizationId       String
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  activeOrganizationId String?      @unique
+
+  @@index([organizationId, createdAt])
+  @@index([status, leaseExpiresAt])
+  @@map("auto_reload_attempts")
 }
 
 model OrgApiToken {

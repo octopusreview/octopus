@@ -75,7 +75,7 @@ export function PurchaseDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {PRESETS.map((preset) => {
               const pct = Math.round((volumeBonusUsd(preset) / preset) * 100);
               return (

@@ -121,8 +121,10 @@ export function CardSetupDialog({
         <DialogHeader>
           <DialogTitle>Add card</DialogTitle>
           <DialogDescription>
-            Saved for subscriptions, top-ups, and auto-reload. Card details go
-            directly to Stripe — they never touch our servers.
+            Saved for subscriptions and top-ups. If you enable auto-reload,
+            you authorize Octopus to charge the configured reload amount each
+            time your balance reaches your threshold. You can turn it off at
+            any time. Card details go directly to Stripe.
           </DialogDescription>
         </DialogHeader>
 

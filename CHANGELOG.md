@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Billing now shows monthly AI usage, the configured spend limit, remaining allowance, reset date, current credit balance, and auto-reload status in one responsive overview.
+
+### Fixed
+- Auto-reload can now be turned off reliably, ignores refund deductions, prevents concurrent duplicate charges, and recovers interrupted charges through Stripe webhooks and scheduled reconciliation.
+- Existing auto-reload settings are paused once during the durable-payment upgrade; owners must review and re-enable them from Billing after deployment.
+
 ## [1.0.109] - 2026-08-10
 
 ## [1.0.108] - 2026-08-10

@@ -1,10 +1,10 @@
+import "server-only";
+
 import { prisma } from "@octopus/db";
 import { ORG_TYPE } from "@/lib/org-types";
-// NOTE: the review-model/provider resolvers are imported LAZILY inside
-// getOrgSpendLimitStatus (not at the top level). cost.ts also exports
-// client-safe formatters (formatUsd/formatNumber), and `@/lib/ai-router` pulls
-// in `server-only`; a top-level import would poison cost.ts for any client
-// importer and break unit tests that import the formatters.
+import { getUtcMonthBounds } from "@/lib/billing-period";
+// Keep the review-model/provider resolvers lazy so pure pricing helpers do not
+// initialize the provider stack and its configuration during module startup.
 
 type ModelPricing = { input: number; output: number };
 
@@ -110,39 +110,23 @@ export function calcCost(
 }
 
 export async function getOrgMonthlySpend(orgId: string): Promise<number> {
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const { start, end } = getUtcMonthBounds();
 
-  const usages = await prisma.aiUsage.groupBy({
-    by: ["model"],
+  // The credit ledger is the source of truth for spend: a usage row exists
+  // only after the balance deduction commits. Refund deductions share the
+  // legacy `usage` type, so exclude rows carrying a Stripe refund id.
+  const debits = await prisma.creditTransaction.aggregate({
     where: {
       organizationId: orgId,
-      createdAt: { gte: monthStart },
-      usedOwnKey: false,
+      type: "usage",
+      stripeRefundId: null,
+      amount: { lt: 0 },
+      createdAt: { gte: start, lt: end },
     },
-    _sum: {
-      inputTokens: true,
-      outputTokens: true,
-      cacheReadTokens: true,
-      cacheWriteTokens: true,
-    },
+    _sum: { amount: true },
   });
 
-  const pricing = await getModelPricing();
-  let total = 0;
-
-  for (const row of usages) {
-    total += calcCost(
-      pricing,
-      row.model,
-      row._sum?.inputTokens ?? 0,
-      row._sum?.outputTokens ?? 0,
-      row._sum?.cacheReadTokens ?? 0,
-      row._sum?.cacheWriteTokens ?? 0,
-    );
-  }
-
-  return total;
+  return Math.max(0, -Number(debits._sum.amount ?? 0));
 }
 
 export type SpendLimitResult =

@@ -1,8 +1,10 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
 
+mock.module("server-only", () => ({}));
+
 // getOrgSpendLimitStatus reaches prisma + the review-model/provider resolvers.
 // Mock those before importing cost.ts. Mock fns close over these mutable vars so
-// each test can set the org, the effective review provider, and monthly usage.
+// each test can set the org, the effective review provider, and monthly spend.
 type OrgRow = {
   type: number;
   anthropicApiKey: string | null;
@@ -21,7 +23,10 @@ type OrgRow = {
 let org: OrgRow;
 let provider = "anthropic";
 let providerThrows = false;
-let usageRows: Array<{ model: string; _sum: Record<string, number> }> = [];
+let usageDebitTotal: number | null = null;
+const creditTransactionAggregate = mock(async (_args: unknown) => ({
+  _sum: { amount: usageDebitTotal },
+}));
 
 function baseOrg(overrides: Partial<OrgRow> = {}): OrgRow {
   return {
@@ -44,7 +49,7 @@ function baseOrg(overrides: Partial<OrgRow> = {}): OrgRow {
 mock.module("@octopus/db", () => ({
   prisma: {
     organization: { findUnique: mock(async () => org) },
-    aiUsage: { groupBy: mock(async () => usageRows) },
+    creditTransaction: { aggregate: creditTransactionAggregate },
     // getModelPricing falls back to FALLBACK_PRICING when the DB list is empty.
     availableModel: { findMany: mock(async () => []), findFirst: mock(async () => null) },
   },
@@ -59,13 +64,14 @@ mock.module("@/lib/ai-router", () => ({
   }),
 }));
 
-import { getOrgSpendLimitStatus } from "@/lib/cost";
+const { getOrgMonthlySpend, getOrgSpendLimitStatus } = await import("@/lib/cost");
 
 beforeEach(() => {
   org = baseOrg();
   provider = "anthropic";
   providerThrows = false;
-  usageRows = [];
+  usageDebitTotal = null;
+  creditTransactionAggregate.mockClear();
 });
 
 describe("getOrgSpendLimitStatus — BYOK admission (B4)", () => {
@@ -113,18 +119,59 @@ describe("getOrgSpendLimitStatus — credit vs cap discrimination (B1 source of 
 
   it("returns reason=spend_limit when a positive-balance org exceeds its monthly cap", async () => {
     org = baseOrg({ creditBalance: 100, freeCreditBalance: 0, monthlySpendLimitUsd: 1 });
-    // ~$30 of platform-billed usage this month (1M output tokens on opus-4-8
-    // fallback pricing $25/M × 1.2 markup) blows the $1 cap.
-    usageRows = [
-      { model: "claude-opus-4-8", _sum: { inputTokens: 0, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0 } },
-    ];
+    usageDebitTotal = -30;
     const res = await getOrgSpendLimitStatus("o");
     expect(res.blocked).toBe(true);
     expect(res).toMatchObject({ reason: "spend_limit" });
   });
 
+  it("uses committed usage debits for current-month spend", async () => {
+    org = baseOrg({ creditBalance: 100, freeCreditBalance: 0, monthlySpendLimitUsd: 4 });
+    usageDebitTotal = -4.25;
+
+    expect(await getOrgSpendLimitStatus("o")).toEqual({
+      blocked: true,
+      reason: "spend_limit",
+      limitUsd: 4,
+    });
+  });
+
   it("exempts community orgs from the credit gate entirely", async () => {
     org = baseOrg({ type: 2, creditBalance: 0, freeCreditBalance: 0 });
     expect(await getOrgSpendLimitStatus("o")).toEqual({ blocked: false });
+  });
+});
+
+describe("getOrgMonthlySpend — committed ledger source", () => {
+  it("sums only non-refund usage debits inside the current UTC month", async () => {
+    usageDebitTotal = -12.3456;
+
+    expect(await getOrgMonthlySpend("org_1")).toBe(12.3456);
+
+    const query = creditTransactionAggregate.mock.calls[0]?.[0] as {
+      where: {
+        organizationId: string;
+        type: string;
+        stripeRefundId: null;
+        amount: { lt: number };
+        createdAt: { gte: Date; lt: Date };
+      };
+    };
+    expect(query.where).toMatchObject({
+      organizationId: "org_1",
+      type: "usage",
+      stripeRefundId: null,
+      amount: { lt: 0 },
+    });
+    expect(query.where.createdAt.gte.getUTCDate()).toBe(1);
+    expect(query.where.createdAt.gte.getUTCHours()).toBe(0);
+    expect(query.where.createdAt.lt.getUTCDate()).toBe(1);
+    expect(query.where.createdAt.lt.getTime()).toBeGreaterThan(
+      query.where.createdAt.gte.getTime(),
+    );
+  });
+
+  it("returns zero when no committed usage debit exists", async () => {
+    expect(await getOrgMonthlySpend("org_1")).toBe(0);
   });
 });

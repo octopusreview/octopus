@@ -104,6 +104,7 @@ jobs:
     env:
       DATABASE_URL: "postgresql://octopus:octopus@localhost:5432/octopus_agent_task_test"
       RUN_AGENT_TASK_DB_TESTS: "1"
+      RUN_BILLING_DB_TESTS: "1"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -126,4 +127,8 @@ jobs:
 
       - name: Test agent task ownership against PostgreSQL
         run: bun test lib/__tests__/agent-task-security.db.test.ts
+        working-directory: apps/web
+
+      - name: Test billing auto-reload invariants against PostgreSQL
+        run: bun test lib/__tests__/billing.db.test.ts
         working-directory: apps/web

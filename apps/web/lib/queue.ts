@@ -147,6 +147,15 @@ export async function startQueue(): Promise<PgBoss> {
     expireInSeconds: 1800, // 30 min — one off-session charge per due org
   }).catch(() => {});
 
+  // Hosted auto-reload reconciliation (scheduled every minute in
+  // instrumentation.ts). The worker reclaims expired durable attempt leases;
+  // retrying the job itself once covers a transient sweep-level DB failure.
+  await boss.createQueue("reconcile-auto-reloads", {
+    retryLimit: 1,
+    retryDelay: 30,
+    expireInSeconds: 300,
+  }).catch(() => {});
+
   // Admin-triggered Ollama model downloads (self-hosted). Long expiry — a
   // large model is many GB. No auto-retry: runOllamaPull records failures in
   // the OllamaModelPull row itself and re-pulls are admin-driven from the UI.

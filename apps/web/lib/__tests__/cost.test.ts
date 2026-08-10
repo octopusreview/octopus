@@ -1,12 +1,14 @@
 import { describe, it, expect, mock } from "bun:test";
 
+mock.module("server-only", () => ({}));
+
 // Mock the db module before importing cost.ts (which imports prisma at top level).
 // Bun's module mocks are file-scoped and automatically cleaned up — no manual restore needed.
 mock.module("@octopus/db", () => ({
   prisma: {},
 }));
 
-import { calcCost, formatUsd, formatNumber } from "@/lib/cost";
+const { calcCost, formatUsd, formatNumber } = await import("@/lib/cost");
 
 // The cache-write premium tracks PROMPT_CACHE_TTL (1.25x for 5m, 2x for 1h).
 // Pin 5m so the formula assertions below stay deterministic; a dedicated test

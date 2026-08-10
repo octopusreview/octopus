@@ -1,5 +1,10 @@
-import { describe, it, expect } from "bun:test";
-import { classifyDiff, extractChangedPaths, MECHANICAL_MODEL } from "@/lib/review-routing";
+import { describe, it, expect, mock } from "bun:test";
+
+mock.module("server-only", () => ({}));
+
+const { classifyDiff, extractChangedPaths, MECHANICAL_MODEL } = await import(
+  "@/lib/review-routing"
+);
 
 function diffFor(path: string, added = 3): string {
   const plus = Array.from({ length: added }, (_, i) => `+line ${i}`).join("\n");

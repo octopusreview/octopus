@@ -15,6 +15,14 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   IconPlus,
   IconExternalLink,
   IconLoader2,
@@ -27,6 +35,7 @@ import {
 import { useRouter } from "next/navigation";
 import { PurchaseDialog } from "./purchase-dialog";
 import { CardSetupDialog } from "./card-setup-dialog";
+import { summarizeMonthlySpend } from "@/lib/billing-period";
 import { SUBSCRIPTION_PLANS, INVOICEABLE_TXN_TYPES } from "@/lib/plans";
 import {
   updateAutoReload,
@@ -48,7 +57,7 @@ type PaymentMethod = {
 };
 
 type Props = {
-  isOwner: boolean;
+  canManageBilling: boolean;
   orgId: string;
   creditBalance: number;
   freeCreditBalance: number;
@@ -64,18 +73,25 @@ type Props = {
   planCancelAtPeriodEnd: boolean;
   autoReloadConfig: {
     enabled: boolean;
+    pausedForDurableUpgrade: boolean;
     thresholdAmount: number;
     reloadAmount: number;
   } | null;
   initialTransactions: Transaction[];
   totalTransactions: number;
   monthlySpend: number;
+  monthlyResetLabel: string;
   paymentMethods: PaymentMethod[];
 };
 
 function formatUsd(n: number): string {
   if (Math.abs(n) < 0.01 && n !== 0) return `$${n.toFixed(4)}`;
   return `$${n.toFixed(2)}`;
+}
+
+function formatPercent(n: number): string {
+  if (n > 0 && n < 1) return "<1%";
+  return `${Math.round(n)}%`;
 }
 
 function typeBadgeVariant(type: string) {
@@ -115,7 +131,7 @@ function typeBadgeClass(type: string) {
 }
 
 export function BillingSettings({
-  isOwner,
+  canManageBilling,
   orgId,
   creditBalance,
   freeCreditBalance,
@@ -130,10 +146,12 @@ export function BillingSettings({
   initialTransactions,
   totalTransactions,
   monthlySpend,
+  monthlyResetLabel,
   paymentMethods,
 }: Props) {
   const router = useRouter();
   const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [spendLimitOpen, setSpendLimitOpen] = useState(false);
   const [cardOpen, setCardOpen] = useState(false);
   const [transactions, setTransactions] = useState(initialTransactions);
   const [hasMore, setHasMore] = useState(initialTransactions.length < totalTransactions);
@@ -153,6 +171,8 @@ export function BillingSettings({
   const [autoReloadEnabled, setAutoReloadEnabled] = useState(
     autoReloadConfig?.enabled ?? false,
   );
+  const autoReloadActive = autoReloadConfig?.enabled ?? false;
+  const autoReloadPaused = autoReloadConfig?.pausedForDurableUpgrade ?? false;
 
   const [planPending, startPlanTransition] = useTransition();
   const [planError, setPlanError] = useState<string | null>(null);
@@ -183,6 +203,10 @@ export function BillingSettings({
   };
 
   const total = creditBalance + freeCreditBalance;
+  const spendSummary = summarizeMonthlySpend(
+    monthlySpend,
+    monthlySpendLimitUsd,
+  );
 
   const handleLoadMore = async (): Promise<boolean> => {
     setLoadingMore(true);
@@ -216,37 +240,143 @@ export function BillingSettings({
 
   return (
     <div className="space-y-6">
-      {/* Card 1: Credit Balance */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Credit Balance</CardTitle>
-          <CardDescription>
-            Your organization&apos;s available credits for AI features.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div className="rounded-lg border bg-muted/20 p-4">
-              <p className="text-xs text-muted-foreground mb-1">Free Credits</p>
-              <p className="text-2xl font-semibold">{formatUsd(freeCreditBalance)}</p>
+      <div className="space-y-1">
+        <h2
+          id="usage-spend-limits-heading"
+          className="text-xl font-semibold tracking-tight sm:text-2xl"
+        >
+          Usage and spend limits
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Manage your organization&apos;s AI usage charges and available credits.
+        </p>
+      </div>
+
+      <Card
+        className="gap-0 py-0"
+        role="region"
+        aria-labelledby="usage-spend-limits-heading"
+      >
+        <CardContent className="p-0">
+          <div className="space-y-4 p-4 sm:p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-3xl font-semibold tracking-tight">
+                  {formatUsd(spendSummary.spendUsd)}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Spent this month
+                  <span className="px-1.5" aria-hidden="true">
+                    ·
+                  </span>
+                  Resets {monthlyResetLabel}
+                </p>
+              </div>
+              {spendSummary.percentUsed != null ? (
+                <p
+                  className={`text-sm font-medium ${
+                    spendSummary.limitReached ? "text-destructive" : ""
+                  }`}
+                >
+                  {formatPercent(spendSummary.percentUsed)} used
+                </p>
+              ) : (
+                <Badge variant="secondary">Unlimited</Badge>
+              )}
             </div>
-            <div className="rounded-lg border bg-muted/20 p-4">
-              <p className="text-xs text-muted-foreground mb-1">
-                Purchased Credits
-              </p>
-              <p className="text-2xl font-semibold">{formatUsd(creditBalance)}</p>
-            </div>
+
+            {spendSummary.limitUsd != null &&
+              spendSummary.progressPercent != null && (
+                <div
+                  className="h-2 overflow-hidden rounded-full bg-muted"
+                  role="progressbar"
+                  aria-label="Monthly spend used"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(spendSummary.progressPercent)}
+                  aria-valuetext={`${formatUsd(spendSummary.spendUsd)} of ${formatUsd(spendSummary.limitUsd)} used`}
+                >
+                  <div
+                    className={`h-full rounded-full ${
+                      spendSummary.limitReached
+                        ? "bg-destructive"
+                        : "bg-primary"
+                    }`}
+                    style={{ width: `${spendSummary.progressPercent}%` }}
+                  />
+                </div>
+              )}
           </div>
-          <div className="flex items-center justify-between">
+
+          <Separator />
+
+          <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-6">
             <div>
-              <span className="text-sm text-muted-foreground">Total Balance: </span>
-              <span className="text-sm font-semibold">{formatUsd(total)}</span>
+              <p className="font-medium">
+                {spendSummary.limitUsd != null
+                  ? `${formatUsd(spendSummary.limitUsd)} monthly spend limit`
+                  : "No monthly spend limit"}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {spendSummary.remainingUsd != null
+                  ? `${formatUsd(spendSummary.remainingUsd)} remaining this month`
+                  : "AI usage is not capped for this organization."}
+              </p>
             </div>
-            {isOwner && (
-              <Button size="sm" onClick={() => setPurchaseOpen(true)}>
-                <IconPlus className="size-4 mr-1" />
-                Purchase Credits
+            {canManageBilling && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={() => setSpendLimitOpen(true)}
+              >
+                Adjust limit
               </Button>
+            )}
+          </div>
+
+          <Separator />
+
+          <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+            <div>
+              <p className="text-2xl font-semibold tracking-tight">
+                {formatUsd(total)}
+              </p>
+              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+                <span>Current balance</span>
+                <span aria-hidden="true">·</span>
+                <a
+                  href="#auto-reload-settings"
+                  className="font-medium text-foreground underline-offset-4 hover:underline"
+                >
+                  Auto-reload
+                </a>
+                <Badge
+                  variant={autoReloadActive ? "default" : "secondary"}
+                  className="ml-0.5"
+                >
+                  {autoReloadActive ? "On" : autoReloadPaused ? "Paused" : "Off"}
+                </Badge>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Free {formatUsd(freeCreditBalance)} · Purchased{" "}
+                {formatUsd(creditBalance)}
+              </p>
+            </div>
+            {canManageBilling && (
+              <div className="flex w-full flex-col gap-1 sm:w-auto sm:items-end">
+                <Button
+                  type="button"
+                  className="w-full sm:w-auto"
+                  onClick={() => setPurchaseOpen(true)}
+                >
+                  <IconPlus className="size-4" />
+                  Buy usage credits
+                </Button>
+                <p className="text-center text-xs text-muted-foreground sm:text-right">
+                  Up to 70% bonus credits
+                </p>
+              </div>
             )}
           </div>
         </CardContent>
@@ -284,7 +414,7 @@ export function BillingSettings({
                       {Math.round(((plan.creditsUsd - plan.priceUsd) / plan.priceUsd) * 100)}%
                       bonus over topping up).
                     </p>
-                    {isOwner && !isCurrent && (
+                    {canManageBilling && !isCurrent && (
                       <Button
                         size="sm"
                         disabled={planPending}
@@ -311,7 +441,7 @@ export function BillingSettings({
             )}
           </div>
           {planError && <p className="text-sm text-destructive mt-3">{planError}</p>}
-          {isOwner && stripeCustomerId && (
+          {canManageBilling && stripeCustomerId && (
             <div className="mt-4">
               <Button
                 variant="outline"
@@ -328,7 +458,7 @@ export function BillingSettings({
               </Button>
             </div>
           )}
-          {isOwner && planTier !== "free" && (
+          {canManageBilling && planTier !== "free" && (
             <div className="mt-4">
               {planCancelAtPeriodEnd ? (
                 <Button
@@ -352,65 +482,6 @@ export function BillingSettings({
               )}
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* Card 2: Usage Summary */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Usage Summary</CardTitle>
-          <CardDescription>Current month AI usage and spend limit.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">
-                This month&apos;s usage
-              </span>
-              <span className="text-sm font-medium">{formatUsd(monthlySpend)}</span>
-            </div>
-            <Separator />
-            {isOwner ? (
-              <form action={spendAction} className="space-y-3">
-                <div className="space-y-2">
-                  <Label htmlFor="monthlySpendLimitUsd">
-                    Monthly Spend Limit (USD)
-                  </Label>
-                  <Input
-                    id="monthlySpendLimitUsd"
-                    name="monthlySpendLimitUsd"
-                    type="number"
-                    min={0}
-                    step={1}
-                    defaultValue={monthlySpendLimitUsd ?? ""}
-                    placeholder="No limit"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Leave empty for no limit. AI features will be paused when
-                    the limit is reached.
-                  </p>
-                </div>
-                {spendState.error && (
-                  <p className="text-sm text-destructive">{spendState.error}</p>
-                )}
-                {spendState.success && (
-                  <p className="text-sm text-green-600">Spend limit updated.</p>
-                )}
-                <Button type="submit" size="sm" disabled={spendPending}>
-                  {spendPending ? "Saving..." : "Update Limit"}
-                </Button>
-              </form>
-            ) : (
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Spend limit</span>
-                <span className="text-sm font-medium">
-                  {monthlySpendLimitUsd != null
-                    ? formatUsd(monthlySpendLimitUsd)
-                    : "No limit"}
-                </span>
-              </div>
-            )}
-          </div>
         </CardContent>
       </Card>
 
@@ -451,7 +522,7 @@ export function BillingSettings({
                 No saved payment methods.
               </p>
             )}
-            {isOwner && (
+            {canManageBilling && (
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" size="sm" onClick={() => setCardOpen(true)}>
                   <IconCreditCard className="size-4 mr-1" />
@@ -716,9 +787,19 @@ export function BillingSettings({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {autoReloadPaused && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+              Auto-reload was paused during the billing safety upgrade. Review
+              the amounts and save to re-enable it.
+            </div>
+          )}
           {/* Auto-reload */}
-          <form action={autoReloadAction} className="space-y-4">
-            <div className="flex items-center justify-between">
+          <form
+            id="auto-reload-settings"
+            action={autoReloadAction}
+            className="scroll-mt-6 space-y-4"
+          >
+            <div className="flex items-center justify-between gap-4">
               <div>
                 <Label>Auto-Reload</Label>
                 <p className="text-xs text-muted-foreground">
@@ -728,13 +809,28 @@ export function BillingSettings({
               <Switch
                 checked={autoReloadEnabled}
                 onCheckedChange={(checked) => setAutoReloadEnabled(checked)}
-                disabled={!isOwner}
+                disabled={!canManageBilling}
+                aria-label="Enable auto-reload"
               />
             </div>
             <input type="hidden" name="enabled" value={String(autoReloadEnabled)} />
+            {!autoReloadEnabled && (
+              <>
+                <input
+                  type="hidden"
+                  name="thresholdAmount"
+                  value={autoReloadConfig?.thresholdAmount ?? 10}
+                />
+                <input
+                  type="hidden"
+                  name="reloadAmount"
+                  value={autoReloadConfig?.reloadAmount ?? 50}
+                />
+              </>
+            )}
 
             {autoReloadEnabled && (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="thresholdAmount">
                     When balance falls below
@@ -748,9 +844,10 @@ export function BillingSettings({
                       name="thresholdAmount"
                       type="number"
                       min={1}
+                      max={1000}
                       step={1}
                       defaultValue={autoReloadConfig?.thresholdAmount ?? 10}
-                      disabled={!isOwner}
+                      disabled={!canManageBilling}
                       className="pl-7"
                     />
                   </div>
@@ -766,9 +863,10 @@ export function BillingSettings({
                       name="reloadAmount"
                       type="number"
                       min={5}
+                      max={1000}
                       step={1}
                       defaultValue={autoReloadConfig?.reloadAmount ?? 50}
-                      disabled={!isOwner}
+                      disabled={!canManageBilling}
                       className="pl-7"
                     />
                   </div>
@@ -785,13 +883,17 @@ export function BillingSettings({
               <p className="text-sm text-green-600">Auto-reload updated.</p>
             )}
 
-            {autoReloadEnabled && (
+            {canManageBilling && (
               <Button
                 type="submit"
                 size="sm"
-                disabled={autoReloadPending || !isOwner}
+                disabled={autoReloadPending}
               >
-                {autoReloadPending ? "Saving..." : "Save Auto-Reload"}
+                {autoReloadPending
+                  ? "Saving..."
+                  : !autoReloadEnabled && autoReloadConfig?.enabled
+                    ? "Turn Off Auto-Reload"
+                    : "Save Auto-Reload"}
               </Button>
             )}
           </form>
@@ -807,7 +909,7 @@ export function BillingSettings({
                 name="billingEmail"
                 type="email"
                 defaultValue={billingEmail ?? ""}
-                disabled={!isOwner}
+                disabled={!canManageBilling}
                 placeholder="billing@company.com"
               />
               <p className="text-xs text-muted-foreground">
@@ -820,18 +922,76 @@ export function BillingSettings({
             {emailState.success && (
               <p className="text-sm text-green-600">Billing email updated.</p>
             )}
-            <Button type="submit" size="sm" disabled={emailPending || !isOwner}>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={emailPending || !canManageBilling}
+            >
               {emailPending ? "Saving..." : "Update Email"}
             </Button>
           </form>
 
-          {!isOwner && (
+          {!canManageBilling && (
             <p className="text-muted-foreground text-center text-xs">
               Only owners and admins can manage billing settings.
             </p>
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={spendLimitOpen} onOpenChange={setSpendLimitOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Adjust monthly spend limit</DialogTitle>
+            <DialogDescription>
+              Set the maximum monthly platform-billed AI usage. Leave the field
+              empty for no limit.
+            </DialogDescription>
+          </DialogHeader>
+          <form action={spendAction} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="monthlySpendLimitUsd">
+                Monthly Spend Limit (USD)
+              </Label>
+              <Input
+                id="monthlySpendLimitUsd"
+                name="monthlySpendLimitUsd"
+                type="number"
+                min={0}
+                step={1}
+                defaultValue={monthlySpendLimitUsd ?? ""}
+                placeholder="No limit"
+              />
+              <p className="text-xs text-muted-foreground">
+                AI features using platform credits pause when this limit is
+                reached.
+              </p>
+            </div>
+            {spendState.error && (
+              <p className="text-sm text-destructive" role="alert">
+                {spendState.error}
+              </p>
+            )}
+            {spendState.success && (
+              <p className="text-sm text-green-600" aria-live="polite">
+                Spend limit updated.
+              </p>
+            )}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setSpendLimitOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={spendPending}>
+                {spendPending ? "Saving..." : "Save limit"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <PurchaseDialog
         open={purchaseOpen}

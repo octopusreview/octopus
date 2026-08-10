@@ -1,5 +1,8 @@
-import { describe, expect, it } from "bun:test";
-import { concurrencyGuardApplies } from "@/lib/cost";
+import { describe, expect, it, mock } from "bun:test";
+
+mock.module("server-only", () => ({}));
+
+const { concurrencyGuardApplies } = await import("@/lib/cost");
 
 describe("concurrencyGuardApplies (#506 low-balance guard)", () => {
   it("never guards a fully-BYOK org (no platform spend)", () => {

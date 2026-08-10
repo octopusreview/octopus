@@ -11,20 +11,12 @@ import {
   getOrgBalance,
   grantAutoReloadFromPaymentIntent,
   grantPurchaseFromPaymentIntent,
+  stripeObjectId,
 } from "@/lib/credits";
 import { grantSubscriptionPeriod, addOneMonth } from "@/lib/subscription";
 import { isPaidPlanTier, volumeBonusUsd } from "@/lib/plans";
 import { prisma } from "@octopus/db";
 import type Stripe from "stripe";
-
-function stripeObjectId(value: unknown): string | null {
-  if (typeof value === "string") return value;
-  if (value && typeof value === "object" && "id" in value) {
-    const id = (value as { id?: unknown }).id;
-    return typeof id === "string" ? id : null;
-  }
-  return null;
-}
 
 async function getMatchingAutoReloadAttempt(
   intent: Stripe.PaymentIntent,
@@ -59,7 +51,9 @@ async function getMatchingAutoReloadAttempt(
 }
 
 const LEGACY_AUTO_RELOAD_MIN_CENTS = 500;
-const LEGACY_AUTO_RELOAD_MAX_CENTS = 100_000;
+// The pre-migration config only enforced reloadAmount >= 5 into a
+// Decimal(12,4) column, so the upper bound is Stripe's own USD ceiling.
+const LEGACY_AUTO_RELOAD_MAX_CENTS = 99_999_999;
 
 /**
  * Recover a succeeded PI created by an old replica during a rolling deploy.
@@ -82,7 +76,7 @@ async function grantValidatedLegacyAutoReload(intent: Stripe.PaymentIntent): Pro
     || intent.status !== "succeeded"
     || intent.currency !== "usd"
     || typeof rawMetadataAmount !== "string"
-    || !/^\d{1,4}(?:\.\d{1,2})?$/.test(rawMetadataAmount)
+    || !/^\d{1,6}(?:\.\d{1,4})?$/.test(rawMetadataAmount)
     || !Number.isFinite(metadataAmount)
     || metadataAmount <= 0
     || intent.amount !== metadataAmountCents

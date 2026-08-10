@@ -189,7 +189,7 @@ export async function failAutoReloadAttemptFromPaymentIntent(
       id: attempt.id,
       organizationId: orgId,
       idempotencyKey: attempt.idempotencyKey,
-      status: { in: ["charged", "completed", "failed"] },
+      status: { in: ["charged", "completed", "failed", "disabled"] },
     },
     select: { id: true, status: true, stripePaymentIntentId: true },
   });
@@ -197,7 +197,7 @@ export async function failAutoReloadAttemptFromPaymentIntent(
     throw new Error("Failed auto-reload PaymentIntent lost its durable attempt claim");
   }
 
-  if (terminal.status === "charged" || terminal.status === "completed") return false;
+  if (terminal.status !== "failed") return false;
 
   // The synchronous Stripe error may have conclusively marked the attempt
   // failed before exposing a PI id. Backfill it from the signed webhook without
@@ -545,7 +545,7 @@ function isValidAutoReloadConfig(threshold: number, reloadAmount: number): boole
     && reloadAmount <= 1000;
 }
 
-function stripeObjectId(value: unknown): string | null {
+export function stripeObjectId(value: unknown): string | null {
   if (typeof value === "string") return value;
   if (value && typeof value === "object" && "id" in value) {
     const id = (value as { id?: unknown }).id;
@@ -939,7 +939,7 @@ export async function applyAutoReloadPaymentIntent(
         id: attempt.id,
         organizationId: orgId,
         idempotencyKey: attempt.idempotencyKey,
-        status: { in: ["initializing", "pending", "submitting", "processing", "failed", "uncertain"] },
+        status: { in: ["initializing", "pending", "submitting", "processing", "failed", "uncertain", "disabled"] },
         OR: [
           { stripePaymentIntentId: null },
           { stripePaymentIntentId: intent.id },

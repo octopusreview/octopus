@@ -35,7 +35,10 @@ import {
 import { useRouter } from "next/navigation";
 import { PurchaseDialog } from "./purchase-dialog";
 import { CardSetupDialog } from "./card-setup-dialog";
-import { summarizeMonthlySpend } from "@/lib/billing-period";
+import {
+  getAutoReloadDisplayStatus,
+  summarizeMonthlySpend,
+} from "@/lib/billing-period";
 import { SUBSCRIPTION_PLANS, INVOICEABLE_TXN_TYPES } from "@/lib/plans";
 import {
   updateAutoReload,
@@ -173,6 +176,10 @@ export function BillingSettings({
   );
   const autoReloadActive = autoReloadConfig?.enabled ?? false;
   const autoReloadPaused = autoReloadConfig?.pausedForDurableUpgrade ?? false;
+  const autoReloadStatus = getAutoReloadDisplayStatus(
+    autoReloadActive,
+    autoReloadPaused,
+  );
 
   const [planPending, startPlanTransition] = useTransition();
   const [planError, setPlanError] = useState<string | null>(null);
@@ -352,10 +359,14 @@ export function BillingSettings({
                   Auto-reload
                 </a>
                 <Badge
-                  variant={autoReloadActive ? "default" : "secondary"}
+                  variant={autoReloadStatus === "on" ? "default" : "secondary"}
                   className="ml-0.5"
                 >
-                  {autoReloadActive ? "On" : autoReloadPaused ? "Paused" : "Off"}
+                  {autoReloadStatus === "on"
+                    ? "On"
+                    : autoReloadStatus === "paused"
+                      ? "Paused"
+                      : "Off"}
                 </Badge>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">

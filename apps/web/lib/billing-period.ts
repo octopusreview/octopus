@@ -7,6 +7,16 @@ export type MonthlySpendSummary = {
   limitReached: boolean;
 };
 
+export type AutoReloadDisplayStatus = "on" | "paused" | "off";
+
+export function getAutoReloadDisplayStatus(
+  enabled: boolean,
+  pausedForDurableUpgrade: boolean,
+): AutoReloadDisplayStatus {
+  if (pausedForDurableUpgrade) return "paused";
+  return enabled ? "on" : "off";
+}
+
 export function getUtcMonthBounds(now = new Date()): { start: Date; end: Date } {
   const year = now.getUTCFullYear();
   const month = now.getUTCMonth();

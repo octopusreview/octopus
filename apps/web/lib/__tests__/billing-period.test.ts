@@ -1,9 +1,21 @@
 import { describe, expect, it } from "bun:test";
 import {
   formatBillingResetLabel,
+  getAutoReloadDisplayStatus,
   getUtcMonthBounds,
   summarizeMonthlySpend,
 } from "@/lib/billing-period";
+
+describe("auto-reload display status", () => {
+  it("prioritizes a rollout pause over the saved enabled flag", () => {
+    expect(getAutoReloadDisplayStatus(true, true)).toBe("paused");
+  });
+
+  it("shows active and inactive persisted states", () => {
+    expect(getAutoReloadDisplayStatus(true, false)).toBe("on");
+    expect(getAutoReloadDisplayStatus(false, false)).toBe("off");
+  });
+});
 
 describe("billing period", () => {
   it("returns UTC month boundaries across a year boundary", () => {

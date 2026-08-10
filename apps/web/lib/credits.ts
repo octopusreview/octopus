@@ -457,6 +457,11 @@ const BURN_QUERY_CEILING = 100; // dollars
 // An unresolved attempt owns this short worker lease. If a process disappears,
 // another worker can retry with the exact persisted Stripe parameters and key.
 const AUTO_RELOAD_LEASE_MS = 5 * 60 * 1000;
+// Conclusive failures back off exponentially per recent failure, so a
+// permanently declining card settles at a few attempts per day instead of one
+// new PaymentIntent per lease. An explicit owner retry bypasses the cooldown.
+const AUTO_RELOAD_FAILURE_BACKOFF_WINDOW_MS = 24 * 60 * 60 * 1000;
+const AUTO_RELOAD_FAILURE_MAX_BACKOFF_MS = 6 * 60 * 60 * 1000;
 // Stripe retains idempotency results for at least 24 hours. Stop automatic
 // retries just before that boundary rather than risk reusing a pruned key.
 const AUTO_RELOAD_RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
@@ -485,6 +490,7 @@ type AutoReloadAttemptState = AutoReloadAttemptIdentity & {
   retryUntil: Date;
   lastSubmittedAt: Date | null;
   createdAt: Date;
+  completedAt: Date | null;
   failureReason: string | null;
 };
 
@@ -648,6 +654,7 @@ async function createDurableAutoReloadAttempt(
   return {
     ...data,
     stripePaymentIntentId: null,
+    completedAt: null,
     failureReason: null,
   };
 }
@@ -670,8 +677,27 @@ async function ensureDurableAutoReloadAttempt(
       };
     }
 
-    // A conclusive failure cools down for one lease. Fresh customer activity
-    // can release it afterward and claim a new durable attempt.
+    // A conclusive failure cools down before fresh customer activity can
+    // release it. The cooldown doubles with every recent failure so ongoing
+    // usage against a dead card cannot arm hundreds of new charges per day.
+    const failedAt = existing.completedAt ?? existing.leaseExpiresAt;
+    const recentFailures = await store.autoReloadAttempt.count({
+      where: {
+        organizationId: orgId,
+        status: "failed",
+        completedAt: {
+          gte: new Date(failedAt.getTime() - AUTO_RELOAD_FAILURE_BACKOFF_WINDOW_MS),
+        },
+      },
+    });
+    const backoffMs = Math.min(
+      AUTO_RELOAD_LEASE_MS * 2 ** Math.max(recentFailures - 1, 0),
+      AUTO_RELOAD_FAILURE_MAX_BACKOFF_MS,
+    );
+    if (new Date(failedAt.getTime() + backoffMs) > now) {
+      return { attempt: existing, readyToProcess: false };
+    }
+
     const released = await store.autoReloadAttempt.updateMany({
       where: {
         id: existing.id,
@@ -1174,11 +1200,18 @@ async function processDurableAutoReloadAttempt(
       });
       return;
     }
+    let latestCharge: string | null = null;
+    try {
+      const intent = await getStripe().paymentIntents.retrieve(attempt.stripePaymentIntentId);
+      latestCharge = stripeObjectId(intent.latest_charge);
+    } catch {
+      /* non-critical — receipt backfill only */
+    }
     await grantAutoReloadFromPaymentIntent(
       orgId,
       attempt.amountCents / 100,
       attempt.stripePaymentIntentId,
-      null,
+      latestCharge,
       { id: attempt.id, idempotencyKey: attempt.idempotencyKey },
     );
     return;

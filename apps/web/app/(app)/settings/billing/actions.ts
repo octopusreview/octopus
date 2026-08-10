@@ -293,16 +293,30 @@ export async function updateAutoReload(
     }
   }
 
-  const savedThreshold = Number.isFinite(thresholdAmount)
+  const thresholdValid = Number.isFinite(thresholdAmount)
     && thresholdAmount >= 1
-    && thresholdAmount <= 1000
-    ? thresholdAmount
-    : 10;
-  const savedReload = Number.isFinite(reloadAmount)
+    && thresholdAmount <= 1000;
+  const reloadValid = Number.isFinite(reloadAmount)
     && reloadAmount >= 5
-    && reloadAmount <= 1000
-    ? reloadAmount
-    : 50;
+    && reloadAmount <= 1000;
+  let savedThreshold = thresholdValid ? thresholdAmount : 10;
+  let savedReload = reloadValid ? reloadAmount : 50;
+  if (!thresholdValid || !reloadValid) {
+    const existing = await prisma.autoReloadConfig.findUnique({
+      where: { organizationId: result.orgId },
+      select: { thresholdAmount: true, reloadAmount: true },
+    });
+    if (existing) {
+      const storedThreshold = Number(existing.thresholdAmount);
+      const storedReload = Number(existing.reloadAmount);
+      if (!thresholdValid && Number.isFinite(storedThreshold)) {
+        savedThreshold = Math.min(Math.max(storedThreshold, 1), 1000);
+      }
+      if (!reloadValid && Number.isFinite(storedReload)) {
+        savedReload = Math.min(Math.max(storedReload, 5), 1000);
+      }
+    }
+  }
   try {
     await updateAutoReloadConfigDurably(
       result.orgId,

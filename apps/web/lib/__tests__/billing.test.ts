@@ -66,6 +66,7 @@ let mockAutoReloadAttemptCreate = mock(({ data }: { data: Record<string, unknown
   Promise.resolve({ stripePaymentIntentId: null, ...data }),
 );
 let mockAutoReloadAttemptUpdateMany = mock(() => Promise.resolve({ count: 1 }));
+let mockAutoReloadAttemptCount = mock(() => Promise.resolve(1));
 
 async function mockAutoReloadAttemptCreateMany(
   args: { data: Record<string, unknown>; skipDuplicates?: boolean },
@@ -157,6 +158,7 @@ mock.module("@octopus/db", () => ({
       create: (...args: unknown[]) => mockAutoReloadAttemptCreate(...args),
       createMany: (...args: unknown[]) => mockAutoReloadAttemptCreateMany(...args as never),
       updateMany: (...args: unknown[]) => mockAutoReloadAttemptUpdateMany(...args),
+      count: (...args: unknown[]) => mockAutoReloadAttemptCount(...args),
     },
     aiUsage: {
       create: ({ data }: { data: { usedOwnKey: boolean } }) => {
@@ -194,6 +196,7 @@ mock.module("@octopus/db", () => ({
             create: (...args: unknown[]) => mockAutoReloadAttemptCreate(...args),
             createMany: (...args: unknown[]) => mockAutoReloadAttemptCreateMany(...args as never),
             updateMany: (...args: unknown[]) => mockAutoReloadAttemptUpdateMany(...args),
+            count: (...args: unknown[]) => mockAutoReloadAttemptCount(...args),
           },
         });
       } catch (err) {
@@ -325,6 +328,7 @@ function resetBillingMocks() {
     Promise.resolve({ stripePaymentIntentId: null, ...data }),
   );
   mockAutoReloadAttemptUpdateMany = mock(() => Promise.resolve({ count: 1 }));
+  mockAutoReloadAttemptCount = mock(() => Promise.resolve(1));
   mockOrganizationFindUnique = mock(() => Promise.resolve(null));
   organizationUpdates = [];
   createdAiUsage = [];

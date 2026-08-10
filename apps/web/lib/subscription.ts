@@ -5,8 +5,9 @@ import { SUBSCRIPTION_PLANS, type PaidPlanTier } from "@/lib/plans";
 
 /**
  * Monthly subscriptions WITHOUT Stripe Billing: each period we charge the
- * org's saved card with an off-session PaymentIntent (exactly like
- * auto-reload in credits.ts) and grant the plan's credits into the unified
+ * org's saved card with an off-session PaymentIntent (auto-reload in
+ * credits.ts uses the same saved-card charge, wrapped in durable
+ * AutoReloadAttempt rows) and grant the plan's credits into the unified
  * balance. The daily `subscription-renewals` cron (instrumentation.ts →
  * queue-workers.ts) picks up orgs whose planRenewsAt has passed.
  *

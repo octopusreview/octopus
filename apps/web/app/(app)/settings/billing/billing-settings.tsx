@@ -247,6 +247,167 @@ export function BillingSettings({
 
   return (
     <div className="space-y-6">
+      {/* Billing Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Billing Settings</CardTitle>
+          <CardDescription>
+            Configure auto-reload and billing contact.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {autoReloadPaused && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+              Auto-reload was paused during the billing safety upgrade. Review
+              the amounts and save to re-enable it.
+            </div>
+          )}
+          {/* Auto-reload */}
+          <form
+            id="auto-reload-settings"
+            action={autoReloadAction}
+            className="scroll-mt-6 space-y-4"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Label>Auto-Reload</Label>
+                <p className="text-xs text-muted-foreground">
+                  Automatically purchase credits when balance is low.
+                </p>
+              </div>
+              <Switch
+                checked={autoReloadEnabled}
+                onCheckedChange={(checked) => setAutoReloadEnabled(checked)}
+                disabled={!canManageBilling}
+                aria-label="Enable auto-reload"
+              />
+            </div>
+            <input type="hidden" name="enabled" value={String(autoReloadEnabled)} />
+            {!autoReloadEnabled && (
+              <>
+                <input
+                  type="hidden"
+                  name="thresholdAmount"
+                  value={autoReloadConfig?.thresholdAmount ?? 10}
+                />
+                <input
+                  type="hidden"
+                  name="reloadAmount"
+                  value={autoReloadConfig?.reloadAmount ?? 50}
+                />
+              </>
+            )}
+
+            {autoReloadEnabled && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="thresholdAmount">
+                    When balance falls below
+                  </Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                      $
+                    </span>
+                    <Input
+                      id="thresholdAmount"
+                      name="thresholdAmount"
+                      type="number"
+                      min={1}
+                      max={1000}
+                      step={1}
+                      defaultValue={autoReloadConfig?.thresholdAmount ?? 10}
+                      disabled={!canManageBilling}
+                      className="pl-7"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="reloadAmount">Reload amount</Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                      $
+                    </span>
+                    <Input
+                      id="reloadAmount"
+                      name="reloadAmount"
+                      type="number"
+                      min={5}
+                      max={1000}
+                      step={1}
+                      defaultValue={autoReloadConfig?.reloadAmount ?? 50}
+                      disabled={!canManageBilling}
+                      className="pl-7"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {autoReloadState.error && (
+              <p className="text-sm text-destructive">
+                {autoReloadState.error}
+              </p>
+            )}
+            {autoReloadState.success && (
+              <p className="text-sm text-green-600">Auto-reload updated.</p>
+            )}
+
+            {canManageBilling && (
+              <Button
+                type="submit"
+                size="sm"
+                disabled={autoReloadPending}
+              >
+                {autoReloadPending
+                  ? "Saving..."
+                  : !autoReloadEnabled && autoReloadConfig?.enabled
+                    ? "Turn Off Auto-Reload"
+                    : "Save Auto-Reload"}
+              </Button>
+            )}
+          </form>
+
+          <Separator />
+
+          {/* Billing Email */}
+          <form action={emailAction} className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="billingEmail">Billing Email</Label>
+              <Input
+                id="billingEmail"
+                name="billingEmail"
+                type="email"
+                defaultValue={billingEmail ?? ""}
+                disabled={!canManageBilling}
+                placeholder="billing@company.com"
+              />
+              <p className="text-xs text-muted-foreground">
+                Receipts and billing notifications will be sent to this email.
+              </p>
+            </div>
+            {emailState.error && (
+              <p className="text-sm text-destructive">{emailState.error}</p>
+            )}
+            {emailState.success && (
+              <p className="text-sm text-green-600">Billing email updated.</p>
+            )}
+            <Button
+              type="submit"
+              size="sm"
+              disabled={emailPending || !canManageBilling}
+            >
+              {emailPending ? "Saving..." : "Update Email"}
+            </Button>
+          </form>
+
+          {!canManageBilling && (
+            <p className="text-muted-foreground text-center text-xs">
+              Only owners and admins can manage billing settings.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="space-y-1">
         <h2
           id="usage-spend-limits-heading"
@@ -784,167 +945,6 @@ export function BillingSettings({
           {transactions.length === 0 && (
             <p className="text-sm text-muted-foreground text-center py-8">
               No transactions yet.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Card 5: Billing Settings */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Billing Settings</CardTitle>
-          <CardDescription>
-            Configure auto-reload and billing contact.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {autoReloadPaused && (
-            <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
-              Auto-reload was paused during the billing safety upgrade. Review
-              the amounts and save to re-enable it.
-            </div>
-          )}
-          {/* Auto-reload */}
-          <form
-            id="auto-reload-settings"
-            action={autoReloadAction}
-            className="scroll-mt-6 space-y-4"
-          >
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <Label>Auto-Reload</Label>
-                <p className="text-xs text-muted-foreground">
-                  Automatically purchase credits when balance is low.
-                </p>
-              </div>
-              <Switch
-                checked={autoReloadEnabled}
-                onCheckedChange={(checked) => setAutoReloadEnabled(checked)}
-                disabled={!canManageBilling}
-                aria-label="Enable auto-reload"
-              />
-            </div>
-            <input type="hidden" name="enabled" value={String(autoReloadEnabled)} />
-            {!autoReloadEnabled && (
-              <>
-                <input
-                  type="hidden"
-                  name="thresholdAmount"
-                  value={autoReloadConfig?.thresholdAmount ?? 10}
-                />
-                <input
-                  type="hidden"
-                  name="reloadAmount"
-                  value={autoReloadConfig?.reloadAmount ?? 50}
-                />
-              </>
-            )}
-
-            {autoReloadEnabled && (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="thresholdAmount">
-                    When balance falls below
-                  </Label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                      $
-                    </span>
-                    <Input
-                      id="thresholdAmount"
-                      name="thresholdAmount"
-                      type="number"
-                      min={1}
-                      max={1000}
-                      step={1}
-                      defaultValue={autoReloadConfig?.thresholdAmount ?? 10}
-                      disabled={!canManageBilling}
-                      className="pl-7"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="reloadAmount">Reload amount</Label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                      $
-                    </span>
-                    <Input
-                      id="reloadAmount"
-                      name="reloadAmount"
-                      type="number"
-                      min={5}
-                      max={1000}
-                      step={1}
-                      defaultValue={autoReloadConfig?.reloadAmount ?? 50}
-                      disabled={!canManageBilling}
-                      className="pl-7"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {autoReloadState.error && (
-              <p className="text-sm text-destructive">
-                {autoReloadState.error}
-              </p>
-            )}
-            {autoReloadState.success && (
-              <p className="text-sm text-green-600">Auto-reload updated.</p>
-            )}
-
-            {canManageBilling && (
-              <Button
-                type="submit"
-                size="sm"
-                disabled={autoReloadPending}
-              >
-                {autoReloadPending
-                  ? "Saving..."
-                  : !autoReloadEnabled && autoReloadConfig?.enabled
-                    ? "Turn Off Auto-Reload"
-                    : "Save Auto-Reload"}
-              </Button>
-            )}
-          </form>
-
-          <Separator />
-
-          {/* Billing Email */}
-          <form action={emailAction} className="space-y-3">
-            <div className="space-y-2">
-              <Label htmlFor="billingEmail">Billing Email</Label>
-              <Input
-                id="billingEmail"
-                name="billingEmail"
-                type="email"
-                defaultValue={billingEmail ?? ""}
-                disabled={!canManageBilling}
-                placeholder="billing@company.com"
-              />
-              <p className="text-xs text-muted-foreground">
-                Receipts and billing notifications will be sent to this email.
-              </p>
-            </div>
-            {emailState.error && (
-              <p className="text-sm text-destructive">{emailState.error}</p>
-            )}
-            {emailState.success && (
-              <p className="text-sm text-green-600">Billing email updated.</p>
-            )}
-            <Button
-              type="submit"
-              size="sm"
-              disabled={emailPending || !canManageBilling}
-            >
-              {emailPending ? "Saving..." : "Update Email"}
-            </Button>
-          </form>
-
-          {!canManageBilling && (
-            <p className="text-muted-foreground text-center text-xs">
-              Only owners and admins can manage billing settings.
             </p>
           )}
         </CardContent>

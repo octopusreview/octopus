@@ -657,7 +657,7 @@ export function BillingSettings({
         </CardContent>
       </Card>
 
-      {/* Card 3: Payment Methods */}
+      {/* Payment Methods */}
       <Card>
         <CardHeader>
           <CardTitle>Payment Methods</CardTitle>
@@ -722,7 +722,7 @@ export function BillingSettings({
         </CardContent>
       </Card>
 
-      {/* Card 4: Transaction History */}
+      {/* Transaction History */}
       <Card>
         <CardHeader>
           <CardTitle>Transaction History</CardTitle>

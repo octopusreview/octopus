@@ -1,6 +1,7 @@
 import { authenticateApiToken } from "@/lib/api-auth";
 import { prisma } from "@octopus/db";
 import { getModelPricing, calcCost, getOrgMonthlySpend } from "@/lib/cost";
+import { getUtcMonthBounds } from "@/lib/billing-period";
 
 export async function GET(request: Request) {
   const result = await authenticateApiToken(request);
@@ -8,15 +9,18 @@ export async function GET(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  // Same UTC calendar month getOrgMonthlySpend uses, so `period`, `totalSpend`,
+  // and `breakdown` all describe one window. totalSpend is exact (committed
+  // credit ledger); breakdown is priced from AiUsage rows at current rates, so
+  // it can differ slightly from totalSpend.
+  const { start, end } = getUtcMonthBounds();
 
   const [usages, pricing, monthlySpend, org] = await Promise.all([
     prisma.aiUsage.groupBy({
       by: ["model", "operation"],
       where: {
         organizationId: result.org.id,
-        createdAt: { gte: monthStart },
+        createdAt: { gte: start, lt: end },
       },
       _sum: {
         inputTokens: true,
@@ -58,8 +62,8 @@ export async function GET(request: Request) {
 
   return Response.json({
     period: {
-      start: monthStart.toISOString(),
-      end: now.toISOString(),
+      start: start.toISOString(),
+      end: end.toISOString(),
     },
     totalSpend: monthlySpend,
     spendLimit: org?.monthlySpendLimitUsd ?? null,

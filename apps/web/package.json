@@ -45,7 +45,7 @@
     "openai": "^6.39.0",
     "pdfkit": "^0.19.1",
     "pg-boss": "^12.15.0",
-    "radix-ui": "^1.4.3",
+    "radix-ui": "^1.6.7",
     "react": "19.2.5",
     "react-dom": "19.2.8",
     "react-email": "^6.6.5",

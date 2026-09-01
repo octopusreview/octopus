@@ -18,6 +18,8 @@ const FALLBACK_PRICING: Record<string, ModelPricing> = {
   // Claude Fable 5 is the Claude 5 frontier model; offered as the top "max"
   // review tier (2x Opus 5).
   "claude-fable-5": { input: 10, output: 50 },
+  // Fable 5.1 succeeds Fable 5 at the same price; opt-in, never the default.
+  "claude-fable-5-1": { input: 10, output: 50 },
   // Anthropic's published API id for Opus 5 is undated (no dated canonical id
   // was released); the key must match the id used in calls for exact-key lookup.
   "claude-opus-5": { input: 5, output: 25 },

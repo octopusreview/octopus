@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Claude Fable 5.1 (`claude-fable-5-1`) is available as an opt-in review model at $10/$50 per 1M tokens, the same price as Fable 5. The platform default is unchanged (Opus 4.8). Listed on the pricing page and in the docs; fallback pricing added so usage never bills at $0.
+
 ## [1.0.122] - 2026-08-30
 
 ### Fixed

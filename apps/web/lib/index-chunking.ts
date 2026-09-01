@@ -33,6 +33,11 @@ const IGNORE_PATHS = [
   "package-lock.json", "bun.lock", "yarn.lock", "pnpm-lock.yaml",
 ];
 
+/** Git-tree entries that are files (`type === "blob"`), not directories. */
+export function treeBlobs<T extends { type: string }>(items: T[]): T[] {
+  return items.filter((item) => item.type === "blob");
+}
+
 export function shouldIndex(path: string, size?: number, ig?: Ignore): boolean {
   if (size && size > MAX_FILE_SIZE) return false;
   if (IGNORE_PATHS.some((p) => path.includes(p))) return false;

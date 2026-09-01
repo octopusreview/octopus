@@ -10,7 +10,7 @@ import * as gitlabLib from "@/lib/gitlab";
 import { ensureCollection, upsertChunks, deleteRepoChunks, deleteRepoFileChunks } from "@/lib/qdrant";
 import { generateSparseVectors } from "@/lib/sparse-vector";
 import { parseOctopusIgnore, type Ignore } from "@/lib/octopus-ignore";
-import { shouldIndex, chunkText, MAX_FILE_SIZE } from "@/lib/index-chunking";
+import { shouldIndex, chunkText, MAX_FILE_SIZE, exceedsMaxFileSize } from "@/lib/index-chunking";
 
 const execFileAsync = promisify(execFile);
 
@@ -542,6 +542,31 @@ export async function indexRepository(
   };
 }
 
+/** Load .octopusignore from the default branch for the incremental path; absence or fetch errors mean "no ignore". */
+async function loadIncrementalIgnore(
+  provider: string,
+  fullName: string,
+  defaultBranch: string,
+  installationId: number,
+  organizationId?: string,
+): Promise<Ignore | undefined> {
+  try {
+    let content: string | null = null;
+    if (provider === "github") {
+      const [owner, repoName] = fullName.split("/");
+      content = await ghGetFileContent(installationId, owner, repoName, defaultBranch, ".octopusignore");
+    } else if (provider === "bitbucket" && organizationId) {
+      const [workspace, repoSlug] = fullName.split("/");
+      content = await bitbucketLib.getFileContent(organizationId, workspace, repoSlug, defaultBranch, ".octopusignore");
+    } else if (provider === "gitlab" && organizationId) {
+      content = await gitlabLib.getFileContent(organizationId, fullName, defaultBranch, ".octopusignore");
+    }
+    return content ? parseOctopusIgnore(content) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Incrementally re-index only the changed files from a merged PR.
  * Deletes old chunks for changed/removed files, fetches & indexes added/modified files.
@@ -559,8 +584,13 @@ export async function incrementalIndex(
   const removed = changedFiles
     .filter((f) => f.status === "removed")
     .map((f) => f.filename);
-  const addedOrModified = changedFiles
-    .filter((f) => f.status !== "removed" && shouldIndex(f.filename))
+  // Extension/path rules first (no I/O); only fetch .octopusignore when something survives them.
+  const candidates = changedFiles.filter((f) => f.status !== "removed" && shouldIndex(f.filename));
+  const ig = candidates.length > 0
+    ? await loadIncrementalIgnore(provider, fullName, defaultBranch, installationId, organizationId)
+    : undefined;
+  const addedOrModified = candidates
+    .filter((f) => shouldIndex(f.filename, undefined, ig))
     .map((f) => f.filename);
 
   // 1. Delete chunks for all changed files (removed + modified + added that had old version)
@@ -583,6 +613,10 @@ export async function incrementalIndex(
         const [owner, repoName] = fullName.split("/");
         const content = await ghGetFileContent(installationId, owner, repoName, defaultBranch, filePath);
         if (!content || content.includes("\0")) continue;
+        if (exceedsMaxFileSize(content)) {
+          console.warn(`[indexer:incremental] Skipping ${filePath}: exceeds ${MAX_FILE_SIZE} bytes`);
+          continue;
+        }
         const chunks = chunkText(content, filePath);
         for (const chunk of chunks) {
           allChunks.push({ text: chunk.text, filePath, startLine: chunk.startLine, endLine: chunk.endLine });
@@ -597,6 +631,10 @@ export async function incrementalIndex(
       try {
         const content = await bitbucketLib.getFileContent(organizationId, workspace, repoSlug, defaultBranch, filePath);
         if (!content || content.includes("\0")) continue;
+        if (exceedsMaxFileSize(content)) {
+          console.warn(`[indexer:incremental] Skipping ${filePath}: exceeds ${MAX_FILE_SIZE} bytes`);
+          continue;
+        }
         const chunks = chunkText(content, filePath);
         for (const chunk of chunks) {
           allChunks.push({ text: chunk.text, filePath, startLine: chunk.startLine, endLine: chunk.endLine });
@@ -610,6 +648,10 @@ export async function incrementalIndex(
       try {
         const content = await gitlabLib.getFileContent(organizationId, fullName, defaultBranch, filePath);
         if (!content || content.includes("\0")) continue;
+        if (exceedsMaxFileSize(content)) {
+          console.warn(`[indexer:incremental] Skipping ${filePath}: exceeds ${MAX_FILE_SIZE} bytes`);
+          continue;
+        }
         const chunks = chunkText(content, filePath);
         for (const chunk of chunks) {
           allChunks.push({ text: chunk.text, filePath, startLine: chunk.startLine, endLine: chunk.endLine });

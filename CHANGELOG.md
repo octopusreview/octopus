@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.125] - 2026-09-01
+
+### Fixed
+- Merge-time indexing now applies the same rules as a full reindex: files over 100 KB and paths listed in `.octopusignore` no longer slip into the index when a merged pull request touches them. Until now, what Octopus knew about such files depended on which indexing path had run last.
+- CLI chat (`octopus repo chat` and the `octopus_ask` MCP tool) now gives the model the relevant past review comments alongside code and knowledge. Those results were already being retrieved but never reached the answer.
+- Repository file counts ("Files: indexed / total") no longer include directories, so the total matches the number of files actually in the repository.
+
 ## [1.0.124] - 2026-09-01
 
 ### Changed

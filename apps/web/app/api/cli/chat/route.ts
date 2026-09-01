@@ -11,6 +11,7 @@ import { rerankDocuments } from "@/lib/reranker";
 import Anthropic from "@anthropic-ai/sdk";
 import { requestAgentSearch } from "@/lib/agent-search";
 import { getReviewModel } from "@/lib/ai-client";
+import { buildCliChatSystemPrompt } from "@/lib/cli-chat-prompt";
 import { streamChat } from "@/lib/chat-stream";
 import { getOrgSpendLimitStatus } from "@/lib/cost";
 import {
@@ -175,6 +176,7 @@ export async function POST(request: Request) {
 
   const codeChunks = reranked.filter((d) => d._source === "code") as (typeof rawCodeChunks[number] & { _source: "code" })[];
   const knowledgeChunks = reranked.filter((d) => d._source === "knowledge") as (typeof rawKnowledgeChunks[number] & { _source: "knowledge" })[];
+  const reviewChunks = reranked.filter((d) => d._source === "review") as (typeof rawReviewChunks[number] & { _source: "review" })[];
 
   const repoMap = new Map(indexedRepos.map((r) => [r.id, r.fullName]));
   const codeContext = codeChunks
@@ -185,25 +187,18 @@ export async function POST(request: Request) {
     .map((c) => `### ${c.title}\n${c.text}`)
     .join("\n\n");
 
-  const systemPrompt = `You are Octopus Chat (CLI mode), an AI assistant with deep knowledge of the user's codebase.
-The current user is: ${result.user.name} (${result.user.email})
+  const reviewContext = reviewChunks
+    .map((c) => `### ${c.repoFullName} PR #${c.prNumber}: ${c.prTitle} (by ${c.author}, ${c.reviewDate})\n${c.text}`)
+    .join("\n\n");
 
-RULES:
-- Answer questions using the provided code and knowledge context
-- Cite file paths: \`path/to/file.ts:L42\`
-- Be concise and technical
-- Use fenced code blocks with language tags
-- If context is insufficient, say so honestly
-
-<codebase_context>
-${codeContext || "No code context available."}
-</codebase_context>
-
-<knowledge_context>
-${knowledgeContext || "No knowledge context available."}
-</knowledge_context>
-
-${agentResult ? `<local_agent_context>\nREAL-TIME results from a local agent ("${agentResult.agentName ?? "unknown"}").\nThis reflects the actual current state of the code on disk. Prefer over codebase_context when they conflict.\n\n${agentResult.summary}\n</local_agent_context>` : ""}`;
+  const systemPrompt = buildCliChatSystemPrompt({
+    userName: result.user.name,
+    userEmail: result.user.email,
+    codeContext,
+    knowledgeContext,
+    reviewContext,
+    agentResult,
+  });
 
   // Stream response
   const encoder = new TextEncoder();

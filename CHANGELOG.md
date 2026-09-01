@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The Octopus Cloud default review model is now Claude Opus 5 (same $5/$25 price as Opus 4.8, which stays available). Organizations and repositories with an explicit model pin are unaffected. Claude Sonnet 4.6 is retired from the catalog; anything that pointed at it now uses Claude Sonnet 5 ($2/$10).
+
 ## [1.0.123] - 2026-09-01
 
 ### Added

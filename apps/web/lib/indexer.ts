@@ -10,7 +10,7 @@ import * as gitlabLib from "@/lib/gitlab";
 import { ensureCollection, upsertChunks, deleteRepoChunks, deleteRepoFileChunks } from "@/lib/qdrant";
 import { generateSparseVectors } from "@/lib/sparse-vector";
 import { parseOctopusIgnore, type Ignore } from "@/lib/octopus-ignore";
-import { shouldIndex, chunkText, MAX_FILE_SIZE } from "@/lib/index-chunking";
+import { shouldIndex, chunkText, treeBlobs, MAX_FILE_SIZE } from "@/lib/index-chunking";
 
 const execFileAsync = promisify(execFile);
 
@@ -322,12 +322,11 @@ export async function indexRepository(
       }
     }
 
-    const files: TreeItem[] = allItems.filter(
-      (item) => item.type === "blob" && shouldIndex(item.path, item.size, ig),
-    );
-    totalFileCount = allItems.length;
+    const blobs = treeBlobs(allItems);
+    const files: TreeItem[] = blobs.filter((item) => shouldIndex(item.path, item.size, ig));
+    totalFileCount = blobs.length;
 
-    onLog(`Found ${allItems.length} total files, ${files.length} eligible for indexing`, "success");
+    onLog(`Found ${blobs.length} total files, ${files.length} eligible for indexing`, "success");
 
     // 1b. Fetch contributors
     try {

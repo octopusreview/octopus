@@ -22,12 +22,18 @@
 #   $env:OCTOPUS_INSTALL_DIR   Override install directory
 #   $env:OCTOPUS_INSTALL_REPO  Override the GitHub repo (default: octopusreview/octopus)
 #   $env:OCTOPUS_INSTALL_TAG   Install a specific tag instead of latest
+#   $env:OCTOPUS_INSTALL_API   Override the GitHub API base URL (default: https://api.github.com)
+#   $env:OCTOPUS_INSTALL_RESOLVE_ONLY=1  Print the resolved tag and exit without downloading
+#   $env:GITHUB_TOKEN          Optional; authenticates the release lookup (higher API rate limit)
 
 $ErrorActionPreference = "Stop"
 
 $Repo        = if ($env:OCTOPUS_INSTALL_REPO) { $env:OCTOPUS_INSTALL_REPO } else { "octopusreview/octopus" }
 $InstallDir  = if ($env:OCTOPUS_INSTALL_DIR)  { $env:OCTOPUS_INSTALL_DIR }  else { Join-Path $env:USERPROFILE ".octopus\bin" }
 $BinaryName  = "octp.exe"
+$ApiBase     = if ($env:OCTOPUS_INSTALL_API) { $env:OCTOPUS_INSTALL_API } else { "https://api.github.com" }
+$ApiHeaders  = @{ "User-Agent" = "octp-installer" }
+if ($env:GITHUB_TOKEN) { $ApiHeaders["Authorization"] = "Bearer $($env:GITHUB_TOKEN)" }
 
 # ── Step 1: arch ─────────────────────────────────────────────────────────────
 
@@ -45,17 +51,38 @@ if ($env:OCTOPUS_INSTALL_TAG) {
   Write-Host "Looking up latest octp release on $Repo ..."
   # Find the most recent NON-DRAFT, NON-PRERELEASE octp-v* tag.
   # Users testing prerelease tags can override via $env:OCTOPUS_INSTALL_TAG.
-  $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=30" -Headers @{ "User-Agent" = "octp-installer" }
-  $tag = (
-    $releases |
-      Where-Object { -not $_.draft -and -not $_.prerelease -and $_.tag_name -like "octp-v*" } |
-      Select-Object -First 1
-  ).tag_name
+  # Platform releases (v1.0.x) are cut far more often than octp releases, so
+  # the newest octp-v* tag is usually NOT on the first page. Walk the pages
+  # (newest first, 100 per request) until one turns up or the list ends (#775).
+  $tag = $null
+  $page = 1
+  # 10 x 100 is also GitHub's listing cap (page 11 returns HTTP 422); don't raise it.
+  $maxPages = 10
+  while ($page -le $maxPages) {
+    $response = Invoke-RestMethod -Uri "$ApiBase/repos/$Repo/releases?per_page=100&page=$page" -Headers $ApiHeaders
+    # PowerShell 7 emits the JSON array as ONE object (so @(Invoke-RestMethod ...)
+    # would be a 1-element array holding the whole page) and 5.1 emits $null for
+    # an empty page. Piping enumerates both into a flat list of release objects.
+    $releases = @($response | Where-Object { $null -ne $_ })
+    if ($releases.Count -eq 0) { break }   # walked past the last page
+    $tag = (
+      $releases |
+        Where-Object { -not $_.draft -and -not $_.prerelease -and $_.tag_name -like "octp-v*" } |
+        Select-Object -First 1
+    ).tag_name
+    if ($tag) { break }
+    $page++
+  }
   if (-not $tag) {
     Write-Error "Could not find any non-prerelease octp-v* on $Repo. Pin a tag with `$env:OCTOPUS_INSTALL_TAG = 'octp-v0.X.Y'`."
     exit 1
   }
   Write-Host "Latest release: $tag"
+}
+
+if ($env:OCTOPUS_INSTALL_RESOLVE_ONLY -eq "1") {
+  Write-Host "Resolved $tag (OCTOPUS_INSTALL_RESOLVE_ONLY=1: nothing downloaded)."
+  exit 0
 }
 
 # ── Step 3: download ─────────────────────────────────────────────────────────

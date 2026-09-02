@@ -1,10 +1,11 @@
 ---
-title: Qwen3.8-Max is now available in Octopus
-slug: qwen3-8-max-now-available
-excerpt: Qwen3.8-Max just topped Arena's WebDev board, and it can now review your pull requests. What it costs, and when to pick it over your default.
+title: Qwen3.8-Max-0902 is now available in Octopus
+slug: qwen3-8-max-0902-now-available
+excerpt: Qwen3.8-Max-0902 just topped Arena's WebDev board, and it can now review your pull requests. What it costs, and when to pick it over your default.
 category: Product
-tags: [Qwen, Models, Code Review, Alibaba Cloud, Pricing]
+tags: [Qwen3.8-Max-0902, Qwen, Models, Code Review, Alibaba Cloud, Pricing]
 authorName: Octopus Team
+coverImageUrl: https://cdn.octopus-review.ai/blog/qwen3-8-max-0902/cover.png
 ---
 
 Alibaba released Qwen3.8-Max-0902 today, and it is already in Octopus. You can pick it as the review model for an organization or a single repository, on our cloud or with your own Alibaba Cloud Model Studio key.
@@ -14,6 +15,10 @@ Alibaba released Qwen3.8-Max-0902 today, and it is already in Octopus. You can p
 Qwen3.8-Max is Alibaba Cloud's newest Qwen model, and 0902 is the snapshot published on September 2. Two things about it matter for code review. It has a 1M-token context window and can write up to 131,072 tokens in one answer, so a large diff plus the surrounding code fits without trimming. And it reasons before it answers: thinking is on by default, and you can tell the model to skip it.
 
 The reason people are talking about it is Arena. On the Code Arena: WebDev leaderboard, Qwen3.8-Max-0902 debuted in first place with 1,691 points, 3 points ahead of Claude Opus 5 (Max) at 1,688, 17 ahead of Kimi K3 (Max) and 22 ahead of the previous Qwen3.8-Max. Arena scores come from blind, side-by-side votes on real web development tasks, which is closer to review work than most benchmarks. It is still one leaderboard, so treat it as a reason to try the model, not as proof it will suit your codebase.
+
+![Arena Code Arena: WebDev leaderboard on September 2, 2026: Qwen3.8-Max-0902 first with 1,691 points, Claude Opus 5 (Max) second with 1,688, Kimi K3 (Max) third with 1,674](https://cdn.octopus-review.ai/blog/qwen3-8-max-0902/arena-code-webdev-2026-09-02.png)
+
+*Chart: Arena.ai, Code Arena: WebDev, September 2, 2026.*
 
 Alibaba's model page is at [alibabacloud.com/help/en/model-studio/qwen3-8-max](https://www.alibabacloud.com/help/en/model-studio/qwen3-8-max), and Arena's announcement is [on X](https://x.com/arena/status/2094974637704913198).
 

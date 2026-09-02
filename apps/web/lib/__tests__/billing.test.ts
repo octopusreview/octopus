@@ -2978,4 +2978,32 @@ describe("AiUsage cost snapshot", () => {
     expect(createdAiUsage[0].chargedCostUsd).toBeNull();
     expect(orgState).toEqual({ creditBalance: 20, freeCreditBalance: 8 });
   });
+
+  it("bills platform-key alibaba usage when the org has no Alibaba key", async () => {
+    mockOrganizationFindUnique = mock(() =>
+      Promise.resolve({
+        anthropicApiKey: null,
+        openaiApiKey: null,
+        cohereApiKey: null,
+        googleApiKey: null,
+        grokApiKey: null,
+        openrouterApiKey: null,
+        alibabaApiKey: null,
+        claudeCodeApiKey: null,
+        claudeCodeAuthMode: null,
+      } as never),
+    );
+
+    await logAiUsage({
+      provider: "alibaba",
+      model: "m",
+      operation: "review",
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      organizationId: "org_1",
+    });
+
+    expect(createdAiUsage[0].usedOwnKey).toBe(false);
+    expect(createdAiUsage[0].chargedCostUsd).toBeGreaterThan(0);
+  });
 });

@@ -57,14 +57,25 @@ export const alibabaProvider: Provider = {
           }
         : {}),
       // Vendor extension (not in the OpenAI SDK types); serialized as-is.
-      enable_thinking: enableThinking,
+      // Omitted for models not known to accept it.
+      ...(enableThinking === undefined ? {} : { enable_thinking: enableThinking }),
     };
 
     const response = await client.chat.completions.create(
       body as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
     );
 
-    const text = response.choices[0]?.message?.content ?? "";
+    const choice = response.choices[0];
+    const text = choice?.message?.content ?? "";
+
+    // With thinking on, hitting the completion cap during reasoning returns
+    // finish_reason "length" and an empty answer (the budget went to
+    // reasoning_content). Fail loudly instead of returning "" as a success.
+    if (enableThinking && !text && choice?.finish_reason === "length") {
+      throw new Error(
+        `DashScope hit max_completion_tokens (${maxCompletionTokens}) while thinking and returned no answer; raise maxTokens or disable thinking`,
+      );
+    }
 
     return {
       text,

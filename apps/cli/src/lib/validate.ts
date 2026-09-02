@@ -9,7 +9,7 @@ import { loadConfig, DEFAULT_OLLAMA_BASE_URL } from "./config.js";
  *   openai     → GET /v1/models
  *   google     → GET /v1beta/models?key=…
  *   grok       → GET /v1/models (OpenAI-compatible at https://api.x.ai/v1)
- *   alibaba    → GET /v1/models (OpenAI-compatible at https://dashscope-intl.aliyuncs.com/compatible-mode/v1)
+ *   alibaba    → GET /v1/models (OpenAI-compatible at https://dashscope-intl.aliyuncs.com/compatible-mode/v1, or DASHSCOPE_BASE_URL)
  *   openrouter → GET /api/v1/models (no auth even, but we send the key for sanity)
  *   ollama     → GET http://localhost:11434/api/tags (local; no key needed)
  *
@@ -33,8 +33,12 @@ export async function validateProvider(provider: string): Promise<ValidateResult
       return await validateOpenAi("https://api.openai.com/v1/models", key);
     case "grok":
       return await validateOpenAi("https://api.x.ai/v1/models", key);
-    case "alibaba":
-      return await validateOpenAi("https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models", key);
+    case "alibaba": {
+      // Keys are region-scoped; honour the same override the server uses so a
+      // China-region key validates against the China endpoint.
+      const base = (process.env.DASHSCOPE_BASE_URL?.trim() || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").replace(/\/+$/, "");
+      return await validateOpenAi(`${base}/models`, key);
+    }
     case "openrouter":
       return await validateOpenAi("https://openrouter.ai/api/v1/models", key);
     case "google":

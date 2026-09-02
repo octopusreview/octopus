@@ -74,6 +74,7 @@ describe("Opus 5 pricing (#opus-5 launch)", () => {
   it("claude-opus-5 has fallback pricing so it never bills $0", async () => {
     const { fallbackPricedModels } = await import("@/lib/cost");
     expect(fallbackPricedModels()).toContain("claude-opus-5");
+    expect(fallbackPricedModels()).toContain("qwen3.8-max-0902");
   });
 
   it("claude-opus-4-8 (replaces Opus 4.6) has fallback pricing", async () => {

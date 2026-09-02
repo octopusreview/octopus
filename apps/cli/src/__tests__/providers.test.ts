@@ -12,6 +12,7 @@ describe("PROVIDERS catalogue", () => {
     expect(ready).toContain("anthropic");
     expect(ready).toContain("openai");
     expect(ready).toContain("google");
+    expect(ready).toContain("alibaba");
   });
 
   it("every provider has displayName and blurb populated", () => {

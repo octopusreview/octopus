@@ -26,13 +26,31 @@ export function alibabaBaseUrl(env: Record<string, string | undefined> = process
  */
 export const ALIBABA_THINKING_MAX_TOKENS_FLOOR = 32_768;
 
-export type AlibabaRequestShape = { maxCompletionTokens: number; enableThinking: boolean };
+/**
+ * Models this adapter knows to be hybrid-thinking (thinking on by default,
+ * accept `enable_thinking`, 131k output ceiling). Everything else routed to
+ * the alibaba provider (any `provider = "alibaba"` catalog row, e.g. a plain
+ * qwen-plus) is called as a vanilla OpenAI-compatible model: no vendor
+ * extension, caller's max tokens verbatim — same reasoning as the Anthropic
+ * always-thinking floor being scoped to a known model set.
+ */
+export const ALIBABA_HYBRID_THINKING_MODEL_RX = /^qwen3\.8-max/;
+
+export type AlibabaRequestShape = {
+  maxCompletionTokens: number;
+  /** undefined = omit the vendor field entirely (model is not known to support it). */
+  enableThinking: boolean | undefined;
+};
 
 export function alibabaRequestShape(params: {
+  model: string;
   maxTokens: number;
   thinking?: "disabled";
   responseSchema?: unknown;
 }): AlibabaRequestShape {
+  if (!ALIBABA_HYBRID_THINKING_MODEL_RX.test(params.model)) {
+    return { maxCompletionTokens: params.maxTokens, enableThinking: undefined };
+  }
   const enableThinking = params.thinking !== "disabled" && params.responseSchema === undefined;
   const maxCompletionTokens = enableThinking
     ? Math.max(params.maxTokens, ALIBABA_THINKING_MAX_TOKENS_FLOOR)

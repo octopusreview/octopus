@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Internal helper calls (finding validation, feedback classification, blog SEO metadata) and the self-host default review model now use Claude Sonnet 5 ($2/$10) instead of Sonnet 4.6 ($3/$15). These short JSON calls run with thinking off, so Sonnet 5's adaptive-thinking default can't eat their small token budgets. Sonnet 5 and Fable 5.1 are also in the self-host catalog seed, the pricing page and the docs.
 
+### Fixed
+- Pricing docs said a 20% platform fee is applied on top of provider costs. Octopus Cloud bills usage at 2x the provider's list price; the docs and the pricing page now say so.
+
 ## [1.0.125] - 2026-09-01
 
 ### Fixed

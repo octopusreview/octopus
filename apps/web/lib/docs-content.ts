@@ -207,7 +207,7 @@ This is ideal for teams that already have API agreements with AI providers or wa
       },
       {
         heading: "Model Pricing",
-        text: `Octopus supports multiple AI models. A 20% platform fee is applied on top of provider costs. Base prices per 1M tokens:
+        text: `Octopus supports multiple AI models. Octopus Cloud bills usage at 2x the provider's list price. That multiple is the platform rate, and there are no other fees. Provider list prices per 1M tokens:
 Claude Fable 5.1 — $10 input / $50 output. Anthropic's most capable generally available model, the successor to Fable 5; opt-in for the most demanding reviews.
 Claude Fable 5 — $10 input / $50 output. Anthropic's Claude 5 frontier model; the top opt-in tier for the most demanding reviews.
 Claude Opus 5 — $5 input / $25 output. The default review model on Octopus Cloud.

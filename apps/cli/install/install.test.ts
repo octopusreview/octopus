@@ -103,6 +103,8 @@ async function run(cmd: string[], extraEnv: Record<string, string> = {}) {
 const SH = ["bash", join(INSTALL_DIR, "install.sh")];
 const PS1 = ["pwsh", "-NoProfile", "-File", join(INSTALL_DIR, "install.ps1")];
 const hasPwsh = Bun.which("pwsh") !== null;
+// pwsh cold-starts in several seconds on CI runners; bun's default per-test timeout is 5 s.
+const PWSH_TIMEOUT_MS = 60_000;
 
 describe("install.sh release lookup", () => {
   test("finds the latest non-draft, non-prerelease octp release beyond the first page", async () => {
@@ -147,7 +149,7 @@ describe.skipIf(!hasPwsh)("install.ps1 release lookup", () => {
       `/repos/${REPO}/releases?per_page=100&page=1`,
       `/repos/${REPO}/releases?per_page=100&page=2`,
     ]);
-  });
+  }, PWSH_TIMEOUT_MS);
 
   test("fails clearly when no octp release exists on any page", async () => {
     pages = PAGES_WITHOUT_OCTP;
@@ -155,5 +157,5 @@ describe.skipIf(!hasPwsh)("install.ps1 release lookup", () => {
     const r = await run(PS1);
     expect(r.code).toBe(1);
     expect(r.stderr + r.stdout).toContain("Could not find any non-prerelease octp-v*");
-  });
+  }, PWSH_TIMEOUT_MS);
 });

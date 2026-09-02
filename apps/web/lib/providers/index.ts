@@ -57,6 +57,13 @@ export type AiCreateParams = {
    * it. Falls back to the env/built-in default when unset.
    */
   effort?: ThinkingEffort;
+  /**
+   * Set to "disabled" for short utility calls (classification, metadata,
+   * validation JSON) so models that default to adaptive thinking (Sonnet 5,
+   * Opus 4.7+) don't spend the small max_tokens budget on thinking. Ignored on
+   * always-thinking models, which reject thinking-off.
+   */
+  thinking?: "disabled";
 };
 
 export type AiResponse = {

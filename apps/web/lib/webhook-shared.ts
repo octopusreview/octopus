@@ -35,6 +35,14 @@ async function postSkippedCheckRun(
  * Shared flow: upsert PR -> post placeholder comment -> notify dashboard -> start review.
  * Works for GitHub, Bitbucket, and GitLab.
  */
+/**
+ * Outcome of startReviewFlow. Webhooks ignore it; user-facing triggers
+ * (CLI / MCP) use it to say why nothing ran instead of "Review started".
+ */
+export type StartReviewResult =
+  | { started: true }
+  | { started: false; reason: "org_paused" | "already_in_progress" | "author_blocked"; message: string };
+
 export async function startReviewFlow(params: {
   provider: "github" | "bitbucket" | "gitlab";
   // GitHub-specific
@@ -52,7 +60,7 @@ export async function startReviewFlow(params: {
   headSha: string;
   triggerCommentId: number;
   triggerCommentBody: string;
-}) {
+}): Promise<StartReviewResult> {
   const {
     provider,
     installationId,
@@ -85,7 +93,7 @@ export async function startReviewFlow(params: {
 
   if (org?.reviewsPaused) {
     console.log(`[webhook] Reviews paused for org ${orgId}, skipping PR #${prNumber}`);
-    return;
+    return { started: false, reason: "org_paused", message: "Reviews are paused for this organization" };
   }
 
   // Check existing PR status to prevent duplicate reviews (cheap indexed lookup first)
@@ -108,7 +116,7 @@ export async function startReviewFlow(params: {
       });
     } else if (existingPr.headSha === headSha) {
       console.log(`[webhook] Review already in progress/queued for PR #${prNumber} (same SHA), skipping`);
-      return;
+      return { started: false, reason: "already_in_progress", message: `Review already in progress for PR #${prNumber}` };
     } else {
       console.log(`[webhook] New SHA detected for PR #${prNumber}, restarting review`);
     }
@@ -125,7 +133,7 @@ export async function startReviewFlow(params: {
     if (isBlocked) {
       console.log(`[webhook] PR author "${prAuthor}" is blocked for org ${orgId}, skipping PR #${prNumber}`);
       await postSkippedCheckRun(provider, installationId, repoFullName, headSha, `PR author "${prAuthor}" is in the blocked list`);
-      return;
+      return { started: false, reason: "author_blocked", message: `PR author "${prAuthor}" is in the blocked list` };
     }
   }
 
@@ -224,4 +232,5 @@ export async function startReviewFlow(params: {
 
   // Enqueue review job — pg-boss persists it in DB, survives container restarts
   await enqueue("process-review", { pullRequestId: pr.id });
+  return { started: true };
 }

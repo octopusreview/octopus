@@ -2,7 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Provider, AiCreateParams, AiResponse } from "./index";
 import { splitSystemForCache, type CacheTtl } from "./system-cache";
-import { resolveThinking } from "./thinking";
+import { resolveThinking, resolveThinkingOverride } from "./thinking";
 import { stripLoneSurrogates } from "./sanitize";
 
 let platformClient: Anthropic | null = null;
@@ -52,6 +52,7 @@ export const anthropicProvider: Provider = {
       useTool,
       params.effort,
     );
+    const thinkingParam = resolveThinkingOverride(params.model, params.thinking, thinking);
 
     // Streaming here is purely between this process and the Anthropic API —
     // finalMessage() buffers the SSE chunks and returns the same complete
@@ -62,7 +63,7 @@ export const anthropicProvider: Provider = {
       {
         model: params.model,
         max_tokens: maxTokens,
-        ...(thinking ? { thinking } : {}),
+        ...(thinkingParam ? { thinking: thinkingParam } : {}),
         ...(outputConfig ? { output_config: outputConfig } : {}),
         // Strip lone UTF-16 surrogates from all text: a diff/file body truncated
         // mid-emoji can leave an unpaired surrogate, which serializes to invalid

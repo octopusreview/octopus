@@ -98,6 +98,7 @@ function activityFor(operation: string): Activity | null {
 function shortModelLabel(model: string): string {
   if (model.startsWith("claude-opus-4-6")) return "Claude Opus 4.6";
   if (model.startsWith("claude-opus-4")) return "Claude Opus 4";
+  if (model.startsWith("claude-sonnet-5")) return "Claude Sonnet 5";
   if (model.startsWith("claude-sonnet-4-6")) return "Claude Sonnet 4.6";
   if (model.startsWith("claude-sonnet-4")) return "Claude Sonnet 4";
   if (model.startsWith("claude-haiku-4-5")) return "Claude Haiku 4.5";

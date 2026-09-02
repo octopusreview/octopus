@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- New native CLI release: `octp` 0.3.0 — re-run the installer to pick it up. The binary now ships the current model catalog (Claude Fable 5 max tier; Claude Opus 4.8 replaces 4.6), and the repository wizard opens the signed GitHub App install flow.
+
+### Fixed
+- `octp update` compares against the installed version correctly. The previous binary always believed it was 0.1.0, so it kept offering an upgrade you already had.
+- The local repository index that `octp` builds no longer follows symlinks or reads files outside the repository, so a checkout cannot make the CLI read files from elsewhere on your machine.
+
 ## [1.0.128] - 2026-09-02
 
 ### Fixed

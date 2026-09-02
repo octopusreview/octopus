@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Pricing docs said a 20% platform fee is applied on top of provider costs. Octopus Cloud bills usage at 2x the provider's list price; the docs and the pricing page now say so.
+
 ## [1.0.125] - 2026-09-01
 
 ### Fixed

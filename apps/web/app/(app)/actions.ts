@@ -283,6 +283,7 @@ export async function updateApiKeys(
   const cohereApiKey = (formData.get("cohereApiKey") as string)?.trim() || null;
   const grokApiKey = (formData.get("grokApiKey") as string)?.trim() || null;
   const openrouterApiKey = (formData.get("openrouterApiKey") as string)?.trim() || null;
+  const alibabaApiKey = (formData.get("alibabaApiKey") as string)?.trim() || null;
 
   if (openaiApiKey && !openaiApiKey.startsWith("sk-")) {
     return { error: "Invalid OpenAI API key format." };
@@ -304,6 +305,10 @@ export async function updateApiKeys(
     return { error: "Invalid OpenRouter API key format." };
   }
 
+  if (alibabaApiKey && !alibabaApiKey.startsWith("sk-")) {
+    return { error: "Invalid Alibaba Cloud Model Studio API key format." };
+  }
+
   // Only update keys that have new values — empty fields keep the existing key.
   // Keys are encrypted at rest with the same helper used for OAuth tokens.
   const data: Record<string, string | null> = {};
@@ -313,6 +318,7 @@ export async function updateApiKeys(
   if (cohereApiKey) data.cohereApiKey = encryptString(cohereApiKey);
   if (grokApiKey) data.grokApiKey = encryptString(grokApiKey);
   if (openrouterApiKey) data.openrouterApiKey = encryptString(openrouterApiKey);
+  if (alibabaApiKey) data.alibabaApiKey = encryptString(alibabaApiKey);
 
   // Per-org provider config: gateway/base-URL overrides + gateway API keys.
   // These clear when submitted empty — a present-but-empty field sets the
@@ -356,7 +362,7 @@ export async function updateApiKeys(
   return { success: true };
 }
 
-const VALID_KEY_FIELDS = ["openaiApiKey", "anthropicApiKey", "googleApiKey", "cohereApiKey", "grokApiKey", "openrouterApiKey"] as const;
+const VALID_KEY_FIELDS = ["openaiApiKey", "anthropicApiKey", "googleApiKey", "cohereApiKey", "grokApiKey", "openrouterApiKey", "alibabaApiKey"] as const;
 
 export async function removeApiKey(
   keyField: (typeof VALID_KEY_FIELDS)[number],

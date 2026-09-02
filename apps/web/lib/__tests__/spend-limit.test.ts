@@ -13,6 +13,7 @@ type OrgRow = {
   cohereApiKey: string | null;
   grokApiKey: string | null;
   openrouterApiKey: string | null;
+  alibabaApiKey: string | null;
   claudeCodeApiKey: string | null;
   claudeCodeAuthMode: string | null;
   monthlySpendLimitUsd: number | null;
@@ -37,6 +38,7 @@ function baseOrg(overrides: Partial<OrgRow> = {}): OrgRow {
     cohereApiKey: null,
     grokApiKey: null,
     openrouterApiKey: null,
+    alibabaApiKey: null,
     claudeCodeApiKey: null,
     claudeCodeAuthMode: null,
     monthlySpendLimitUsd: null,
@@ -79,6 +81,18 @@ describe("getOrgSpendLimitStatus — BYOK admission (B4)", () => {
     org = baseOrg({ anthropicApiKey: "sk-ant", creditBalance: 0, freeCreditBalance: 0 });
     provider = "anthropic";
     expect(await getOrgSpendLimitStatus("o")).toEqual({ blocked: false });
+  });
+
+  it("exempts an org with its own Alibaba Cloud Model Studio key when the review provider is alibaba", async () => {
+    org = baseOrg({ alibabaApiKey: "sk-ali", creditBalance: 0, freeCreditBalance: 0 });
+    provider = "alibaba";
+    expect(await getOrgSpendLimitStatus("o")).toEqual({ blocked: false });
+  });
+
+  it("does not let an Alibaba key exempt usage on another provider", async () => {
+    org = baseOrg({ alibabaApiKey: "sk-ali", creditBalance: 0, freeCreditBalance: 0 });
+    provider = "anthropic";
+    expect(await getOrgSpendLimitStatus("o")).toEqual({ blocked: true, reason: "no_credits" });
   });
 
   it("does NOT exempt when the org's only key is for a provider it does not use", async () => {

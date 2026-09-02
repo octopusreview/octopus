@@ -41,6 +41,7 @@ export default async function ApiKeysPage() {
           cohereApiKey: true,
           grokApiKey: true,
           openrouterApiKey: true,
+          alibabaApiKey: true,
         },
       },
     },
@@ -59,6 +60,7 @@ export default async function ApiKeysPage() {
       cohereApiKey={maskStoredKey(member.organization.cohereApiKey)}
       grokApiKey={maskStoredKey(member.organization.grokApiKey)}
       openrouterApiKey={maskStoredKey(member.organization.openrouterApiKey)}
+      alibabaApiKey={maskStoredKey(member.organization.alibabaApiKey)}
       isOwner={canManage}
     />
   );

@@ -117,6 +117,7 @@ model Organization {
   googleApiKey         String?
   grokApiKey           String?
   openrouterApiKey     String?
+  alibabaApiKey        String?
   // Custom Ollama base URL — overrides OLLAMA_SERVER_URL env when set. Used
   // for self-hosted Octopus instances pointing at a non-default Ollama host
   // (a different container, a different machine on the LAN, etc.).

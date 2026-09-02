@@ -292,6 +292,8 @@ docker compose exec ollama ollama pull nomic-embed-text`}</CodeBlock>
           <EnvVar name="GOOGLE_API_KEY" example="AIza..." description="Gemini models" />
           <EnvVar name="GROK_API_KEY" example="xai-..." description="xAI Grok models" />
           <EnvVar name="OPENROUTER_API_KEY" example="sk-or-..." description="OpenRouter — many model vendors via one key" />
+          <EnvVar name="DASHSCOPE_API_KEY" example="sk-..." description="Alibaba Cloud Model Studio (Qwen) models" />
+          <EnvVar name="DASHSCOPE_BASE_URL" example="https://dashscope.aliyuncs.com/compatible-mode/v1" description="Optional: DashScope endpoint override (default is the international endpoint; set the China endpoint here)" />
           <EnvVar name="OLLAMA_SERVER_URL" example="http://localhost:11434" description="Self-hosted Ollama (ollama: model ids); optional OLLAMA_USERNAME / OLLAMA_PASSWORD for a proxied host" />
           <EnvVar name="ACP_BASE_URL" example="https://acpx.example.com" description="ACPX gateway (acp: model ids); set together with ACP_API_KEY" />
           <EnvVar name="OPENCODE_BASE_URL" example="https://opencode.example.com" description="OpenCode gateway (opencode: model ids); set together with OPENCODE_API_KEY" />

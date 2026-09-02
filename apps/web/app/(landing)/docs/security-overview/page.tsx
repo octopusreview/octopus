@@ -55,7 +55,8 @@ export default function SecurityOverviewPage() {
       <Section title="3. Secrets handling">
         <P>
           BYOK API keys (Anthropic / OpenAI / Google / Cohere / Grok /
-          OpenRouter / ACPX / OpenCode) are stored as nullable columns on the
+          OpenRouter / Alibaba Cloud Model Studio / ACPX / OpenCode) are
+          stored as nullable columns on the
           Organization row, accessible only through the AI router on the
           server. They are never returned over the API, never logged, and
           never sent to the LLM provider as anything other than an HTTP

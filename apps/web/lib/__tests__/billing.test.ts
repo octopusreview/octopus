@@ -2867,6 +2867,7 @@ describe("AiUsage cost snapshot", () => {
         googleApiKey: null,
         grokApiKey: null,
         openrouterApiKey: null,
+        alibabaApiKey: null,
         claudeCodeApiKey: null,
         claudeCodeAuthMode: null,
       } as never),
@@ -2898,6 +2899,7 @@ describe("AiUsage cost snapshot", () => {
         googleApiKey: null,
         grokApiKey: null,
         openrouterApiKey: null,
+        alibabaApiKey: null,
         claudeCodeApiKey: null,
         claudeCodeAuthMode: null,
       } as never),
@@ -2928,6 +2930,7 @@ describe("AiUsage cost snapshot", () => {
         googleApiKey: null,
         grokApiKey: null,
         openrouterApiKey: null,
+        alibabaApiKey: null,
         claudeCodeApiKey: null,
         claudeCodeAuthMode: null,
       } as never),
@@ -2935,6 +2938,35 @@ describe("AiUsage cost snapshot", () => {
 
     await logAiUsage({
       provider: "anthropic",
+      model: "m",
+      operation: "review",
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      organizationId: "org_1",
+    });
+
+    expect(createdAiUsage[0].usedOwnKey).toBe(true);
+    expect(createdAiUsage[0].chargedCostUsd).toBeNull();
+    expect(orgState).toEqual({ creditBalance: 20, freeCreditBalance: 8 });
+  });
+
+  it("stores null chargedCostUsd for own-Alibaba-key usage and never deducts", async () => {
+    mockOrganizationFindUnique = mock(() =>
+      Promise.resolve({
+        anthropicApiKey: null,
+        openaiApiKey: null,
+        cohereApiKey: null,
+        googleApiKey: null,
+        grokApiKey: null,
+        openrouterApiKey: null,
+        alibabaApiKey: "sk-ali-user",
+        claudeCodeApiKey: null,
+        claudeCodeAuthMode: null,
+      } as never),
+    );
+
+    await logAiUsage({
+      provider: "alibaba",
       model: "m",
       operation: "review",
       inputTokens: 1_000_000,

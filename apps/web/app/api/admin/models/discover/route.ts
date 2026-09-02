@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { isAdminApiAuthorized } from "@/lib/admin-auth";
 import { prisma } from "@octopus/db";
+import { alibabaBaseUrl } from "@/lib/providers/alibaba-request";
 
 // Vendor admin "pull latest from provider": ask each provider's own API which
 // models exist, and diff against the available_models catalog. Lets the admin
@@ -130,6 +131,26 @@ async function discoverGrok(catalog: Set<string>): Promise<ProviderResult> {
   };
 }
 
+async function discoverAlibaba(catalog: Set<string>): Promise<ProviderResult> {
+  const key = process.env.DASHSCOPE_API_KEY;
+  if (!key) return { keyConfigured: false, newUpstream: [], inCatalogNotUpstream: [] };
+  // DashScope compatible-mode is OpenAI-compatible (same as the alibaba provider adapter).
+  const client = new OpenAI({ apiKey: key, baseURL: alibabaBaseUrl() });
+  const list = await client.models.list();
+  const upstreamIds = new Set<string>();
+  const upstream: DiscoveredModel[] = [];
+  for (const m of list.data) {
+    if (!/^qwen/i.test(m.id)) continue;
+    upstreamIds.add(m.id);
+    upstream.push({ id: m.id, displayName: titleCase(m.id) });
+  }
+  return {
+    keyConfigured: true,
+    newUpstream: upstream.filter((m) => !catalog.has(m.id)),
+    inCatalogNotUpstream: [...catalog].filter((id) => !upstreamIds.has(id)),
+  };
+}
+
 // OpenRouter lists 300+ models; surface only notable labs (plus anything Kimi)
 // so the panel isn't flooded. Ids are namespaced "lab/model" (the grok/
 // openrouter adapters pass them verbatim).
@@ -207,16 +228,17 @@ export async function GET(request: NextRequest) {
     }
   };
 
-  const [anthropic, openai, google, grok, openrouter] = await Promise.all([
+  const [anthropic, openai, google, grok, openrouter, alibaba] = await Promise.all([
     settle(() => discoverAnthropic(byProvider("anthropic"))),
     settle(() => discoverOpenAI(byProvider("openai"))),
     settle(() => discoverGoogle(byProvider("google"))),
     settle(() => discoverGrok(byProvider("grok"))),
     settle(() => discoverOpenRouter(byProvider("openrouter"))),
+    settle(() => discoverAlibaba(byProvider("alibaba"))),
   ]);
 
   return NextResponse.json({
     ok: true,
-    providers: { anthropic, openai, google, grok, openrouter },
+    providers: { anthropic, openai, google, grok, openrouter, alibaba },
   });
 }

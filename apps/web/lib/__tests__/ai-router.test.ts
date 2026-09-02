@@ -50,6 +50,7 @@ describe("resolveProvider", () => {
   it("infers real providers from model-name prefixes", async () => {
     expect(await resolveProvider("claude-sonnet-4-20250514")).toBe("anthropic");
     expect(await resolveProvider("gpt-4o")).toBe("openai");
+    expect(await resolveProvider("qwen3.8-max-0902")).toBe("alibaba");
     expect(await resolveProvider("gemini-2.0-flash")).toBe("google");
     expect(await resolveProvider("claude-code:sonnet")).toBe("claude-code");
   });

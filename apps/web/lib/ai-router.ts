@@ -29,6 +29,7 @@ const PROVIDER_FALLBACK: Record<string, AiProvider> = {
   // Native OpenRouter ids are vendor/model (e.g. "openai/gpt-4o") and resolve
   // via the AvailableModel DB cache above, not this prefix.
   "openrouter/": "openrouter",
+  "qwen3.8-max": "alibaba", // Alibaba Cloud Model Studio (DashScope), e.g. qwen3.8-max-0902
   "ollama:": "ollama", // namespaced local models, e.g. "ollama:qwen2.5-coder:32b"
   "acp:": "acp", // OpenAI-compatible gateway (Agent Communication Protocol)
   "opencode:": "opencode", // OpenAI-compatible gateway
@@ -93,6 +94,7 @@ type OrgKeys = {
   googleApiKey: string | null;
   grokApiKey: string | null;
   openrouterApiKey: string | null;
+  alibabaApiKey: string | null;
 };
 
 async function getOrgKeys(orgId: string): Promise<OrgKeys> {
@@ -104,6 +106,7 @@ async function getOrgKeys(orgId: string): Promise<OrgKeys> {
       googleApiKey: true,
       grokApiKey: true,
       openrouterApiKey: true,
+      alibabaApiKey: true,
     },
   });
   return {
@@ -112,6 +115,7 @@ async function getOrgKeys(orgId: string): Promise<OrgKeys> {
     googleApiKey: org?.googleApiKey ? decryptStringMaybeLegacy(org.googleApiKey) : null,
     grokApiKey: org?.grokApiKey ? decryptStringMaybeLegacy(org.grokApiKey) : null,
     openrouterApiKey: org?.openrouterApiKey ? decryptStringMaybeLegacy(org.openrouterApiKey) : null,
+    alibabaApiKey: org?.alibabaApiKey ? decryptStringMaybeLegacy(org.alibabaApiKey) : null,
   };
 }
 
@@ -122,6 +126,7 @@ function getOrgKeyForProvider(keys: OrgKeys, provider: AiProvider): string | nul
     case "google": return keys.googleApiKey;
     case "grok": return keys.grokApiKey;
     case "openrouter": return keys.openrouterApiKey;
+    case "alibaba": return keys.alibabaApiKey;
     // Ollama runs on the operator's own infra — env-configured, no per-org key.
     case "ollama": return null;
     // Local-agent bridge dispatches to a laptop; provider.create() reads org

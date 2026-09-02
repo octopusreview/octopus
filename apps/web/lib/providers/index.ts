@@ -6,6 +6,7 @@ import { ollamaProvider } from "./ollama";
 import { localProvider } from "./local";
 import { grokProvider } from "./grok";
 import { openrouterProvider } from "./openrouter";
+import { alibabaProvider } from "./alibaba";
 import { acpProvider } from "./acp";
 import { opencodeProvider } from "./opencode";
 import { claudeCodeProvider } from "./claude-code";
@@ -21,6 +22,7 @@ export type AiProvider =
   | "local"
   | "grok"
   | "openrouter"
+  | "alibaba"
   | "acp"
   | "opencode"
   | "claude-code"
@@ -115,6 +117,7 @@ const PROVIDERS: Partial<Record<AiProvider, Provider>> = {
   local: localProvider,
   grok: grokProvider,
   openrouter: openrouterProvider,
+  alibaba: alibabaProvider,
   acp: acpProvider,
   opencode: opencodeProvider,
   "claude-code": claudeCodeProvider,

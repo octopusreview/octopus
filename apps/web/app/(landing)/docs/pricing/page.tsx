@@ -103,7 +103,7 @@ export default function PricingPage() {
       <Section title="Model Pricing">
         <P>
           Credit consumption varies by model. Octopus Cloud bills usage at 2x
-          the provider's list price; that multiple is the platform rate, and
+          the provider&apos;s list price; that multiple is the platform rate, and
           there are no other fees. Below are the provider list prices per 1M
           tokens:
         </P>

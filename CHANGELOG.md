@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.130] - 2026-09-02
+
+### Added
+- Qwen3.8-Max now shows up everywhere the other review models do: the pricing page ($2 input / $6 output per 1M tokens at Alibaba's list price), the FAQ and getting-started docs, Ask Octopus, the sub-processor list (Alibaba Cloud, Singapore region) and the terms. A launch post explains what it costs and when to pick it over your default.
+
 ## [1.0.129] - 2026-09-02
 
 ### Added

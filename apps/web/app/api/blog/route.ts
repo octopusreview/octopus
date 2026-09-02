@@ -251,8 +251,9 @@ export async function POST(request: NextRequest) {
       try {
         const client = new Anthropic();
         const response = await client.messages.create({
-          model: "claude-sonnet-4-6",
+          model: "claude-sonnet-5",
           max_tokens: 300,
+          thinking: { type: "disabled" },
           messages: [
             {
               role: "user",

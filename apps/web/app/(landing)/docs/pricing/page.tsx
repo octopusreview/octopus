@@ -121,6 +121,7 @@ export default function PricingPage() {
               <ModelRow model="Claude Fable 5" input="$10" output="$50" />
               <ModelRow model="Claude Opus 5" input="$5" output="$25" />
               <ModelRow model="Claude Opus 4.8" input="$5" output="$25" />
+              <ModelRow model="Claude Sonnet 5" input="$2" output="$10" />
               <ModelRow model="Claude Sonnet 4.6" input="$3" output="$15" />
               <ModelRow model="Claude Sonnet 4" input="$3" output="$15" />
               <ModelRow model="Claude Opus 4" input="$15" output="$75" />

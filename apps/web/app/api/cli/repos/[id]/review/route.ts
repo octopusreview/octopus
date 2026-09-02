@@ -60,7 +60,7 @@ export async function POST(
         return Response.json({ error: `${prLabel} not found` }, { status: 404 });
       }
 
-      await startReviewFlow({
+      const outcome = await startReviewFlow({
         provider: repo.provider as "github" | "gitlab" | "bitbucket",
         installationId: repo.installationId ?? undefined,
         organizationId: result.org.id,
@@ -76,6 +76,12 @@ export async function POST(
         triggerCommentBody: "",
       });
 
+      if (!outcome.started) {
+        // Blocked author / paused org / duplicate: tell the caller instead of
+        // claiming a review started that never will.
+        const status = outcome.reason === "already_in_progress" ? 409 : 422;
+        return Response.json({ error: outcome.message, reason: outcome.reason }, { status });
+      }
       return Response.json({ message: "Review started", prNumber: details.number });
     } catch (err) {
       console.error(`[cli] Failed to fetch ${repo.provider} ${prLabel} #${prNumber}:`, err);

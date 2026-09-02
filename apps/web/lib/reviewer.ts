@@ -172,7 +172,7 @@ async function emitReviewStatus(orgId: string, event: ReviewEvent) {
 
 // --- LLM-based reply intent classification ---
 
-const FEEDBACK_CLASSIFICATION_MODEL = "claude-sonnet-4-6";
+const FEEDBACK_CLASSIFICATION_MODEL = "claude-sonnet-5";
 
 // GitLab commit-status context name — the merge-gating check GitLab MRs can
 // require. Kept as one constant so every finalize path uses the same name
@@ -232,6 +232,7 @@ Reply ONLY with a JSON array of strings, one per entry, in order. Example: ["dis
       {
         model: FEEDBACK_CLASSIFICATION_MODEL,
         maxTokens: 256,
+        thinking: "disabled",
         system: systemPrompt,
         messages: [{ role: "user", content: userMessage }],
       },

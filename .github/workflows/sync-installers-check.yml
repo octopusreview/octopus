@@ -3,12 +3,20 @@ name: sync-installers-check
 on:
   pull_request:
     paths:
-      - "apps/cli/install/install.sh"
-      - "apps/cli/install/install.ps1"
+      - "apps/cli/install/**"
       - "apps/web/public/install.sh"
       - "apps/web/public/install.ps1"
       - "scripts/sync-installers.sh"
       - ".github/workflows/sync-installers-check.yml"
+  # The installers resolve "latest octp release" against the live GitHub API.
+  # Platform releases can change what that lookup sees without touching any
+  # file here (#775), so also probe the live API daily.
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   check:
@@ -17,3 +25,37 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4
       - name: Verify installer sync
         run: scripts/sync-installers.sh --check
+
+  # Fixture-backed lookup tests (bash + PowerShell; ubuntu runners ship pwsh).
+  lookup-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: latest
+      - name: Installer release-lookup tests
+        run: bun test install/install.test.ts
+        working-directory: apps/cli
+
+  # Live probe: both installers must resolve an octp-v* tag from the real API.
+  live-resolve:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      OCTOPUS_INSTALL_RESOLVE_ONLY: "1"
+      # install.ps1 derives its default dir from USERPROFILE, which Linux lacks.
+      OCTOPUS_INSTALL_DIR: ${{ runner.temp }}/octp
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4
+      - name: install.sh resolves a release
+        run: |
+          set -o pipefail
+          bash apps/cli/install/install.sh | tee out.txt
+          grep -q "^Latest release: octp-v" out.txt
+      - name: install.ps1 resolves a release
+        shell: pwsh
+        run: |
+          $out = & pwsh -NoProfile -File apps/cli/install/install.ps1
+          $out | Write-Host
+          if (-not ($out -match "^Latest release: octp-v")) { throw "install.ps1 did not resolve an octp-v* release" }

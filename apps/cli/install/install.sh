@@ -22,6 +22,9 @@
 #   OCTOPUS_INSTALL_DIR  Override install directory (default: $HOME/.octopus/bin)
 #   OCTOPUS_INSTALL_REPO Override the GitHub repo (default: octopusreview/octopus)
 #   OCTOPUS_INSTALL_TAG  Install a specific tag instead of latest (e.g. octp-v0.2.0)
+#   OCTOPUS_INSTALL_API  Override the GitHub API base URL (default: https://api.github.com)
+#   OCTOPUS_INSTALL_RESOLVE_ONLY=1  Print the resolved tag and exit without downloading
+#   GITHUB_TOKEN         Optional; authenticates the release lookup (higher API rate limit)
 #
 # Exit codes:
 #   0 success
@@ -32,6 +35,15 @@ set -euo pipefail
 REPO="${OCTOPUS_INSTALL_REPO:-octopusreview/octopus}"
 INSTALL_DIR="${OCTOPUS_INSTALL_DIR:-$HOME/.octopus/bin}"
 BINARY_NAME="octp"
+API_BASE="${OCTOPUS_INSTALL_API:-https://api.github.com}"
+# Releases are listed newest-first, 100 per page; MAX_PAGES bounds the walk.
+# 10 x 100 is also GitHub's listing cap (page 11 returns HTTP 422), so don't
+# raise it — an octp release older than 1000 platform releases needs a re-cut.
+MAX_PAGES=10
+auth_header=()
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  auth_header=(-H "Authorization: Bearer $GITHUB_TOKEN")
+fi
 
 # ── Step 1: detect platform ──────────────────────────────────────────────────
 
@@ -83,23 +95,55 @@ else
   # POSIX class is used everywhere else for the same portability reason
   # (GNU `\s` would silently match "s" on busybox grep / BSD sed).
   # Users testing prerelease tags can still override via OCTOPUS_INSTALL_TAG.
-  api_url="https://api.github.com/repos/${REPO}/releases?per_page=30"
-  tag=$(
-    curl -fsSL "$api_url" \
-      | sed 's/},{/}\
+  #
+  # Platform releases (v1.0.x) are cut far more often than octp releases, so
+  # the newest octp-v* tag is usually NOT on the first page. Walk the pages
+  # (newest first, 100 per request) until one turns up or the list ends (#775).
+  # A no-match grep exits 1, which under `pipefail` would abort the whole
+  # script silently — hence the `|| true`.
+  tag=""
+  page=1
+  while [ "$page" -le "$MAX_PAGES" ]; do
+    api_url="${API_BASE}/repos/${REPO}/releases?per_page=100&page=${page}"
+    if ! body=$(curl -fsSL --retry 3 --retry-delay 1 ${auth_header[@]+"${auth_header[@]}"} "$api_url"); then
+      echo "Error: GitHub API request failed: $api_url" >&2
+      echo "If you are rate-limited, set GITHUB_TOKEN to authenticate the lookup." >&2
+      exit 1
+    fi
+    # GitHub pretty-prints its JSON (one field per line). Strip ALL whitespace
+    # first so the `},{` object boundaries and the empty page `[]` are literal;
+    # nothing we match on (tag names, draft/prerelease flags) contains spaces.
+    body=$(printf '%s' "$body" | tr -d '[:space:]')
+    # An empty array means we walked past the last page.
+    if [ "$body" = "[]" ]; then
+      break
+    fi
+    tag=$(
+      printf '%s' "$body" \
+        | sed 's/},{/}\
 {/g' \
-      | grep -v '"draft"[[:space:]]*:[[:space:]]*true' \
-      | grep -v '"prerelease"[[:space:]]*:[[:space:]]*true' \
-      | grep -E '"tag_name"[[:space:]]*:[[:space:]]*"octp-v' \
-      | head -1 \
-      | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'
-  )
+        | grep -v '"draft"[[:space:]]*:[[:space:]]*true' \
+        | grep -v '"prerelease"[[:space:]]*:[[:space:]]*true' \
+        | grep -E '"tag_name"[[:space:]]*:[[:space:]]*"octp-v' \
+        | head -1 \
+        | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'
+    ) || true
+    if [ -n "$tag" ]; then
+      break
+    fi
+    page=$((page + 1))
+  done
   if [ -z "$tag" ]; then
     echo "Error: could not find any non-prerelease octp-v* on $REPO." >&2
     echo "If you are testing a prerelease, pin a tag with OCTOPUS_INSTALL_TAG=octp-v0.X.Y" >&2
     exit 1
   fi
   echo "Latest release: $tag"
+fi
+
+if [ "${OCTOPUS_INSTALL_RESOLVE_ONLY:-0}" = "1" ]; then
+  echo "Resolved $tag (OCTOPUS_INSTALL_RESOLVE_ONLY=1: nothing downloaded)."
+  exit 0
 fi
 
 # ── Step 3: download ─────────────────────────────────────────────────────────

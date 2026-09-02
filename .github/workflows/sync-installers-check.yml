@@ -45,7 +45,8 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
       OCTOPUS_INSTALL_RESOLVE_ONLY: "1"
       # install.ps1 derives its default dir from USERPROFILE, which Linux lacks.
-      OCTOPUS_INSTALL_DIR: ${{ runner.temp }}/octp
+      # (Literal path: the `runner` context is not available in job-level env.)
+      OCTOPUS_INSTALL_DIR: /tmp/octp
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4
       - name: install.sh resolves a release

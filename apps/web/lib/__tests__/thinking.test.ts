@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   resolveThinking,
+  resolveThinkingOverride,
   resolveEffort,
   asThinkingEffort,
   ALWAYS_THINKING_MAX_TOKENS_FLOOR,
@@ -88,5 +89,21 @@ describe("resolveEffort", () => {
     process.env.FABLE_THINKING_EFFORT = "bogus";
     expect(resolveEffort()).toBe(DEFAULT_THINKING_EFFORT);
     delete process.env.FABLE_THINKING_EFFORT;
+  });
+});
+
+describe("resolveThinkingOverride", () => {
+  it("turns thinking off when a caller asks and the model allows it", () => {
+    expect(resolveThinkingOverride("claude-sonnet-5", "disabled", undefined)).toEqual({ type: "disabled" });
+  });
+
+  it("keeps adaptive thinking on always-thinking models even if asked to disable", () => {
+    expect(resolveThinkingOverride("claude-fable-5-1", "disabled", { type: "adaptive" })).toEqual({ type: "adaptive" });
+    expect(resolveThinkingOverride("claude-opus-5", "disabled", { type: "adaptive" })).toEqual({ type: "adaptive" });
+  });
+
+  it("passes the resolved value through when nothing was requested", () => {
+    expect(resolveThinkingOverride("claude-sonnet-5", undefined, undefined)).toBeUndefined();
+    expect(resolveThinkingOverride("claude-fable-5-1", undefined, { type: "adaptive" })).toEqual({ type: "adaptive" });
   });
 });

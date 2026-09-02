@@ -221,7 +221,7 @@ export async function gatherVerificationContext(
 
 // ─── Two-Pass Validation ────────────────────────────────────────────────────
 
-export const VALIDATION_MODEL = "claude-sonnet-4-6";
+export const VALIDATION_MODEL = "claude-sonnet-5";
 
 export async function validateFindings(
   findings: InlineFinding[],
@@ -275,6 +275,8 @@ export async function validateFindings(
       // Raised from 2048 to fit per-finding citations/refutations without the
       // validator truncating its own JSON.
       maxTokens: 4096,
+      // Sonnet 5 defaults to adaptive thinking; this is a JSON-out utility call.
+      thinking: "disabled",
       messages: [
         {
           role: "user",

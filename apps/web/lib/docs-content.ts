@@ -213,7 +213,8 @@ Claude Fable 5 — $10 input / $50 output. Anthropic's Claude 5 frontier model; 
 Claude Opus 5 — $5 input / $25 output. The default review model on Octopus Cloud.
 Claude Opus 4.8 — $5 input / $25 output. Previous default; still available at the same price.
 Claude Opus 4 — $15 input / $75 output. Legacy high-quality review model.
-Claude Sonnet 4.6 and Claude Sonnet 4 — $3 input / $15 output. High quality and fast; Sonnet 4.6 is the default for self-hosted installs.
+Claude Sonnet 5 — $2 input / $10 output. Fast and strong; the default for self-hosted installs.
+Claude Sonnet 4.6 and Claude Sonnet 4 — $3 input / $15 output. Previous Sonnet generation.
 Claude Haiku 4.5 — $1 input / $5 output. Lightweight tasks like title generation.
 Gemini 2.5 Pro — $1.25 input / $10 output. Gemini 2.5 Flash — $0.15 input / $0.60 output.
 GPT-5.3 Codex — $1.75 input / $14 output.

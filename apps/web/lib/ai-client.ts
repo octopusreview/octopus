@@ -1,6 +1,6 @@
 import { prisma } from "@octopus/db";
 
-export const HARDCODED_REVIEW_MODEL = "claude-sonnet-4-6";
+export const HARDCODED_REVIEW_MODEL = "claude-sonnet-5";
 export const HARDCODED_EMBED_MODEL = "text-embedding-3-large";
 
 async function getPlatformDefault(category: "llm" | "embedding"): Promise<string | null> {

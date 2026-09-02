@@ -38,6 +38,22 @@ export function resolveEffort(): ThinkingEffort {
   return asThinkingEffort(process.env.FABLE_THINKING_EFFORT) ?? DEFAULT_THINKING_EFFORT;
 }
 
+/**
+ * A caller's explicit `thinking: "disabled"` wins on models that allow it.
+ * Always-thinking models (Fable/Mythos/Opus 5) reject thinking-off, so they
+ * keep whatever resolveThinking produced.
+ */
+export function resolveThinkingOverride(
+  model: string,
+  requested: "disabled" | undefined,
+  resolved: { type: "adaptive" } | undefined,
+): { type: "adaptive" } | { type: "disabled" } | undefined {
+  if (requested === "disabled" && !ALWAYS_THINKING_MODEL_RX.test(model)) {
+    return { type: "disabled" };
+  }
+  return resolved;
+}
+
 export type ResolvedThinking = {
   maxTokens: number;
   thinking?: { type: "adaptive" };

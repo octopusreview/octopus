@@ -8,7 +8,7 @@
  *
  * Options:
  *   --skip-llm       Skip LLM calls, only replay dedup on existing findings
- *   --model <id>     Model override (default: claude-sonnet-4-6)
+ *   --model <id>     Model override (default: claude-sonnet-5)
  *   --output <path>  Output HTML file path
  */
 
@@ -51,7 +51,7 @@ function parseArgs(): { prUrl: string; skipLlm: boolean; model: string; output?:
   const args = process.argv.slice(2);
   let prUrl = "";
   let skipLlm = false;
-  let model = "claude-sonnet-4-6";
+  let model = "claude-sonnet-5";
   let output: string | undefined;
 
   for (let i = 0; i < args.length; i++) {

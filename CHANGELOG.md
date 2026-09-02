@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.126] - 2026-09-02
+
 ### Fixed
 - Triggering a review from the CLI or the editor plugin (`octopus_review_pr`) on a pull request whose author is blocked, whose organization has reviews paused, or which is already being reviewed now returns that reason (HTTP 422 / 409) instead of "Review started".
 - Pricing docs said a 20% platform fee is applied on top of provider costs. Octopus Cloud bills usage at 2x the provider's list price; the docs and the pricing page now say so.

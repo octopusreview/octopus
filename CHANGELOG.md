@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.127] - 2026-09-02
+
+### Fixed
+- The native CLI installer (`curl -fsSL https://octopus-review.ai/install.sh | bash` and the PowerShell equivalent) works again. It only looked at the 30 most recent GitHub releases when resolving the latest `octp` build, and platform releases had pushed the CLI release out of that window, so every install failed with no error message. The lookup now walks the release list, skips draft and prerelease builds correctly, fails with a clear message when something is wrong, and is checked daily in CI against the live API.
+
 ## [1.0.126] - 2026-09-02
 
 ### Fixed

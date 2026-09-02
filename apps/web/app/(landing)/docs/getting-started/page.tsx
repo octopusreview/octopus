@@ -287,7 +287,7 @@ export default function GettingStartedPage() {
         <div className="mb-4 space-y-2">
           <SettingRow
             title="AI Provider"
-            description="Choose between Claude and OpenAI, or bring your own API keys."
+            description="Choose between Claude, OpenAI, Google Gemini, and Qwen, or bring your own API keys."
           />
           <SettingRow
             title="Knowledge Base"

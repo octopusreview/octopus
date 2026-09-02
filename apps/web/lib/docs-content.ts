@@ -71,7 +71,7 @@ Q: Does Octopus replace human reviewers?
 A: No. Octopus augments your team's review process. It catches bugs, security issues, and style inconsistencies so your human reviewers can focus on architecture, design decisions, and business logic.
 
 Q: Is there a free tier?
-A: Yes! Every organization gets free credits to start. You can also bring your own API keys (Anthropic, OpenAI, Google, Cohere) to avoid credit costs entirely.`,
+A: Yes! Every organization gets free credits to start. You can also bring your own API keys (Anthropic, OpenAI, Google, Alibaba Cloud Model Studio, Cohere) to avoid credit costs entirely.`,
       },
     ],
   },
@@ -118,7 +118,7 @@ Key commands: octp chat (chat with your codebase), octp review --pr <number> (re
       },
       {
         heading: "5. Customize Your Setup",
-        text: `AI Provider: Choose between Claude (Anthropic), OpenAI, and Google Gemini for reviews and chat. Or bring your own API keys.
+        text: `AI Provider: Choose between Claude (Anthropic), OpenAI, Google Gemini, and Qwen (Alibaba Cloud Model Studio) for reviews and chat. Or bring your own API keys.
 Knowledge Base: Upload documents, coding guidelines, and architecture decisions. Octopus references these during reviews.
 .octopusignore: Exclude files and directories from indexing and review (same syntax as .gitignore).
 Spend Limits: Set monthly spending caps per organization to control costs.
@@ -202,7 +202,7 @@ Usage-Based: Pay only for what you use. Purchase credits as needed or set up aut
       },
       {
         heading: "Bring Your Own Keys (BYOK)",
-        text: `You can bring your own API keys for Anthropic (Claude), OpenAI, Google, and Cohere. When using your own keys, AI operations don't consume Octopus credits — you pay the providers directly at their rates.
+        text: `You can bring your own API keys for Anthropic (Claude), OpenAI, Google, Alibaba Cloud Model Studio (Qwen), and Cohere. When using your own keys, AI operations don't consume Octopus credits — you pay the providers directly at their rates.
 This is ideal for teams that already have API agreements with AI providers or want full control over costs.`,
       },
       {
@@ -218,6 +218,7 @@ Claude Sonnet 4.6 and Claude Sonnet 4 — $3 input / $15 output. Previous Sonnet
 Claude Haiku 4.5 — $1 input / $5 output. Lightweight tasks like title generation.
 Gemini 2.5 Pro — $1.25 input / $10 output. Gemini 2.5 Flash — $0.15 input / $0.60 output.
 GPT-5.3 Codex — $1.75 input / $14 output.
+Qwen3.8-Max — $2 input / $6 output. Alibaba Cloud Model Studio (Qwen), via the DashScope API; BYOK supported.
 Embeddings: text-embedding-3-large ($0.13) and text-embedding-3-small ($0.02).
 Cohere rerank is used for re-ranking search results.
 Prompt caching reduces costs: cached reads are billed at 10% of the input price.`,
@@ -353,7 +354,7 @@ Q: Can I self-host Octopus?
 A: Yes. Octopus is fully self-hostable with Docker. Your code never leaves your infrastructure.
 
 Q: Which AI models are used?
-A: Claude (Anthropic), OpenAI (GPT), and Google Gemini are all supported review/chat models, selectable per organization — and you can bring your own key for any of them (a Google Gemini API key works for reviews, not just embeddings). OpenAI text-embedding-3-large is used for embeddings. Cohere Rerank is used for search re-ranking.
+A: Claude (Anthropic), OpenAI (GPT), Google Gemini, and Qwen (Alibaba Cloud Model Studio) are all supported review/chat models, selectable per organization — and you can bring your own key for any of them (a Google Gemini API key works for reviews, not just embeddings). OpenAI text-embedding-3-large is used for embeddings. Cohere Rerank is used for search re-ranking.
 
 Q: Is my code used for AI training?
 A: No. Anthropic, OpenAI, and Google do not use API inputs to train their models. Your code is never used to train AI models.`,
@@ -387,7 +388,7 @@ Q: Is there a free tier?
 A: Yes. Every organization gets free credits. No credit card required.
 
 Q: Can I use my own API keys?
-A: Yes. Bring Your Own Keys (BYOK) for Anthropic, OpenAI, Google, and Cohere. No credits consumed.
+A: Yes. Bring Your Own Keys (BYOK) for Anthropic, OpenAI, Google, Alibaba Cloud Model Studio, and Cohere. No credits consumed.
 
 Q: How do spend limits work?
 A: Set a monthly cap per organization. Operations are paused when the limit is reached.`,
@@ -419,7 +420,7 @@ A: Octopus uses WebSocket connections (via Pubby SDK) to push real-time updates:
     sections: [
       {
         heading: "Terms",
-        text: `BYO Keys (Bring Your Own Keys): Use your own API keys for Anthropic, OpenAI, Google, or Cohere instead of Octopus credits. Configure in organization settings.
+        text: `BYO Keys (Bring Your Own Keys): Use your own API keys for Anthropic, OpenAI, Google, Alibaba Cloud Model Studio, or Cohere instead of Octopus credits. Configure in organization settings.
 
 Codebase Indexing: The process of cloning a repository, splitting code into chunks, creating vector embeddings, and storing them in Qdrant for semantic search.
 

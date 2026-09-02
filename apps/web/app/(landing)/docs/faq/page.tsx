@@ -18,7 +18,7 @@ const generalFaqs = [
   },
   {
     q: "How does Octopus review my code?",
-    a: "When a pull request is opened, Octopus fetches the diff, retrieves relevant context from your indexed codebase using vector search, and sends it to an LLM (Claude, OpenAI, or Google Gemini) for analysis. The results are posted as PR comments with severity indicators: 🔴 Critical, 🟠 Major, 🟡 Minor, 🔵 Suggestion, 💡 Tip.",
+    a: "When a pull request is opened, Octopus fetches the diff, retrieves relevant context from your indexed codebase using vector search, and sends it to an LLM (Claude, OpenAI, Google Gemini, or Qwen) for analysis. The results are posted as PR comments with severity indicators: 🔴 Critical, 🟠 Major, 🟡 Minor, 🔵 Suggestion, 💡 Tip.",
   },
   {
     q: "Which programming languages does Octopus support?",
@@ -45,7 +45,7 @@ const securityFaqs = [
   },
   {
     q: "Which AI models process my code?",
-    a: "Octopus supports Anthropic Claude, OpenAI (GPT), and Google Gemini as review models. You can configure which your organization uses, or bring your own API key (BYOK) for any of them — including a Google Gemini key — so requests go directly to the provider without any intermediary. (Embeddings use OpenAI, and Cohere is used for search re-ranking.)",
+    a: "Octopus supports Anthropic Claude, OpenAI (GPT), Google Gemini, and Qwen (Alibaba Cloud Model Studio) as review models. You can configure which your organization uses, or bring your own API key (BYOK) for any of them — including a Google Gemini key — so requests go directly to the provider without any intermediary. (Embeddings use OpenAI, and Cohere is used for search re-ranking.)",
   },
   {
     q: "Does Octopus train AI models on my code?",

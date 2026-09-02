@@ -52,6 +52,14 @@ const SUBPROCESSORS: Subprocessor[] = [
     url: "https://policies.google.com/privacy",
   },
   {
+    name: "Alibaba Cloud (Model Studio)",
+    purpose: "Qwen LLM for code review",
+    dataAccessed: "Diff content + retrieved code context for orgs that use Qwen with platform keys (not used when org has a BYOK DashScope key, which routes to their own account)",
+    location: "Singapore (Alibaba Cloud international region)",
+    required: "conditional",
+    url: "https://www.alibabacloud.com/help/en/legal/latest/privacy-policy",
+  },
+  {
     name: "Cohere",
     purpose: "Rerank API for retrieval result reranking",
     dataAccessed: "Repository chunk previews and the query string used for retrieval",

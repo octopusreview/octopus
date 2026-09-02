@@ -79,13 +79,13 @@ export default function PricingPage() {
                 Use your own API keys, pay zero credits
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-[#888]">
-                Configure your own Anthropic, OpenAI, Google, or Cohere API keys
-                in the organization settings. When you bring your own keys,
+                Configure your own Anthropic, OpenAI, Google, Alibaba Cloud,
+                or Cohere API keys in the organization settings. When you bring your own keys,
                 Octopus routes requests directly to your provider account and no
                 credits are deducted.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                {["Anthropic", "OpenAI", "Google AI", "Cohere"].map((p) => (
+                {["Anthropic", "OpenAI", "Google AI", "Alibaba Cloud", "Cohere"].map((p) => (
                   <span
                     key={p}
                     className="rounded-md border border-white/[0.06] bg-white/[0.03] px-2.5 py-1 text-xs text-[#888]"
@@ -129,6 +129,7 @@ export default function PricingPage() {
               <ModelRow model="Gemini 2.5 Pro" input="$1.25" output="$10" />
               <ModelRow model="Gemini 2.5 Flash" input="$0.15" output="$0.60" />
               <ModelRow model="GPT-5.3 Codex" input="$1.75" output="$14" />
+              <ModelRow model="Qwen3.8-Max" input="$2" output="$6" />
               <ModelRow model="Embeddings (text-embedding-3-large)" input="$0.13" output="—" />
               <ModelRow model="Embeddings (text-embedding-3-small)" input="$0.02" output="—" last />
             </tbody>

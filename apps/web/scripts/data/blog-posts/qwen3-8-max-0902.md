@@ -5,6 +5,7 @@ excerpt: Qwen3.8-Max-0902 just topped Arena's WebDev board, and it can now revie
 category: Product
 tags: [Qwen3.8-Max-0902, Qwen, Models, Code Review, Alibaba Cloud, Pricing]
 authorName: Octopus Team
+coverImageUrl: https://cdn.octopus-review.ai/blog/qwen3-8-max-0902/cover.png
 ---
 
 Alibaba released Qwen3.8-Max-0902 today, and it is already in Octopus. You can pick it as the review model for an organization or a single repository, on our cloud or with your own Alibaba Cloud Model Studio key.

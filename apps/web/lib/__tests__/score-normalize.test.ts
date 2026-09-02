@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { normalizeScoreDenominators, reconcileScoreTable } from "@/lib/review-helpers";
+import { normalizeScoreDenominators, reconcileScoreTable, normalizeLastReviewedCommit } from "@/lib/review-helpers";
 
 const scoreSection = (rows: string) => `## 🐙 Octopus Review — PR #42
 
@@ -129,5 +129,25 @@ describe("reconcileScoreTable", () => {
   it("no-ops when there is no Score table", () => {
     const body = "### Summary\nAll good, nothing to score.\n";
     expect(reconcileScoreTable(body, noFindings)).toBe(body);
+  });
+});
+
+describe("normalizeLastReviewedCommit", () => {
+  const sha = "9e794def0fbfe8df5f37a871fcf65bbb6ee5421a";
+
+  it("replaces a short SHA with the full reviewed head", () => {
+    const body = "### Diagram\n(none)\n\nLast reviewed commit: 9e794de\n\n### Checklist";
+    expect(normalizeLastReviewedCommit(body, sha)).toBe(`### Diagram\n(none)\n\nLast reviewed commit: ${sha}\n\n### Checklist`);
+  });
+
+  it("replaces a paraphrased or placeholder value too", () => {
+    const body = "Last reviewed commit: current head";
+    expect(normalizeLastReviewedCommit(body, sha)).toBe(`Last reviewed commit: ${sha}`);
+  });
+
+  it("leaves the body alone without the line or without a valid head", () => {
+    expect(normalizeLastReviewedCommit("### Checklist\n- [ ] x", sha)).toBe("### Checklist\n- [ ] x");
+    expect(normalizeLastReviewedCommit("Last reviewed commit: 9e794de", null)).toBe("Last reviewed commit: 9e794de");
+    expect(normalizeLastReviewedCommit("Last reviewed commit: 9e794de", "not-a-sha")).toBe("Last reviewed commit: 9e794de");
   });
 });

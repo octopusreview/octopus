@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The review comment's `Last reviewed commit:` line is now written from the pull request's recorded head SHA (full 40 characters) instead of whatever the model wrote; re-reviews sometimes emitted the 7-character form, which merge gates that bind a review to an exact commit reject as malformed.
+
 ## [1.0.127] - 2026-09-02
 
 ### Fixed

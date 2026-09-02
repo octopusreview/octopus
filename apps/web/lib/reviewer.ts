@@ -78,6 +78,7 @@ import {
   generateVerificationQueries,
   resolveIndexClaimWait,
   normalizeScoreDenominators,
+  normalizeLastReviewedCommit,
   reconcileScoreTable,
   shouldFailReviewCheck,
   formatPastReviews,
@@ -1866,6 +1867,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
 
     // Fix wrong score denominators ("4/4" → "4/5") in the Score table
     reviewBody = normalizeScoreDenominators(reviewBody);
+    reviewBody = normalizeLastReviewedCommit(reviewBody, pr.headSha);
 
     // Strip empty diagram sections: remove "### Diagram" when there's no meaningful mermaid content.
     // Matches from "### Diagram" up to the next ### heading or end of string.

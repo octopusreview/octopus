@@ -208,7 +208,7 @@ If this PR contains meaningful code changes, choose the BEST diagram type (see <
 ```
 If the PR only changes documentation, config files, or text content (README, markdown, comments, .env examples, etc.), OMIT this section entirely — no diagram needed.
 
-Last reviewed commit: abc1234
+Last reviewed commit: <full 40-character commit SHA of the reviewed head>
 
 ### Checklist
 - [ ] No hardcoded secrets or credentials

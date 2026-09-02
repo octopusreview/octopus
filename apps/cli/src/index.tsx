@@ -22,8 +22,9 @@ import { accountCommand } from "./commands/account.js";
 import { ensureProfilesMigrated, isValidProfileName, ensureProfile, setActiveProfile } from "./lib/profile.js";
 import { setActiveProfileOverride } from "./lib/paths.js";
 import { flagValue } from "./lib/args.js";
+import pkg from "../package.json" with { type: "json" };
 
-const VERSION = "0.2.0";
+const VERSION = pkg.version;
 
 /** Remove a `--flag <value>` pair from argv (the value is dropped only when the
  *  next token isn't itself a flag). Used to peel the global --account/--profile

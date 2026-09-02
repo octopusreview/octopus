@@ -2,10 +2,11 @@ import { loadCredentials } from "../lib/credentials.js";
 import { getJson } from "../lib/api.js";
 import { hasFlag } from "../lib/args.js";
 import { error, info, success, c } from "../lib/output.js";
+import pkg from "../../package.json" with { type: "json" };
 
-// Must track VERSION in index.tsx. The compiled binary has no package.json to
-// read from at runtime, so the current version is hardcoded here.
-const CURRENT = "0.1.0";
+// Version comes from package.json, inlined by the bundler at compile time —
+// the compiled binary has no package.json to read from at runtime.
+const CURRENT = pkg.version;
 
 const RELEASES_URL = "https://api.github.com/repos/octopusreview/octopus/releases";
 const TAG_PREFIX = "octp-v";

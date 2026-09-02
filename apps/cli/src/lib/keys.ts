@@ -35,6 +35,11 @@ export const KEY_HINTS: Record<string, KeyHint> = {
     dashboardUrl: "https://console.x.ai",
     minLength: 20,
   },
+  alibaba: {
+    placeholder: "sk-…",
+    dashboardUrl: "https://modelstudio.console.alibabacloud.com/?tab=model#/api-key",
+    minLength: 20,
+  },
   openrouter: {
     placeholder: "sk-or-…",
     dashboardUrl: "https://openrouter.ai/keys",

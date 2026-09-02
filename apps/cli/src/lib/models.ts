@@ -43,6 +43,9 @@ export const MODELS_BY_PROVIDER: Record<string, ModelInfo[]> = {
     { modelId: "gemini-2.5-pro", displayName: "Gemini 2.5 Pro", inputPrice: 1.25, outputPrice: 10, isDefault: true },
     { modelId: "gemini-2.5-flash", displayName: "Gemini 2.5 Flash", inputPrice: 0.15, outputPrice: 0.6 },
   ],
+  alibaba: [
+    { modelId: "qwen3.8-max-0902", displayName: "Qwen3.8-Max-0902", inputPrice: 2, outputPrice: 6, isDefault: true },
+  ],
   // Coming-soon providers: empty until their model lists are seeded by the
   // backend. The CLI handles the empty case with a friendly message.
   "claude-code": [],

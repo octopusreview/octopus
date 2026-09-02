@@ -45,6 +45,13 @@ export const PROVIDERS: ProviderInfo[] = [
     blurb: "Direct Google Generative AI API. BYOK.",
     status: "ready",
   },
+  {
+    slug: "alibaba",
+    displayName: "Alibaba Cloud Model Studio",
+    type: "direct",
+    blurb: "OpenAI-compatible DashScope API (Qwen models). BYOK.",
+    status: "ready",
+  },
 
   // Coming soon — tracked under Workstream 5.
   {

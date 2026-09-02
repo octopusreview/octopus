@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Alibaba Cloud Model Studio as a review provider: Qwen models (starting with `qwen3.8-max-0902`, $2/$6 per 1M tokens) via the OpenAI-compatible DashScope endpoint, with per-organization BYOK, `DASHSCOPE_API_KEY` as the platform key and `DASHSCOPE_BASE_URL` to select the China endpoint. Thinking mode follows the model default and can be switched off per call.
+
 ### Changed
 - New native CLI release: `octp` 0.3.0 — re-run the installer to pick it up. The binary now ships the current model catalog (Claude Fable 5 max tier; Claude Opus 4.8 replaces 4.6), and the repository wizard opens the signed GitHub App install flow.
 

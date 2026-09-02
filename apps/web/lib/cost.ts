@@ -39,6 +39,8 @@ const FALLBACK_PRICING: Record<string, ModelPricing> = {
   "claude-code:sonnet": { input: 0, output: 0 },
   // OpenRouter Hermes 3 8B — estimate (~$0.10/$0.15 per 1M in/out).
   "openrouter/nousresearch/hermes-3-llama-3.1-8b": { input: 0.1, output: 0.15 },
+  // Alibaba Cloud Model Studio — Qwen3.8-Max list price (international region).
+  "qwen3.8-max-0902": { input: 2, output: 6 },
   "text-embedding-3-large": { input: 0.13, output: 0 },
   "rerank-v3.5": { input: 2000.0, output: 0 },
 };
@@ -147,6 +149,7 @@ function orgOwnsKeyForProvider(
     cohereApiKey: string | null;
     grokApiKey: string | null;
     openrouterApiKey: string | null;
+    alibabaApiKey: string | null;
     claudeCodeApiKey: string | null;
     claudeCodeAuthMode: string | null;
   },
@@ -159,6 +162,7 @@ function orgOwnsKeyForProvider(
     case "cohere": return !!org.cohereApiKey;
     case "grok": return !!org.grokApiKey;
     case "openrouter": return !!org.openrouterApiKey;
+    case "alibaba": return !!org.alibabaApiKey;
     case "claude-code":
       return !!org.claudeCodeApiKey || org.claudeCodeAuthMode === "subscription";
     // Operator-infra / local-agent / gateways / test doubles: never platform-billed.
@@ -188,6 +192,7 @@ export async function getOrgSpendLimitStatus(
       cohereApiKey: true,
       grokApiKey: true,
       openrouterApiKey: true,
+      alibabaApiKey: true,
       claudeCodeApiKey: true,
       claudeCodeAuthMode: true,
       monthlySpendLimitUsd: true,

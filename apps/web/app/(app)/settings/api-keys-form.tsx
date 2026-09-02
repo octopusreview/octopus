@@ -23,6 +23,7 @@ export function ApiKeysForm({
   cohereApiKey,
   grokApiKey,
   openrouterApiKey,
+  alibabaApiKey,
   isOwner,
 }: {
   // Masked previews (e.g. "sk-abc••••••••wxyz"), not full keys. The server masks
@@ -33,12 +34,13 @@ export function ApiKeysForm({
   cohereApiKey: string | null;
   grokApiKey: string | null;
   openrouterApiKey: string | null;
+  alibabaApiKey: string | null;
   isOwner: boolean;
 }) {
   const [state, formAction, pending] = useActionState(updateApiKeys, {});
   const [removing, startTransition] = useTransition();
 
-  function handleRemove(keyField: "openaiApiKey" | "anthropicApiKey" | "googleApiKey" | "cohereApiKey" | "grokApiKey" | "openrouterApiKey") {
+  function handleRemove(keyField: "openaiApiKey" | "anthropicApiKey" | "googleApiKey" | "cohereApiKey" | "grokApiKey" | "openrouterApiKey" | "alibabaApiKey") {
     startTransition(async () => {
       try {
         await removeApiKey(keyField);
@@ -280,6 +282,43 @@ export function ApiKeysForm({
             </p>
           </div>
 
+          <Separator />
+
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="alibabaApiKey">Alibaba Cloud Model Studio</Label>
+              {alibabaApiKey ? (
+                <Badge variant="outline" className="gap-1 text-[10px] font-normal">
+                  {alibabaApiKey}
+                  {isOwner && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemove("alibabaApiKey")}
+                      disabled={removing}
+                      className="text-muted-foreground hover:text-destructive -mr-1 ml-0.5"
+                    >
+                      <IconX size={12} />
+                    </button>
+                  )}
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="text-[10px] font-normal">
+                  Not set
+                </Badge>
+              )}
+            </div>
+            <Input
+              id="alibabaApiKey"
+              name="alibabaApiKey"
+              type="password"
+              placeholder="sk-..."
+              disabled={!isOwner}
+              autoComplete="off"
+            />
+            <p className="text-xs text-muted-foreground">
+              Required for Qwen models.
+            </p>
+          </div>
           {state.error && (
             <p className="text-sm text-destructive">{state.error}</p>
           )}

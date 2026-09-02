@@ -737,6 +737,8 @@ async function main() {
     // OpenRouter — the "openrouter/…"-namespaced id forces OpenRouter routing.
     // Price is an estimate (~$0.10/$0.15 per 1M in/out for Hermes 3 8B).
     { modelId: "openrouter/nousresearch/hermes-3-llama-3.1-8b", displayName: "Nous Hermes 3 8B (OpenRouter)", provider: "openrouter", category: "llm", inputPrice: 0.1, outputPrice: 0.15, sortOrder: 10 },
+    // Alibaba Cloud Model Studio — "qwen3.8-max"-prefixed ids route to DashScope.
+    { modelId: "qwen3.8-max-0902", displayName: "Qwen3.8-Max-0902", provider: "alibaba", category: "llm", inputPrice: 2, outputPrice: 6, sortOrder: 11 },
     // Ollama (local — runs on the operator's own machine, zero cost)
     { modelId: "ollama:qwen2.5-coder:32b", displayName: "Qwen 2.5 Coder 32B (Ollama)", provider: "ollama", category: "llm", inputPrice: 0, outputPrice: 0, sortOrder: 20 },
     { modelId: "ollama:llama3.3", displayName: "Llama 3.3 (Ollama)", provider: "ollama", category: "llm", inputPrice: 0, outputPrice: 0, sortOrder: 21 },

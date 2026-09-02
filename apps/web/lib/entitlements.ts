@@ -38,6 +38,7 @@ type ProviderKeyFields = {
   cohereApiKey: string | null;
   grokApiKey: string | null;
   openrouterApiKey: string | null;
+  alibabaApiKey: string | null;
   claudeCodeApiKey: string | null;
 };
 
@@ -49,6 +50,7 @@ function hasOwnProviderKey(org: ProviderKeyFields): boolean {
       org.cohereApiKey ||
       org.grokApiKey ||
       org.openrouterApiKey ||
+      org.alibabaApiKey ||
       org.claudeCodeApiKey,
   );
 }
@@ -95,6 +97,7 @@ export async function getOrgEntitlements(orgId: string): Promise<OrgEntitlements
       cohereApiKey: true,
       grokApiKey: true,
       openrouterApiKey: true,
+      alibabaApiKey: true,
       claudeCodeApiKey: true,
       liveTelemetryEnabled: true,
       allowVendorMemberVisibility: true,

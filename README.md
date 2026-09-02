@@ -33,7 +33,7 @@ Octopus analyzes pull and merge requests via GitHub, GitLab, and Bitbucket webho
 - **Repo Config Files** — Honor `.octopus.md`, `AGENTS.md`, or `CLAUDE.md` as repo-scoped review rules, extracted in a sandboxed pass
 - **Slack Integration** — Ask questions about your codebase directly from Slack
 - **Linear & Jira Integration** — Create issues from review findings with one click
-- **CLI** — `@octp/cli` for local review runs, plus a Claude Code skill for terminal workflows
+- **CLI** — `octp`, a native single-binary CLI for local review runs (`curl -fsSL https://octopus-review.ai/install.sh | bash`), plus a Claude Code skill for terminal workflows
 - **Review Output Language** — Org-level setting for the prose language of summaries and findings (code stays in source language)
 - **Repository Graph** — Structural and semantic edges across your codebase
 - **Real-time Updates** — Live dashboard updates via WebSocket (Pubby)
@@ -57,7 +57,7 @@ Octopus analyzes pull and merge requests via GitHub, GitLab, and Bitbucket webho
 octopus/
 ├── apps/
 │   ├── web/              # Next.js web application
-│   └── cli/              # octp CLI (@octp/cli)
+│   └── cli/              # octp CLI (native single binary)
 ├── packages/
 │   └── db/               # Prisma schema & shared DB client
 └── tools/

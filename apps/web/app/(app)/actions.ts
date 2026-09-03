@@ -10,6 +10,7 @@ import { pubby } from "@/lib/pubby";
 import { writeSyncLog, deleteSyncLogs } from "@/lib/elasticsearch";
 import { listInstallationRepos } from "@/lib/github";
 import { listWorkspaceRepos } from "@/lib/bitbucket";
+import { grantDeferredWelcomeCredit, WELCOME_DEFERRED_REASON } from "@/lib/org-create";
 import type { LogLevel } from "@/lib/indexer";
 import { createAbortController, abortIndexing } from "@/lib/indexing-abort";
 import { runIndexingInBackground } from "@/lib/indexing-runner";
@@ -123,13 +124,25 @@ export async function createOrganization(
       // creates can't double-grant). A WITHHELD first org still consumes the
       // bonus, so it can't be retried after an org hard-delete. Credits are
       // added only when the claim wins AND the risk score clears.
+      //
+      // Users with no OAuth credential (magic-link signups have no `accounts`
+      // row) get neither claim nor grant here — same gate as createOrgForUser:
+      // their bonus is DEFERRED to the first repository connect
+      // (grantDeferredWelcomeCredit), marked on the org via
+      // WELCOME_DEFERRED_REASON.
       let grantBonus = false;
+      let deferred = false;
       if (firstOrg) {
-        const claim = await tx.user.updateMany({
-          where: { id: user.id, welcomeGrantedAt: null },
-          data: { welcomeGrantedAt: new Date() },
-        });
-        grantBonus = claim.count === 1 && welcome.grant;
+        const hasOauthAccount = (await tx.account.count({ where: { userId: user.id } })) > 0;
+        if (hasOauthAccount) {
+          const claim = await tx.user.updateMany({
+            where: { id: user.id, welcomeGrantedAt: null },
+            data: { welcomeGrantedAt: new Date() },
+          });
+          grantBonus = claim.count === 1 && welcome.grant;
+        } else {
+          deferred = true;
+        }
       }
 
       const org = await tx.organization.create({
@@ -144,7 +157,7 @@ export async function createOrganization(
           },
           ...(firstOrg && {
             welcomeRiskScore: welcome.score,
-            welcomeRiskReason: welcome.reason,
+            welcomeRiskReason: deferred ? WELCOME_DEFERRED_REASON : welcome.reason,
           }),
           ...(grantBonus && {
             freeCreditBalance: WELCOME_FREE_CREDITS,
@@ -159,11 +172,14 @@ export async function createOrganization(
           }),
         },
       });
-      return { org, firstOrg, granted: grantBonus };
+      return { org, firstOrg, granted: grantBonus, deferred };
     });
     org = created.org;
     // Surface a silently-withheld (or race-lost) welcome bonus in the logs.
-    logWelcomeOutcome({ userId: user.id, orgId: org.id, firstOrg: created.firstOrg, granted: created.granted, decision: welcome });
+    // A deferred grant isn't withheld — it's pending first repo connect.
+    if (!created.deferred) {
+      logWelcomeOutcome({ userId: user.id, orgId: org.id, firstOrg: created.firstOrg, granted: created.granted, decision: welcome });
+    }
   } catch (err) {
     if (err instanceof Error && err.message === "ORG_LIMIT_REACHED") {
       return { error: `You can own at most ${MAX_OWNED_ORGS_PER_USER} organizations.` };
@@ -687,6 +703,11 @@ export async function syncRepos(): Promise<{ synced: number; removed: number; er
 
   if (installationIds.size === 0 && !bbIntegration) {
     return { synced: 0, removed: 0, error: "No GitHub or Bitbucket integration linked." };
+  }
+
+  // First repo connect releases a deferred welcome grant (no-op otherwise).
+  if (synced > 0) {
+    await grantDeferredWelcomeCredit(orgId);
   }
 
   revalidatePath("/");

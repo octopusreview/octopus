@@ -10,6 +10,7 @@ import {
   userCanAccessInstallation,
 } from "@/lib/github";
 import { getGithubAppConfig } from "@/lib/github-app-config";
+import { grantDeferredWelcomeCredit } from "@/lib/org-create";
 import { getRedis } from "@/lib/redis";
 import { writeAuditLog } from "@/lib/audit";
 import {
@@ -169,6 +170,10 @@ async function bindAndSyncInstallation(
           organizationId,
         },
       });
+    }
+    // First repo connect releases a deferred welcome grant (no-op otherwise).
+    if (ghRepos.length > 0) {
+      await grantDeferredWelcomeCredit(organizationId);
     }
   } catch (error) {
     console.error("[github/callback] repo sync error:", error);

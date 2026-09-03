@@ -14,6 +14,7 @@ import {
 } from "@/lib/github";
 import { startReviewFlow } from "@/lib/webhook-shared";
 import { getGithubAppConfig } from "@/lib/github-app-config";
+import { grantDeferredWelcomeCredit } from "@/lib/org-create";
 import {
   observeGithubWebhookDeliveryBestEffort,
   resolveGithubWebhookTenant,
@@ -182,6 +183,11 @@ export async function POST(request: NextRequest) {
             data: { isActive: false },
           });
         }
+
+        // First repo connect releases a deferred welcome grant (no-op otherwise).
+        if (added.length > 0) {
+          await grantDeferredWelcomeCredit(org.id);
+        }
       } else {
         // Full sync on installation created/updated
         const ghRepos = await listInstallationRepos(installationId);
@@ -215,6 +221,11 @@ export async function POST(request: NextRequest) {
               organizationId: org.id,
             },
           });
+        }
+
+        // First repo connect releases a deferred welcome grant (no-op otherwise).
+        if (ghRepos.length > 0) {
+          await grantDeferredWelcomeCredit(org.id);
         }
       }
 

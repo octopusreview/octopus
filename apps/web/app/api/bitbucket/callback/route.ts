@@ -5,6 +5,7 @@ import { prisma } from "@octopus/db";
 import { hasOrgPermission } from "@/lib/org-permissions";
 import { auth } from "@/lib/auth";
 import { listWorkspaceRepos, createWebhook } from "@/lib/bitbucket";
+import { grantDeferredWelcomeCredit } from "@/lib/org-create";
 import { encryptString } from "@/lib/crypto";
 import {
   integrationOAuthStateCookie,
@@ -241,6 +242,10 @@ export async function GET(request: NextRequest) {
           isActive: true,
         },
       });
+    }
+    // First repo connect releases a deferred welcome grant (no-op otherwise).
+    if (bbRepos.length > 0) {
+      await grantDeferredWelcomeCredit(orgId);
     }
     debugLog.push(`repos synced: ${bbRepos.length}`);
     console.log(`[bitbucket-callback] Synced ${bbRepos.length} repos for workspace ${workspaceSlug}`);

@@ -5,6 +5,7 @@ import { prisma } from "@octopus/db";
 import { hasOrgPermission } from "@/lib/org-permissions";
 import { auth } from "@/lib/auth";
 import { listNamespaceProjects, createProjectWebhook } from "@/lib/gitlab";
+import { grantDeferredWelcomeCredit } from "@/lib/org-create";
 import { decryptJson, encryptString } from "@/lib/crypto";
 
 const GITLAB_OAUTH_INIT_COOKIE = "gitlab_oauth_init";
@@ -268,6 +269,10 @@ export async function GET(request: NextRequest) {
       } catch (err) {
         console.warn(`[gitlab-callback] Hook creation failed for ${project.path_with_namespace}:`, err);
       }
+    }
+    // First repo connect releases a deferred welcome grant (no-op otherwise).
+    if (projects.length > 0) {
+      await grantDeferredWelcomeCredit(orgId);
     }
     debugLog.push(`projects synced: ${projectCount}`);
     debugLog.push(`hooks created: ${hookCount}`);

@@ -1816,6 +1816,7 @@ export function RepositoriesContent({
   totalPages = 1,
   totalCount = 0,
   bitbucketWorkspaceSlug = null,
+  welcomePending = false,
 }: {
   repos: Repo[];
   orgId: string;
@@ -1834,6 +1835,7 @@ export function RepositoriesContent({
   totalPages?: number;
   totalCount?: number;
   bitbucketWorkspaceSlug?: string | null;
+  welcomePending?: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -2089,6 +2091,11 @@ export function RepositoriesContent({
               <p className="text-sm text-muted-foreground">
                 {currentSearch ? "No repositories match your search" : "No repositories yet"}
               </p>
+              {!currentSearch && welcomePending && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Connect a repository to unlock your welcome credits.
+                </p>
+              )}
               {!currentSearch && (
                 <div className="mt-4 flex flex-col items-center gap-2">
                   {githubAppSlug && (

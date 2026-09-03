@@ -5,6 +5,7 @@ import { getGithubAppConfig } from "@/lib/github-app-config";
 import { prisma } from "@octopus/db";
 import { HARDCODED_REVIEW_MODEL, HARDCODED_EMBED_MODEL } from "@/lib/ai-client";
 import { RepositoriesContent } from "./repositories-content";
+import { WELCOME_DEFERRED_REASON } from "@/lib/org-create";
 
 const PAGE_SIZE = 50;
 
@@ -102,7 +103,7 @@ export default async function RepositoriesPage({
   } as const;
 
   // Step 2: All queries in parallel
-  const [repos, totalCount, allRepoNames, favoriteRepos, otherOrgMemberships, availableModels, bitbucketIntegration, platformDefaults] = await Promise.all([
+  const [repos, totalCount, allRepoNames, favoriteRepos, otherOrgMemberships, availableModels, bitbucketIntegration, platformDefaults, ownerMember] = await Promise.all([
     // Paginated repos — light select, no heavy fields
     prisma.repository.findMany({
       where: baseWhere,
@@ -157,6 +158,20 @@ export default async function RepositoriesPage({
     prisma.availableModel.findMany({
       where: { isPlatformDefault: true, isActive: true },
       select: { modelId: true, displayName: true, category: true },
+    }),
+
+    // Org owner's welcome-grant state — drives the empty-state hint that
+    // connecting a repo unlocks the deferred welcome credits. The hint only
+    // shows for orgs marked deferred at creation (WELCOME_DEFERRED_REASON):
+    // legacy pre-stamp owners also have welcomeGrantedAt=null, but connecting
+    // a repo won't grant them anything.
+    prisma.organizationMember.findFirst({
+      where: { organizationId: orgId, role: "owner", deletedAt: null },
+      orderBy: { createdAt: "asc" },
+      select: {
+        user: { select: { welcomeGrantedAt: true } },
+        organization: { select: { welcomeRiskReason: true } },
+      },
     }),
   ]);
 
@@ -242,6 +257,10 @@ export default async function RepositoriesPage({
       totalPages={totalPages}
       totalCount={totalCount}
       bitbucketWorkspaceSlug={bitbucketIntegration?.workspaceSlug ?? null}
+      welcomePending={
+        ownerMember?.user.welcomeGrantedAt === null &&
+        ownerMember.organization.welcomeRiskReason === WELCOME_DEFERRED_REASON
+      }
     />
   );
 }

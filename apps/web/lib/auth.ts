@@ -1,5 +1,5 @@
 import { betterAuth } from "better-auth";
-import { APIError } from "better-auth/api";
+import { APIError, getIp } from "better-auth/api";
 import { magicLink } from "better-auth/plugins";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { prisma } from "@octopus/db";
@@ -10,6 +10,7 @@ import { enqueueAfter } from "./queue";
 import { reasonToMessage, validateEmailForSignup } from "./email-validator";
 import { normalizeEmail } from "./email-normalize";
 import { assertUserNotBanned } from "./session-guard";
+import { checkSignupVelocity } from "./signup-velocity";
 
 // Email/password sign-in + sign-up (and the first-boot admin seed) are a
 // self-hosted opt-in. On the multi-tenant SaaS, sign-in is OAuth + magic-link.
@@ -86,6 +87,19 @@ export const auth = betterAuth({
         },
       }
     : {}),
+  user: {
+    additionalFields: {
+      // Declared so the adapter persists the signupIp the user.create.before
+      // hook stamps (transformInput drops fields not in the schema). Never
+      // client-writable, never returned in API responses.
+      signupIp: {
+        type: "string",
+        required: false,
+        input: false,
+        returned: false,
+      },
+    },
+  },
   databaseHooks: {
     session: {
       create: {
@@ -126,7 +140,7 @@ export const auth = betterAuth({
     },
     user: {
       create: {
-        before: async (user) => {
+        before: async (user, ctx) => {
           const normalizedEmail = normalizeEmail(user.email);
 
           // If an account already owns the canonical identity, fail with a
@@ -162,7 +176,52 @@ export const auth = betterAuth({
               message: reasonToMessage(result.reason),
             });
           }
-          return { data: { ...user, email: normalizedEmail } };
+
+          // Hard signup-velocity cap (issue #788): unlike the welcome-credit
+          // scorer, this BLOCKS user creation. Resolve the IP with better-auth's
+          // own getIp + the live options so the string is byte-identical to
+          // what session.create.after stamps into signupIp (getIp normalizes:
+          // IPv6 is expanded and /64-masked — making the exact-IP cap an
+          // effective per-/64 cap — and ::ffff: v4-mapped becomes dotted-quad).
+          const requestHeaders = ctx?.headers ?? ctx?.request?.headers;
+          const ip =
+            ctx && requestHeaders
+              ? getIp(new Headers(requestHeaders), ctx.context.options)
+              : null;
+          const velocity = await checkSignupVelocity(ip);
+          if (velocity.blocked) {
+            await writeAuditLog({
+              action: "auth.signup_blocked_velocity",
+              category: "auth",
+              actorEmail: normalizedEmail,
+              targetType: "user",
+              ipAddress: ip,
+              metadata: {
+                reason: velocity.reason,
+                ip,
+                ipCount: velocity.ipCount,
+                subnetCount: velocity.subnetCount,
+              },
+            });
+            throw new APIError("TOO_MANY_REQUESTS", {
+              message:
+                "Too many sign-ups from this network today. Please try again tomorrow or contact support.",
+            });
+          }
+
+          // Stamp signupIp at create time, not only at first session, so the
+          // velocity count sees users who never open a session and a parallel
+          // burst of verifies can only overshoot the cap by the concurrent
+          // INSERT window (milliseconds), not the whole burst.
+          // session.create.after's set-once update guards on `signupIp: null`,
+          // so rows created before this change keep first-session semantics.
+          return {
+            data: {
+              ...user,
+              email: normalizedEmail,
+              ...(ip ? { signupIp: ip } : {}),
+            },
+          };
         },
         after: async (user) => {
           await writeAuditLog({

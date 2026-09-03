@@ -9,11 +9,31 @@ const EXTRA_BLOCKED_DOMAINS = [
   "foodhz.com",
   "birdzpt.com",
   "rainsase.com",
+  "firegameplay.com",
 ];
+
+// Parses SIGNUP_BLOCKED_DOMAINS (comma-separated registrable domains) into a
+// normalized, de-duplicated list. Entries without a dot (a bare TLD such as
+// "com") are ignored: the suffix match below would otherwise refuse every
+// address under that TLD. Exported for tests.
+export function parseBlockedDomainsEnv(value: string | undefined): string[] {
+  if (!value) return [];
+  const seen = new Set<string>();
+  for (const raw of value.split(",")) {
+    const domain = raw
+      .trim()
+      .toLowerCase()
+      .replace(/^[@.]+/, "")
+      .replace(/\.+$/, "");
+    if (domain.includes(".")) seen.add(domain);
+  }
+  return [...seen];
+}
 
 const DISPOSABLE_LIST = [
   ...(disposableDomains as string[]),
   ...EXTRA_BLOCKED_DOMAINS,
+  ...parseBlockedDomainsEnv(process.env.SIGNUP_BLOCKED_DOMAINS),
 ];
 const DISPOSABLE_SET = new Set<string>(DISPOSABLE_LIST);
 

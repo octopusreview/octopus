@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Automatic repository discovery: new repositories in connected GitHub, GitLab and Bitbucket accounts are added without clicking Sync. GitHub repositories appear within seconds through the new `repository` webhook event; an hourly sweep (`REPO_DISCOVERY_CRON`, default `17 * * * *`, `off` to disable) covers every provider, and GitLab projects created after connecting now get synced and hooked. Organizations can opt out under Settings → Reviews. Freshly added repositories carry a "New" badge for a week and the list refreshes live. Existing GitHub Apps need the **Repository** event ticked once under "Subscribe to events".
+
 ## [1.0.132] - 2026-09-03
 
 ### Fixed

@@ -43,6 +43,8 @@ export function buildAppManifest(baseUrl: string, name: string) {
       checks: "write",
       metadata: "read",
     },
-    default_events: ["pull_request", "pull_request_review"],
+    // `repository` = created/renamed/transferred/deleted, so new repositories
+    // on an "all repositories" install are discovered without a manual Sync.
+    default_events: ["pull_request", "pull_request_review", "repository"],
   };
 }

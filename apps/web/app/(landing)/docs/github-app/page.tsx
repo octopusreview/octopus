@@ -130,6 +130,10 @@ export default function GithubAppPage() {
                 <Mono>Pull request review</Mono> — to react to human reviewer
                 actions
               </li>
+              <li>
+                <Mono>Repository</Mono> — to detect new, renamed, or deleted
+                repositories automatically (no manual Sync)
+              </li>
             </UL>
           </li>
           <li>

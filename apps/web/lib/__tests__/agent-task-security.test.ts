@@ -135,8 +135,11 @@ const llmTaskUpdateMany = mock(() =>
 const pubbyTrigger = mock(() => Promise.resolve());
 const PRISMA_DB_NULL = Symbol("Prisma.DbNull");
 
+// Export the full surface of lib/pubby: bun's mock.module is process-wide, and a
+// later file cannot add an export name that this record never had.
 mock.module("@/lib/pubby", () => ({
   pubby: { trigger: pubbyTrigger },
+  PUBBY_ENABLED: true,
 }));
 mock.module("@/lib/prisma-json-null", () => ({ PRISMA_DB_NULL }));
 mock.module("server-only", () => ({}));

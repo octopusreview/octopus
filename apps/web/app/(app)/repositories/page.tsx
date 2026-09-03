@@ -8,6 +8,8 @@ import { RepositoriesContent } from "./repositories-content";
 import { WELCOME_DEFERRED_REASON } from "@/lib/org-create";
 
 const PAGE_SIZE = 50;
+/** Repositories created in the last week are badged "New" (auto-discovery or first sync). */
+const NEW_REPO_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 export default async function RepositoriesPage({
   searchParams,
@@ -84,6 +86,7 @@ export default async function RepositoriesPage({
     isActive: true,
     autoReview: true,
     dismissedAt: true,
+    createdAt: true,
     indexStatus: true,
     indexedAt: true,
     indexedFiles: true,
@@ -222,6 +225,8 @@ export default async function RepositoriesPage({
     isActive: r.isActive,
     autoReview: r.autoReview,
     dismissedAt: r.dismissedAt?.toISOString() ?? null,
+    // Decided on the server so the badge cannot differ between SSR and hydration.
+    isNew: Date.now() - r.createdAt.getTime() < NEW_REPO_WINDOW_MS,
     indexStatus: r.indexStatus,
     indexedAt: r.indexedAt?.toISOString() ?? null,
     indexedFiles: r.indexedFiles,

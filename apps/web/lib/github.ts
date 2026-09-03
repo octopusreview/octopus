@@ -83,6 +83,29 @@ export async function getInstallationPermissions(
   return (data.permissions ?? {}) as Record<string, string>;
 }
 
+/**
+ * Thrown when GitHub rate-limited a request: 429, or 403 carrying rate-limit
+ * headers. A bare 403 (suspended installation, missing scope) is NOT a rate
+ * limit and keeps its plain error. Callers running sweeps stop on this.
+ */
+export class GithubRateLimitError extends Error {
+  constructor(
+    readonly status: number,
+    readonly retryAfterSeconds: number | null,
+  ) {
+    super(`GitHub rate limited (${status})`);
+    this.name = "GithubRateLimitError";
+  }
+}
+
+function throwIfRateLimited(res: Response): void {
+  const retryAfter = res.headers.get("retry-after");
+  const remaining = res.headers.get("x-ratelimit-remaining");
+  if (res.status === 429 || (res.status === 403 && (retryAfter !== null || remaining === "0"))) {
+    throw new GithubRateLimitError(res.status, retryAfter ? Number(retryAfter) : null);
+  }
+}
+
 export async function getInstallationToken(
   installationId: number,
 ): Promise<string> {
@@ -98,6 +121,7 @@ export async function getInstallationToken(
     },
   );
 
+  throwIfRateLimited(res);
   if (!res.ok) {
     throw new Error(`Failed to get installation token: ${res.status}`);
   }
@@ -971,6 +995,7 @@ export async function listInstallationRepos(
       },
     );
 
+    throwIfRateLimited(res);
     if (!res.ok) {
       throw new Error(`Failed to list repos: ${res.status}`);
     }

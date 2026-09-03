@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.131] - 2026-09-03
+
+### Added
+- Sign-ups are now capped per network: at most 5 new accounts per IP address and 15 per IPv4 /24 in any 24-hour window. Blocked attempts get a clear "try again tomorrow or contact support" message and an audit entry. Self-hosters behind a shared NAT can raise the caps with `SIGNUP_MAX_PER_IP_DAY` / `SIGNUP_MAX_PER_SUBNET_DAY` or switch the cap off with `SIGNUP_VELOCITY_CAP=off`.
+- API tokens now require an account in good standing. Accounts whose device is shared across many sign-ups, or whose organization was scored as high risk at sign-up, cannot mint tokens until the organization shows real use (a connected repository, a purchase, a paid plan or its own provider key), and tokens already minted by such organizations stop authenticating with a 403 that says why.
+
+### Changed
+- The welcome credit for accounts that signed up with a magic link (no GitHub, GitLab or Bitbucket login) is now granted when the first repository is connected, not at sign-up. Accounts that signed in with a provider are unaffected. The repositories page tells pending accounts what unlocks the credit.
+
+### Fixed
+- Sign-ups from the email domain families used by the September sign-up farm are refused as disposable addresses.
+
 ## [1.0.130] - 2026-09-02
 
 ### Added

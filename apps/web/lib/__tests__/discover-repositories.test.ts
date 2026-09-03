@@ -8,8 +8,8 @@ const findMany = mock(async (args: Record<string, any>) => {
   findManyArgs = args;
   return orgs;
 });
-const update = mock(async () => ({}));
-mock.module("@octopus/db", () => ({ prisma: { organization: { findMany, update } } }));
+const update = mock(async () => ({ count: 1 }));
+mock.module("@octopus/db", () => ({ prisma: { organization: { findMany, updateMany: update } } }));
 
 class GithubRateLimitError extends Error {
   constructor(readonly status = 429, readonly retryAfterSeconds: number | null = null) {

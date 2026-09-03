@@ -77,6 +77,12 @@ mock.module("@/lib/webhook-shared", () => ({
 mock.module("@octopus/db", () => ({
   prisma: {
     organization: {
+      findFirst: (args: { where: { id?: string } }) =>
+        Promise.resolve(
+          args.where.id === "org_b" && !installationBindingCleared
+            ? { id: "org_b", autoDiscoverRepos: autoDiscoverEnabled }
+            : null,
+        ),
       findUnique: (args: {
         where: { githubInstallationId?: number; id?: string };
       }) => {
@@ -404,6 +410,27 @@ try {
   assert(optOutResponse.status === 200, "opt-out repository.created response failed");
   assert(syncCalls.length === 1, "repository.created ignored the organization opt-out");
 
+  const addedBody = JSON.stringify({
+    action: "added",
+    installation: { id: 222 },
+    repositories_added: [{ id: 9004, name: "added", full_name: "shared/added" }],
+    repositories_removed: [],
+  });
+  const addedResponse = await POST(
+    webhookRequest(addedBody, {
+      deliveryId: "delivery-repos-added",
+      eventType: "installation_repositories",
+    }),
+  );
+  await runAfterCallbacks();
+  assert(addedResponse.status === 200, "installation_repositories response failed");
+  assert(
+    syncCalls.length === 2 &&
+      syncCalls[1].organizationId === "org_b" &&
+      syncCalls[1].source === "webhook",
+    "installation_repositories did not run the shared sync for the mapped organization",
+  );
+
   originalConsole.log(JSON.stringify({
     invalidSignatureRejected: true,
     trustedRoutingEnforced: true,
@@ -414,6 +441,7 @@ try {
     repositoryCreatedSynced: true,
     repositoryCreatedUnmappedDropped: true,
     repositoryCreatedRespectsOptOut: true,
+    installationRepositoriesSynced: true,
   }));
 } catch (error) {
   originalConsole.warn(error);

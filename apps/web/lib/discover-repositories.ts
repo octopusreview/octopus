@@ -56,9 +56,15 @@ export async function discoverRepositories(now: Date = new Date()): Promise<{
       if (err instanceof GithubRateLimitError) rateLimited = true;
       console.error(`[discover-repositories] org ${org.id} failed:`, err);
     } finally {
-      await prisma.organization.update({ where: { id: org.id }, data: { reposSyncedAt: now } });
+      // updateMany: no throw if the row vanished mid-sweep, and a stamp failure
+      // must never mask the sync error or abort the rest of the batch.
+      await prisma.organization
+        .updateMany({ where: { id: org.id }, data: { reposSyncedAt: now } })
+        .catch((err) => console.error(`[discover-repositories] cursor stamp failed for org ${org.id}:`, err));
     }
-    // The installation-token budget is app-wide; stop and resume next tick.
+    // A 429/403 from the installation-token mint is app-wide; one from a repo
+    // listing is per-installation. We cannot cheaply tell them apart, so stop
+    // the sweep either way: the cursor resumes the skipped orgs first next tick.
     if (rateLimited) break;
   }
 

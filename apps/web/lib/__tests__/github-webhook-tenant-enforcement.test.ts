@@ -34,6 +34,7 @@ describe("GitHub webhook tenant enforcement", () => {
       repositoryCreatedSynced: true,
       repositoryCreatedUnmappedDropped: true,
       repositoryCreatedRespectsOptOut: true,
+      installationRepositoriesSynced: true,
     });
   });
 });

@@ -4,8 +4,8 @@ import { listInstallationRepos, GithubRateLimitError } from "@/lib/github";
 import { listWorkspaceRepos } from "@/lib/bitbucket";
 import { listNamespaceProjects, createProjectWebhook } from "@/lib/gitlab";
 import { grantDeferredWelcomeCredit } from "@/lib/org-create";
-// Namespace import on purpose: read at call time, so a test double that only
-// stubs `pubby` (bun mock.module leaks across files) cannot break module load.
+// Namespace import: read at call time so a partial module double elsewhere in
+// the test process cannot break module load.
 import * as realtime from "@/lib/pubby";
 import { writeAuditLog } from "@/lib/audit";
 
@@ -57,7 +57,7 @@ async function upsertRepo(
   provider: RepoSyncProvider,
   existing: Map<string, Date | null>,
   result: RepoSyncResult,
-  repo: { externalId: string; name: string; fullName: string; defaultBranch: string; installationId?: number },
+  repo: { externalId: string; name: string; fullName: string; defaultBranch?: string; installationId?: number },
 ): Promise<"created" | "updated" | "dismissed"> {
   if (existing.has(repo.externalId) && existing.get(repo.externalId) != null) return "dismissed";
   const isNew = !existing.has(repo.externalId);
@@ -69,7 +69,7 @@ async function upsertRepo(
       name: repo.name,
       fullName: repo.fullName,
       externalId: repo.externalId,
-      defaultBranch: repo.defaultBranch,
+      defaultBranch: repo.defaultBranch ?? "main",
       provider,
       isActive: true,
       organizationId,
@@ -78,7 +78,9 @@ async function upsertRepo(
     update: {
       name: repo.name,
       fullName: repo.fullName,
-      defaultBranch: repo.defaultBranch,
+      // Only overwrite the stored default branch when the provider told us one;
+      // a payload without it must not clobber a correct "master" with "main".
+      ...(repo.defaultBranch !== undefined ? { defaultBranch: repo.defaultBranch } : {}),
       isActive: true,
       ...(repo.installationId !== undefined ? { installationId: repo.installationId } : {}),
     },
@@ -92,7 +94,13 @@ async function upsertRepo(
   return isNew ? "created" : "updated";
 }
 
-async function deactivateMissing(organizationId: string, provider: RepoSyncProvider, presentIds: string[]) {
+async function deactivateMissing(
+  organizationId: string,
+  provider: RepoSyncProvider,
+  presentIds: string[],
+  /** GitHub only: restrict to rows belonging to the installations that were actually listed. */
+  installationIds?: number[],
+) {
   const res = await prisma.repository.updateMany({
     where: {
       organizationId,
@@ -100,6 +108,9 @@ async function deactivateMissing(organizationId: string, provider: RepoSyncProvi
       externalId: { notIn: presentIds },
       isActive: true,
       dismissedAt: null,
+      ...(installationIds
+        ? { OR: [{ installationId: null }, { installationId: { in: installationIds } }] }
+        : {}),
     },
     data: { isActive: false },
   });
@@ -152,12 +163,18 @@ export async function syncOrgRepos(
           });
         }
       } catch (err) {
-        if (err instanceof GithubRateLimitError) throw err;
+        // The sweep stops on a rate limit (cursor resumes next tick); a person
+        // clicking Sync still gets the other providers synced.
+        if (err instanceof GithubRateLimitError && opts.source !== "manual") throw err;
         listingFailed = true;
         console.error(`[repo-sync] Failed to list repos for installation ${installationId}:`, err);
       }
     }
-    if (!listingFailed) result.removed += await deactivateMissing(organizationId, "github", present);
+    // Deactivate only rows the listing actually covered: rows tied to a legacy
+    // installation this run did not list (non-manual sources) must stay put.
+    if (!listingFailed) {
+      result.removed += await deactivateMissing(organizationId, "github", present, [...installationIds]);
+    }
   }
 
   // ── Bitbucket ──
@@ -251,18 +268,12 @@ function notifyDiscovered(organizationId: string, source: RepoSyncSource, create
       repos: createdRepos.slice(0, 50).map((r) => r.fullName),
     },
   }).catch(() => {});
-  // PUBBY_ENABLED normally comes from lib/pubby.ts; fall back to the same env
-  // check when a partial module double (tests) lacks the export.
-  const realtimeEnabled =
-    realtime.PUBBY_ENABLED ??
-    !!(process.env.PUBBY_APP_ID && process.env.PUBBY_APP_KEY && process.env.PUBBY_APP_SECRET);
-  if (realtimeEnabled && typeof realtime.pubby?.trigger === "function") {
-    Promise.resolve(
-      realtime.pubby.trigger(`presence-org-${organizationId}`, "repos-discovered", {
-        count: createdRepos.length,
-        repoIds: createdRepos.map((r) => r.id),
-      }),
-    ).catch((err: unknown) => console.warn("[repo-sync] realtime notify failed:", err));
+  // Count only: the page re-fetches on this event, and an uncapped id list
+  // would exceed realtime message limits on a large first sync.
+  if (realtime.PUBBY_ENABLED) {
+    realtime.pubby
+      .trigger(`presence-org-${organizationId}`, "repos-discovered", { count: createdRepos.length })
+      .catch((err: unknown) => console.warn("[repo-sync] realtime notify failed:", err));
   }
 }
 
@@ -301,7 +312,7 @@ export async function applyRepositoryEvent(
     externalId,
     name: repo.name,
     fullName: repo.full_name,
-    defaultBranch: repo.default_branch ?? "main",
+    ...(repo.default_branch ? { defaultBranch: repo.default_branch } : {}),
     installationId,
   });
   if (outcome === "created") {

@@ -42,6 +42,7 @@ if (RUN_DB_TESTS) {
   mock.module("server-only", () => ({}));
   mock.module("@/lib/pubby", () => ({
     pubby: { trigger: pubbyTrigger },
+    PUBBY_ENABLED: true,
   }));
 }
 

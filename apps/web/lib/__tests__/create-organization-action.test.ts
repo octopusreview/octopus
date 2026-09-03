@@ -79,12 +79,14 @@ mock.module("@/lib/auth", () => ({
   auth: { api: { getSession: () => Promise.resolve({ user: { id: "u1", name: "Test User" } }) } },
 }));
 mock.module("@/lib/org-permissions", () => ({ hasOrgPermission: () => Promise.resolve(true) }));
-mock.module("@/lib/pubby", () => ({ pubby: {} }));
+const actualPubby = await import("@/lib/pubby");
+mock.module("@/lib/pubby", () => ({ ...actualPubby, pubby: {} }));
 mock.module("@/lib/elasticsearch", () => ({
   writeSyncLog: () => Promise.resolve(),
   deleteSyncLogs: () => Promise.resolve(),
 }));
-mock.module("@/lib/github", () => ({ listInstallationRepos: () => Promise.resolve([]) }));
+const actualGithub = await import("@/lib/github");
+mock.module("@/lib/github", () => ({ ...actualGithub, listInstallationRepos: () => Promise.resolve([]) }));
 mock.module("@/lib/bitbucket", () => ({ listWorkspaceRepos: () => Promise.resolve([]) }));
 mock.module("@/lib/repo-sync", () => ({
   syncOrgRepos: () => Promise.resolve({ synced: 0, created: 0, removed: 0, createdRepos: [], providers: [] }),

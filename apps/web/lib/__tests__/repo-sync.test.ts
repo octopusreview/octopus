@@ -2,13 +2,6 @@ import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 mock.module("server-only", () => ({}));
 
-// The realtime module double below may be shadowed by an earlier test file's
-// `{ pubby: {} }` mock (bun mock.module leaks); repo-sync falls back to these
-// env vars for the enabled check, so set them here.
-process.env.PUBBY_APP_ID = "test-app";
-process.env.PUBBY_APP_KEY = "test-key";
-process.env.PUBBY_APP_SECRET = "test-secret";
-
 // ── fixtures (reset in beforeEach) ──
 type ExistingRow = { externalId: string; dismissedAt: Date | null };
 let orgRow: { githubInstallationId: number | null } | null = { githubInstallationId: 111 };
@@ -83,7 +76,8 @@ const actualOrgCreate = await import("@/lib/org-create");
 mock.module("@/lib/org-create", () => ({ ...actualOrgCreate, grantDeferredWelcomeCredit }));
 
 const trigger = mock(async () => {});
-mock.module("@/lib/pubby", () => ({ pubby: { trigger }, PUBBY_ENABLED: true }));
+const actualPubby = await import("@/lib/pubby");
+mock.module("@/lib/pubby", () => ({ ...actualPubby, pubby: { trigger }, PUBBY_ENABLED: true }));
 
 const writeAuditLog = mock(async () => {});
 const actualAudit = await import("@/lib/audit");
@@ -145,8 +139,30 @@ describe("syncOrgRepos", () => {
       isActive: true,
       dismissedAt: null,
       externalId: { notIn: ["9", "10"] },
+      OR: [{ installationId: null }, { installationId: { in: [111] } }],
     });
     expect(deactivation?.data).toEqual({ isActive: false });
+  });
+
+  it("reports deactivated rows and never deactivates repos of installations it did not list", async () => {
+    updateManyCount = 3;
+    ghRepos[111] = [gh(1, "a")];
+    const r = await syncOrgRepos("org_1", { source: "scheduled" });
+    expect(r.removed).toBe(3);
+    const deactivation = updateManys.find((u) => u.where.provider === "github");
+    // Scheduled runs list only the org-level installation, so legacy rows on
+    // other installations are excluded from the notIn sweep by this clause.
+    expect(deactivation?.where.OR).toEqual([{ installationId: null }, { installationId: { in: [111] } }]);
+  });
+
+  it("keeps syncing other providers when a manual Sync hits a GitHub rate limit", async () => {
+    ghRepos[111] = new GithubRateLimitError(429, 60);
+    bitbucket = { workspaceSlug: "acme" };
+    bbRepos = [{ uuid: "{u9}", name: "svc", full_name: "acme/svc", mainbranch: { name: "main" } }];
+    const r = await syncOrgRepos("org_1", { source: "manual" });
+    expect(r.providers).toEqual(["github", "bitbucket"]);
+    expect(r.created).toBe(1);
+    expect(updateManys.filter((u) => u.where.provider === "github")).toHaveLength(0);
   });
 
   it("uses only the org-level installation when scheduled, and widens to repo-level ids for manual sync", async () => {
@@ -224,7 +240,7 @@ describe("syncOrgRepos", () => {
       organizationId: "org_1",
       metadata: { source: "webhook", count: 2, repos: ["acme/a", "acme/b"] },
     });
-    expect(trigger).toHaveBeenCalledWith("presence-org-org_1", "repos-discovered", { count: 2, repoIds: ["row_1", "row_2"] });
+    expect(trigger).toHaveBeenCalledWith("presence-org-org_1", "repos-discovered", { count: 2 });
 
     writeAuditLog.mockClear();
     trigger.mockClear();
@@ -258,13 +274,15 @@ describe("applyRepositoryEvent (GitHub repository webhooks)", () => {
     expect(upserts[0].create).toMatchObject({ externalId: "42", defaultBranch: "trunk", installationId: 111, provider: "github" });
     expect(grantDeferredWelcomeCredit).toHaveBeenCalledWith("org_1");
     expect(writeAuditLog.mock.calls[0][0]).toMatchObject({ action: "repo.discovered", metadata: { source: "webhook", count: 1 } });
-    expect(trigger).toHaveBeenCalledWith("presence-org-org_1", "repos-discovered", { count: 1, repoIds: ["row_42"] });
+    expect(trigger).toHaveBeenCalledWith("presence-org-org_1", "repos-discovered", { count: 1 });
   });
 
   it("refreshes an existing row on rename without announcing, and never touches a dismissed one", async () => {
     existingRows.github = [{ externalId: "42", dismissedAt: null }, { externalId: "43", dismissedAt: new Date() }];
     expect(await applyRepositoryEvent("org_1", 111, "renamed", { id: 42, name: "renamed", full_name: "acme/renamed" })).toBe("updated");
-    expect(upserts[0].update).toMatchObject({ fullName: "acme/renamed", defaultBranch: "main" });
+    expect(upserts[0].update).toMatchObject({ fullName: "acme/renamed" });
+    // No default_branch in the payload → the stored branch is left untouched.
+    expect("defaultBranch" in upserts[0].update).toBe(false);
     expect(writeAuditLog).not.toHaveBeenCalled();
     expect(await applyRepositoryEvent("org_1", 111, "created", { id: 43, name: "back", full_name: "acme/back" })).toBe("dismissed");
     expect(upserts).toHaveLength(1);

@@ -115,8 +115,8 @@ type Repo = {
   isActive: boolean;
   autoReview: boolean;
   dismissedAt: string | null;
-  /** ISO; repositories created in the last week get a "New" badge. */
-  createdAt: string;
+  /** Server-decided: created in the last week (auto-discovery or first sync). */
+  isNew: boolean;
   indexStatus: string;
   indexedAt: string | null;
   indexedFiles: number;
@@ -132,9 +132,6 @@ type Repo = {
   reviewConfig: Record<string, unknown>;
   pullRequestCount: number;
 };
-
-/** Auto-discovered (or freshly synced) repositories are marked "New" for a week. */
-const NEW_REPO_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 const providerConfig: Record<
   string,
@@ -1709,7 +1706,7 @@ function RepoListItem({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="truncate text-sm font-medium">{repo.name}</span>
-          {Date.now() - new Date(repo.createdAt).getTime() < NEW_REPO_WINDOW_MS && (
+          {repo.isNew && (
             <Badge
               variant="secondary"
               className="shrink-0 border border-emerald-600/30 bg-emerald-600/10 px-1.5 py-0 text-[10px] text-emerald-600"

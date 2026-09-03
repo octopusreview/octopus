@@ -114,11 +114,12 @@ export async function POST(request: NextRequest) {
     const installationId = payload.installation?.id as number | undefined;
     const action = String(payload.action ?? "");
     if (orgId && installationId && payload.repository?.id !== undefined) {
-      const org = await prisma.organization.findUnique({
-        where: { id: orgId },
+      // Standing check mirrors the sweep: no writes for soft-deleted or banned orgs.
+      const org = await prisma.organization.findFirst({
+        where: { id: orgId, deletedAt: null, bannedAt: null },
         select: { autoDiscoverRepos: true },
       });
-      if (org?.autoDiscoverRepos !== false) {
+      if (org && org.autoDiscoverRepos !== false) {
         try {
           const outcome = await applyRepositoryEvent(orgId, installationId, action, payload.repository);
           if (outcome !== "ignored") {
@@ -141,9 +142,15 @@ export async function POST(request: NextRequest) {
     event === "installation_repositories"
   ) {
     const orgId = tenantResolution.organizationId;
-    if (orgId) {
+    const org = orgId
+      ? await prisma.organization.findFirst({
+          where: { id: orgId, deletedAt: null, bannedAt: null },
+          select: { id: true },
+        })
+      : null;
+    if (org) {
       try {
-        await syncOrgRepos(orgId, { source: "webhook" });
+        await syncOrgRepos(org.id, { source: "webhook" });
         revalidatePath("/");
         revalidatePath("/repositories");
       } catch (err) {

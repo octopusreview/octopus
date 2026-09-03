@@ -2,7 +2,19 @@ import { promises as dns } from "node:dns";
 import disposableDomains from "disposable-domains";
 import { getRedis } from "./redis";
 
-const DISPOSABLE_LIST = disposableDomains as string[];
+// signup farm 2026-09, see #788
+const EXTRA_BLOCKED_DOMAINS = [
+  "foodtrik.com",
+  "totalgamehub.net",
+  "foodhz.com",
+  "birdzpt.com",
+  "rainsase.com",
+];
+
+const DISPOSABLE_LIST = [
+  ...(disposableDomains as string[]),
+  ...EXTRA_BLOCKED_DOMAINS,
+];
 const DISPOSABLE_SET = new Set<string>(DISPOSABLE_LIST);
 
 const DISPOSABLE_MX_SUFFIXES = [

@@ -23,6 +23,22 @@ describe("isDisposableDomain", () => {
     expect(isDisposableDomain("example.com")).toBe(false);
   });
 
+  it("blocks the signup-farm domain families and their subdomains (#788)", () => {
+    const farmRoots = [
+      "foodtrik.com",
+      "totalgamehub.net",
+      "foodhz.com",
+      "birdzpt.com",
+      "rainsase.com",
+    ];
+    for (const root of farmRoots) {
+      expect(isDisposableDomain(root)).toBe(true);
+      expect(isDisposableDomain(`x7kq2.${root}`)).toBe(true);
+    }
+    // Unrelated normal domain is unaffected.
+    expect(isDisposableDomain("example-company.com")).toBe(false);
+  });
+
   it("requires a dot before the root for subdomain matching (no raw substring)", () => {
     // Verify the subdomain check uses `.<root>` not raw endsWith.
     // Construct a domain that shares a suffix with a disposable root but

@@ -16,6 +16,7 @@ export async function GET(request: Request) {
   let authorized = false;
 
   const apiAuth = await authenticateApiToken(request);
+  if (apiAuth instanceof Response) return apiAuth; // account-standing hold (403), pass through
   if (apiAuth && apiAuth.org.id === orgId) {
     authorized = true;
   }

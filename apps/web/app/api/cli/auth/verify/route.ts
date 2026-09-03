@@ -2,6 +2,7 @@ import { authenticateApiToken } from "@/lib/api-auth";
 
 export async function POST(request: Request) {
   const result = await authenticateApiToken(request);
+  if (result instanceof Response) return result; // account-standing hold (403), pass through
   if (!result) {
     return Response.json({ error: "Invalid or expired token" }, { status: 401 });
   }

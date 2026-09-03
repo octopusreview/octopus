@@ -10,6 +10,7 @@ const MAX_DISCONNECT_BODY_BYTES = 16 * 1024;
 
 export async function POST(request: Request) {
   const auth = await authenticateApiToken(request);
+  if (auth instanceof Response) return auth; // account-standing hold (403), pass through
   if (!auth) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

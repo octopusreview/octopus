@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { hasOrgPermission } from "@/lib/org-permissions";
 import { generateApiToken, hashToken, getTokenPrefix } from "@/lib/api-auth";
+import { getAccountStanding, ACCOUNT_HOLD_MESSAGE } from "@/lib/account-standing";
 
 export async function createApiToken(formData: FormData) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -30,6 +31,16 @@ export async function createApiToken(formData: FormData) {
   // requires tokens:manage (previously any member could do both).
   if (!member || !hasOrgPermission(member, "tokens:manage")) {
     return { error: "API token management permission required" };
+  }
+
+  // Account-standing gate (issue #788): shared-fingerprint / risk-held
+  // accounts with no product signal cannot mint tokens.
+  const standing = await getAccountStanding({
+    userId: session.user.id,
+    orgId: currentOrgId,
+  });
+  if (standing.held) {
+    return { error: ACCOUNT_HOLD_MESSAGE };
   }
 
   // Rate limit: max 5 tokens per hour per user

@@ -3,6 +3,7 @@ import { prisma } from "@octopus/db";
 
 export async function GET(request: Request) {
   const result = await authenticateApiToken(request);
+  if (result instanceof Response) return result; // account-standing hold (403), pass through
   if (!result) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -27,6 +28,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const result = await authenticateApiToken(request);
+  if (result instanceof Response) return result; // account-standing hold (403), pass through
   if (!result) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }

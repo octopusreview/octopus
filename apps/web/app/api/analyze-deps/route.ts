@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
   let installationId: number | null;
 
   const tokenAuth = await authenticateApiToken(req);
+  if (tokenAuth instanceof Response) return tokenAuth; // account-standing hold (403), pass through
   if (tokenAuth) {
     orgId = tokenAuth.org.id;
     userId = tokenAuth.user.id;

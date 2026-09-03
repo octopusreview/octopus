@@ -12,6 +12,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const auth = await authenticateApiToken(request);
+  if (auth instanceof Response) return auth; // account-standing hold (403), pass through
   if (!auth) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

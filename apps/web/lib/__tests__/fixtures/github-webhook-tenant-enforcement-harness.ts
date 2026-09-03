@@ -63,6 +63,10 @@ mock.module("@/lib/repo-sync", () => ({
     syncCalls.push({ organizationId, source: opts.source });
     return Promise.resolve({ synced: 0, created: 0, removed: 0, createdRepos: [], providers: [] });
   },
+  applyRepositoryEvent: (organizationId: string, installationId: number, action: string) => {
+    syncCalls.push({ organizationId, source: `repository.${action}@${installationId}` });
+    return Promise.resolve("created");
+  },
 }));
 mock.module("@/lib/webhook-shared", () => ({
   startReviewFlow: (input: Record<string, unknown>) => {
@@ -369,8 +373,8 @@ try {
   assert(
     syncCalls.length === 1 &&
       syncCalls[0].organizationId === "org_b" &&
-      syncCalls[0].source === "webhook",
-    "repository.created did not sync the mapped organization",
+      syncCalls[0].source === "repository.created@222",
+    "repository.created did not write the mapped organization's repository",
   );
 
   const unmappedCreatedBody = JSON.stringify({

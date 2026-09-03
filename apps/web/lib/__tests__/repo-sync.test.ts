@@ -37,6 +37,11 @@ const prisma = {
       updateManys.push(args);
       return { count: updateManyCount };
     }),
+    findUnique: mock(async (args: Record<string, any>) => {
+      const ext = args.where.provider_externalId_organizationId.externalId;
+      const row = existingRows.github.find((r) => r.externalId === ext);
+      return row ? { dismissedAt: row.dismissedAt } : null;
+    }),
   },
   bitbucketIntegration: { findUnique: mock(async () => bitbucket) },
   gitlabIntegration: { findUnique: mock(async () => gitlab) },
@@ -84,7 +89,7 @@ const writeAuditLog = mock(async () => {});
 const actualAudit = await import("@/lib/audit");
 mock.module("@/lib/audit", () => ({ ...actualAudit, writeAuditLog }));
 
-const { syncOrgRepos } = await import("@/lib/repo-sync");
+const { syncOrgRepos, applyRepositoryEvent } = await import("@/lib/repo-sync");
 
 const gh = (id: number, name: string) => ({
   id,
@@ -227,5 +232,50 @@ describe("syncOrgRepos", () => {
     await syncOrgRepos("org_1", { source: "webhook" });
     expect(writeAuditLog).not.toHaveBeenCalled();
     expect(trigger).not.toHaveBeenCalled();
+  });
+});
+
+describe("applyRepositoryEvent (GitHub repository webhooks)", () => {
+  beforeEach(() => {
+    existingRows = { github: [], bitbucket: [], gitlab: [] };
+    upserts.length = 0;
+    updateManys.length = 0;
+    updateManyCount = 1;
+    grantDeferredWelcomeCredit.mockClear();
+    trigger.mockClear();
+    writeAuditLog.mockClear();
+  });
+
+  it("writes one row from the payload on created and announces it", async () => {
+    const outcome = await applyRepositoryEvent("org_1", 111, "created", {
+      id: 42,
+      name: "fresh",
+      full_name: "acme/fresh",
+      default_branch: "trunk",
+    });
+    expect(outcome).toBe("created");
+    expect(upserts).toHaveLength(1);
+    expect(upserts[0].create).toMatchObject({ externalId: "42", defaultBranch: "trunk", installationId: 111, provider: "github" });
+    expect(grantDeferredWelcomeCredit).toHaveBeenCalledWith("org_1");
+    expect(writeAuditLog.mock.calls[0][0]).toMatchObject({ action: "repo.discovered", metadata: { source: "webhook", count: 1 } });
+    expect(trigger).toHaveBeenCalledWith("presence-org-org_1", "repos-discovered", { count: 1, repoIds: ["row_42"] });
+  });
+
+  it("refreshes an existing row on rename without announcing, and never touches a dismissed one", async () => {
+    existingRows.github = [{ externalId: "42", dismissedAt: null }, { externalId: "43", dismissedAt: new Date() }];
+    expect(await applyRepositoryEvent("org_1", 111, "renamed", { id: 42, name: "renamed", full_name: "acme/renamed" })).toBe("updated");
+    expect(upserts[0].update).toMatchObject({ fullName: "acme/renamed", defaultBranch: "main" });
+    expect(writeAuditLog).not.toHaveBeenCalled();
+    expect(await applyRepositoryEvent("org_1", 111, "created", { id: 43, name: "back", full_name: "acme/back" })).toBe("dismissed");
+    expect(upserts).toHaveLength(1);
+  });
+
+  it("deactivates (never deletes) on deleted and ignores unrelated actions", async () => {
+    expect(await applyRepositoryEvent("org_1", 111, "deleted", { id: 7, name: "gone", full_name: "acme/gone" })).toBe("deactivated");
+    expect(updateManys[0]).toMatchObject({
+      where: { organizationId: "org_1", provider: "github", externalId: "7", isActive: true, dismissedAt: null },
+      data: { isActive: false },
+    });
+    expect(await applyRepositoryEvent("org_1", 111, "archived", { id: 7, name: "gone", full_name: "acme/gone" })).toBe("ignored");
   });
 });

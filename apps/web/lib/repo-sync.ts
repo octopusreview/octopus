@@ -231,33 +231,82 @@ export async function syncOrgRepos(
   // First repo connect releases a deferred welcome grant (no-op otherwise).
   if (result.synced > 0) await grantDeferredWelcomeCredit(organizationId);
 
-  if (result.createdRepos.length > 0) {
-    void writeAuditLog({
-      action: "repo.discovered",
-      category: "repo",
-      organizationId,
-      targetType: "Organization",
-      targetId: organizationId,
-      metadata: {
-        source: opts.source,
-        count: result.createdRepos.length,
-        repos: result.createdRepos.slice(0, 50).map((r) => r.fullName),
-      },
-    }).catch(() => {});
-    // PUBBY_ENABLED normally comes from lib/pubby.ts; fall back to the same env
-    // check when a partial module double (tests) lacks the export.
-    const realtimeEnabled =
-      realtime.PUBBY_ENABLED ??
-      !!(process.env.PUBBY_APP_ID && process.env.PUBBY_APP_KEY && process.env.PUBBY_APP_SECRET);
-    if (realtimeEnabled && typeof realtime.pubby?.trigger === "function") {
-      Promise.resolve(
-        realtime.pubby.trigger(`presence-org-${organizationId}`, "repos-discovered", {
-          count: result.createdRepos.length,
-          repoIds: result.createdRepos.map((r) => r.id),
-        }),
-      ).catch((err: unknown) => console.warn("[repo-sync] realtime notify failed:", err));
-    }
-  }
+  notifyDiscovered(organizationId, opts.source, result.createdRepos);
 
   return result;
+}
+
+/** One audit row + one realtime event per run that created repositories. */
+function notifyDiscovered(organizationId: string, source: RepoSyncSource, createdRepos: DiscoveredRepo[]) {
+  if (createdRepos.length === 0) return;
+  void writeAuditLog({
+    action: "repo.discovered",
+    category: "repo",
+    organizationId,
+    targetType: "Organization",
+    targetId: organizationId,
+    metadata: {
+      source,
+      count: createdRepos.length,
+      repos: createdRepos.slice(0, 50).map((r) => r.fullName),
+    },
+  }).catch(() => {});
+  // PUBBY_ENABLED normally comes from lib/pubby.ts; fall back to the same env
+  // check when a partial module double (tests) lacks the export.
+  const realtimeEnabled =
+    realtime.PUBBY_ENABLED ??
+    !!(process.env.PUBBY_APP_ID && process.env.PUBBY_APP_KEY && process.env.PUBBY_APP_SECRET);
+  if (realtimeEnabled && typeof realtime.pubby?.trigger === "function") {
+    Promise.resolve(
+      realtime.pubby.trigger(`presence-org-${organizationId}`, "repos-discovered", {
+        count: createdRepos.length,
+        repoIds: createdRepos.map((r) => r.id),
+      }),
+    ).catch((err: unknown) => console.warn("[repo-sync] realtime notify failed:", err));
+  }
+}
+
+export type RepositoryEventOutcome = "created" | "updated" | "dismissed" | "deactivated" | "ignored";
+
+/**
+ * Fast path for GitHub `repository` webhooks (created / renamed / transferred /
+ * deleted). The payload already carries id, name, full_name and default_branch,
+ * so one row is written without listing the whole installation. Same
+ * invariants as syncOrgRepos: dismissed rows are never resurrected, deletion
+ * only deactivates, a newly created row is audited and announced.
+ */
+export async function applyRepositoryEvent(
+  organizationId: string,
+  installationId: number,
+  action: string,
+  repo: { id: number; name: string; full_name: string; default_branch?: string | null },
+): Promise<RepositoryEventOutcome> {
+  const externalId = String(repo.id);
+  if (action === "deleted") {
+    const res = await prisma.repository.updateMany({
+      where: { organizationId, provider: "github", externalId, isActive: true, dismissedAt: null },
+      data: { isActive: false },
+    });
+    return res.count > 0 ? "deactivated" : "ignored";
+  }
+  if (!["created", "renamed", "transferred"].includes(action)) return "ignored";
+
+  const row = await prisma.repository.findUnique({
+    where: { provider_externalId_organizationId: { provider: "github", externalId, organizationId } },
+    select: { dismissedAt: true },
+  });
+  const existing = new Map<string, Date | null>(row ? [[externalId, row.dismissedAt]] : []);
+  const result: RepoSyncResult = { synced: 0, created: 0, removed: 0, createdRepos: [], providers: ["github"] };
+  const outcome = await upsertRepo(organizationId, "github", existing, result, {
+    externalId,
+    name: repo.name,
+    fullName: repo.full_name,
+    defaultBranch: repo.default_branch ?? "main",
+    installationId,
+  });
+  if (outcome === "created") {
+    await grantDeferredWelcomeCredit(organizationId);
+    notifyDiscovered(organizationId, "webhook", result.createdRepos);
+  }
+  return outcome;
 }

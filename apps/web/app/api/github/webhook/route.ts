@@ -12,7 +12,7 @@ import {
 } from "@/lib/github";
 import { startReviewFlow } from "@/lib/webhook-shared";
 import { getGithubAppConfig } from "@/lib/github-app-config";
-import { syncOrgRepos } from "@/lib/repo-sync";
+import { syncOrgRepos, applyRepositoryEvent } from "@/lib/repo-sync";
 import {
   observeGithubWebhookDeliveryBestEffort,
   resolveGithubWebhookTenant,
@@ -106,24 +106,27 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Repository lifecycle (created / renamed / transferred / deleted) ──
-  // A brand-new repository has no row yet, so re-list the installation through
-  // the shared sync core instead of trusting payload fields. Orgs can opt out
-  // of automatic discovery in Settings → Reviews.
+  // The payload carries the repository's id/name/default_branch, so this is a
+  // single-row write (no installation listing). The signed installation picks
+  // the tenant; orgs can opt out of automatic discovery in Settings → Reviews.
   if (event === "repository") {
     const orgId = tenantResolution.organizationId;
+    const installationId = payload.installation?.id as number | undefined;
     const action = String(payload.action ?? "");
-    if (orgId && ["created", "renamed", "transferred", "deleted"].includes(action)) {
+    if (orgId && installationId && payload.repository?.id !== undefined) {
       const org = await prisma.organization.findUnique({
         where: { id: orgId },
         select: { autoDiscoverRepos: true },
       });
       if (org?.autoDiscoverRepos !== false) {
         try {
-          await syncOrgRepos(orgId, { source: "webhook" });
-          revalidatePath("/");
-          revalidatePath("/repositories");
+          const outcome = await applyRepositoryEvent(orgId, installationId, action, payload.repository);
+          if (outcome !== "ignored") {
+            revalidatePath("/");
+            revalidatePath("/repositories");
+          }
         } catch (err) {
-          console.error("[webhook] repository sync failed:", err);
+          console.error("[webhook] repository event sync failed:", err);
         }
       }
     }

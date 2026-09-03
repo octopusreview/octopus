@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.132] - 2026-09-03
+
+### Fixed
+- Sign-ups from `firegameplay.com`, the sixth domain used by the September sign-up farm, are refused. Operators can now block further domains without a release: set `SIGNUP_BLOCKED_DOMAINS` to a comma-separated list and they are refused at signup, subdomains included.
+
 ## [1.0.131] - 2026-09-03
 
 ### Added

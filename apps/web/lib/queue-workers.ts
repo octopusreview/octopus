@@ -13,6 +13,7 @@ import { renewDueSubscriptions } from "./subscription";
 import { reconcileAutoReloadAttempts } from "./credits";
 import { runOllamaPull } from "./ollama-admin";
 import { reapStuckReviews } from "./reap-stuck-reviews";
+import { discoverRepositories } from "./discover-repositories";
 import type { QueueConfig } from "./queue";
 
 export interface WelcomeEmailJob {
@@ -212,5 +213,23 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
     }
   });
 
-  console.log("[queue] Workers registered: welcome-email, process-review, post-large-review-result, community-review, enforce-audit-retention, enforce-activity-retention, refresh-release-cache, reap-stuck-reviews, subscription-renewals, reconcile-auto-reloads, pull-ollama-model");
+  // Hourly repository discovery sweep — scheduled in instrumentation.ts.
+  // Quiet when nothing changed, like the reaper above.
+  await boss.work("discover-repositories", async (jobs) => {
+    for (const job of jobs) {
+      try {
+        const r = await discoverRepositories();
+        if (r.created || r.removed || r.failed || r.rateLimited) {
+          console.log(
+            `[queue] discover-repositories ${job.id}: orgs=${r.orgs} created=${r.created} removed=${r.removed} failed=${r.failed} rateLimited=${r.rateLimited}`,
+          );
+        }
+      } catch (err) {
+        console.error(`[queue] discover-repositories failed (job ${job.id}):`, err);
+        throw err;
+      }
+    }
+  });
+
+  console.log("[queue] Workers registered: welcome-email, process-review, post-large-review-result, community-review, enforce-audit-retention, enforce-activity-retention, refresh-release-cache, reap-stuck-reviews, discover-repositories, subscription-renewals, reconcile-auto-reloads, pull-ollama-model");
 }

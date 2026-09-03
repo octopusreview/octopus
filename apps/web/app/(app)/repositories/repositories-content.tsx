@@ -115,6 +115,8 @@ type Repo = {
   isActive: boolean;
   autoReview: boolean;
   dismissedAt: string | null;
+  /** ISO; repositories created in the last week get a "New" badge. */
+  createdAt: string;
   indexStatus: string;
   indexedAt: string | null;
   indexedFiles: number;
@@ -130,6 +132,9 @@ type Repo = {
   reviewConfig: Record<string, unknown>;
   pullRequestCount: number;
 };
+
+/** Auto-discovered (or freshly synced) repositories are marked "New" for a week. */
+const NEW_REPO_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 const providerConfig: Record<
   string,
@@ -1704,6 +1709,14 @@ function RepoListItem({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="truncate text-sm font-medium">{repo.name}</span>
+          {Date.now() - new Date(repo.createdAt).getTime() < NEW_REPO_WINDOW_MS && (
+            <Badge
+              variant="secondary"
+              className="shrink-0 border border-emerald-600/30 bg-emerald-600/10 px-1.5 py-0 text-[10px] text-emerald-600"
+            >
+              New
+            </Badge>
+          )}
           {repo.contributorCount > 0 && (
             <Badge variant="secondary" className="text-[10px] px-1.5 py-0 shrink-0">
               <IconUsers className="mr-0.5 size-3" />
@@ -1997,16 +2010,28 @@ export function RepositoriesContent({
       }
     };
 
+    // Fired by lib/repo-sync.ts when the sweep or a webhook adds repositories.
+    const handleReposDiscovered = (raw: unknown) => {
+      const data = raw as { count?: number };
+      const count = data.count ?? 0;
+      if (count > 0) {
+        toast.success(`${count} new ${count === 1 ? "repository" : "repositories"} discovered`);
+      }
+      router.refresh();
+    };
+
     channel.bind("index-status", handleIndexStatus);
     channel.bind("analysis-status", handleAnalysisStatus);
     channel.bind("review-requested", handleReviewRequested);
     channel.bind("review-status", handleReviewStatus);
+    channel.bind("repos-discovered", handleReposDiscovered);
 
     return () => {
       channel.unbind("index-status", handleIndexStatus);
       channel.unbind("analysis-status", handleAnalysisStatus);
       channel.unbind("review-requested", handleReviewRequested);
       channel.unbind("review-status", handleReviewStatus);
+      channel.unbind("repos-discovered", handleReposDiscovered);
     };
   }, [orgId, router, selectedRepoId]);
 

@@ -31,6 +31,9 @@ describe("GitHub webhook tenant enforcement", () => {
       mergedAndMentionScoped: true,
       ledgerFailureNonFatal: true,
       uninstallTenantCaptured: true,
+      repositoryCreatedSynced: true,
+      repositoryCreatedUnmappedDropped: true,
+      repositoryCreatedRespectsOptOut: true,
     });
   });
 });

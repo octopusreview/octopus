@@ -5,8 +5,6 @@ import { after, NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@octopus/db";
 import {
-  listInstallationRepos,
-  getRepositoryDetails,
   addCommentReaction,
   getPullRequestDetails,
   createCheckRun,
@@ -14,7 +12,7 @@ import {
 } from "@/lib/github";
 import { startReviewFlow } from "@/lib/webhook-shared";
 import { getGithubAppConfig } from "@/lib/github-app-config";
-import { grantDeferredWelcomeCredit } from "@/lib/org-create";
+import { syncOrgRepos } from "@/lib/repo-sync";
 import {
   observeGithubWebhookDeliveryBestEffort,
   resolveGithubWebhookTenant,
@@ -91,148 +89,63 @@ export async function POST(request: NextRequest) {
   // A signature proves the GitHub App emitted the body; the installation ID
   // inside that signed body selects the tenant. Never route a repository event
   // through a provider/external-ID lookup that omits the selected organization.
-  if (payload.repository?.id !== undefined && !resolvedRepositoryTenant) {
+  // `repository.created` arrives before the repo has a row (status
+  // repository_not_owned); let repository lifecycle events through only when
+  // the signed installation mapped to an organization. Unmapped stays dropped.
+  const isRepositoryLifecycleEvent =
+    event === "repository" && tenantResolution.organizationId !== null;
+  if (
+    payload.repository?.id !== undefined &&
+    !resolvedRepositoryTenant &&
+    !isRepositoryLifecycleEvent
+  ) {
     console.warn(
       `[webhook] Dropping GitHub repository event: ${tenantResolution.status}`,
     );
     return NextResponse.json({ ok: true });
   }
 
-  if (event === "installation" || event === "installation_repositories") {
-    const installationId = payload.installation?.id as number | undefined;
-    if (!installationId) {
-      return NextResponse.json({ ok: true });
-    }
-
-    if (!tenantResolution.organizationId) {
-      return NextResponse.json({ ok: true });
-    }
-    const org = { id: tenantResolution.organizationId };
-
-    // Sync repos from GitHub
-    try {
-      const dismissedGh = new Set(
-        (
-          await prisma.repository.findMany({
-            where: { organizationId: org.id, provider: "github", dismissedAt: { not: null } },
-            select: { externalId: true },
-          })
-        ).map((r) => r.externalId),
-      );
-
-      if (event === "installation_repositories") {
-        // Incremental sync: only add/remove repos that changed.
-        // The webhook payload omits `default_branch` for added repos, so we
-        // fetch each repo's metadata to resolve it (otherwise repos with a
-        // `master` default branch get stored as `main` and indexing 404s).
-        const added = (payload.repositories_added ?? []) as { id: number; name: string; full_name: string }[];
-        const removed = (payload.repositories_removed ?? []) as { id: number }[];
-
-        const detailed = await Promise.all(
-          added.map(async (repo) => {
-            const [owner, repoName] = repo.full_name.split("/");
-            try {
-              const details = await getRepositoryDetails(installationId, owner, repoName);
-              return { repo, defaultBranch: details?.default_branch };
-            } catch (err) {
-              console.warn(`[webhook] Failed to fetch details for ${repo.full_name}:`, err);
-              return { repo, defaultBranch: undefined };
-            }
-          }),
-        );
-
-        for (const { repo, defaultBranch } of detailed) {
-          if (dismissedGh.has(String(repo.id))) continue;
-          const branch = defaultBranch ?? "main";
-          await prisma.repository.upsert({
-            where: {
-              provider_externalId_organizationId: {
-                provider: "github",
-                externalId: String(repo.id),
-                organizationId: org.id,
-              },
-            },
-            create: {
-              name: repo.name,
-              fullName: repo.full_name,
-              externalId: String(repo.id),
-              defaultBranch: branch,
-              provider: "github",
-              isActive: true,
-              installationId,
-              organizationId: org.id,
-            },
-            update: {
-              name: repo.name,
-              fullName: repo.full_name,
-              defaultBranch: branch,
-              isActive: true,
-              installationId,
-              organizationId: org.id,
-            },
-          });
-        }
-
-        if (removed.length > 0) {
-          await prisma.repository.updateMany({
-            where: {
-              organizationId: org.id,
-              provider: "github",
-              externalId: { in: removed.map((r) => String(r.id)) },
-            },
-            data: { isActive: false },
-          });
-        }
-
-        // First repo connect releases a deferred welcome grant (no-op otherwise).
-        if (added.length > 0) {
-          await grantDeferredWelcomeCredit(org.id);
-        }
-      } else {
-        // Full sync on installation created/updated
-        const ghRepos = await listInstallationRepos(installationId);
-
-        for (const repo of ghRepos) {
-          if (dismissedGh.has(String(repo.id))) continue;
-          await prisma.repository.upsert({
-            where: {
-              provider_externalId_organizationId: {
-                provider: "github",
-                externalId: String(repo.id),
-                organizationId: org.id,
-              },
-            },
-            create: {
-              name: repo.name,
-              fullName: repo.full_name,
-              externalId: String(repo.id),
-              defaultBranch: repo.default_branch,
-              provider: "github",
-              isActive: true,
-              installationId,
-              organizationId: org.id,
-            },
-            update: {
-              name: repo.name,
-              fullName: repo.full_name,
-              defaultBranch: repo.default_branch,
-              isActive: true,
-              installationId,
-              organizationId: org.id,
-            },
-          });
-        }
-
-        // First repo connect releases a deferred welcome grant (no-op otherwise).
-        if (ghRepos.length > 0) {
-          await grantDeferredWelcomeCredit(org.id);
+  // ── Repository lifecycle (created / renamed / transferred / deleted) ──
+  // A brand-new repository has no row yet, so re-list the installation through
+  // the shared sync core instead of trusting payload fields. Orgs can opt out
+  // of automatic discovery in Settings → Reviews.
+  if (event === "repository") {
+    const orgId = tenantResolution.organizationId;
+    const action = String(payload.action ?? "");
+    if (orgId && ["created", "renamed", "transferred", "deleted"].includes(action)) {
+      const org = await prisma.organization.findUnique({
+        where: { id: orgId },
+        select: { autoDiscoverRepos: true },
+      });
+      if (org?.autoDiscoverRepos !== false) {
+        try {
+          await syncOrgRepos(orgId, { source: "webhook" });
+          revalidatePath("/");
+          revalidatePath("/repositories");
+        } catch (err) {
+          console.error("[webhook] repository sync failed:", err);
         }
       }
+    }
+    return NextResponse.json({ ok: true });
+  }
 
-      revalidatePath("/");
-      revalidatePath("/repositories");
-    } catch (err) {
-      console.error("Webhook repo sync failed:", err);
+  // Installation created/updated or repositories added/removed to it: one full
+  // sync through the shared core (same end state as the old incremental path,
+  // and it never resurrects repositories the user removed).
+  if (
+    (event === "installation" && payload.action !== "deleted") ||
+    event === "installation_repositories"
+  ) {
+    const orgId = tenantResolution.organizationId;
+    if (orgId) {
+      try {
+        await syncOrgRepos(orgId, { source: "webhook" });
+        revalidatePath("/");
+        revalidatePath("/repositories");
+      } catch (err) {
+        console.error("Webhook repo sync failed:", err);
+      }
     }
   }
 

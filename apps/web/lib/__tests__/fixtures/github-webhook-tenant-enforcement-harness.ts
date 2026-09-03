@@ -19,6 +19,8 @@ const mutationCalls: Array<{ kind: string; args: Record<string, unknown> }> = []
 let failNextLedgerWrite = false;
 let installationBindingCleared = false;
 let legacyRepositoryLookups = 0;
+let autoDiscoverEnabled = true;
+const syncCalls: Array<{ organizationId: string; source: string }> = [];
 
 const webhookDeliveryStore = {
   upsert: (args: DeliveryUpsertArgs) => {
@@ -56,6 +58,12 @@ mock.module("@/lib/github", () => ({
   createCheckRun: () => Promise.resolve(1),
   updateCheckRun: () => Promise.resolve(),
 }));
+mock.module("@/lib/repo-sync", () => ({
+  syncOrgRepos: (organizationId: string, opts: { source: string }) => {
+    syncCalls.push({ organizationId, source: opts.source });
+    return Promise.resolve({ synced: 0, created: 0, removed: 0, createdRepos: [], providers: [] });
+  },
+}));
 mock.module("@/lib/webhook-shared", () => ({
   startReviewFlow: (input: Record<string, unknown>) => {
     reviewCalls.push(input);
@@ -73,7 +81,7 @@ mock.module("@octopus/db", () => ({
           return Promise.resolve({ id: "org_b" });
         }
         if (args.where.id === "org_b") {
-          return Promise.resolve({ blockedAuthors: [] });
+          return Promise.resolve({ blockedAuthors: [], autoDiscoverRepos: autoDiscoverEnabled });
         }
         return Promise.resolve(null);
       },
@@ -103,6 +111,10 @@ mock.module("@octopus/db", () => ({
         };
       }) => {
         if (args.where.provider_externalId_organizationId) {
+          // Only the shared repository (9001) has a row; 9002 is brand new.
+          if (args.where.provider_externalId_organizationId.externalId !== "9001") {
+            return Promise.resolve(null);
+          }
           return Promise.resolve({ id: "repo_b", organizationId: "org_b" });
         }
         if (args.where.id === "repo_b") {
@@ -337,6 +349,56 @@ try {
     "uninstall lost its pre-mutation tenant snapshot",
   );
   assert(installationBindingCleared, "uninstall did not clear the installation binding");
+  assert(syncCalls.length === 0, "uninstall or earlier events unexpectedly triggered a repo sync");
+
+  // Re-bind the installation for the repository lifecycle scenarios.
+  installationBindingCleared = false;
+  const repositoryCreatedBody = JSON.stringify({
+    action: "created",
+    installation: { id: 222 },
+    repository: { id: 9002, full_name: "shared/brand-new" },
+  });
+  const createdResponse = await POST(
+    webhookRequest(repositoryCreatedBody, {
+      deliveryId: "delivery-repo-created",
+      eventType: "repository",
+    }),
+  );
+  await runAfterCallbacks();
+  assert(createdResponse.status === 200, "repository.created response failed");
+  assert(
+    syncCalls.length === 1 &&
+      syncCalls[0].organizationId === "org_b" &&
+      syncCalls[0].source === "webhook",
+    "repository.created did not sync the mapped organization",
+  );
+
+  const unmappedCreatedBody = JSON.stringify({
+    action: "created",
+    installation: { id: 999 },
+    repository: { id: 9003, full_name: "stranger/brand-new" },
+  });
+  const unmappedCreatedResponse = await POST(
+    webhookRequest(unmappedCreatedBody, {
+      deliveryId: "delivery-repo-created-unmapped",
+      eventType: "repository",
+    }),
+  );
+  await runAfterCallbacks();
+  assert(unmappedCreatedResponse.status === 200, "unmapped repository.created response failed");
+  assert(syncCalls.length === 1, "unmapped repository.created was not dropped");
+
+  autoDiscoverEnabled = false;
+  const optOutResponse = await POST(
+    webhookRequest(repositoryCreatedBody, {
+      deliveryId: "delivery-repo-created-opt-out",
+      eventType: "repository",
+    }),
+  );
+  await runAfterCallbacks();
+  autoDiscoverEnabled = true;
+  assert(optOutResponse.status === 200, "opt-out repository.created response failed");
+  assert(syncCalls.length === 1, "repository.created ignored the organization opt-out");
 
   originalConsole.log(JSON.stringify({
     invalidSignatureRejected: true,
@@ -345,6 +407,9 @@ try {
     mergedAndMentionScoped: true,
     ledgerFailureNonFatal: true,
     uninstallTenantCaptured: true,
+    repositoryCreatedSynced: true,
+    repositoryCreatedUnmappedDropped: true,
+    repositoryCreatedRespectsOptOut: true,
   }));
 } catch (error) {
   originalConsole.warn(error);

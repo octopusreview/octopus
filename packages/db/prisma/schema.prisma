@@ -144,6 +144,11 @@ model Organization {
   monthlySpendLimitUsd    Float?
   checkFailureThreshold   String   @default("critical") // "critical" | "high" | "medium" | "none"
   reviewsPaused           Boolean  @default(false)
+  // Automatic repository discovery (hourly sweep + GitHub repository events).
+  // Off = new repositories are added only through the manual Sync button.
+  autoDiscoverRepos       Boolean  @default(true)
+  // Cursor for the discover-repositories sweep: least-recently-synced org first.
+  reposSyncedAt           DateTime?
   // Live telemetry (real-time presence + activity). Opt-in, paid-only.
   // liveTelemetryEnabled: org owner surfaces members'/agents' live presence +
   // activity to the org's own admins. allowVendorMemberVisibility: a SEPARATE

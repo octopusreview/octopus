@@ -69,6 +69,17 @@ export async function register() {
       // instances; the worker in queue-workers.ts does the work.
       await boss.schedule("reap-stuck-reviews", "*/5 * * * *");
 
+      // Automatic repository discovery sweep. Default :17 past every hour
+      // (offset from the other crons); REPO_DISCOVERY_CRON overrides, "off"
+      // disables it (and clears a previously stored schedule). Runs on cloud
+      // and self-hosted alike; the worker in queue-workers.ts does the work.
+      const discoveryCron = process.env.REPO_DISCOVERY_CRON?.trim() || "17 * * * *";
+      if (discoveryCron === "off") {
+        await boss.unschedule("discover-repositories");
+      } else {
+        await boss.schedule("discover-repositories", discoveryCron);
+      }
+
       // Daily release-cache refresh (05:00 UTC — offset from the retention jobs).
       // Gated to self-hosted: the release-check/update panel only surfaces there
       // (same server-side flag the admin bootstrap above uses). pg-boss dedups

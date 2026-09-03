@@ -25,6 +25,6 @@ describe("buildAppManifest", () => {
       checks: "write",
       metadata: "read",
     });
-    expect(m.default_events).toEqual(["pull_request", "pull_request_review"]);
+    expect(m.default_events).toEqual(["pull_request", "pull_request_review", "repository"]);
   });
 });

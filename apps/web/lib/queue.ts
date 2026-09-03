@@ -96,6 +96,14 @@ export async function startQueue(): Promise<PgBoss> {
     expireInSeconds: 300,
   }).catch(() => {});
 
+  // Hourly repository discovery sweep (scheduled in instrumentation.ts).
+  // Cursor-driven via Organization.reposSyncedAt, so no retry: the next tick
+  // resumes where this one stopped.
+  await boss.createQueue("discover-repositories", {
+    retryLimit: 0,
+    expireInSeconds: 1800,
+  }).catch(() => {});
+
   // Community-tier (no API key) async review pipeline.
   // Indexing can take minutes for first-touch repos, so the action enqueues
   // and polls; the worker indexes + reviews and writes the result back to

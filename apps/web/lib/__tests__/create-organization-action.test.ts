@@ -86,6 +86,9 @@ mock.module("@/lib/elasticsearch", () => ({
 }));
 mock.module("@/lib/github", () => ({ listInstallationRepos: () => Promise.resolve([]) }));
 mock.module("@/lib/bitbucket", () => ({ listWorkspaceRepos: () => Promise.resolve([]) }));
+mock.module("@/lib/repo-sync", () => ({
+  syncOrgRepos: () => Promise.resolve({ synced: 0, created: 0, removed: 0, createdRepos: [], providers: [] }),
+}));
 mock.module("@/lib/indexing-abort", () => ({
   createAbortController: () => new AbortController(),
   abortIndexing: () => {},

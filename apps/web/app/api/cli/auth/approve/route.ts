@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { generateApiToken, hashToken, getTokenPrefix } from "@/lib/api-auth";
+import { getAccountStanding, ACCOUNT_HOLD_MESSAGE } from "@/lib/account-standing";
 
 export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -44,6 +45,17 @@ export async function POST(request: Request) {
   });
   if (!member) {
     return Response.json({ error: "Not a member of this organization" }, { status: 403 });
+  }
+
+  // Account-standing gate (issue #788): the signup farm minted its tokens
+  // through this device flow — held accounts with no product signal get a
+  // clear, actionable refusal instead of a token.
+  const standing = await getAccountStanding({
+    userId: session.user.id,
+    orgId: organizationId,
+  });
+  if (standing.held) {
+    return Response.json({ error: ACCOUNT_HOLD_MESSAGE }, { status: 403 });
   }
 
   const org = await prisma.organization.findUnique({

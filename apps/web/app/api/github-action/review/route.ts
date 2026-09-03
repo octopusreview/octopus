@@ -126,6 +126,7 @@ export async function POST(request: NextRequest) {
   // ── Dual auth ─────────────────────────────────────────────────────────────
 
   const apiAuth = await authenticateApiToken(request);
+  if (apiAuth instanceof Response) return apiAuth; // account-standing hold (403), pass through
   const hasAuthHeader = request.headers.get("authorization")?.startsWith("Bearer ") ?? false;
   let orgId: string;
   let isCommunityMode = false;

@@ -7,6 +7,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const result = await authenticateApiToken(request);
+  if (result instanceof Response) return result; // account-standing hold (403), pass through
   if (!result) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }

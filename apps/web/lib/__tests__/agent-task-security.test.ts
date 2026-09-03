@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 type FakeAgent = {
   id: string;
@@ -135,7 +135,6 @@ const llmTaskUpdateMany = mock(() =>
 const pubbyTrigger = mock(() => Promise.resolve());
 const PRISMA_DB_NULL = Symbol("Prisma.DbNull");
 
-mock.module("@/lib/api-auth", () => ({ authenticateApiToken }));
 mock.module("@/lib/pubby", () => ({
   pubby: { trigger: pubbyTrigger },
 }));
@@ -166,6 +165,16 @@ mock.module("@octopus/db", () => ({
     },
   },
 }));
+
+// Snapshot the real api-auth exports (with @octopus/db already mocked above)
+// before mocking the module, and restore them after this file: bun module
+// mocks leak into later test files, and account-standing.test.ts exercises
+// the real authenticateApiToken.
+const realApiAuth = { ...(await import("@/lib/api-auth")) };
+mock.module("@/lib/api-auth", () => ({ authenticateApiToken }));
+afterAll(() => {
+  mock.module("@/lib/api-auth", () => realApiAuth);
+});
 
 const { POST: claimTask } =
   await import("@/app/api/agent/tasks/[id]/claim/route");

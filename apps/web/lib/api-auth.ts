@@ -1,5 +1,10 @@
 import { prisma } from "@octopus/db";
 import { createHash } from "crypto";
+import {
+  ACCOUNT_HOLD_MESSAGE,
+  isHeldRiskBand,
+  orgHasProductSignal,
+} from "@/lib/account-standing";
 
 export async function authenticateApiToken(request: Request) {
   const authHeader = request.headers.get("authorization");
@@ -34,6 +39,19 @@ export async function authenticateApiToken(request: Request) {
   // Check if org is banned
   if (apiToken.organization.bannedAt || apiToken.organization.deletedAt) {
     return null;
+  }
+
+  // Account-standing hold (issue #788): stop tokens already minted by held
+  // orgs. Gated here on the org's risk band + missing product signal only
+  // (NOT the creator's device fingerprints) — the org row is already loaded,
+  // so the common not-held case costs zero extra queries; fingerprints are
+  // enforced at mint time via getAccountStanding. Callers must pass this
+  // Response through as-is.
+  if (
+    isHeldRiskBand(apiToken.organization.welcomeRiskScore) &&
+    !(await orgHasProductSignal(apiToken.organization))
+  ) {
+    return Response.json({ error: ACCOUNT_HOLD_MESSAGE }, { status: 403 });
   }
 
   // Update last used timestamp (fire and forget)

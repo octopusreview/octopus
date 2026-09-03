@@ -23,6 +23,7 @@ const ORPHAN_REAP_MS = 10 * 60 * 1000;
 
 export async function GET(request: Request) {
   const auth = await authenticateApiToken(request);
+  if (auth instanceof Response) return auth; // account-standing hold (403), pass through
   if (!auth) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

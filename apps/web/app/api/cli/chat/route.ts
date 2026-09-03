@@ -33,6 +33,7 @@ function getAnthropicClient(): Anthropic {
 
 export async function POST(request: Request) {
   const result = await authenticateApiToken(request);
+  if (result instanceof Response) return result; // account-standing hold (403), pass through
   if (!result) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }

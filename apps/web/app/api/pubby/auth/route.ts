@@ -12,6 +12,7 @@ export async function POST(req: Request) {
 
   // Try API token auth first (for headless agents)
   const apiAuth = await authenticateApiToken(req);
+  if (apiAuth instanceof Response) return apiAuth; // account-standing hold (403), pass through
   if (apiAuth) {
     // Agents can only subscribe to their org's agent channel
     const agentChannelMatch = channel_name.match(

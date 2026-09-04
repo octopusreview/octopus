@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
-import { ORGANIZATION_ENTITY, ORGANIZATION_JSON_LD, SOCIAL_PROFILES, jsonLd } from "@/lib/structured-data";
+import { ORGANIZATION_ENTITY, ORGANIZATION_JSON_LD, SOCIAL_PROFILES, docsPageJsonLd, jsonLd } from "@/lib/structured-data";
 import { docsContent } from "@/lib/docs-content";
 import { GET, renderLlmsFull } from "@/app/llms-full.txt/route";
 
@@ -13,11 +13,23 @@ describe("Organization entity", () => {
   });
 });
 
+describe("docsPageJsonLd", () => {
+  it("emits a WebPage tied to the organization plus a two-level breadcrumb", () => {
+    const g = docsPageJsonLd({ title: "Pricing — Octopus Docs", description: "d", path: "/docs/pricing", crumb: "Pricing" });
+    const [page, crumbs] = g["@graph"] as [Record<string, unknown>, { itemListElement: Array<{ name: string; item: string; position: number }> }];
+    expect(page["@type"]).toBe("WebPage");
+    expect(page.url).toBe("https://octopus-review.ai/docs/pricing");
+    expect((page.publisher as { "@id": string })["@id"]).toBe(ORGANIZATION_ENTITY["@id"]);
+    expect(crumbs.itemListElement.map((c) => [c.position, c.name])).toEqual([[1, "Docs"], [2, "Pricing"]]);
+    expect(crumbs.itemListElement[1].item).toBe("https://octopus-review.ai/docs/pricing");
+  });
+});
+
 describe("llms.txt files", () => {
   const short = readFileSync(new URL("../../public/llms.txt", import.meta.url), "utf8");
 
   it("llms.txt names every vendor and surface and links the full file", () => {
-    for (const needle of ["Grok", "Qwen", "OpenRouter", "GPT-6 Astra", "GitHub Action", "CLI", "MCP", "/blog", "llms-full.txt", "source-available"]) {
+    for (const needle of ["Grok", "Qwen", "OpenRouter", "GPT-6 Astra", "GitHub Action", "CLI", "MCP", "/blog", "llms-full.txt", "source-available", "Grok 4.6", "Kimi K3", "/docs/glossary", "/compare"]) {
       expect(short).toContain(needle);
     }
     expect(short).not.toMatch(/open[- ]source/i);

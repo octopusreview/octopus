@@ -8,7 +8,7 @@ Octopus is a source-available (Modified MIT) AI code review platform. It connect
 
 - Automated pull request review with codebase context (vector index over the whole repository, not just the diff)
 - Severity-rated findings and a per-PR quality score; re-review on new commits
-- Choice of AI vendor and model per organization or per repository: Anthropic Claude (Fable 5.1, Opus 5, Sonnet 5), OpenAI (GPT-6 Astra, GPT-5.3 Codex), Google Gemini, xAI Grok, Alibaba Cloud Qwen (Qwen3.8-Max), and any model on OpenRouter. Cloud default: Claude Opus 5.
+- Choice of AI vendor and model per organization or per repository: Anthropic Claude (Fable 5.1, Opus 5, Sonnet 5), OpenAI (GPT-6 Astra, GPT-5.3 Codex), Google Gemini, xAI Grok (Grok 4.6), Alibaba Cloud Qwen (Qwen3.8-Max), and any model on OpenRouter (e.g. Kimi K3). Cloud default: Claude Opus 5.
 - Bring your own API keys (Anthropic, OpenAI, Google, xAI, Alibaba Cloud Model Studio, OpenRouter) or pay with Octopus credits
 - Organization knowledge base: custom rules and guidelines the reviewer follows
 - Package analyzer, code chat, issue creation from findings, live review timeline
@@ -19,6 +19,7 @@ Octopus is a source-available (Modified MIT) AI code review platform. It connect
 - GitLab and Bitbucket integrations
 - GitHub Action for CI-triggered reviews: https://octopus-review.ai/docs/github-action
 - CLI `octp` for local and terminal workflows: https://octopus-review.ai/docs/cli
+- Claude Code integration (review from the agent): https://octopus-review.ai/docs/cli/claude-code-integration
 - MCP plugin for Claude Code and Cursor: https://github.com/octopusreview/octopus-plugin
 - Slack (ask questions about your codebase), Linear and Jira (create issues from findings): https://octopus-review.ai/docs/integrations
 - Self-hosting with Docker Compose: https://octopus-review.ai/docs/self-hosting
@@ -41,10 +42,12 @@ Usage-based. Free credits on signup, no subscription. Octopus Cloud bills AI usa
 - Sub-processors: https://octopus-review.ai/docs/sub-processors
 - Privacy: https://octopus-review.ai/docs/privacy
 - Terms: https://octopus-review.ai/docs/terms
+- Glossary: https://octopus-review.ai/docs/glossary
 
 ## More
 
 - Blog (model launches, product news): https://octopus-review.ai/blog
+- Compared with other AI reviewers: https://octopus-review.ai/compare
 - Compared with CodeRabbit: https://octopus-review.ai/vs-coderabbit
 - Full documentation text for LLMs: https://octopus-review.ai/llms-full.txt
 - Source: https://github.com/octopusreview/octopus

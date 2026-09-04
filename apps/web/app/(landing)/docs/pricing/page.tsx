@@ -1,4 +1,5 @@
 import Link from "@/components/link";
+import { docsPageJsonLd, jsonLd } from "@/lib/structured-data";
 import {
   IconSparkles,
   IconCreditCard,
@@ -20,6 +21,19 @@ export const metadata = {
 export default function PricingPage() {
   return (
     <article className="max-w-3xl">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: jsonLd(
+            docsPageJsonLd({
+              title: metadata.title,
+              description: metadata.description,
+              path: "/docs/pricing",
+              crumb: "Pricing",
+            }),
+          ),
+        }}
+      />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconCreditCard className="size-4" />
@@ -68,7 +82,7 @@ export default function PricingPage() {
       </Section>
 
       {/* BYO Keys */}
-      <Section title="Bring Your Own Keys">
+      <Section title="Can I use my own API keys?">
         <div className="mb-4 rounded-xl border border-white/[0.08] bg-white/[0.03] p-6">
           <div className="flex items-start gap-4">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-white/[0.06] text-[#888]">
@@ -100,7 +114,7 @@ export default function PricingPage() {
       </Section>
 
       {/* Model pricing */}
-      <Section title="Model Pricing">
+      <Section title="How much does each model cost?">
         <P>
           Credit consumption varies by model. Octopus Cloud bills usage at 2x
           the provider&apos;s list price; that multiple is the platform rate, and
@@ -130,7 +144,9 @@ export default function PricingPage() {
               <ModelRow model="Gemini 2.5 Flash" input="$0.15" output="$0.60" />
               <ModelRow model="GPT-6 Astra" input="$10" output="$50" />
               <ModelRow model="GPT-5.3 Codex" input="$1.75" output="$14" />
+              <ModelRow model="Grok 4.6" input="$2" output="$6" />
               <ModelRow model="Qwen3.8-Max" input="$2" output="$6" />
+              <ModelRow model="Kimi K3 (via OpenRouter)" input="$3" output="$15" />
               <ModelRow model="Embeddings (text-embedding-3-large)" input="$0.13" output="—" />
               <ModelRow model="Embeddings (text-embedding-3-small)" input="$0.02" output="—" last />
             </tbody>

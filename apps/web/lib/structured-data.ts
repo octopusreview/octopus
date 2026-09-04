@@ -40,6 +40,42 @@ export const ORGANIZATION_JSON_LD = {
   ...ORGANIZATION_ENTITY,
 } as const;
 
+/**
+ * WebPage + BreadcrumbList for a documentation page, tied to the Organization
+ * entity by @id. `path` is the route ("/docs/pricing"), `crumb` the label shown
+ * in the docs breadcrumb.
+ */
+export function docsPageJsonLd(input: {
+  title: string;
+  description: string;
+  path: string;
+  crumb: string;
+}) {
+  const url = `${SITE_URL}${input.path}`;
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebPage",
+        "@id": url,
+        url,
+        name: input.title,
+        description: input.description,
+        isPartOf: { "@type": "WebSite", "@id": `${SITE_URL}/#website`, url: SITE_URL, name: "Octopus" },
+        publisher: { "@id": ORGANIZATION_ID },
+        inLanguage: "en",
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Docs", item: `${SITE_URL}/docs/getting-started` },
+          { "@type": "ListItem", position: 2, name: input.crumb, item: url },
+        ],
+      },
+    ],
+  };
+}
+
 /** JSON for a <script type="application/ld+json"> body; closes no script tag early. */
 export function jsonLd(value: unknown): string {
   return JSON.stringify(value).replace(/<\/script>/gi, "<\\/script>");

@@ -219,7 +219,9 @@ Claude Haiku 4.5 — $1 input / $5 output. Lightweight tasks like title generati
 Gemini 2.5 Pro — $1.25 input / $10 output. Gemini 2.5 Flash — $0.15 input / $0.60 output.
 GPT-6 Astra — $10 input / $50 output. OpenAI's flagship (released September 3, 2026); 1M-token context, opt-in review model; BYOK with an OpenAI key supported.
 GPT-5.3 Codex — $1.75 input / $14 output.
+Grok 4.6 — $2 input / $6 output. xAI; BYOK supported.
 Qwen3.8-Max — $2 input / $6 output. Alibaba Cloud Model Studio (Qwen), via the DashScope API; BYOK supported.
+Kimi K3 (MoonshotAI, via OpenRouter) — $3 input / $15 output. Any OpenRouter model can be used with your own OpenRouter key.
 Embeddings: text-embedding-3-large ($0.13) and text-embedding-3-small ($0.02).
 Cohere rerank is used for re-ranking search results.
 Prompt caching reduces costs: cached reads are billed at 10% of the input price.`,

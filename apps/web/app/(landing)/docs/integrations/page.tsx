@@ -12,6 +12,7 @@ import {
   IconBug,
   IconServer,
 } from "@tabler/icons-react";
+import { docsPageJsonLd, jsonLd } from "@/lib/structured-data";
 
 export const metadata = {
   title: "Integrations — Octopus Docs",
@@ -25,6 +26,19 @@ export const metadata = {
 export default function IntegrationsPage() {
   return (
     <article className="max-w-3xl">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: jsonLd(
+            docsPageJsonLd({
+              title: metadata.title,
+              description: metadata.description,
+              path: "/docs/integrations",
+              crumb: "Integrations",
+            }),
+          ),
+        }}
+      />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconPlugConnected className="size-4" />

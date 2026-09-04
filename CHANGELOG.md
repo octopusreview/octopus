@@ -11,8 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Documentation pages (About, Pricing, Integrations, CLI, GitHub Action) now carry WebPage and breadcrumb structured data linked to the Octopus organization entity. The pricing table lists Grok 4.6 and Kimi K3 (via OpenRouter), and three docs headings are phrased as the questions people ask.
-
-### Added
 - AI search readiness: `/llms-full.txt` (full documentation text, generated from the same corpus as Ask Octopus), an Organization schema with our public profiles on every marketing page, a Blog schema on the blog index, and explicit robots rules for ChatGPT search and Bing. `/llms.txt` now lists every supported AI vendor, the GitHub Action, CLI, MCP plugin and blog.
 
 ### Fixed

@@ -1,6 +1,6 @@
 {
   "name": "octopus",
-  "version": "1.0.135",
+  "version": "1.0.136",
   "devDependencies": {
     "turbo": "^2"
   },

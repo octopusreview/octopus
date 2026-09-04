@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.136] - 2026-09-04
+
 ### Added
 - Documentation pages (About, Pricing, Integrations, CLI, GitHub Action) now carry WebPage and breadcrumb structured data linked to the Octopus organization entity. The pricing table lists Grok 4.6 and Kimi K3 (via OpenRouter), and three docs headings are phrased as the questions people ask.
 

@@ -1,4 +1,5 @@
 import Link from "@/components/link";
+import { docsPageJsonLd, jsonLd } from "@/lib/structured-data";
 import { IconTerminal2 } from "@tabler/icons-react";
 import { CodeBlock } from "../self-hosting/code-block";
 
@@ -14,6 +15,19 @@ export const metadata = {
 export default function CLIPage() {
   return (
     <article className="prose-invert max-w-3xl">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: jsonLd(
+            docsPageJsonLd({
+              title: metadata.title,
+              description: metadata.description,
+              path: "/docs/cli",
+              crumb: "CLI",
+            }),
+          ),
+        }}
+      />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconTerminal2 className="size-4" />

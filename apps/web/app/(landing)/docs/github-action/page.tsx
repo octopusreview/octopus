@@ -1,4 +1,5 @@
 import Link from "@/components/link";
+import { docsPageJsonLd, jsonLd } from "@/lib/structured-data";
 import {
   IconBrandGithub,
   IconKey,
@@ -94,6 +95,19 @@ jobs:
 export default function GitHubActionPage() {
   return (
     <article className="max-w-3xl">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: jsonLd(
+            docsPageJsonLd({
+              title: metadata.title,
+              description: metadata.description,
+              path: "/docs/github-action",
+              crumb: "GitHub Action",
+            }),
+          ),
+        }}
+      />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconBrandGithub className="size-4" />

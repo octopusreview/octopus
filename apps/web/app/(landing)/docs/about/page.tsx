@@ -6,6 +6,7 @@ import {
   IconEye,
   IconRocket,
 } from "@tabler/icons-react";
+import { docsPageJsonLd, jsonLd } from "@/lib/structured-data";
 import { GetInTouchModal } from "@/components/get-in-touch-modal";
 import { TrackedAnchor } from "@/components/tracked-link";
 
@@ -21,6 +22,19 @@ export const metadata = {
 export default function AboutPage() {
   return (
     <article className="max-w-3xl">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: jsonLd(
+            docsPageJsonLd({
+              title: metadata.title,
+              description: metadata.description,
+              path: "/docs/about",
+              crumb: "About",
+            }),
+          ),
+        }}
+      />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconInfoCircle className="size-4" />
@@ -87,7 +101,7 @@ export default function AboutPage() {
       </Section>
 
       {/* Tech Stack */}
-      <Section title="Built With">
+      <Section title="What is Octopus built with?">
         <Paragraph>
           Octopus is built on modern, battle-tested technologies:
         </Paragraph>

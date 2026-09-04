@@ -34,6 +34,8 @@ const FALLBACK_PRICING: Record<string, ModelPricing> = {
   "claude-haiku-4-5-20251001": { input: 1, output: 5 },
   "gemini-2.5-pro": { input: 1.25, output: 10 },
   "gemini-2.5-flash": { input: 0.15, output: 0.6 },
+  // OpenAI GPT-6 Astra (2026-09-03) list price; the DB catalog row is authoritative.
+  "gpt-6-astra": { input: 10, output: 50 },
   "gpt-5.3-codex": { input: 1.75, output: 14 },
   // Claude Code is subscription-billed (not per-token), so platform price is 0.
   "claude-code:sonnet": { input: 0, output: 0 },

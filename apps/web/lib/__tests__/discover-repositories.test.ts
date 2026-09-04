@@ -2,9 +2,13 @@ import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 mock.module("server-only", () => ({}));
 
+// Prisma-shaped arguments captured by the test doubles below; shape is asserted per test.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Loose = Record<string, any>;
+
 let orgs: Array<{ id: string }> = [];
-let findManyArgs: Record<string, any> | null = null;
-const findMany = mock(async (args: Record<string, any>) => {
+let findManyArgs: Loose | null = null;
+const findMany = mock(async (args: Loose) => {
   findManyArgs = args;
   return orgs;
 });

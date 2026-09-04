@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 mock.module("server-only", () => ({}));
 
+// Prisma-shaped arguments captured by the test doubles below; shape is asserted per test.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Loose = Record<string, any>;
+
 // ── fixtures (reset in beforeEach) ──
 type ExistingRow = { externalId: string; dismissedAt: Date | null };
 let orgRow: { githubInstallationId: number | null } | null = { githubInstallationId: 111 };
@@ -10,27 +14,27 @@ let existingRows: Record<string, ExistingRow[]> = { github: [], bitbucket: [], g
 let bitbucket: { workspaceSlug: string } | null = null;
 let gitlab: { namespacePath: string; webhookSecret: string | null } | null = null;
 let updateManyCount = 0;
-const upserts: Array<Record<string, any>> = [];
-const updateManys: Array<Record<string, any>> = [];
+const upserts: Array<Loose> = [];
+const updateManys: Array<Loose> = [];
 
 const prisma = {
   organization: { findUnique: mock(async () => orgRow) },
   repository: {
-    findMany: mock(async (args: Record<string, any>) =>
+    findMany: mock(async (args: Loose) =>
       args.distinct ? repoInstallations : (existingRows[args.where.provider] ?? []),
     ),
-    upsert: mock(async (args: Record<string, any>) => {
+    upsert: mock(async (args: Loose) => {
       upserts.push(args);
       return {
         id: `row_${args.where.provider_externalId_organizationId.externalId}`,
         fullName: args.create.fullName,
       };
     }),
-    updateMany: mock(async (args: Record<string, any>) => {
+    updateMany: mock(async (args: Loose) => {
       updateManys.push(args);
       return { count: updateManyCount };
     }),
-    findUnique: mock(async (args: Record<string, any>) => {
+    findUnique: mock(async (args: Loose) => {
       const ext = args.where.provider_externalId_organizationId.externalId;
       const row = existingRows.github.find((r) => r.externalId === ext);
       return row ? { dismissedAt: row.dismissedAt } : null;
@@ -47,7 +51,7 @@ class GithubRateLimitError extends Error {
     this.name = "GithubRateLimitError";
   }
 }
-let ghRepos: Record<number, Array<Record<string, any>> | Error> = {};
+let ghRepos: Record<number, Array<Loose> | Error> = {};
 const listInstallationRepos = mock(async (installationId: number) => {
   const v = ghRepos[installationId];
   if (v instanceof Error) throw v;
@@ -58,11 +62,11 @@ const listInstallationRepos = mock(async (installationId: number) => {
 const actualGithub = await import("@/lib/github");
 mock.module("@/lib/github", () => ({ ...actualGithub, listInstallationRepos, GithubRateLimitError }));
 
-let bbRepos: Array<Record<string, any>> = [];
+let bbRepos: Array<Loose> = [];
 const actualBitbucket = await import("@/lib/bitbucket");
 mock.module("@/lib/bitbucket", () => ({ ...actualBitbucket, listWorkspaceRepos: mock(async () => bbRepos) }));
 
-let glProjects: Array<Record<string, any>> = [];
+let glProjects: Array<Loose> = [];
 const createProjectWebhook = mock(async () => 1);
 const actualGitlab = await import("@/lib/gitlab");
 mock.module("@/lib/gitlab", () => ({

@@ -14,6 +14,8 @@ let currentSession: Session = null;
 let boundInstallationId: number | null = null;
 let requestCookies = new Map<string, string>();
 let installationAccessible = false;
+let clientCredentialsConfigured = true;
+let existingBinding: { id: string; deletedAt: Date | null } | null = null;
 
 const TEST_PRIVATE_KEY = crypto
   .generateKeyPairSync("rsa", { modulusLength: 1024 })
@@ -22,9 +24,9 @@ const TEST_PRIVATE_KEY = crypto
 
 const redisSet = mock(() => Promise.resolve("OK"));
 const organizationUpdate = mock(
-  ({ data }: { data: { githubInstallationId: number } }) => {
-    boundInstallationId = data.githubInstallationId;
-    return Promise.resolve({ id: "org_victim" });
+  ({ where, data }: { where: { id: string }; data: { githubInstallationId: number | null } }) => {
+    if (where.id === "org_victim") boundInstallationId = data.githubInstallationId;
+    return Promise.resolve({ id: where.id });
   },
 );
 
@@ -53,6 +55,9 @@ mock.module("@/lib/redis", () => ({
   getRedis: () => ({ set: redisSet }),
 }));
 
+const writeAuditLog = mock((_entry: Record<string, unknown>) => Promise.resolve());
+mock.module("@/lib/audit", () => ({ writeAuditLog }));
+
 let githubAppConfigured = true;
 
 mock.module("@/lib/github-app-config", () => ({
@@ -63,8 +68,8 @@ mock.module("@/lib/github-app-config", () => ({
             appId: "123",
             slug: "octopus-review",
             privateKey: TEST_PRIVATE_KEY,
-            clientId: "github-app-client-id",
-            clientSecret: "github-app-client-secret",
+            clientId: clientCredentialsConfigured ? "github-app-client-id" : null,
+            clientSecret: clientCredentialsConfigured ? "github-app-client-secret" : null,
           }
         : null,
     ),
@@ -100,7 +105,7 @@ mock.module("@octopus/db", () => ({
       findFirst: () => Promise.resolve({ organizationId: "org_victim" }),
     },
     organization: {
-      findUnique: () => Promise.resolve(null),
+      findUnique: () => Promise.resolve(existingBinding),
       update: organizationUpdate,
     },
     repository: {
@@ -141,9 +146,16 @@ beforeEach(() => {
   boundInstallationId = null;
   requestCookies = new Map();
   installationAccessible = false;
+  clientCredentialsConfigured = true;
+  existingBinding = null;
   redisSet.mockClear();
   organizationUpdate.mockClear();
+  writeAuditLog.mockClear();
 });
+
+function auditEntries(): Array<Record<string, unknown>> {
+  return writeAuditLog.mock.calls.map((call) => call[0]);
+}
 
 afterAll(() => {
   globalThis.fetch = originalFetch;
@@ -260,6 +272,133 @@ describe("GitHub installation callback authorization", () => {
 
     expect(setCookie).toContain(`${GITHUB_INSTALL_STATE_COOKIE}=;`);
     expect(setCookie).toContain("Path=/api/github/callback");
+  });
+
+  it("records who hit a missing-client-credentials failure and never shows it as the user's fault", async () => {
+    clientCredentialsConfigured = false;
+    const nonce = "unconfigured-browser-nonce";
+    const state = signInstallState({
+      uid: "user_victim",
+      oid: "org_victim",
+      rt: "/settings/integrations",
+      nonce,
+    });
+    requestCookies.set(GITHUB_INSTALL_STATE_COOKIE, nonce);
+
+    const response = await GET(
+      callbackRequest({ state, installation_id: "424242" }),
+    );
+    const location = new URL(response.headers.get("location")!);
+
+    expect(location.searchParams.get("error")).toBe("github_verification_not_configured");
+    expect(boundInstallationId).toBeNull();
+    const failure = auditEntries().find((e) => e.action === "integration.install_failed");
+    expect(failure).toMatchObject({
+      actorId: "user_victim",
+      organizationId: "org_victim",
+      metadata: { provider: "github", reason: "github_verification_not_configured" },
+    });
+  });
+
+  it("attributes a GitHub authorization denial to the user and keeps GitHub's error code", async () => {
+    const nonce = "denied-browser-nonce";
+    const state = signInstallationVerificationState({
+      uid: "user_victim",
+      oid: "org_victim",
+      rt: "/settings/integrations",
+      nonce,
+      installationId: 424242,
+    });
+    requestCookies.set(GITHUB_INSTALL_STATE_COOKIE, nonce);
+
+    const response = await GET(
+      callbackRequest({ state, error: "redirect_uri_mismatch" }),
+    );
+    const location = new URL(response.headers.get("location")!);
+
+    expect(location.searchParams.get("error")).toBe("github_authorization_denied");
+    expect(auditEntries()).toContainEqual(
+      expect.objectContaining({
+        action: "integration.install_failed",
+        actorId: "user_victim",
+        organizationId: "org_victim",
+        metadata: expect.objectContaining({
+          reason: "github_authorization_denied",
+          githubError: "redirect_uri_mismatch",
+        }),
+      }),
+    );
+  });
+
+  it("records a pending-approval return (no installation_id) without failing the user", async () => {
+    const nonce = "pending-browser-nonce";
+    const state = signInstallState({
+      uid: "user_victim",
+      oid: "org_victim",
+      rt: "/settings/integrations",
+      nonce,
+    });
+    requestCookies.set(GITHUB_INSTALL_STATE_COOKIE, nonce);
+
+    const response = await GET(callbackRequest({ state, setup_action: "request" }));
+    const location = new URL(response.headers.get("location")!);
+
+    expect(location.pathname).toBe("/settings/integrations");
+    expect(location.searchParams.get("error")).toBeNull();
+    await Promise.resolve();
+    expect(auditEntries()).toContainEqual(
+      expect.objectContaining({
+        actorId: "user_victim",
+        organizationId: "org_victim",
+        metadata: expect.objectContaining({ reason: "installation_pending_approval" }),
+      }),
+    );
+  });
+
+  it("releases an installation held by a soft-deleted organization and binds the new one", async () => {
+    existingBinding = { id: "org_deleted", deletedAt: new Date("2026-08-01T00:00:00Z") };
+    const nonce = "release-browser-nonce";
+    const state = signInstallationVerificationState({
+      uid: "user_victim",
+      oid: "org_victim",
+      rt: "/settings/integrations",
+      nonce,
+      installationId: 424242,
+    });
+    requestCookies.set(GITHUB_INSTALL_STATE_COOKIE, nonce);
+    installationAccessible = true;
+
+    const response = await GET(callbackRequest({ state, code: "one-time-code" }));
+    const location = new URL(response.headers.get("location")!);
+
+    expect(location.searchParams.get("error")).toBeNull();
+    expect(boundInstallationId).toBe(424242);
+    expect(organizationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "org_deleted" },
+        data: { githubInstallationId: null },
+      }),
+    );
+  });
+
+  it("still refuses to steal an installation from a live organization", async () => {
+    existingBinding = { id: "org_other_live", deletedAt: null };
+    const nonce = "steal-browser-nonce";
+    const state = signInstallationVerificationState({
+      uid: "user_victim",
+      oid: "org_victim",
+      rt: "/settings/integrations",
+      nonce,
+      installationId: 424242,
+    });
+    requestCookies.set(GITHUB_INSTALL_STATE_COOKIE, nonce);
+    installationAccessible = true;
+
+    const response = await GET(callbackRequest({ state, code: "one-time-code" }));
+    const location = new URL(response.headers.get("location")!);
+
+    expect(location.searchParams.get("error")).toBe("installation_already_bound");
+    expect(boundInstallationId).toBeNull();
   });
 
   it("does not redirect off-origin for a backslash return path", async () => {
@@ -389,6 +528,21 @@ describe("GitHub installation UI entry points", () => {
 
     expect(location.pathname).toBe("/settings/integrations");
     expect(location.searchParams.get("error")).toBe("github_app_not_configured");
+  });
+
+  it("records an install start with no organization selected instead of failing silently", async () => {
+    const response = await GET_INSTALL(installRequest({ returnTo: "/repositories" }));
+    const location = new URL(response.headers.get("location")!);
+
+    expect(location.pathname).toBe("/dashboard");
+    await Promise.resolve();
+    expect(auditEntries()).toContainEqual(
+      expect.objectContaining({
+        action: "integration.install_failed",
+        actorId: "user_victim",
+        metadata: expect.objectContaining({ reason: "no_org_selected" }),
+      }),
+    );
   });
 
   it("resumes an unauthenticated install-start request after login", async () => {

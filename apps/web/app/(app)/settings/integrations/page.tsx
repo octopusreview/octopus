@@ -1,4 +1,5 @@
 import { headers, cookies } from "next/headers";
+import { GITHUB_INSTALL_ERROR_CODES, type GitHubInstallErrorCode } from "@/lib/github-install-errors";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
@@ -13,32 +14,9 @@ import { IntegrationOAuthErrorBanner } from "./integration-oauth-error-banner";
 import { getGithubAppConfig } from "@/lib/github-app-config";
 import { isSelfHosted } from "@/lib/self-hosted";
 
-const ALLOWED_GITHUB_ERRORS = [
-  "installation_already_bound",
-  "invalid_installation_id",
-  "missing_state",
-  "invalid_state_bad_signature",
-  "invalid_state_expired",
-  "invalid_state_malformed",
-  "replay_detected",
-  "state_store_unavailable",
-  "session_required",
-  "state_user_mismatch",
-  "state_browser_mismatch",
-  "github_app_not_configured",
-  "github_verification_not_configured",
-  "github_authorization_denied",
-  "github_authorization_failed",
-  "installation_not_accessible",
-  "not_a_member",
-  "manifest_forbidden",
-  "manifest_already_configured",
-  "manifest_bad_org",
-  "manifest_expired",
-  "manifest_failed",
-] as const;
+const ALLOWED_GITHUB_ERRORS = GITHUB_INSTALL_ERROR_CODES;
 
-type GitHubErrorCode = (typeof ALLOWED_GITHUB_ERRORS)[number];
+type GitHubErrorCode = GitHubInstallErrorCode;
 
 export default async function IntegrationsPage({
   searchParams,

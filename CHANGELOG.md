@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Connecting GitHub on Octopus Cloud failed for every new organization since 1.0.90 (1 August). That release added a verification step to the GitHub install that needs the GitHub App's client credentials, and production never received them. The credentials are in place; the server now refuses to start on Octopus Cloud without them, the message shown to customers no longer contains self-host setup instructions, failed connect attempts are recorded with the user and organization, and an installation held by a deleted organization is released instead of blocking a new one. Affected users can connect by clicking Install GitHub App again.
+
 ## [1.0.133] - 2026-09-03
 
 ### Added

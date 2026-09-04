@@ -88,6 +88,28 @@ export async function getGithubAppConfig(): Promise<GithubAppConfig | null> {
 }
 
 /** Whether a GitHub App is configured at all (DB or env). */
+/**
+ * The install callback verifies that the installing user can access the
+ * installation through a GitHub App user-authorization hop, which needs the
+ * App's OAuth client credentials. Without them every install completes on
+ * GitHub and then fails to bind (github_verification_not_configured) — which
+ * is exactly what happened on Octopus Cloud from v1.0.90 until the env was
+ * fixed. So: no App at all is fine (Connect is hidden), but an App without
+ * client credentials is a misconfiguration. Cloud refuses to start (the deploy
+ * health gate keeps the previous version serving); self-host logs loudly.
+ */
+export function assertGithubAppVerificationConfig(input: {
+  selfHosted: boolean;
+  appConfig: Pick<GithubAppConfig, "clientId" | "clientSecret"> | null;
+}): void {
+  if (!input.appConfig) return;
+  if (input.appConfig.clientId && input.appConfig.clientSecret) return;
+  const message =
+    "[github-app] GITHUB_APP_CLIENT_ID / GITHUB_APP_CLIENT_SECRET missing — GitHub installs will fail with github_verification_not_configured";
+  if (!input.selfHosted) throw new Error(message);
+  console.error(message);
+}
+
 export async function isGithubAppConfigured(): Promise<boolean> {
   return (await getGithubAppConfig()) !== null;
 }

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.135] - 2026-09-04
 
+### Added
+- GPT-6 Astra (OpenAI, released 3 September) can be chosen as the review model on Octopus Cloud or with your own OpenAI key. Listed on the pricing page at OpenAI's $10 / $50 per million tokens; the Cloud default stays Claude Opus 5.
+
 ## [1.0.134] - 2026-09-04
 
 ### Fixed

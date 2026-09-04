@@ -18,6 +18,17 @@ export async function register() {
     );
     resolveWebhookDeliveryRetentionDays();
 
+    // Fail before queue startup when the GitHub App lacks the OAuth client
+    // credentials the install verification needs (cloud throws, self-host logs).
+    const { getGithubAppConfig, assertGithubAppVerificationConfig } = await import(
+      "./lib/github-app-config"
+    );
+    const { isSelfHosted } = await import("./lib/self-hosted");
+    assertGithubAppVerificationConfig({
+      selfHosted: isSelfHosted(),
+      appConfig: await getGithubAppConfig(),
+    });
+
     const { reconcileStaleRepoStates } = await import("./lib/boot-reconciler");
     await reconcileStaleRepoStates();
 

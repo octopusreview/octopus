@@ -10,9 +10,8 @@ mock.module("@octopus/db", () => ({
   },
 }));
 
-const { getGithubAppConfig, clearGithubAppConfigCache } = await import(
-  "@/lib/github-app-config"
-);
+const { getGithubAppConfig, clearGithubAppConfigCache, assertGithubAppVerificationConfig } =
+  await import("@/lib/github-app-config");
 
 // decryptStringMaybeLegacy returns its input unchanged when the value isn't
 // valid ciphertext, so plaintext test values round-trip without a data key.
@@ -86,5 +85,64 @@ describe("getGithubAppConfig", () => {
   it("returns null when neither DB nor env is configured", async () => {
     sysRow = null;
     expect(await getGithubAppConfig()).toBeNull();
+  });
+});
+
+describe("assertGithubAppVerificationConfig", () => {
+  const full = { clientId: "cid", clientSecret: "cs" };
+
+  it("accepts no GitHub App at all (Connect is simply hidden)", () => {
+    expect(() => assertGithubAppVerificationConfig({ selfHosted: false, appConfig: null })).not.toThrow();
+  });
+
+  it("accepts an App with both client credentials", () => {
+    expect(() => assertGithubAppVerificationConfig({ selfHosted: false, appConfig: full })).not.toThrow();
+  });
+
+  it("refuses to boot cloud with an App but no client secret", () => {
+    expect(() =>
+      assertGithubAppVerificationConfig({
+        selfHosted: false,
+        appConfig: { clientId: "cid", clientSecret: null },
+      }),
+    ).toThrow(/GITHUB_APP_CLIENT_ID \/ GITHUB_APP_CLIENT_SECRET.*github_verification_not_configured/);
+  });
+
+  it("refuses to boot cloud with an App but no client id", () => {
+    expect(() =>
+      assertGithubAppVerificationConfig({
+        selfHosted: false,
+        appConfig: { clientId: null, clientSecret: "cs" },
+      }),
+    ).toThrow();
+  });
+
+  it("only logs on self-host so an operator mid-setup can still start", () => {
+    const original = console.error;
+    const calls: unknown[][] = [];
+    console.error = (...args: unknown[]) => {
+      calls.push(args);
+    };
+    try {
+      expect(() =>
+        assertGithubAppVerificationConfig({
+          selfHosted: true,
+          appConfig: { clientId: "cid", clientSecret: null },
+        }),
+      ).not.toThrow();
+    } finally {
+      console.error = original;
+    }
+    expect(calls).toHaveLength(1);
+    expect(String(calls[0][0])).toContain("GITHUB_APP_CLIENT_ID");
+  });
+
+  it("is wired into instrumentation before the queue starts", async () => {
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync(new URL("../../instrumentation.ts", import.meta.url), "utf8");
+    const assertAt = source.indexOf("assertGithubAppVerificationConfig({");
+    const queueAt = source.indexOf("startQueue()");
+    expect(assertAt).toBeGreaterThan(-1);
+    expect(queueAt).toBeGreaterThan(assertAt);
   });
 });

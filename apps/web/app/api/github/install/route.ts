@@ -35,6 +35,15 @@ export async function GET(request: NextRequest) {
   const orgId = requestedOrgId || cookieStore.get("current_org_id")?.value;
 
   if (!orgId) {
+    // No organization selected (cookie not set yet / cleared). Silent for the
+    // user, but recorded so a dead Connect button is visible in the funnel.
+    void writeAuditLog({
+      action: "integration.install_failed",
+      category: "system",
+      actorId: session.user.id,
+      actorEmail: session.user.email,
+      metadata: { provider: "github", reason: "no_org_selected" },
+    }).catch(() => {});
     return NextResponse.redirect(new URL("/dashboard", baseUrl));
   }
 
@@ -44,6 +53,14 @@ export async function GET(request: NextRequest) {
   });
 
   if (!membership) {
+    void writeAuditLog({
+      action: "integration.install_failed",
+      category: "system",
+      actorId: session.user.id,
+      actorEmail: session.user.email,
+      organizationId: orgId,
+      metadata: { provider: "github", reason: "not_a_member" },
+    }).catch(() => {});
     return NextResponse.redirect(new URL("/dashboard", baseUrl));
   }
 

@@ -1,4 +1,5 @@
 import Link from "@/components/link";
+import { ORGANIZATION_ENTITY } from "@/lib/structured-data";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
@@ -35,7 +36,7 @@ const landingFaqs = [
   },
   {
     q: "How does the automated review work?",
-    a: "When a pull request is opened, Octopus fetches the diff, retrieves relevant context from your indexed codebase using vector search, and sends it to an LLM (Claude, OpenAI, Google Gemini, or Qwen) for analysis. Findings are posted directly on the PR with severity ratings: Critical, Major, Minor, Suggestion, and Tip.",
+    a: "When a pull request is opened, Octopus fetches the diff, retrieves relevant context from your indexed codebase using vector search, and sends it to an LLM (Anthropic Claude, OpenAI GPT, Google Gemini, xAI Grok, Alibaba Qwen, or any model on OpenRouter) for analysis. Findings are posted directly on the PR with severity ratings: Critical, Major, Minor, Suggestion, and Tip.",
   },
   {
     q: "Which programming languages are supported?",
@@ -82,7 +83,9 @@ const productJsonLd = {
     "Real-time WebSocket updates",
     "Knowledge base for custom review rules",
     "CLI for terminal-based workflows",
+    "Choice of AI vendor: Anthropic Claude, OpenAI GPT, Google Gemini, xAI Grok, Alibaba Qwen, or OpenRouter",
   ],
+  publisher: ORGANIZATION_ENTITY,
 };
 
 const faqJsonLd = {

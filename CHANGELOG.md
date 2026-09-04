@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- AI search readiness: `/llms-full.txt` (full documentation text, generated from the same corpus as Ask Octopus), an Organization schema with our public profiles on every marketing page, a Blog schema on the blog index, and explicit robots rules for ChatGPT search and Bing. `/llms.txt` now lists every supported AI vendor, the GitHub Action, CLI, MCP plugin and blog.
+
+### Fixed
+- The About page, FAQ and homepage said reviews run on "Claude and OpenAI" or "Claude, OpenAI, Gemini or Qwen"; they now name all supported vendors, including Grok and OpenRouter.
+
 ## [1.0.135] - 2026-09-04
 
 ### Added

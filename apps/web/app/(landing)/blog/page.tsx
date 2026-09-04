@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ORGANIZATION_ENTITY, SITE_URL, jsonLd } from "@/lib/structured-data";
 import Link from "@/components/link";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
@@ -167,8 +168,20 @@ export default async function BlogPage({
   const TAG_SIZE = ["text-xs", "text-xs", "text-sm", "text-sm"];
   const TAG_TONE = ["text-[#666]", "text-[#888]", "text-[#aaa]", "text-white"];
 
+  const blogJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Blog",
+    "@id": `${SITE_URL}/blog#blog`,
+    name: "Octopus Blog",
+    url: `${SITE_URL}/blog`,
+    description:
+      "Product news, model launches and engineering notes from the Octopus AI code review team.",
+    publisher: ORGANIZATION_ENTITY,
+  };
+
   return (
     <div className="min-h-screen bg-[#0c0c0c] text-white">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(blogJsonLd) }} />
       <LandingDesktopNav isLoggedIn={isLoggedIn} />
       <LandingMobileNav isLoggedIn={isLoggedIn} />
 

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ORGANIZATION_ENTITY } from "@/lib/structured-data";
 import { notFound } from "next/navigation";
 import Link from "@/components/link";
 import { headers } from "next/headers";
@@ -93,14 +94,7 @@ export default async function BlogPostPage({
       "@type": "Person",
       name: post.authorName,
     },
-    publisher: {
-      "@type": "Organization",
-      name: "Octopus",
-      logo: {
-        "@type": "ImageObject",
-        url: "https://octopus-review.ai/logo.svg",
-      },
-    },
+    publisher: ORGANIZATION_ENTITY,
     mainEntityOfPage: {
       "@type": "WebPage",
       "@id": canonicalUrl,

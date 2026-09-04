@@ -1,38 +1,51 @@
 # Octopus
 
-> AI-powered code review tool
+> AI code review for pull requests. Octopus reviews every PR on GitHub, GitLab and Bitbucket with full-repository context and posts severity-rated findings inline. Cloud service at octopus-review.ai; self-hosting is optional.
 
-Octopus is a source-available, AI-powered code review platform. It connects to GitHub, GitLab, and Bitbucket repositories, indexes codebases using vector embeddings, and automatically reviews pull requests — posting findings as inline comments with severity levels.
+Octopus is a source-available (Modified MIT) AI code review platform. It connects to your repositories, indexes the codebase with vector search, and reviews each pull request as it is opened or updated. Findings are posted as inline review comments with a severity (Critical, Major, Minor, Suggestion, Tip), a short explanation and, where useful, a suggested patch, plus a per-PR score table. Reviews re-run when the PR changes, and replies to review comments are understood and acted on.
 
-## Core Features
+## Core features
 
-- **Automated PR Review**: AI analyzes pull request diffs with full codebase context
-- **Severity Ratings**: Findings rated as 🔴 Critical, 🟠 Major, 🟡 Minor, 🔵 Suggestion, 💡 Tip
-- **Codebase Indexing**: Vector search over your entire codebase for context-aware reviews
-- **Multi-Provider AI**: Supports Anthropic Claude, OpenAI, and Google Gemini models
-- **Organization Knowledge**: Custom rules and guidelines per organization
-- **Re-review**: Address feedback and re-trigger reviews on updated code
+- Automated pull request review with codebase context (vector index over the whole repository, not just the diff)
+- Severity-rated findings and a per-PR quality score; re-review on new commits
+- Choice of AI vendor and model per organization or per repository: Anthropic Claude (Fable 5.1, Opus 5, Sonnet 5), OpenAI (GPT-6 Astra, GPT-5.3 Codex), Google Gemini, xAI Grok, Alibaba Cloud Qwen (Qwen3.8-Max), and any model on OpenRouter. Cloud default: Claude Opus 5.
+- Bring your own API keys (Anthropic, OpenAI, Google, xAI, Alibaba Cloud Model Studio, OpenRouter) or pay with Octopus credits
+- Organization knowledge base: custom rules and guidelines the reviewer follows
+- Package analyzer, code chat, issue creation from findings, live review timeline
 
-## Integrations
+## Ways to use it
 
-- GitHub (App installation)
-- GitLab (OAuth)
-- Bitbucket (OAuth webhooks)
-- Linear (issue creation from findings)
-- Slack (ask questions about your codebase)
+- GitHub App (recommended on cloud): automatic reviews on every pull request
+- GitLab and Bitbucket integrations
+- GitHub Action for CI-triggered reviews: https://octopus-review.ai/docs/github-action
+- CLI `octp` for local and terminal workflows: https://octopus-review.ai/docs/cli
+- MCP plugin for Claude Code and Cursor: https://github.com/octopusreview/octopus-plugin
+- Slack (ask questions about your codebase), Linear and Jira (create issues from findings): https://octopus-review.ai/docs/integrations
+- Self-hosting with Docker Compose: https://octopus-review.ai/docs/self-hosting
 
 ## Pricing
 
-Usage-based billing with credits. Free tier available. Pay only for AI tokens consumed during reviews.
+Usage-based. Free credits on signup, no subscription. Octopus Cloud bills AI usage at 2x the provider's list price and charges nothing else; with your own API keys the model call is free and the provider bills you. Provider list prices per 1M tokens are on https://octopus-review.ai/docs/pricing.
 
-## Links
+## Documentation
 
-- Website: https://octopus-review.ai
-- Docs: https://octopus-review.ai/docs/about
+- About: https://octopus-review.ai/docs/about
+- Getting started: https://octopus-review.ai/docs/getting-started
 - Pricing: https://octopus-review.ai/docs/pricing
 - FAQ: https://octopus-review.ai/docs/faq
-- CLI: https://octopus-review.ai/docs/cli
 - Integrations: https://octopus-review.ai/docs/integrations
-- Self-Hosting: https://octopus-review.ai/docs/self-hosting
+- CLI: https://octopus-review.ai/docs/cli
+- GitHub Action: https://octopus-review.ai/docs/github-action
+- Self-hosting: https://octopus-review.ai/docs/self-hosting
+- Security overview: https://octopus-review.ai/docs/security-overview
+- Sub-processors: https://octopus-review.ai/docs/sub-processors
 - Privacy: https://octopus-review.ai/docs/privacy
 - Terms: https://octopus-review.ai/docs/terms
+
+## More
+
+- Blog (model launches, product news): https://octopus-review.ai/blog
+- Compared with CodeRabbit: https://octopus-review.ai/vs-coderabbit
+- Full documentation text for LLMs: https://octopus-review.ai/llms-full.txt
+- Source: https://github.com/octopusreview/octopus
+- Contact: support@octopus-review.ai

@@ -95,7 +95,7 @@ export default function AboutPage() {
           <TechCard name="Next.js" detail="App Router, React 19" />
           <TechCard name="Prisma" detail="PostgreSQL ORM" />
           <TechCard name="Qdrant" detail="Vector search" />
-          <TechCard name="Claude & OpenAI" detail="AI review engine" />
+          <TechCard name="Claude, GPT, Gemini, Grok, Qwen" detail="AI review models, plus OpenRouter" />
           <TechCard name="Tailwind CSS" detail="Styling" />
           <TechCard name="TypeScript" detail="End-to-end type safety" />
         </div>

@@ -18,7 +18,7 @@ const generalFaqs = [
   },
   {
     q: "How does Octopus review my code?",
-    a: "When a pull request is opened, Octopus fetches the diff, retrieves relevant context from your indexed codebase using vector search, and sends it to an LLM (Claude, OpenAI, Google Gemini, or Qwen) for analysis. The results are posted as PR comments with severity indicators: 🔴 Critical, 🟠 Major, 🟡 Minor, 🔵 Suggestion, 💡 Tip.",
+    a: "When a pull request is opened, Octopus fetches the diff, retrieves relevant context from your indexed codebase using vector search, and sends it to an LLM (Anthropic Claude, OpenAI GPT, Google Gemini, xAI Grok, Alibaba Qwen, or any model on OpenRouter) for analysis. The results are posted as PR comments with severity indicators: 🔴 Critical, 🟠 Major, 🟡 Minor, 🔵 Suggestion, 💡 Tip.",
   },
   {
     q: "Which programming languages does Octopus support?",

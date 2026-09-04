@@ -33,6 +33,9 @@ export default function robots(): MetadataRoute.Robots {
       { userAgent: "Google-Extended", allow: "/", disallow },
       { userAgent: "PerplexityBot", allow: "/", disallow },
       { userAgent: "CCBot", allow: "/", disallow },
+      // AI search (as opposed to training) crawlers: ChatGPT search and Bing/Copilot.
+      { userAgent: "OAI-SearchBot", allow: "/", disallow },
+      { userAgent: "Bingbot", allow: "/", disallow },
     ],
     sitemap: "https://octopus-review.ai/sitemap.xml",
   };

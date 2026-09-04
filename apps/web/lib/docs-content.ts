@@ -59,7 +59,7 @@ Self-Host Ready — Run Octopus on your own infrastructure with one Docker Compo
 A: Octopus is an AI-powered code review tool that connects to GitHub, GitLab, and Bitbucket, indexes your codebase for deep context, and automatically reviews every pull request (and GitLab merge request) — posting findings as inline comments with severity levels.
 
 Q: How does the automated review work?
-A: When a pull request is opened, Octopus fetches the diff, retrieves relevant context from your indexed codebase using vector search, and sends it to an LLM (Claude, OpenAI, or Google Gemini) for analysis. Findings are posted directly on the PR with severity ratings: Critical, Major, Minor, Suggestion, and Tip.
+A: When a pull request is opened, Octopus fetches the diff, retrieves relevant context from your indexed codebase using vector search, and sends it to an LLM (Anthropic Claude, OpenAI GPT, Google Gemini, xAI Grok, Alibaba Qwen, or any model on OpenRouter) for analysis. Findings are posted directly on the PR with severity ratings: Critical, Major, Minor, Suggestion, and Tip.
 
 Q: Which programming languages are supported?
 A: Octopus is language-agnostic. It reviews any text-based code file — TypeScript, Python, Go, Rust, Java, C#, Ruby, PHP, Swift, Kotlin, and more.
@@ -335,7 +335,7 @@ Running without Docker: Install Bun, set up PostgreSQL and Qdrant locally, run b
 A: Octopus is a source-available, AI-powered code review tool that indexes your codebase and automatically reviews pull requests with context-aware findings.
 
 Q: How does Octopus review code?
-A: When a PR is opened, Octopus fetches the diff, retrieves relevant code context via vector search, and uses an LLM (Claude, OpenAI, or Google Gemini) to analyze changes. Findings are posted as inline PR comments.
+A: When a PR is opened, Octopus fetches the diff, retrieves relevant code context via vector search, and uses an LLM (Anthropic Claude, OpenAI GPT, Google Gemini, xAI Grok, Alibaba Qwen, or any model on OpenRouter) to analyze changes. Findings are posted as inline PR comments.
 
 Q: What languages does Octopus support?
 A: Octopus is language-agnostic. It supports TypeScript, JavaScript, Python, Go, Rust, Java, C#, Ruby, PHP, Swift, Kotlin, Scala, C, C++, Vue, Svelte, Astro, HTML, CSS, SQL, GraphQL, and more.
@@ -435,7 +435,7 @@ Embeddings: Numerical vector representations of text. Octopus uses OpenAI text-e
 
 Knowledge Base: Custom documents uploaded to an organization (coding guidelines, architecture decisions, style guides) that Octopus references during reviews.
 
-LLM (Large Language Model): AI models like Claude (Anthropic), GPT (OpenAI), and Gemini (Google) that analyze code and generate review findings.
+LLM (Large Language Model): AI models like Claude (Anthropic), GPT (OpenAI), Gemini (Google), Grok (xAI) and Qwen (Alibaba) that analyze code and generate review findings.
 
 .octopusignore: A file in your repository root (same syntax as .gitignore) that tells Octopus which files to skip during indexing and review.
 

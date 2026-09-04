@@ -128,6 +128,7 @@ export default function PricingPage() {
               <ModelRow model="Claude Haiku 4.5" input="$1" output="$5" />
               <ModelRow model="Gemini 2.5 Pro" input="$1.25" output="$10" />
               <ModelRow model="Gemini 2.5 Flash" input="$0.15" output="$0.60" />
+              <ModelRow model="GPT-6 Astra" input="$10" output="$50" />
               <ModelRow model="GPT-5.3 Codex" input="$1.75" output="$14" />
               <ModelRow model="Qwen3.8-Max" input="$2" output="$6" />
               <ModelRow model="Embeddings (text-embedding-3-large)" input="$0.13" output="—" />

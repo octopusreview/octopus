@@ -1,5 +1,5 @@
 import Link from "@/components/link";
-import { docsPageJsonLd, jsonLd } from "@/lib/structured-data";
+import { docsPageJsonLd, jsonLd, pricingProductJsonLd } from "@/lib/structured-data";
 import {
   IconSparkles,
   IconCreditCard,
@@ -33,6 +33,10 @@ export default function PricingPage() {
             }),
           ),
         }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLd(pricingProductJsonLd()) }}
       />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">

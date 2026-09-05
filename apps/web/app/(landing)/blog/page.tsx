@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ORGANIZATION_ENTITY, SITE_URL, jsonLd } from "@/lib/structured-data";
+import { ORGANIZATION_ENTITY, SITE_URL, blogItemListJsonLd, jsonLd } from "@/lib/structured-data";
 import Link from "@/components/link";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
@@ -177,6 +177,7 @@ export default async function BlogPage({
     description:
       "Product news, model launches and engineering notes from the Octopus AI code review team.",
     publisher: ORGANIZATION_ENTITY,
+    mainEntity: blogItemListJsonLd(posts),
   };
 
   return (

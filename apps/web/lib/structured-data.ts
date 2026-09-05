@@ -76,6 +76,52 @@ export function docsPageJsonLd(input: {
   };
 }
 
+/**
+ * Product + Offer for /docs/pricing. Octopus has no per-seat plan: signup is
+ * free with starter credits and usage is billed at 2x provider list price, so
+ * the Offer is price 0 with the usage terms in its description.
+ */
+export function pricingProductJsonLd() {
+  const url = `${SITE_URL}/docs/pricing`;
+  return {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "@id": `${SITE_URL}/#product`,
+    name: "Octopus AI Code Review",
+    description:
+      "AI code review for pull requests on GitHub, GitLab and Bitbucket. Usage-based: free credits on signup, then AI usage billed at 2x the provider's list price. No per-seat fee. Bring your own API keys to pay providers directly.",
+    brand: { "@id": ORGANIZATION_ID },
+    url,
+    category: "Developer Tools",
+    offers: {
+      "@type": "Offer",
+      url,
+      price: "0",
+      priceCurrency: "USD",
+      availability: "https://schema.org/InStock",
+      description:
+        "Free to start with starter credits. Reviews are billed per token at 2x the AI provider's list price; with your own API keys the model call is free.",
+      seller: { "@id": ORGANIZATION_ID },
+    },
+  };
+}
+
+/** Blog index ItemList: the posts shown on the page, in order. */
+export function blogItemListJsonLd(posts: Array<{ slug: string; title: string; publishedAt: Date | null }>) {
+  return {
+    "@type": "ItemList",
+    itemListOrder: "https://schema.org/ItemListOrderDescending",
+    numberOfItems: posts.length,
+    itemListElement: posts.map((post, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      url: `${SITE_URL}/blog/${post.slug}`,
+      name: post.title,
+      ...(post.publishedAt ? { datePublished: post.publishedAt.toISOString() } : {}),
+    })),
+  };
+}
+
 /** JSON for a <script type="application/ld+json"> body; closes no script tag early. */
 export function jsonLd(value: unknown): string {
   return JSON.stringify(value).replace(/<\/script>/gi, "<\\/script>");

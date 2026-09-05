@@ -1,6 +1,14 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
-import { ORGANIZATION_ENTITY, ORGANIZATION_JSON_LD, SOCIAL_PROFILES, docsPageJsonLd, jsonLd } from "@/lib/structured-data";
+import {
+  ORGANIZATION_ENTITY,
+  ORGANIZATION_JSON_LD,
+  SOCIAL_PROFILES,
+  blogItemListJsonLd,
+  docsPageJsonLd,
+  jsonLd,
+  pricingProductJsonLd,
+} from "@/lib/structured-data";
 import { docsContent } from "@/lib/docs-content";
 import { GET, renderLlmsFull } from "@/app/llms-full.txt/route";
 
@@ -22,6 +30,30 @@ describe("docsPageJsonLd", () => {
     expect((page.publisher as { "@id": string })["@id"]).toBe(ORGANIZATION_ENTITY["@id"]);
     expect(crumbs.itemListElement.map((c) => [c.position, c.name])).toEqual([[1, "Docs"], [2, "Pricing"]]);
     expect(crumbs.itemListElement[1].item).toBe("https://octopus-review.ai/docs/pricing");
+  });
+});
+
+describe("pricingProductJsonLd", () => {
+  it("describes a free-to-start, usage-billed product sold by the organization", () => {
+    const p = pricingProductJsonLd();
+    expect(p["@type"]).toBe("Product");
+    expect(p.brand["@id"]).toBe(ORGANIZATION_ENTITY["@id"]);
+    expect(p.offers.price).toBe("0");
+    expect(p.offers.priceCurrency).toBe("USD");
+    expect(p.offers.description).toMatch(/2x the AI provider/);
+    expect(p.url).toBe("https://octopus-review.ai/docs/pricing");
+  });
+});
+
+describe("blogItemListJsonLd", () => {
+  it("lists posts in page order with absolute urls and dates", () => {
+    const list = blogItemListJsonLd([
+      { slug: "a", title: "A", publishedAt: new Date("2026-09-04T00:00:00Z") },
+      { slug: "b", title: "B", publishedAt: null },
+    ]);
+    expect(list.numberOfItems).toBe(2);
+    expect(list.itemListElement[0]).toMatchObject({ position: 1, url: "https://octopus-review.ai/blog/a", name: "A", datePublished: "2026-09-04T00:00:00.000Z" });
+    expect(list.itemListElement[1]).not.toHaveProperty("datePublished");
   });
 });
 

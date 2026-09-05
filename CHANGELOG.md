@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.137] - 2026-09-05
+
 ### Added
 - The pricing page carries a Product and Offer schema (free to start, usage billed at 2x provider list price), and the blog index lists its posts as structured data.
 

@@ -3,6 +3,8 @@ import { Box, Text, useApp } from "ink";
 import { loadConfig, saveConfig, type OctopusConfig } from "../lib/config.js";
 import { loadCredentials } from "../lib/credentials.js";
 import { loadByok } from "../lib/byok.js";
+import { isCloudBaseUrl } from "../lib/hosting.js";
+import { displayNameFor } from "../lib/providers.js";
 
 export type DoneStepProps = {
   answers: Partial<OctopusConfig>;
@@ -83,22 +85,32 @@ export function DoneStep({ answers }: DoneStepProps) {
       <Text color="green" bold>You're set 🐙</Text>
       <Text> </Text>
       <Text bold>Summary</Text>
-      <Text>  Server:   {summary.baseUrl ? <Text color="cyan">{summary.baseUrl}</Text> : <Text dimColor>not signed in</Text>}</Text>
-      <Text>  Org:      {summary.orgName ?? <Text dimColor>—</Text>}</Text>
-      <Text>  Provider: {summary.provider ?? <Text dimColor>not chosen</Text>}</Text>
+      <Text>
+        {"  Server:   "}
+        {summary.baseUrl ? (
+          <Text color="cyan">{isCloudBaseUrl(summary.baseUrl) ? "Cloud (octopus-review.ai)" : summary.baseUrl}</Text>
+        ) : (
+          <Text dimColor>not signed in</Text>
+        )}
+      </Text>
+      <Text>  Org:      {summary.orgName ?? <Text dimColor>-</Text>}</Text>
+      <Text>
+        {"  Provider: "}
+        {summary.provider ? displayNameFor(summary.provider) : <Text dimColor>org default (set in Settings)</Text>}
+      </Text>
       {summary.provider === "ollama" && !summary.model ? (
         <Text>  Model:    <Text dimColor>configure per-repo (no default picked)</Text></Text>
       ) : (
-        <Text>  Model:    {summary.model ?? <Text dimColor>not chosen</Text>}</Text>
+        <Text>  Model:    {summary.model ?? <Text dimColor>org default</Text>}</Text>
       )}
-      <Text>  BYOK key: {summary.byokSaved ? <Text color="green">saved</Text> : <Text dimColor>none</Text>}</Text>
+      <Text>  Billing:  {summary.byokSaved ? <Text color="green">your API key</Text> : <Text>Octopus credits</Text>}</Text>
       {summary.provider === "ollama" ? (
         <Text>  Ollama URL: <Text color="cyan">{summary.ollamaBaseUrl ?? "http://localhost:11434 (default)"}</Text></Text>
       ) : null}
       <Text> </Text>
       <Text bold>Next steps</Text>
       <Text>  • Run <Text color="cyan">octp review</Text> in any git repo to review your local changes before committing.</Text>
-      <Text>  • Connect a repo at <Text color="cyan">/settings/integrations</Text> for cloud reviews on every PR — and for richer context-aware <Text color="cyan">octp review</Text> output.</Text>
+      <Text>  • Connect a repo at <Text color="cyan">{`${summary.baseUrl ?? "https://octopus-review.ai"}/settings/integrations`}</Text> for reviews on every PR, and for richer context-aware <Text color="cyan">octp review</Text> output.</Text>
       <Text>  • Re-run this wizard any time with <Text color="cyan">octp onboard --reset</Text>.</Text>
     </Box>
   );

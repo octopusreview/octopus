@@ -91,7 +91,7 @@ Usage:
 Flags:
   --token <oct_...>              API token; skips the browser
                                  (exposes the token via process args (ps) and shell history; for CI prefer 'octp setup-token')
-  --api-url <url>                Server base URL (default: hosted, or your saved server)
+  --api-url <url>                Server base URL (default: Cloud (Octopus hosted), or your saved server)
   --insecure                     Allow sending the token over cleartext HTTP (not recommended)
   --help, -h                     This help
 `);

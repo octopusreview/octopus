@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
 import { validateProvider, type ValidateResult } from "../lib/validate.js";
+import { displayNameFor } from "../lib/providers.js";
 
 export type ValidateStepProps = {
   provider: string;
@@ -69,7 +70,7 @@ export function ValidateStep({ provider, onNext, onEditKey }: ValidateStepProps)
   if (phase === "validating") {
     return (
       <Box flexDirection="column">
-        <Text>Validating {provider} credentials …</Text>
+        <Text>Validating {displayNameFor(provider)} credentials …</Text>
       </Box>
     );
   }
@@ -78,7 +79,7 @@ export function ValidateStep({ provider, onNext, onEditKey }: ValidateStepProps)
     return (
       <Box flexDirection="column">
         <Text color="green">
-          ✓ {provider} reachable
+          ✓ {displayNameFor(provider)} reachable
           {typeof result.modelCount === "number"
             ? ` — ${result.modelCount} model${result.modelCount === 1 ? "" : "s"} available.`
             : "."}

@@ -40,7 +40,7 @@ export async function doctorCommand(_argv: string[]): Promise<number> {
   if (config.model) line("ok", "model", config.model);
   else line("warn", "model", "not chosen");
   if (config.selfHostedBaseUrl) line("ok", "self-hosted base URL", config.selfHostedBaseUrl);
-  else line("skip", "self-hosted base URL", "using hosted (octopus-review.ai)");
+  else line("skip", "self-hosted base URL", "using Cloud (Octopus hosted, octopus-review.ai)");
 
   // ── Credentials ────────────────────────────────────────────────────────────
   console.log("\nAuth:");

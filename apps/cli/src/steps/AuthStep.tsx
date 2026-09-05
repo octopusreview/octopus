@@ -3,9 +3,10 @@ import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
 import TextInput from "ink-text-input";
 import { getJson, normalizeBaseUrl, postJson } from "../lib/api.js";
+import { openBrowser } from "../lib/auth.js";
 import { saveCredentials, type Credentials } from "../lib/credentials.js";
+import { HOSTED_BASE_URL, buildHostingPatch } from "../lib/hosting.js";
 
-const HOSTED_BASE_URL = "https://octopus-review.ai";
 const POLL_INTERVAL_MS = 2000;
 
 type Mode = "choose-mode" | "self-hosted-url" | "requesting" | "waiting" | "approved" | "failed" | "skipped";
@@ -22,26 +23,26 @@ type PollResponse =
 
 export type AuthStepProps = {
   /**
-   * Called with `selfHostedBaseUrl` set only when the user chose self-hosted.
-   * Hosted is the default so we do not store it in prefs.
+   * Called with `selfHostedBaseUrl` set when the user chose self-hosted and
+   * explicitly cleared (undefined) for Cloud, so a --reset-seeded value does
+   * not survive a switch back to Cloud.
    */
   onNext: (patch: { selfHostedBaseUrl?: string }) => void;
 };
 
-function buildPatch(baseUrl: string): { selfHostedBaseUrl?: string } {
-  return baseUrl && baseUrl !== HOSTED_BASE_URL ? { selfHostedBaseUrl: baseUrl } : {};
-}
+const buildPatch = buildHostingPatch;
 
 /**
  * Step 2 of the onboarding wizard.
  *
- *   choose-mode      → "Hosted (octopus-review.ai)" vs "Self-hosted (enter URL)"
+ *   choose-mode      → "Cloud (Octopus hosted)" vs "Self-hosted (enter URL)"
  *     ↓
- *   self-hosted-url  → text input for base URL (skipped in hosted mode)
+ *   self-hosted-url  → text input for base URL (skipped on Cloud)
  *     ↓
  *   requesting       → POST /api/cli/auth/device, get { deviceCode, expiresAt }
  *     ↓
- *   waiting          → render the URL + deviceCode, poll /api/cli/auth/poll every 2s
+ *   waiting          → open the approval URL in the browser (Enter re-opens),
+ *                      print it as fallback, poll /api/cli/auth/poll every 2s
  *     ↓
  *   approved         → write credentials, call onNext({ baseUrl })
  *
@@ -55,6 +56,7 @@ export function AuthStep({ onNext }: AuthStepProps) {
   const [deviceCode, setDeviceCode] = useState<string>("");
   const [expiresAt, setExpiresAt] = useState<Date | null>(null);
   const [error, setError] = useState<string>("");
+  const [openState, setOpenState] = useState<"idle" | "opened" | "failed">("idle");
 
   // Global Esc → skip the whole step (user can configure auth later).
   // Now also allowed during `requesting` so the wizard isn't hard-locked
@@ -70,6 +72,21 @@ export function AuthStep({ onNext }: AuthStepProps) {
     if (key.escape && mode !== "approved" && mode !== "waiting") {
       setMode("skipped");
       onNext(buildPatch(baseUrl || HOSTED_BASE_URL));
+    }
+    if (mode === "waiting") {
+      // Enter re-opens the approval page; Esc abandons this device code and
+      // returns to the Cloud / self-hosted choice (the poll effect is torn
+      // down by the mode change).
+      if (key.return && baseUrl && deviceCode) {
+        void openBrowser(`${baseUrl}/cli/authorize?code=${deviceCode}`).then((ok) =>
+          setOpenState(ok ? "opened" : "failed"),
+        );
+      } else if (key.escape) {
+        setDeviceCode("");
+        setExpiresAt(null);
+        setOpenState("idle");
+        setMode("choose-mode");
+      }
     }
     if (mode === "failed") {
       if (key.return) {
@@ -160,6 +177,21 @@ export function AuthStep({ onNext }: AuthStepProps) {
     return `${baseUrl}/cli/authorize?code=${deviceCode}`;
   }, [baseUrl, deviceCode]);
 
+  // Open the approval page once per device code. Shell-free spawn (see
+  // lib/auth.ts); the URL stays on screen as the fallback for headless / SSH
+  // sessions where nothing can open.
+  useEffect(() => {
+    if (mode !== "waiting" || !verificationUrl) return;
+    let cancelled = false;
+    setOpenState("idle");
+    openBrowser(verificationUrl).then((ok) => {
+      if (!cancelled) setOpenState(ok ? "opened" : "failed");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, verificationUrl]);
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (mode === "choose-mode") {
@@ -169,9 +201,9 @@ export function AuthStep({ onNext }: AuthStepProps) {
         <Text> </Text>
         <SelectInput
           items={[
-            { label: "Hosted — octopus-review.ai", value: "hosted" },
-            { label: "Self-hosted — I run my own instance", value: "self-hosted" },
-            { label: "Skip — I'll configure auth later", value: "skip" },
+            { label: "Cloud (Octopus hosted) - octopus-review.ai", value: "hosted" },
+            { label: "Self-hosted - I run my own instance", value: "self-hosted" },
+            { label: "Skip - I'll sign in later", value: "skip" },
           ]}
           onSelect={(item) => {
             if (item.value === "hosted") {
@@ -230,16 +262,22 @@ export function AuthStep({ onNext }: AuthStepProps) {
   if (mode === "waiting") {
     return (
       <Box flexDirection="column">
-        <Text bold>Open this URL in your browser to approve:</Text>
+        <Text bold>Approve this sign-in in your browser</Text>
         <Text> </Text>
         <Text color="cyan">{verificationUrl}</Text>
+        {openState === "opened" ? (
+          <Text dimColor>Opened in your browser. Approve there, or use the URL above.</Text>
+        ) : null}
+        {openState === "failed" ? (
+          <Text color="yellow">Could not open a browser (headless/SSH?). Open the URL above manually.</Text>
+        ) : null}
         <Text> </Text>
         <Text dimColor>Waiting for approval … (polls every {POLL_INTERVAL_MS / 1000}s)</Text>
         {expiresAt ? (
           <Text dimColor>Code expires at {expiresAt.toLocaleTimeString()}.</Text>
         ) : null}
         <Text> </Text>
-        <Text dimColor>Ctrl+C to abort</Text>
+        <Text dimColor>Enter: open browser again · Esc: back · Ctrl+C: quit</Text>
       </Box>
     );
   }

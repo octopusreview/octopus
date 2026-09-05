@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `octp onboard`: the sign-in step opens the approval page in your browser (Enter opens it again, Esc goes back) and the sign-in choice reads "Cloud (Octopus hosted)". On Cloud the review-model step offers "Use org default" first, since Cloud reviews follow the organization's model setting; a provider picked here only overrides local `octp review` runs. Ollama (local) is offered only for self-hosted instances and unreleased providers are no longer listed. The model catalogue matches the current Cloud catalog (default Claude Opus 5; GPT-6 Astra and GPT-5.3 Codex for OpenAI).
+
+### Added
+- `GET /api/cli/models`: the organization's effective review model (provider, model, whether it is the platform default, which providers have an org API key), used by the CLI wizard for display.
+
+### Fixed
+- `octp onboard` no longer prints a React "Cannot update a component while rendering a different component" warning when no provider is selected.
+
 ## [1.0.137] - 2026-09-05
 
 ### Added

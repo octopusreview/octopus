@@ -21,8 +21,8 @@ describe("modelsFor", () => {
 
 describe("defaultModelFor", () => {
   it("returns the isDefault model when one is marked", () => {
-    expect(defaultModelFor("anthropic")?.modelId).toBe("claude-sonnet-4-6-20250619");
-    expect(defaultModelFor("openai")?.modelId).toBe("gpt-4o");
+    expect(defaultModelFor("anthropic")?.modelId).toBe("claude-opus-5");
+    expect(defaultModelFor("openai")?.modelId).toBe("gpt-5.3-codex");
     expect(defaultModelFor("google")?.modelId).toBe("gemini-2.5-pro");
     expect(defaultModelFor("alibaba")?.modelId).toBe("qwen3.8-max-0902");
   });

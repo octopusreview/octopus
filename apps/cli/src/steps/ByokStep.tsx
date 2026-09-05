@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
 import TextInput from "ink-text-input";
 import { setByokKey } from "../lib/byok.js";
 import { hintFor } from "../lib/keys.js";
+import { displayNameFor } from "../lib/providers.js";
 
 export type ByokStepProps = {
   provider: string;
@@ -36,22 +37,26 @@ export function ByokStep({ provider, onNext }: ByokStepProps) {
     }
   });
 
-  // No provider selected (the user skipped ProviderStep) — pass through.
-  if (!provider) {
-    onNext({ byokSaved: false });
-    return null;
-  }
+  // No provider selected (org default / skipped) — pass through. Runs in an
+  // effect: calling onNext during render updates the wizard while this step
+  // is rendering ("Cannot update a component while rendering a different
+  // component").
+  useEffect(() => {
+    if (!provider) onNext({ byokSaved: false });
+  }, [provider, onNext]);
+
+  if (!provider) return null;
 
   if (mode === "intro") {
     return (
       <Box flexDirection="column">
-        <Text bold>API key for {provider}</Text>
+        <Text bold>API key for {displayNameFor(provider)}</Text>
         <Text dimColor>{hint.placeholder}</Text>
         <Text> </Text>
         <SelectInput
           items={[
             { label: "I want to enter an API key", value: "enter" },
-            { label: "Skip — I'm using subscription / CLI / local mode", value: "skip" },
+            { label: "Skip - review with Octopus credits", value: "skip" },
           ]}
           onSelect={(item) => {
             if (item.value === "enter") setMode("entering");
@@ -68,7 +73,7 @@ export function ByokStep({ provider, onNext }: ByokStepProps) {
   if (mode === "entering") {
     return (
       <Box flexDirection="column">
-        <Text bold>API key for {provider}</Text>
+        <Text bold>API key for {displayNameFor(provider)}</Text>
         {hint.dashboardUrl ? (
           <Text dimColor>Get one at <Text color="cyan">{hint.dashboardUrl}</Text></Text>
         ) : null}
@@ -103,7 +108,7 @@ export function ByokStep({ provider, onNext }: ByokStepProps) {
         />
         {error ? <Text color="red">{error}</Text> : null}
         <Text> </Text>
-        <Text dimColor>Enter to save · Esc to skip (use platform key instead)</Text>
+        <Text dimColor>Enter to save · Esc to skip (review with Octopus credits)</Text>
       </Box>
     );
   }

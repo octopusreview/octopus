@@ -4,7 +4,7 @@
  * is one fetch swap.
  *
  * Prices are USD per million tokens (input / output). Reference prices as
- * of 2026-05; keep in sync with apps/web/lib/cost.ts and the AvailableModel
+ * of 2026-09 (Octopus Cloud catalog); keep in sync with apps/web/lib/cost.ts and the AvailableModel
  * Prisma rows seeded in packages/db/prisma/seed.ts.
  */
 export type ModelInfo = {
@@ -27,17 +27,16 @@ export type ModelInfo = {
 // FALLBACK_PRICING + seed.ts exactly.
 export const MODELS_BY_PROVIDER: Record<string, ModelInfo[]> = {
   anthropic: [
+    { modelId: "claude-fable-5-1", displayName: "Claude Fable 5.1", inputPrice: 10, outputPrice: 50 },
     { modelId: "claude-fable-5", displayName: "Claude Fable 5", inputPrice: 10, outputPrice: 50 },
-    { modelId: "claude-opus-5", displayName: "Claude Opus 5", inputPrice: 5, outputPrice: 25 },
-    { modelId: "claude-sonnet-4-6-20250619", displayName: "Claude Sonnet 4.6", inputPrice: 3, outputPrice: 15, isDefault: true },
+    { modelId: "claude-opus-5", displayName: "Claude Opus 5", inputPrice: 5, outputPrice: 25, isDefault: true },
+    { modelId: "claude-sonnet-5", displayName: "Claude Sonnet 5", inputPrice: 2, outputPrice: 10 },
     { modelId: "claude-opus-4-8", displayName: "Claude Opus 4.8", inputPrice: 5, outputPrice: 25 },
     { modelId: "claude-haiku-4-5-20251001", displayName: "Claude Haiku 4.5", inputPrice: 1, outputPrice: 5 },
   ],
   openai: [
-    { modelId: "gpt-4o", displayName: "GPT-4o", inputPrice: 2.5, outputPrice: 10, isDefault: true },
-    { modelId: "gpt-4o-mini", displayName: "GPT-4o mini", inputPrice: 0.15, outputPrice: 0.6 },
-    { modelId: "o4-mini", displayName: "o4-mini (reasoning)", inputPrice: 1.1, outputPrice: 4.4 },
-    { modelId: "codex-mini-latest", displayName: "Codex mini", inputPrice: 1.5, outputPrice: 6 },
+    { modelId: "gpt-6-astra", displayName: "GPT-6 Astra", inputPrice: 10, outputPrice: 50 },
+    { modelId: "gpt-5.3-codex", displayName: "GPT-5.3 Codex", inputPrice: 1.75, outputPrice: 14, isDefault: true },
   ],
   google: [
     { modelId: "gemini-2.5-pro", displayName: "Gemini 2.5 Pro", inputPrice: 1.25, outputPrice: 10, isDefault: true },

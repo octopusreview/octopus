@@ -108,3 +108,30 @@ export const PROVIDERS: ProviderInfo[] = [
 export function providersByType(type: ProviderType): ProviderInfo[] {
   return PROVIDERS.filter((p) => p.type === type);
 }
+
+/** The provider the wizard recommends when the user does not want to choose. */
+export function defaultProvider(): ProviderInfo | undefined {
+  return PROVIDERS.find((p) => p.status === "ready" && p.type === "direct");
+}
+
+/** Human name for a provider slug; falls back to the slug for unknown/stale values. */
+export function displayNameFor(slug: string): string {
+  return PROVIDERS.find((p) => p.slug === slug)?.displayName ?? slug;
+}
+
+export type ProviderItem = { label: string; value: string };
+
+/**
+ * Selectable rows for the provider picker. Coming-soon providers are never
+ * listed (they used to be selectable and led to a dead end). Local providers
+ * (Ollama) are hidden on Cloud, where reviews run on Octopus servers.
+ */
+export function buildProviderItems(
+  providers: readonly ProviderInfo[],
+  options: { cloud: boolean },
+): ProviderItem[] {
+  return providers
+    .filter((p) => p.status === "ready")
+    .filter((p) => !(options.cloud && p.type === "local"))
+    .map((p) => ({ label: p.displayName, value: p.slug }));
+}

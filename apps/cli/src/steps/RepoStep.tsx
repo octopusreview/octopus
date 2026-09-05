@@ -4,6 +4,7 @@ import SelectInput from "ink-select-input";
 import { loadCredentials } from "../lib/credentials.js";
 import { getJson } from "../lib/api.js";
 import { openBrowser } from "../lib/auth.js";
+import { isCloudBaseUrl } from "../lib/hosting.js";
 
 export type RepoStepProps = {
   onNext: () => void;
@@ -66,10 +67,9 @@ export function RepoStep({ onNext }: RepoStepProps) {
         return;
       }
 
-      // Self-hosted users: skip the repo step entirely. The hosted GitHub
+      // Self-hosted users: skip the repo step entirely. The Cloud GitHub
       // App install flow is irrelevant for them.
-      const isHosted = creds.baseUrl === "https://octopus-review.ai";
-      if (!isHosted) {
+      if (!isCloudBaseUrl(creds.baseUrl)) {
         onNext();
         return;
       }

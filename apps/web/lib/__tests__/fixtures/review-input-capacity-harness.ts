@@ -17,7 +17,7 @@ describe("bounded changed-source capacity", () => {
     ],
   };
 
-  it("supplies every eligible hunk beyond the old limit, preserving exclusions", () => {
+  it("supplies every eligible hunk beyond the old limit, preserving exclusions", async () => {
     const old = prepareReviewInput(input, { maxChars: 300000, generated });
     expect(old.coverage.complete).toBe(false);
     expect(old.coverage.files.find(f => f.path === "src/main.test.ts")?.state).toBe("omitted");
@@ -33,6 +33,14 @@ describe("bounded changed-source capacity", () => {
     expect(full.diff).not.toContain("_journal.json");
     // Complete input cannot substitute for a valid model assessment.
     expect(reviewCheckResult(full.coverage, false, 0).conclusion).toBe("failure");
+    if (process.env.REVIEW_TEST_EVIDENCE_DIR) {
+      await Bun.write(`${process.env.REVIEW_TEST_EVIDENCE_DIR}/capacity-comparison.json`, JSON.stringify({
+        oldLimit: 300000, oldCounts: coverageCounts(old.coverage), oldComplete: old.coverage.complete,
+        defaultLimit: MAX_DIFF_CHARS, preparedCharacters: full.diff.length,
+        counts: coverageCounts(full.coverage), coverage: full.coverage,
+        checkWithoutAssessment: reviewCheckResult(full.coverage, false, 0),
+      }, null, 2));
+    }
   });
 
   it("keeps larger input explicitly incomplete under the same bounded default", () => {

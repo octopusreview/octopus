@@ -188,6 +188,14 @@ for (const [name, value] of [
   assert.equal((archived.at(-1)!.coverage as ReviewCoverage).complete, true, name);
   assert.equal((archived.at(-1)!.coverage as ReviewCoverage).assessment?.requests[0]?.inputPreserved, true);
   assert.ok(!received.messages[0].content.includes("RE-REVIEW MODE"), `${name}: actual provider prompt is a full assessment`);
+  if (name === "omitted" && process.env.REVIEW_TEST_EVIDENCE_DIR) {
+    const directory = process.env.REVIEW_TEST_EVIDENCE_DIR;
+    await Bun.write(`${directory}/retry-publication.json`, JSON.stringify({ publication: published.at(-1), archived: archived.at(-1) }, null, 2));
+    const publication = published.at(-1)!;
+    const comments = publication.comments as { path: string; line: number; body: string }[];
+    await Bun.write(`${directory}/retry-report.html`, '<!doctype html><meta charset="utf-8"><title>Fixture retry review</title>' +
+      Bun.markdown.html([publication.body, ...comments.map(comment => `### ${comment.path}:${comment.line}\n\n${comment.body}`)].join("\n\n")));
+  }
 }
 prior = completed();
 assert.equal(await canRestrictReviewToFollowUp("pr", current), true);
@@ -210,5 +218,8 @@ try {
   await processReview("pr");
   assert.equal((archived.at(-1)!.coverage as ReviewCoverage).complete, false);
   assert.equal((archived.at(-1)!.coverage as ReviewCoverage).assessment?.state, "incomplete");
+  if (process.env.REVIEW_TEST_EVIDENCE_DIR) {
+    await Bun.write(`${process.env.REVIEW_TEST_EVIDENCE_DIR}/malformed-assessment.json`, JSON.stringify(archived.at(-1), null, 2));
+  }
 } finally { console.warn = warn; }
 console.log("PASS incomplete retry findings, inline publication and assessment gates");

@@ -36,7 +36,7 @@ OpenAI's list price is $10 per million input tokens and $50 per million output t
 
 Output tokens are where review bills grow, because findings, explanations and suggested patches are all output. Against Opus 5, Astra costs twice as much on both sides. With your own OpenAI key, Octopus charges nothing for the model call and OpenAI bills you at list.
 
-Two OpenAI details you do not need to worry about on Octopus. Fast mode, which doubles the price for speed, is not used for reviews. And the long-context surcharge, which doubles input pricing on requests above 272,000 input tokens, is never triggered: Octopus caps the diff it sends at 300,000 characters, roughly 75,000 tokens, and tells you when a diff was cut.
+Fast mode is not used for reviews. The diff cap alone does not guarantee that a request stays below long-context pricing thresholds. See the [review coverage reference](https://github.com/octopusreview/octopus/blob/master/docs/review-coverage.md#limits-and-follow-up-work) for input limits and how Octopus reports incomplete coverage.
 
 The full table is on the [pricing page](/docs/pricing).
 

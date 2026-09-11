@@ -57,6 +57,7 @@ import { MAX_DIFF_CHARS } from "@/lib/diff-truncate";
 import { prepareReviewInput, applyReviewCoverage, coverageSummary, reviewCheckResult, type ReviewInput, type ReviewCoverage } from "@/lib/review-coverage";
 import { prepareReviewComment } from "@/lib/review-comment-context";
 import { createCoveredReviewRequest } from "@/lib/review-request";
+import { canRestrictReviewToFollowUp } from "@/lib/review-follow-up";
 import { prepareReviewPresentation, mapReviewPresentation, enforceReviewFindingsIntegrity, finalizeReviewPresentation } from "@/lib/review-presentation";
 import { executeCoveredReview, executeFindingsRecovery, recordNoModelAssessment } from "@/lib/review-assessment";
 import { saveReviewAttempt, createReviewAttemptComment, updateCurrentReview } from "@/lib/review-attempt";
@@ -1540,12 +1541,12 @@ export async function processReview(pullRequestId: string): Promise<void> {
       }
     }
 
-    // Detect re-review: if the bot already has inline comments, summary table findings,
-    // or a previous reviewBody, this is a follow-up review.
+    // Provider comments survive failed/partial attempts. Restrict follow-up
+    // findings only when the preceding request completed the eligible scope.
     let priorReviewContext = "";
     let dismissedDbFindings: { title: string; description: string | null; severity: string; filePath: string | null; lineNumber: number | null }[] = [];
     const botComments = allPriorReviewComments.filter((c) => !c.inReplyToId && c.user === botLogin && c.line != null);
-    const isReReview = botComments.length > 0 || priorSummaryTableFindings.length > 0 || !!pr.reviewBody;
+    const isReReview = await canRestrictReviewToFollowUp(pr.id, coverage);
 
     if (isReReview) {
       const parts: string[] = [
@@ -2161,7 +2162,7 @@ export async function processReview(pullRequestId: string): Promise<void> {
       if (inlineComments.length > 0) {
         // Dedup: skip inline comments where the bot already posted on the same file+line
         const existingLocations = new Set(
-          allPriorReviewComments
+          (isReReview ? allPriorReviewComments : [])
             .filter((c) => !c.inReplyToId && c.line != null && c.user === botLogin)
             .map((c) => `${c.path}:${c.line}`),
         );

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.143] - 2026-09-11
+
+### Fixed
+- Reviews: moderately large PRs can supply up to 350,000 changed-source characters by default. Retrying an incomplete assessment performs a full review, retaining findings in previously omitted files and at previously commented locations.
+- Operators: follow-up restrictions now require complete evidence from the preceding review request; missing or stale evidence retains full assessment. Explicit input-limit overrides and coverage/assessment gates remain in effect.
+
 ## [1.0.142] - 2026-09-11
 
 ### Fixed

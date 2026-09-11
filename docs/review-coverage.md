@@ -36,7 +36,9 @@ The trigger comment is sent once as untrusted context, outside system instructio
 
 ## Limits and follow-up work
 
-This change keeps one main model review within the existing `MAX_DIFF_CHARS` budget defined in [`diff-truncate.ts`](../apps/web/lib/diff-truncate.ts). It does not add automatic multi-pass model calls, an unbounded retrieval loop or a model fallback. Provider pagination and retained patches are bounded. Remaining material produces an honest incomplete result.
+The main model review uses the `MAX_DIFF_CHARS` budget defined in [`diff-truncate.ts`](../apps/web/lib/diff-truncate.ts), defaulting to 350,000 characters. An explicit positive environment override remains supported. This is a changed-source ceiling, not a token allowance for the entire prompt: retrieved context, instructions and output also consume the selected model's context. Provider pagination and retained patches remain bounded. Material beyond the allowance produces an incomplete result; there is no automatic multi-batch review or model fallback.
+
+Retries after incomplete, malformed or unrecorded assessments perform a full review. Restricted follow-up mode requires the immediately preceding request's immutable attempt to have a complete model assessment, the same base revision and coverage of every currently eligible path. A previous comment alone cannot establish that the source was assessed. Missing evidence, a request-version gap or a newly eligible path keeps the full assessment, including non-critical findings and inline publication at previously commented locations.
 
 Further work can add bounded multi-pass scheduling and verified source-supplement retrieval on top of this coverage contract. Those features must merge coverage only for exact-revision, actually supplied hunks; summaries, generated labels and unverified comments must never turn missing source into complete coverage.
 

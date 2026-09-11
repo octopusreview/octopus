@@ -1,17 +1,15 @@
 // Shared diff-size cap for the review engine, used by every provider path
 // (GitHub, GitLab, Bitbucket) so the limit can't drift between them.
 //
-// Sized to fit the model context (~200k-token windows ≈ ~800k chars) alongside
-// the reviewer's RAG context, rulepacks and output, with headroom — 300k chars
-// (~7.5k diff lines) covers the overwhelming majority of PRs so they review IN
-// FULL. Env-tunable (MAX_DIFF_CHARS) to trade coverage vs. token cost without a
-// redeploy. The old 30k default silently truncated everyday PRs, so
-// security-critical files past the cut went unreviewed while a confident score
-// was still posted (#1429).
+// Bounded changed-source allowance, separate from the provider's token context.
+// 350k covers moderately large inputs that exceeded the former 300k ceiling.
+// RAG, rulepacks and model output also consume context; characters are not a
+// token guarantee. Env-tunable (MAX_DIFF_CHARS) for operator cost/context limits.
+// The coverage manifest keeps oversized reviews explicitly incomplete.
 
 export const MAX_DIFF_CHARS = (() => {
   const n = Number(process.env.MAX_DIFF_CHARS);
-  return Number.isFinite(n) && n > 0 ? n : 300_000;
+  return Number.isFinite(n) && n > 0 ? n : 350_000;
 })();
 
 // Raw-fetch ceiling — how much diff a provider fetch returns BEFORE generated/

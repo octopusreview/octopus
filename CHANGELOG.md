@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.7] - 2026-09-26
+
+### Improved
+- Anthropic and OpenAI reuse stable prompt instructions more effectively while preserving conversation history and free switching between models and providers.
+- Cache cost estimates and new usage charges account for provider-specific token counters, cache prices and streaming cache duration.
+
+### Fixed
+- OpenAI-compatible provider requests safely handle malformed Unicode without changing valid characters.
+- Review assessment accepts supported heading formats and counts the overall score only from the score table.
+
+### Configuration
+- Review output budgets can be configured with `OCTOPUS_REVIEW_MAX_TOKENS`; the default remains 8,192 tokens.
+
+### Upgrade notes
+- No database migration or configuration change is required. Existing charged usage and ledger history remain unchanged.
+
 ## [1.2.6] - 2026-09-25
 
 ### Added

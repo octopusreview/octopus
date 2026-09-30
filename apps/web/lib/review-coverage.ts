@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { Ignore } from "ignore";
 import { buildGeneratedMatcher } from "@/lib/generated-files";
 import { validateBinaryAssetEvidence, type BinaryAssetEvidence } from "@/lib/review-binary-assets";
+import { validateEmptyFileEvidence, type EmptyFileEvidence } from "@/lib/github-empty-files";
 
 const defaultGenerated = buildGeneratedMatcher();
 
@@ -15,6 +16,7 @@ export type ReviewFileInput = {
   blobSha?: string;
   unavailable?: string;
   binaryEvidence?: BinaryAssetEvidence;
+  emptyEvidence?: EmptyFileEvidence;
 };
 
 export type ReviewInput = {
@@ -33,6 +35,7 @@ export type FileCoverage = {
   change: string;
   blobSha?: string;
   binaryEvidence?: BinaryAssetEvidence;
+  emptyEvidence?: EmptyFileEvidence;
   state: "supplied" | "partial" | "omitted" | "excluded" | "unavailable";
   reason?: string;
   patchSha256: string | null;
@@ -151,6 +154,13 @@ export function prepareReviewInput(input: ReviewInput, options: { maxChars: numb
       record.reason = binaryEvidence.policy === "github-binary-png-v1"
         ? `Declared binary PNG policy (${binaryEvidence.policy}); image content not reviewed`
         : `Declared binary ${binaryEvidence.assetKind} policy (${binaryEvidence.policy}); content not reviewed`;
+      continue;
+    }
+    const emptyEvidence = validateEmptyFileEvidence(file, input, file.emptyEvidence);
+    if (fileHeader && emptyEvidence) {
+      record.emptyEvidence = emptyEvidence;
+      record.patchSha256 = emptyEvidence.rawSectionSha256;
+      candidates.push({ file, record, header: emptyEvidence.rawSection + "Empty file (0 bytes)\n", hunks: [], complete: true });
       continue;
     }
     if (!fileHeader || file.patch === undefined || file.unavailable) {

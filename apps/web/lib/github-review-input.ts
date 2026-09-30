@@ -1,10 +1,11 @@
 import { reviewFilePriority, type ReviewInput, type ReviewFileInput } from "@/lib/review-coverage";
 import { createBinaryAssetEvidence, indexGitHubBinarySections } from "@/lib/review-binary-assets";
 import { indexGitHubDiffSections } from "@/lib/github-diff-sections";
+import { createEmptyFileEvidence } from "@/lib/github-empty-files";
 import { recoverAddedGitHubTextPatch } from "@/lib/github-text-patches";
 
 type PullMetadata = { head?: { sha?: string }; base?: { sha?: string }; changed_files?: number };
-type ChangedFile = { filename: string; previous_filename?: string; status: string; patch?: string; additions?: number; deletions?: number; sha?: string };
+type ChangedFile = { filename: string; previous_filename?: string; status: string; patch?: string | null; additions?: number; deletions?: number; sha?: string };
 
 /** Fetch the complete inventory independently of diff size. No comment or diff
  * content can declare coverage; only provider pagination and pinned revisions do. */
@@ -50,6 +51,7 @@ export async function fetchGitHubReviewInput(options: {
       reviewFile.patch = patch;
       reviewFile.unavailable = typeof availablePatch === "string" && patch === undefined ? "File exceeds retained patch budget" : undefined;
       if (file.patch === undefined) reviewFile.binaryEvidence = createBinaryAssetEvidence(reviewFile, revision, binarySections.get(file.filename));
+      if (file.patch == null) reviewFile.emptyEvidence = createEmptyFileEvidence(reviewFile, revision, textSections.get(file.filename));
       files.push(reviewFile);
     }
     if (response.length < 100 || (expectedFiles !== null && files.length >= expectedFiles)) {

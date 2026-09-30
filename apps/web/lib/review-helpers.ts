@@ -195,34 +195,34 @@ export function parseDiffLines(diff: string): Map<string, Set<number>> {
   const fileLines = new Map<string, Set<number>>();
   let currentFile = "";
   let newLine = 0;
+  let remainingNewLines = 0;
 
   for (const line of diff.split("\n")) {
     const fileMatch = line.match(/^diff --git a\/(.+?) b\/(.+)/);
     if (fileMatch) {
       currentFile = fileMatch[2];
+      newLine = 0;
+      remainingNewLines = 0;
       if (!fileLines.has(currentFile)) {
         fileLines.set(currentFile, new Set());
       }
       continue;
     }
 
-    const hunkMatch = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    const hunkMatch = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/);
     if (hunkMatch) {
       newLine = parseInt(hunkMatch[1], 10);
+      remainingNewLines = parseInt(hunkMatch[2] ?? "1", 10);
       continue;
     }
 
-    if (!currentFile) continue;
+    // File metadata (including empty-file declarations) has no inline target.
+    if (!currentFile || remainingNewLines <= 0) continue;
 
-    if (line.startsWith("-") && !line.startsWith("---")) {
-      // deleted line — don't increment newLine
-    } else if (line.startsWith("+") && !line.startsWith("+++")) {
+    if (line.startsWith("+") || line.startsWith(" ") || line === "") {
       fileLines.get(currentFile)?.add(newLine);
       newLine++;
-    } else if (!line.startsWith("\\")) {
-      // context line
-      fileLines.get(currentFile)?.add(newLine);
-      newLine++;
+      remainingNewLines--;
     }
   }
 

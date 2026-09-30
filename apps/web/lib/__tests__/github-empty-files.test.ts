@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { fetchGitHubReviewInput } from "@/lib/github-review-input";
 import { prepareReviewInput, reviewCheckResult, sha256, type ReviewInput } from "@/lib/review-coverage";
 
+import { parseDiffLines, buildInlineComments } from "@/lib/review-helpers";
+
 const head = "1".repeat(40), base = "2".repeat(40);
 const blob = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391";
 const path = ".review-evidence/check.stderr.log";
@@ -28,6 +30,26 @@ describe("verified empty GitHub additions", () => {
     expect(omitted.diff).toBe("");
     expect(omitted.coverage.files[0].state).toBe("omitted");
     expect(omitted.coverage.complete).toBe(false);
+  });
+
+  it("never maps empty declarations inline, alone or after real source hunks", async () => {
+    const empty = (await fetch()).files[0];
+    const real = { path: ".aaa.ts", change: "modified", additions: 1, deletions: 1,
+      patch: "@@ -20,2 +20,2 @@\n context\n-old\n+new\n" };
+    for (const files of [[empty], [real, empty]]) {
+      const prepared = prepareReviewInput({ ...(await fetch()), files, expectedFiles: files.length }, { maxChars: 1000 });
+      expect(prepared.coverage.complete).toBe(true);
+      expect(prepared.diff).toContain("Empty file (0 bytes)");
+      const lines = parseDiffLines(prepared.diff);
+      expect([...lines.get(path)!]).toEqual([]);
+      const finding = { filePath: path, startLine: 1, endLine: 1, severity: "🟡", title: "Empty file", description: "No source lines", category: "quality", suggestion: "", confidence: 90 };
+      expect(buildInlineComments([finding, { ...finding, startLine: 22, endLine: 22 }], lines)).toEqual([]);
+      if (files.length > 1) {
+        expect(prepared.diff.indexOf("a/.aaa.ts")).toBeLessThan(prepared.diff.indexOf(`a/${path}`));
+        expect([...lines.get(".aaa.ts")!]).toEqual([20, 21]);
+        expect(buildInlineComments([{ ...finding, filePath: ".aaa.ts", startLine: 21, endLine: 21 }], lines)).toMatchObject([{ path: ".aaa.ts", line: 21 }]);
+      }
+    }
   });
 
   const invalid = [

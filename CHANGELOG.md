@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.14] - 2026-09-30
+
+### Fixed
+
+- GitHub reviews now recognize verified empty added files instead of reporting them as missing review input.
+- Inline findings attach only to source lines within diff hunks. Empty files and diff metadata no longer create invalid comment locations.
+
+### Upgrade notes
+
+- No database or configuration changes from 1.2.13. Update all web instances and review workers. Existing review attempts stay unchanged; retry an affected pull request after the rollout completes.
+
 ## [1.2.13] - 2026-09-29
 
 ### Improved

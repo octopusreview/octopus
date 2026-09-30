@@ -74,7 +74,7 @@ jobs:
 
       - name: Build + push image (self-host distribution)
         id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/web/Dockerfile
@@ -139,7 +139,7 @@ jobs:
       - name: Build + push image (hosted deploy variant)
         id: build
         if: ${{ vars.NEXT_PUBLIC_PUBBY_KEY != '' && vars.NEXT_PUBLIC_GITHUB_APP_SLUG != '' }}
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/web/Dockerfile
@@ -189,7 +189,7 @@ jobs:
           echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-selfhost" >> "$GITHUB_OUTPUT"
       - name: Build and push connector
         id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: packages/forgejo-connector/Dockerfile

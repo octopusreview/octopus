@@ -21,6 +21,9 @@ model User {
   bannedAt     DateTime?
   bannedReason String?
 
+  // Vendor console access; granted only by the separate octopus-admin app.
+  adminConsoleAccess Boolean @default(false)
+
   // Set true for seeded admin accounts (self-host first-boot) so the user is
   // forced to change the password before any other UI renders. Cleared when
   // they submit a new password via /change-password. Always false on the SaaS.

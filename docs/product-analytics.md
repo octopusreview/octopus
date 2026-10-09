@@ -91,7 +91,9 @@ are outside the business-table allowlist.
    Postgres restart, logical replication or application release is needed by
    this SQL itself.
 2. Run `scripts/analytics/check.sh` against the disposable local PostgreSQL
-   fixture. Review the SQL through the repository's normal PR gates.
+   fixture. It requires the pinned PostgreSQL 17 image to be cached locally and
+   never pulls an image. It checks privileges, cash validation and synthetic
+   funnel aggregates at scale. Review the SQL through the repository's normal PR gates.
 3. Apply the reviewed `access.sql` using the application's existing DB operator
    connection. Record its exact checksum and aggregate acceptance privately.
 4. Verify the four projections and deny checks using the restricted role. Then

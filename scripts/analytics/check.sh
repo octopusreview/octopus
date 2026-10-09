@@ -3,10 +3,9 @@ set -euo pipefail
 cd "$(dirname "$0")"
 # Local disposable Postgres only: no published port or network access.
 image=postgres@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317
-container="octopus-analytics-check-$$"
+container=$(docker run --pull never --rm -d --network none -e POSTGRES_HOST_AUTH_METHOD=trust "$image")
 trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
-docker run --pull never --rm -d --name "$container" --network none -e POSTGRES_HOST_AUTH_METHOD=trust "$image" >/dev/null
-for i in {1..30}; do
+for _ in {1..30}; do
   if docker exec "$container" pg_isready -U postgres >/dev/null 2>&1; then break; fi
   sleep 1
 done

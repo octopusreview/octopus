@@ -10,6 +10,7 @@ The unit is an **organisation**, not a user, repository or review attempt.
 An invited member joining an existing organisation does not start a new cohort.
 Use UTC throughout. A cohort begins at organisation creation; weekly cohorts
 start on Monday. Account registration remains a separate acquisition metric.
+The observation cutoff is exclusive: facts exactly at the cutoff are excluded.
 
 **Activation** means the first substantive PR/MR review successfully published
 for an eligible customer organisation. A review with no findings counts. An empty
@@ -32,10 +33,10 @@ tracks milestone repair and evidence-based backfill.
 | Provisional organisations | Standard organisations not currently banned or soft-deleted; count once by opaque organisation ID. |
 | Repository connected, observed | Earliest retained repository creation at or after organisation creation. Import time is a setup proxy, not OAuth completion time. |
 | Publication observed | Earliest retained PR first-publication marker at or after organisation creation. Missing historical records remain a coverage gap. |
-| Publication within 7 days, observed | Observed publications before cohort start + 7 days, divided by organisations at least 7 days old at the observation cutoff. |
+| Publication within 7 days, observed | Among organisations at least 7 days old at the cutoff, observed publications before organisation creation + 7 days, divided by that same mature cohort. |
 | Time to publication, observed | Median and p90 hours from organisation creation, among organisations with an observed publication; not a statistic for non-converters. |
 | Paid, observed | At least one retained, validated positive cash purchase event, deduplicated by canonical event ID. Credit grants, coupons and opening checkout do not count. |
-| Payment order | Payments observed before versus after publication. Payment is not forced to be the last step in a linear funnel. |
+| Payment order | Earliest observed purchase before versus at/after earliest observed publication, for organisations with both. Paid organisations without a publication remain outside these two counts. Payment is not forced to be the last step in a linear funnel. |
 | Activated-to-paid, target | Once strict activation is available, first positive payment within 30 days after activation, among organisations with no earlier payment and a full 30-day observation window. Already-paid organisations are a separate segment. |
 | Paid retention, target | Distinct paying organisations with a substantive published review in each complete 7-day period after first payment, divided by the paid cohort old enough to reach that period. Rereviews are activity, not new activations. |
 

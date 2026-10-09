@@ -22,7 +22,12 @@ BEGIN
     SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
       AND n.nspname NOT LIKE 'pg_toast%' AND c.relkind IN ('r','p','v','m','S')
-      AND EXISTS (SELECT 1 FROM aclexplode(c.relacl) a WHERE a.grantee = 0)
+      AND (EXISTS (SELECT 1 FROM aclexplode(c.relacl) a WHERE a.grantee = 0)
+        OR EXISTS (
+          SELECT 1 FROM pg_attribute att CROSS JOIN LATERAL aclexplode(att.attacl) a
+          WHERE att.attrelid = c.oid AND att.attnum > 0 AND NOT att.attisdropped
+            AND a.grantee = 0
+        ))
   ) OR EXISTS (
     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND p.prosecdef

@@ -32,6 +32,24 @@ SELECT 'one','live','delivered','purchase',payload FROM (VALUES
   (json_build_object('schemaVersion',1,'eventId','payment_'||repeat('c',64),'eventType','purchase','currency','USD','amountMinor','1000','occurredAt','not a date')::text)
 ) AS invalid(payload);
 SQL
+# Column grants must reject installation and roll back its role and schema.
+psql_fixture -c 'GRANT SELECT ("anthropicApiKey") ON organizations TO PUBLIC'
+if output=$(psql_fixture < access.sql 2>&1); then
+  echo 'PUBLIC column grant unexpectedly accepted' >&2; exit 1
+fi
+[[ "$output" == *'Existing public privileges need operator review; no changes applied'* ]]
+psql_fixture <<'SQL'
+DO $$ BEGIN
+  IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'octopus_analytics_reader')
+    OR to_regnamespace('octopus_analytics') IS NOT NULL THEN RAISE EXCEPTION 'installation not rolled back'; END IF;
+  IF NOT EXISTS (
+    SELECT FROM pg_attribute att CROSS JOIN LATERAL aclexplode(att.attacl) a
+    WHERE att.attrelid = 'organizations'::regclass AND att.attname = 'anthropicApiKey'
+      AND a.grantee = 0 AND a.privilege_type = 'SELECT'
+  ) THEN RAISE EXCEPTION 'existing column grant changed'; END IF;
+END $$;
+REVOKE SELECT ("anthropicApiKey") ON organizations FROM PUBLIC;
+SQL
 psql_fixture < access.sql
 psql_fixture <<'SQL'
 SET ROLE octopus_analytics_reader;

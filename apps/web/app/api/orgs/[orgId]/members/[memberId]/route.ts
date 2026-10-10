@@ -1,4 +1,7 @@
+import "server-only";
 import { NextRequest, NextResponse } from "next/server";
+import { isActionId } from "@/lib/action-input";
+import { isPostgresSafeJson, readBoundedJson } from "@/lib/bounded-json";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
@@ -18,13 +21,23 @@ export async function PATCH(
   }
 
   const { orgId, memberId } = await params;
-  const body = await request.json();
-  const { role, scopes } = body;
+  if (!isActionId(orgId) || !isActionId(memberId)) {
+    return NextResponse.json({ error: "Invalid member or organization" }, { status: 400 });
+  }
+  const parsed = await readBoundedJson(request, 65_536);
+  if (!parsed.ok) {
+    return NextResponse.json({ error: "Invalid request body" }, { status: parsed.reason === "too_large" ? 413 : 400 });
+  }
+  const body = parsed.value;
+  if (!body || typeof body !== "object" || Array.isArray(body) || !isPostgresSafeJson(body)) {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+  const { role, scopes } = body as Record<string, unknown>;
 
   if (role === undefined && scopes === undefined) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
-  if (role !== undefined && !ASSIGNABLE_ROLES.includes(role)) {
+  if (role !== undefined && (typeof role !== "string" || !ASSIGNABLE_ROLES.includes(role))) {
     return NextResponse.json(
       { error: `Invalid role. Must be one of: ${ASSIGNABLE_ROLES.join(", ")}` },
       { status: 400 },

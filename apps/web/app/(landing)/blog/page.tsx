@@ -1,4 +1,7 @@
+import "server-only";
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { isPostgresSafeText } from "@/lib/bounded-json";
 import { ORGANIZATION_ENTITY, SITE_URL, blogItemListJsonLd, jsonLd } from "@/lib/structured-data";
 import Link from "@/components/link";
 import { headers } from "next/headers";
@@ -70,10 +73,10 @@ export default async function BlogPage({
   searchParams,
 }: {
   searchParams: Promise<{
-    page?: string;
-    q?: string;
-    category?: string;
-    tag?: string;
+    page?: string | string[];
+    q?: string | string[];
+    category?: string | string[];
+    tag?: string | string[];
   }>;
 }) {
   const {
@@ -82,7 +85,13 @@ export default async function BlogPage({
     category: categoryParam,
     tag: tagParam,
   } = await searchParams;
-  const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
+  if (Array.isArray(pageParam) || Array.isArray(searchQuery) || Array.isArray(categoryParam) || Array.isArray(tagParam)) notFound();
+  for (const value of [pageParam, searchQuery, categoryParam, tagParam]) {
+    if (value !== undefined && (value.length > 1024 || !isPostgresSafeText(value))) notFound();
+  }
+  const page = Number(pageParam || "1");
+  const skip = (page - 1) * POSTS_PER_PAGE;
+  if ((pageParam && !/^\d+$/.test(pageParam)) || !Number.isSafeInteger(page) || page < 1 || skip > 2_147_483_647) notFound();
   const query = searchQuery?.trim() || "";
   const category = categoryParam?.trim() || "";
   const tag = tagParam?.trim() || "";
@@ -119,7 +128,7 @@ export default async function BlogPage({
     prisma.blogPost.findMany({
       where,
       orderBy: { publishedAt: "desc" },
-      skip: (page - 1) * POSTS_PER_PAGE,
+      skip,
       take: POSTS_PER_PAGE,
       select: {
         title: true,

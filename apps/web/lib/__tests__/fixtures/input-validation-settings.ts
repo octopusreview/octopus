@@ -5,6 +5,8 @@ let signedIn = true;
 let role = "owner";
 let orgId = "org_1";
 let held = false;
+const reads: string[] = [];
+const transactionQueries: unknown[] = [];
 const writes: { operation: string; data: Record<string, unknown> }[] = [];
 mock.module("server-only", () => ({}));
 mock.module("next/headers", () => ({ headers: async () => new Headers(), cookies: async () => ({ get: () => ({ value: orgId }), set: () => {} }) }));
@@ -13,9 +15,12 @@ mock.module("next/cache", () => ({ revalidatePath: () => {} }));
 mock.module("@/lib/auth", () => ({ auth: { api: { getSession: async () => signedIn ? { user: { id: "user_1" } } : null } } }));
 mock.module("@octopus/db", () => ({ prisma: {
   organizationMember: { findFirst: async ({ where }: { where: { organizationId: string; userId: string; deletedAt: null } }) => {
+    reads.push("membership");
     assert.equal(where.userId, "user_1"); assert.equal(where.deletedAt, null);
     return where.organizationId === "org_1" ? { role, scopes: [] } : null;
   } },
+  repository: { findUnique: async () => { reads.push("repository"); return null; } },
+  creditTransaction: { findMany: async (args: unknown) => { transactionQueries.push(args); return []; } },
   organization: {
     findUnique: async () => ({ stripeCustomerId: null }),
     update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
@@ -64,6 +69,41 @@ mock.module("@/lib/presence", () => ({ clearPresence: async () => {} }));
 const actions = await import("@/app/(app)/actions");
 const billing = await import("@/app/(app)/settings/billing/actions");
 const tokens = await import("@/app/(app)/settings/api-tokens/actions");
+for (const invalid of [undefined, null, 42, {}, [], "", "nul\0value", "\ud800", "x".repeat(1025)]) {
+  for (const action of [actions.indexRepository, actions.cancelIndexing]) {
+    reads.length = 0;
+    assert.ok((await action(invalid as string)).error);
+    assert.deepEqual(reads, [], "invalid repository IDs must not reach Prisma");
+  }
+  reads.length = 0;
+  assert.deepEqual(await billing.loadMoreTransactions(invalid as string, 0), []);
+  assert.deepEqual(reads, [], "invalid organization IDs must not reach Prisma");
+}
+for (const invalid of [undefined, null, "1", NaN, Infinity, -1, 0.5, 2147483648]) {
+  reads.length = 0;
+  assert.deepEqual(await billing.loadMoreTransactions("org_1", invalid as number), []);
+  assert.deepEqual(reads, []);
+}
+for (const invalid of [null, "20", NaN, Infinity, -1, 0, 0.5, 101]) {
+  reads.length = 0;
+  assert.deepEqual(await billing.loadMoreTransactions("org_1", 0, invalid as number), []);
+  assert.deepEqual(reads, []);
+}
+assert.deepEqual(transactionQueries, []);
+await billing.loadMoreTransactions("other_org", 0);
+signedIn = false;
+await billing.loadMoreTransactions("org_1", 0);
+await assert.rejects(() => actions.indexRepository("repo_1"), /redirect:\/login/);
+await assert.rejects(() => actions.cancelIndexing("repo_1"), /redirect:\/login/);
+assert.deepEqual(transactionQueries, []);
+signedIn = true;
+await billing.loadMoreTransactions("org_1", 20);
+assert.deepEqual(transactionQueries, [{ where: { organizationId: "org_1" }, orderBy: { createdAt: "desc" }, skip: 20, take: 20 }]);
+for (const action of [actions.indexRepository, actions.cancelIndexing]) {
+  reads.length = 0;
+  assert.ok((await action("repo_1")).error);
+  assert.deepEqual(reads, ["repository"]);
+}
 const form = (fields: Record<string, string | Blob>) => {
   const data = new FormData();
   for (const [key, value] of Object.entries(fields)) data.set(key, value);

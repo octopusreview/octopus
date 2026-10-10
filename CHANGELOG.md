@@ -7,10 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.16] - 2026-10-10
+
 ### Fixed
 
 - Blog pages and search suggestions reject malformed, repeated or oversized query parameters; invalid page numbers no longer reach the database.
 - Organization member updates reject malformed or oversized JSON, and billing history pagination and repository indexing actions reject invalid arguments before database access.
+
+### Improved
+
+- Vendor console access supports explicit grants and revocation independently of organization permissions.
+- Product analytics setup includes restricted reporting views and a documented activation funnel.
+
+### Upgrade notes
+
+- Apply the two additive user-access migrations introduced since 1.2.15 before updating web and review workers. Explicit revocation overrides bootstrap console access.
+- No provider credential changes or automatic retries of earlier requests. Existing analytics connectors and schedules do not need to be recreated.
 
 ## [1.2.15] - 2026-10-06
 

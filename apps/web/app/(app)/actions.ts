@@ -1,6 +1,7 @@
 "use server";
 
 import "server-only";
+import { isActionId } from "@/lib/action-input";
 import { isTextFormData } from "@/lib/form-input";
 import { headers, cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -595,6 +596,7 @@ const INDEX_COOLDOWN_MS = 60_000; // 1 minute
 
 export async function indexRepository(repoId: string): Promise<{ error?: string }> {
   const user = await getUser();
+  if (!isActionId(repoId)) return { error: "Invalid repository." };
 
   const repo = await prisma.repository.findUnique({
     where: { id: repoId },
@@ -735,6 +737,7 @@ export async function indexRepository(repoId: string): Promise<{ error?: string 
 
 export async function cancelIndexing(repoId: string): Promise<{ error?: string }> {
   const user = await getUser();
+  if (!isActionId(repoId)) return { error: "Invalid repository." };
 
   const repo = await prisma.repository.findUnique({
     where: { id: repoId },

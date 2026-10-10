@@ -1,6 +1,7 @@
 "use server";
 
 import "server-only";
+import { isActionId } from "@/lib/action-input";
 import { isTextFormData } from "@/lib/form-input";
 import { beginMarketingPayment } from "@/lib/marketing-capture";
 
@@ -427,6 +428,8 @@ export async function loadMoreTransactions(
 ): Promise<TransactionDTO[]> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return [];
+  if (!isActionId(orgId) || !Number.isInteger(offset) || offset < 0 || offset > 2_147_483_647 ||
+      !Number.isInteger(limit) || limit < 1 || limit > 100) return [];
 
   const member = await prisma.organizationMember.findFirst({
     where: {

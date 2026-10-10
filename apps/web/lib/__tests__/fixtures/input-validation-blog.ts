@@ -4,7 +4,7 @@ import { NextRequest } from "next/server";
 
 const queries: { skip?: number; where: unknown }[] = [];
 let searchPosts: { title: string; slug: string; excerpt: string | null }[] = [];
-let databaseError: Error | undefined;
+let databaseError: Error | undefined = undefined;
 mock.module("server-only", () => ({}));
 mock.module("next/headers", () => ({ headers: async () => new Headers() }));
 mock.module("next/cache", () => ({ unstable_cache: (fn: unknown) => fn }));

@@ -464,7 +464,12 @@ async function syncTextDismissalsForPR(
   // --- Part 1: Scan inline review comment replies (threaded dismissals) ---
   const issuesWithCommentId = issues.filter((i) => i.githubCommentId !== null);
   if (issuesWithCommentId.length > 0) {
-    const allReviewComments = await ghListPullRequestReviewComments(installationId, owner, repoName, prNumber);
+    let allReviewComments: import("@/lib/github").PRReviewComment[] = [];
+    try {
+      allReviewComments = await ghListPullRequestReviewComments(installationId, owner, repoName, prNumber);
+    } catch (err) {
+      console.warn("[reviewer] Failed to list PR review comments for feedback sync:", err);
+    }
 
     // Build map: parent comment ID → reply bodies (only from PR author, not from the bot)
     const repliesByParent = new Map<number, { body: string; isAuthor: boolean }[]>();

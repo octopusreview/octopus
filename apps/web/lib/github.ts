@@ -990,6 +990,11 @@ export type PRReviewComment = {
   isOutdated: boolean;
 };
 
+/**
+ * Every inline review comment of a pull request, replies included, across
+ * all pages. Throws on a failed response, so a caller that gates on the list
+ * can tell an empty list from an unknown one.
+ */
 export async function listPullRequestReviewComments(
   installationId: number,
   owner: string,
@@ -997,41 +1002,42 @@ export async function listPullRequestReviewComments(
   prNumber: number,
 ): Promise<PRReviewComment[]> {
   const token = await getInstallationToken(installationId);
-  const res = await fetchWithRetry(
-    `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/comments?per_page=100`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
+  const comments: PRReviewComment[] = [];
+  for (let page = 1; ; page++) {
+    const res = await fetchWithRetry(
+      `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/comments?per_page=100&page=${page}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+        },
       },
-    },
-  );
+    );
 
-  if (!res.ok) {
-    console.error(`[github] Failed to list PR review comments: ${res.status}`);
-    return [];
+    if (!res.ok) throw new Error(`Failed to list PR review comments: ${res.status}`);
+
+    const pageComments = (await res.json()) as {
+      id: number;
+      path: string;
+      line: number | null;
+      original_line: number | null;
+      position: number | null;
+      body: string;
+      user: { login: string } | null;
+      in_reply_to_id?: number;
+    }[];
+
+    comments.push(...pageComments.map((c) => ({
+      id: c.id,
+      path: c.path,
+      line: c.line ?? c.original_line,
+      body: c.body,
+      user: c.user?.login ?? "",
+      inReplyToId: c.in_reply_to_id ?? null,
+      isOutdated: c.line === null && c.original_line !== null,
+    })));
+    if (pageComments.length < 100) return comments;
   }
-
-  const comments = (await res.json()) as {
-    id: number;
-    path: string;
-    line: number | null;
-    original_line: number | null;
-    position: number | null;
-    body: string;
-    user: { login: string } | null;
-    in_reply_to_id?: number;
-  }[];
-
-  return comments.map((c) => ({
-    id: c.id,
-    path: c.path,
-    line: c.line ?? c.original_line,
-    body: c.body,
-    user: c.user?.login ?? "",
-    inReplyToId: c.in_reply_to_id ?? null,
-    isOutdated: c.line === null && c.original_line !== null,
-  }));
 }
 
 /**

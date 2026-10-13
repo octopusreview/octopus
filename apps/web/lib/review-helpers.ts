@@ -773,6 +773,38 @@ export function shouldFailReviewCheck(
   );
 }
 
+/** One earlier inline comment by Octopus on the pull request, reduced to its resolution signals. */
+export interface PriorBotComment {
+  /** GitHub marks a review comment outdated when the lines it sits on changed. */
+  isOutdated: boolean;
+  /** A reply in the comment's thread from a user other than the bot. */
+  hasReply: boolean;
+}
+
+/**
+ * The approval decision: does a review approve the pull request? Only when the
+ * org opted in, the input coverage is complete, the review surfaced zero
+ * findings and every earlier inline comment by Octopus is outdated or replied
+ * to. `findings` is the count after the confidence filter, the re-review
+ * filter and the cap, not the count of comments that reach the provider: the
+ * dedup against earlier comments can hide a finding that still exists.
+ * `priorBotComments` is empty on a first review, so only a re-review gates on
+ * the earlier comments.
+ */
+export function shouldApproveReview(input: {
+  enabled: boolean;
+  findings: number;
+  coverageComplete: boolean;
+  priorBotComments: PriorBotComment[];
+}): boolean {
+  return (
+    input.enabled &&
+    input.coverageComplete &&
+    input.findings === 0 &&
+    input.priorBotComments.every((c) => c.isOutdated || c.hasReply)
+  );
+}
+
 /** One hit from `searchReviewChunks` (past review summaries in Qdrant). */
 export interface PastReviewHit {
   text: string;

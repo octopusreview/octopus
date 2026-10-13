@@ -214,6 +214,7 @@ mock.module("@/lib/github", () => ({
   createPullRequestComment: async (...args: unknown[]) => { if (failSummary && String(args[4]).includes("Large PR —")) throw new Error("Transient summary failure"); if (!allowPublication) unexpectedPublication(); await duringPublication?.(); published.push(args); return 900; },
   updatePullRequestComment: async (...args: unknown[]) => { if (failSummary && String(args[4]).includes("Large PR —")) throw new Error("Transient summary failure"); if (!allowPublication) unexpectedPublication(); await duringPublication?.(); published.push(args); },
   createPullRequestReview: async (...args: unknown[]) => { if (failSummary || nativeOnlyFailure) throw new Error("Transient summary failure"); if (!allowPublication) unexpectedPublication(); published.push(args); return 901; },
+  listPullRequestReviewComments: async () => [],
 }));
 mock.module("@/lib/pubby", () => ({ pubby: { trigger: unexpectedPublication } }));
 mock.module("@/lib/events", () => ({ eventBus: { emit: unexpectedPublication } }));

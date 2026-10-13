@@ -7,6 +7,7 @@ mock.module("server-only", () => ({}));
 const directCommentFailure = process.argv.includes("--direct-forgejo-comment-failure");
 const preserveAutoReview = process.argv.includes("--preserve-auto-review");
 const firstCompletion = process.argv.includes("--first-review-completion");
+const approveCleanReviews = process.argv.includes("--approve-clean-reviews");
 let completionFailure: "summary" | "check" | null = null;
 const reviewUpdates: unknown[] = [];
 let nativeFailure = false;
@@ -52,7 +53,7 @@ const finding = {
   category: "Bug", description: "A missing value causes this access to throw.", suggestion: "", confidence: 95,
 };
 const diff = "diff --git a/src/check.ts b/src/check.ts\n--- a/src/check.ts\n+++ b/src/check.ts\n@@ -1 +1 @@\n-return value;\n+return value.name;\n";
-const org = { id: "org", defaultReviewConfig: {}, reviewLanguage: "en" };
+const org = { id: "org", defaultReviewConfig: {}, reviewLanguage: "en", approveCleanReviews: false };
 const repo = {
   id: "repo", fullName: "fixture/repo", organization: org, reviewConfig: {},
   provider: "github", installationId: 1, indexStatus: "indexed", defaultBranch: "main",
@@ -134,7 +135,10 @@ mock.module("@/lib/review-validation", () => ({
 // persistence mapping real; replace external services and unrelated prerequisites.
 const archived: { id: string; findings: { title: string }[]; coverage: unknown; body: string }[] = [];
 const summaries: string[] = [];
-const published: { body: string; comments: unknown[] }[] = [];
+const published: { body: string; event: string; comments: unknown[] }[] = [];
+const priorReviewComments: { id: number; user: string; path: string; line: number; body: string; inReplyToId: number | null; isOutdated: boolean }[] = [
+  { id: 5, user: "fixture[bot]", path: "src/check.ts", line: 1, body: "🟠 Previous unrelated partial-review issue", inReplyToId: null, isOutdated: false },
+];
 const checkConclusions: string[] = [];
 mock.module("@/lib/review-summary-comment", () => ({ publishReviewSummary: async (target: { body: string; headSha: string; reviewRequestVersion: number; expectedReviewBody?: string; executionWindow?: ReviewExecutionWindow }) => {
   if (firstCompletion && pr.status === "completed" && completionFailure === "summary") {
@@ -177,9 +181,9 @@ mock.module("@/lib/github", () => ({
   getPullRequestDetails: async () => ({ body: "Handle missing values" }),
   createPullRequestComment: async () => { directComments++; return 123; },
   updatePullRequestComment: async (_installation: number, _owner: string, _repo: string, _id: number, body: string) => { summaries.push(body); },
-  createPullRequestReview: async (_installation: number, _owner: string, _repo: string, _number: number, body: string, _event: string, comments: unknown[]) => {
+  createPullRequestReview: async (_installation: number, _owner: string, _repo: string, _number: number, body: string, event: string, comments: unknown[]) => {
     if (nativeFailure) throw new Error("fixture native review rejected");
-    published.push({ body, comments });
+    published.push({ body, event, comments });
     return 456;
   },
   createCheckRun: async () => 789,
@@ -191,7 +195,7 @@ mock.module("@/lib/github", () => ({
   getRepositoryTree: async () => ["src/check.ts"],
   getFileContent: async () => "return value.name;",
   listReviewComments: async () => [],
-  listPullRequestReviewComments: async () => [{ id: 5, user: "fixture[bot]", path: "src/check.ts", line: 1, body: "🟠 Previous unrelated partial-review issue", inReplyToId: null }],
+  listPullRequestReviewComments: async () => priorReviewComments,
   listPullRequestIssueComments: async () => [],
   listPullRequestReviews: async () => [],
   getCommentReactions: async () => ({ thumbsUp: 0, thumbsDown: 0 }),
@@ -339,6 +343,35 @@ if (directCommentFailure) {
   }), "Direct comment failure is persisted for the same review attempt");
   assert.ok(events.some(event => event.type === "review-failed"));
   console.log("PASS handled direct Forgejo comment failure without connector uncertainty");
+  process.exit(0);
+}
+if (approveCleanReviews) {
+  const cleanReport = report.replace(JSON.stringify([finding]), "[]").replace("| 🟠 High | 1 |", "| 🟠 High | 0 |");
+  responseOverride = cleanReport;
+  await processReview("pr");
+  assert.equal((archived.at(-1)!.coverage as ReviewCoverage).assessment?.state, "completed");
+  assert.deepEqual(archived.at(-1)!.findings, []);
+  assert.equal(published.at(-1)!.event, "COMMENT", "a clean review stays a COMMENT while the setting is off");
+  org.approveCleanReviews = true;
+  await processReview("pr");
+  assert.equal(published.at(-1)!.event, "APPROVE", "a clean first review approves with the setting on");
+  responseOverride = null;
+  await processReview("pr");
+  assert.equal(published.at(-1)!.comments.length, 1);
+  assert.equal(published.at(-1)!.event, "COMMENT", "one finding blocks the approval");
+  prior = { ...structuredClone(archived.at(-1)!.coverage as ReviewCoverage), reviewRequestVersion: 1 };
+  responseOverride = cleanReport;
+  await processReview("pr");
+  assert.ok(received.messages[0].content.includes("RE-REVIEW MODE"));
+  assert.equal(published.at(-1)!.event, "COMMENT", "an earlier inline comment that is open blocks the approval on a re-review");
+  priorReviewComments[0].isOutdated = true;
+  await processReview("pr");
+  assert.equal(published.at(-1)!.event, "APPROVE", "a re-review approves once every earlier inline comment is outdated");
+  priorReviewComments[0].isOutdated = false;
+  priorReviewComments.push({ id: 6, user: "fixture", path: "src/check.ts", line: 1, body: "Fixed in the last commit.", inReplyToId: 5, isOutdated: false });
+  await processReview("pr");
+  assert.equal(published.at(-1)!.event, "APPROVE", "a re-review approves once every earlier inline comment has a reply");
+  console.log("PASS clean reviews approve only with the setting on and settled earlier comments");
   process.exit(0);
 }
 const current = prepareReviewInput({ provider: "github", headSha: pr.headSha, baseSha: "b".repeat(40), expectedFiles: 1, inventoryComplete: true, limitations: [], files: [

@@ -216,7 +216,9 @@ export default function GettingStartedPage() {
         <Paragraph>
           Every finding includes a severity level so you can prioritize what
           matters most. Critical issues block the PR with a
-          REQUEST_CHANGES review, while suggestions are informational.
+          REQUEST_CHANGES review, while suggestions are informational. With
+          the organization setting &quot;Approve Clean Reviews&quot; on, a
+          review with no findings is an approving review.
         </Paragraph>
         <div className="mb-4 space-y-2">
           <SeverityRow

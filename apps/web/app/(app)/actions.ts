@@ -876,6 +876,49 @@ export async function toggleReviewsPaused(
 }
 
 /**
+ * Turn the APPROVE review for a clean GitHub review on/off for the org.
+ * Needs `reviews:configure`, like the check failure threshold.
+ */
+export async function toggleApproveCleanReviews(
+  _prevState: { error?: string; success?: boolean },
+  formData: FormData,
+): Promise<{ error?: string; success?: boolean }> {
+  const user = await getUser();
+  const cookieStore = await cookies();
+  const orgId = cookieStore.get("current_org_id")?.value;
+
+  if (!orgId) return { error: "No organization selected." };
+
+  const member = await prisma.organizationMember.findFirst({
+    where: {
+      organizationId: orgId,
+      userId: user.id,
+      deletedAt: null,
+    },
+    select: { role: true, scopes: true },
+  });
+
+  if (!hasOrgPermission(member, "reviews:configure")) {
+    return { error: "Only organization owners and admins can change review approval." };
+  }
+
+  if (!isTextFormData(formData)) return { error: "Invalid form data." };
+
+  if (!["true", "false"].includes(formData.get("enabled") as string)) {
+    return { error: "Invalid enabled value." };
+  }
+  const enabled = formData.get("enabled") === "true";
+
+  await prisma.organization.update({
+    where: { id: orgId },
+    data: { approveCleanReviews: enabled },
+  });
+
+  revalidatePath("/settings/reviews");
+  return { success: true };
+}
+
+/**
  * Turn automatic repository discovery on/off for the org (hourly sweep +
  * GitHub repository events). Manual Sync keeps working either way.
  */

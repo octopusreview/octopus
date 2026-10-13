@@ -82,6 +82,8 @@ import {
   generateVerificationQueries,
   resolveIndexClaimWait,
   shouldFailReviewCheck,
+  shouldApproveReview,
+  type PriorBotComment,
   formatPastReviews,
   formatPrIntent,
   buildRetrievalQuery,
@@ -2161,7 +2163,28 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       { hasCritical, hasHigh, hasMedium },
       threshold,
     );
-    const reviewEvent = shouldRequestChanges ? "REQUEST_CHANGES" : "COMMENT";
+    // Approval gate (GitHub only). The earlier inline comments gate only a
+    // re-review: a full review re-assesses every line, and the re-review prompt
+    // forbids a repeat of an earlier finding, so zero findings on a re-review
+    // means nothing new, not everything fixed. `findings` is the post-filter
+    // list, not the visible count after the dedup.
+    const priorBotComments: PriorBotComment[] = isReReview
+      ? botComments.map((c) => ({
+          isOutdated: c.isOutdated,
+          hasReply: allPriorReviewComments.some((r) => r.inReplyToId === c.id && r.user !== botLogin),
+        }))
+      : [];
+    const approve = isGitHub && shouldApproveReview({
+      enabled: org.approveCleanReviews === true,
+      findings: findings.length,
+      coverageComplete: reviewAssessmentComplete(coverage) && coverage.assessment?.state !== "not-required",
+      priorBotComments,
+    });
+    const reviewEvent: "APPROVE" | "REQUEST_CHANGES" | "COMMENT" = approve
+      ? "APPROVE"
+      : shouldRequestChanges
+        ? "REQUEST_CHANGES"
+        : "COMMENT";
 
     // Track the actual number of findings visible to the user (inline + summary table)
     // This gets set by the GitHub/Bitbucket posting logic below
@@ -2229,7 +2252,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           assertProcessingActive();
           const reviewId = await ghCreatePullRequestReview(
             installationId, owner, repoName, pr.number,
-            summaryLine, reviewEvent as "COMMENT" | "REQUEST_CHANGES", dedupedComments, undefined, coverage.headSha ?? undefined,
+            summaryLine, reviewEvent, dedupedComments, undefined, coverage.headSha ?? undefined,
           );
           inlineReviewSucceeded = true;
           console.log(`[reviewer] PR review submitted with ${dedupedComments.length} inline comments, ${nonInlineWithUnmappable.length} in summary (${reviewEvent}), reviewId: ${reviewId}`);
@@ -2278,7 +2301,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           assertProcessingActive();
           await ghCreatePullRequestReview(
             installationId, owner, repoName, pr.number,
-            summaryBody, reviewEvent as "COMMENT" | "REQUEST_CHANGES", [], undefined, coverage.headSha ?? undefined,
+            summaryBody, reviewEvent, [], undefined, coverage.headSha ?? undefined,
           );
           console.log(`[reviewer] PR review submitted without inline comments, ${allSummaryFindings.length} in summary (${reviewEvent})`);
         } catch (err) {

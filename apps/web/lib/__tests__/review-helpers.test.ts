@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { formatPastReviews, formatPrIntent, buildRetrievalQuery, cappedConfidence, UNCITED_HIGH_SEV_CAP, filterByConfidence, resolveConfidenceThreshold, type PastReviewHit } from "@/lib/review-helpers";
+import { formatPastReviews, formatPrIntent, buildRetrievalQuery, cappedConfidence, UNCITED_HIGH_SEV_CAP, filterByConfidence, resolveConfidenceThreshold, shouldApproveReview, type PastReviewHit } from "@/lib/review-helpers";
 
 describe("formatPastReviews", () => {
   const hit = (o: Partial<PastReviewHit> = {}): PastReviewHit => ({
@@ -158,5 +158,37 @@ describe("resolveConfidenceThreshold (#652)", () => {
   it("maps HIGH to 85 and default to 70", () => {
     expect(resolveConfidenceThreshold({ confidenceThreshold: "HIGH" })).toBe(85);
     expect(resolveConfidenceThreshold({})).toBe(70);
+  });
+});
+
+describe("shouldApproveReview", () => {
+  const clean = { enabled: true, findings: 0, coverageComplete: true, priorBotComments: [] };
+
+  it("never approves while the org setting is off", () => {
+    expect(shouldApproveReview({ ...clean, enabled: false })).toBe(false);
+  });
+  it("approves a first review with zero findings and complete coverage", () => {
+    expect(shouldApproveReview(clean)).toBe(true);
+  });
+  it("does not approve with one finding, whatever its severity", () => {
+    expect(shouldApproveReview({ ...clean, findings: 1 })).toBe(false);
+  });
+  it("does not approve with incomplete coverage", () => {
+    expect(shouldApproveReview({ ...clean, coverageComplete: false })).toBe(false);
+  });
+  it("approves a re-review when every earlier comment is outdated", () => {
+    expect(shouldApproveReview({ ...clean, priorBotComments: [
+      { isOutdated: true, hasReply: false }, { isOutdated: true, hasReply: false },
+    ] })).toBe(true);
+  });
+  it("approves a re-review when every earlier comment has a reply", () => {
+    expect(shouldApproveReview({ ...clean, priorBotComments: [
+      { isOutdated: false, hasReply: true }, { isOutdated: false, hasReply: true },
+    ] })).toBe(true);
+  });
+  it("does not approve a re-review while one earlier comment is neither outdated nor replied to", () => {
+    expect(shouldApproveReview({ ...clean, priorBotComments: [
+      { isOutdated: true, hasReply: false }, { isOutdated: false, hasReply: false },
+    ] })).toBe(false);
   });
 });

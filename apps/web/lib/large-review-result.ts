@@ -4,13 +4,15 @@ import { randomUUID } from "node:crypto";
 import { deliverReviewAttempt } from "@/lib/review-attempt-delivery";
 import { saveReviewAttempt, updateCurrentReview, hasReviewAttempt, recordFirstReviewCompletion } from "@/lib/review-attempt";
 import { publishReviewSummary } from "@/lib/review-summary-comment";
-import { unknownReviewCoverage, applyReviewCoverage, coverageSummary, reviewCheckResult } from "@/lib/review-coverage";
+import { unknownReviewCoverage, applyReviewCoverage, coverageSummary, reviewCheckResult, reviewAssessmentComplete } from "@/lib/review-coverage";
 import { prisma, type Prisma } from "@octopus/db";
 import { pubby } from "@/lib/pubby";
 import {
   createPullRequestReview as ghCreatePullRequestReview,
+  listPullRequestReviewComments as ghListPullRequestReviewComments,
   updateCheckRun as ghUpdateCheckRun,
 } from "@/lib/github";
+import { getGithubAppConfig } from "@/lib/github-app-config";
 import { parseFindings } from "@/lib/review-dedup";
 import { findingSignature, mergeFindingsBySignature, inheritReviewIssueTriage } from "@/lib/finding-merge";
 import {
@@ -24,6 +26,8 @@ import {
   mergeReviewConfigs,
   MAX_FINDINGS_PER_REVIEW,
   shouldFailReviewCheck,
+  shouldApproveReview,
+  type PriorBotComment,
   type ReviewConfig,
 } from "@/lib/review-helpers";
 import { eventBus } from "@/lib/events";
@@ -130,9 +134,36 @@ export async function handleLargeReviewResult(
     { hasCritical, hasHigh, hasMedium },
     threshold,
   );
-  const reviewEvent: "COMMENT" | "REQUEST_CHANGES" = shouldRequestChanges
-    ? "REQUEST_CHANGES"
-    : "COMMENT";
+  // Approval gate. This path has no re-review state, so the earlier inline
+  // comments are the only signal: it lists them when the org opted in, and a
+  // failed list means unknown, which never approves.
+  let approve = false;
+  const coverageComplete = reviewAssessmentComplete(coverage) && coverage.assessment?.state !== "not-required";
+  if (org.approveCleanReviews === true && coverageComplete && !shouldRequestChanges && findings.length === 0) {
+    try {
+      const botLogin = `${(await getGithubAppConfig())?.slug ?? "octopus-review"}[bot]`;
+      const priorComments = await ghListPullRequestReviewComments(installationId, owner, repoName, pr.number);
+      const priorBotComments: PriorBotComment[] = priorComments
+        .filter((c) => !c.inReplyToId && c.user === botLogin && c.line != null)
+        .map((c) => ({
+          isOutdated: c.isOutdated,
+          hasReply: priorComments.some((r) => r.inReplyToId === c.id && r.user !== botLogin),
+        }));
+      approve = shouldApproveReview({
+        enabled: true,
+        findings: findings.length,
+        coverageComplete,
+        priorBotComments,
+      });
+    } catch (err) {
+      console.warn("[large-review-result] Failed to fetch prior review comments, posting COMMENT:", err);
+    }
+  }
+  const reviewEvent: "APPROVE" | "COMMENT" | "REQUEST_CHANGES" = approve
+    ? "APPROVE"
+    : shouldRequestChanges
+      ? "REQUEST_CHANGES"
+      : "COMMENT";
 
   // 4. Persist findings to review_issues
   // Signature-matched findings inherit prior triage state; delete+create run

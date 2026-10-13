@@ -153,6 +153,8 @@ model Organization {
   reviewEffort         String?
   monthlySpendLimitUsd    Float?
   checkFailureThreshold   String   @default("critical") // "critical" | "high" | "medium" | "none"
+  // Post a GitHub APPROVE review when a review finds nothing. Off = COMMENT.
+  approveCleanReviews     Boolean  @default(false)
   reviewsPaused           Boolean  @default(false)
   // Automatic repository discovery (hourly sweep + GitHub repository events).
   // Off = new repositories are added only through the manual Sync button.

@@ -83,7 +83,7 @@ import {
   resolveIndexClaimWait,
   shouldFailReviewCheck,
   shouldApproveReview,
-  type PriorBotComment,
+  priorBotCommentSignals,
   formatPastReviews,
   formatPrIntent,
   buildRetrievalQuery,
@@ -1551,14 +1551,19 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
     }
 
     // Fetch prior review comments once — shared by prompt context injection and inline dedup.
-    const appSlug = (await getGithubAppConfig())?.slug ?? "octopus-review";
+    const appConfig = await getGithubAppConfig();
+    const appSlug = appConfig?.slug ?? "octopus-review";
     const botLogin = `${appSlug}[bot]`;
     let allPriorReviewComments: import("@/lib/github").PRReviewComment[] = [];
+    // The approval gate reads the earlier bot comments. A failed list or an
+    // unknown app slug leaves them unknown, and unknown never approves.
+    let priorCommentsKnown = appConfig?.slug != null;
     const priorSummaryTableFindings: PriorFinding[] = [];
     if (isGitHub && installationId) {
       try {
         allPriorReviewComments = await ghListPullRequestReviewComments(installationId, owner, repoName, pr.number);
       } catch (err) {
+        priorCommentsKnown = false;
         console.warn("[reviewer] Failed to fetch prior review comments:", err);
       }
 
@@ -2163,22 +2168,16 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       { hasCritical, hasHigh, hasMedium },
       threshold,
     );
-    // Approval gate (GitHub only). The earlier inline comments gate only a
-    // re-review: a full review re-assesses every line, and the re-review prompt
-    // forbids a repeat of an earlier finding, so zero findings on a re-review
-    // means nothing new, not everything fixed. `findings` is the post-filter
-    // list, not the visible count after the dedup.
-    const priorBotComments: PriorBotComment[] = isReReview
-      ? botComments.map((c) => ({
-          isOutdated: c.isOutdated,
-          hasReply: allPriorReviewComments.some((r) => r.inReplyToId === c.id && r.user !== botLogin),
-        }))
-      : [];
-    const approve = isGitHub && shouldApproveReview({
+    // Approval gate (GitHub only). Every earlier inline comment by the bot has
+    // to be outdated or replied to, on a re-review and on a full review alike:
+    // the re-review prompt forbids a repeat of an earlier finding, so zero
+    // findings means nothing new, not everything fixed. `findings` is the
+    // post-filter list, not the visible count after the dedup.
+    const approve = isGitHub && priorCommentsKnown && shouldApproveReview({
       enabled: org.approveCleanReviews === true,
       findings: findings.length,
       coverageComplete: reviewAssessmentComplete(coverage) && coverage.assessment?.state !== "not-required",
-      priorBotComments,
+      priorBotComments: priorBotCommentSignals(allPriorReviewComments, botLogin),
     });
     const reviewEvent: "APPROVE" | "REQUEST_CHANGES" | "COMMENT" = approve
       ? "APPROVE"

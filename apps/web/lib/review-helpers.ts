@@ -782,14 +782,32 @@ export interface PriorBotComment {
 }
 
 /**
+ * Reduce the review comments of a pull request to the resolution signals of
+ * each top-level inline comment by the bot. A reply counts when its user is a
+ * person: not the bot, and not another `[bot]` account. The caller passes the
+ * full list, including replies, and the exact bot login.
+ */
+export function priorBotCommentSignals(
+  comments: { id: number; user: string; line: number | null; inReplyToId: number | null; isOutdated: boolean }[],
+  botLogin: string,
+): PriorBotComment[] {
+  return comments
+    .filter((c) => !c.inReplyToId && c.user === botLogin && c.line != null)
+    .map((c) => ({
+      isOutdated: c.isOutdated,
+      hasReply: comments.some((r) => r.inReplyToId === c.id && r.user !== botLogin && !r.user.endsWith("[bot]")),
+    }));
+}
+
+/**
  * The approval decision: does a review approve the pull request? Only when the
  * org opted in, the input coverage is complete, the review surfaced zero
  * findings and every earlier inline comment by Octopus is outdated or replied
  * to. `findings` is the count after the confidence filter, the re-review
  * filter and the cap, not the count of comments that reach the provider: the
  * dedup against earlier comments can hide a finding that still exists.
- * `priorBotComments` is empty on a first review, so only a re-review gates on
- * the earlier comments.
+ * `priorBotComments` must be the known list: a caller that could not list the
+ * earlier comments must not call this with an empty list.
  */
 export function shouldApproveReview(input: {
   enabled: boolean;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { formatPastReviews, formatPrIntent, buildRetrievalQuery, cappedConfidence, UNCITED_HIGH_SEV_CAP, filterByConfidence, resolveConfidenceThreshold, shouldApproveReview, type PastReviewHit } from "@/lib/review-helpers";
+import { formatPastReviews, formatPrIntent, buildRetrievalQuery, cappedConfidence, UNCITED_HIGH_SEV_CAP, filterByConfidence, resolveConfidenceThreshold, shouldApproveReview, priorBotCommentSignals, type PastReviewHit } from "@/lib/review-helpers";
 
 describe("formatPastReviews", () => {
   const hit = (o: Partial<PastReviewHit> = {}): PastReviewHit => ({
@@ -190,5 +190,27 @@ describe("shouldApproveReview", () => {
     expect(shouldApproveReview({ ...clean, priorBotComments: [
       { isOutdated: true, hasReply: false }, { isOutdated: false, hasReply: false },
     ] })).toBe(false);
+  });
+});
+
+describe("priorBotCommentSignals", () => {
+  const bot = "octopus-review[bot]";
+  const top = (id: number, user = bot, isOutdated = false) => ({ id, user, line: 1, inReplyToId: null, isOutdated });
+  const reply = (id: number, to: number, user: string) => ({ id, user, line: 1, inReplyToId: to, isOutdated: false });
+
+  it("keeps only the top-level inline comments of the bot, with their outdated flag", () => {
+    expect(priorBotCommentSignals([top(1), top(2, "alice"), top(3, bot, true), { ...top(4), line: null }], bot))
+      .toEqual([{ isOutdated: false, hasReply: false }, { isOutdated: true, hasReply: false }]);
+  });
+  it("counts a reply from a person", () => {
+    expect(priorBotCommentSignals([top(1), reply(2, 1, "alice")], bot)).toEqual([{ isOutdated: false, hasReply: true }]);
+  });
+  it("does not count a reply from the bot or from another bot account", () => {
+    expect(priorBotCommentSignals([top(1), reply(2, 1, bot), reply(3, 1, "dependabot[bot]")], bot))
+      .toEqual([{ isOutdated: false, hasReply: false }]);
+  });
+  it("does not count a reply in another thread", () => {
+    expect(priorBotCommentSignals([top(1), top(2), reply(3, 2, "alice")], bot))
+      .toEqual([{ isOutdated: false, hasReply: false }, { isOutdated: false, hasReply: true }]);
   });
 });

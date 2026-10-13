@@ -27,7 +27,7 @@ import {
   MAX_FINDINGS_PER_REVIEW,
   shouldFailReviewCheck,
   shouldApproveReview,
-  type PriorBotComment,
+  priorBotCommentSignals,
   type ReviewConfig,
 } from "@/lib/review-helpers";
 import { eventBus } from "@/lib/events";
@@ -134,27 +134,23 @@ export async function handleLargeReviewResult(
     { hasCritical, hasHigh, hasMedium },
     threshold,
   );
-  // Approval gate. This path has no re-review state, so the earlier inline
-  // comments are the only signal: it lists them when the org opted in, and a
-  // failed list means unknown, which never approves.
+  // Approval gate. This path lists the earlier inline comments itself when the
+  // org opted in. A failed list or an unknown app slug leaves them unknown,
+  // and unknown never approves.
   let approve = false;
   const coverageComplete = reviewAssessmentComplete(coverage) && coverage.assessment?.state !== "not-required";
   if (org.approveCleanReviews === true && coverageComplete && !shouldRequestChanges && findings.length === 0) {
     try {
-      const botLogin = `${(await getGithubAppConfig())?.slug ?? "octopus-review"}[bot]`;
-      const priorComments = await ghListPullRequestReviewComments(installationId, owner, repoName, pr.number);
-      const priorBotComments: PriorBotComment[] = priorComments
-        .filter((c) => !c.inReplyToId && c.user === botLogin && c.line != null)
-        .map((c) => ({
-          isOutdated: c.isOutdated,
-          hasReply: priorComments.some((r) => r.inReplyToId === c.id && r.user !== botLogin),
-        }));
-      approve = shouldApproveReview({
-        enabled: true,
-        findings: findings.length,
-        coverageComplete,
-        priorBotComments,
-      });
+      const appSlug = (await getGithubAppConfig())?.slug;
+      if (appSlug) {
+        const priorComments = await ghListPullRequestReviewComments(installationId, owner, repoName, pr.number);
+        approve = shouldApproveReview({
+          enabled: true,
+          findings: findings.length,
+          coverageComplete,
+          priorBotComments: priorBotCommentSignals(priorComments, `${appSlug}[bot]`),
+        });
+      }
     } catch (err) {
       console.warn("[large-review-result] Failed to fetch prior review comments, posting COMMENT:", err);
     }

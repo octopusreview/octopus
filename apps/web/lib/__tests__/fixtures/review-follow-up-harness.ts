@@ -8,6 +8,7 @@ const directCommentFailure = process.argv.includes("--direct-forgejo-comment-fai
 const preserveAutoReview = process.argv.includes("--preserve-auto-review");
 const firstCompletion = process.argv.includes("--first-review-completion");
 const approveCleanReviews = process.argv.includes("--approve-clean-reviews");
+let priorCommentsFailure = false;
 let completionFailure: "summary" | "check" | null = null;
 const reviewUpdates: unknown[] = [];
 let nativeFailure = false;
@@ -195,7 +196,7 @@ mock.module("@/lib/github", () => ({
   getRepositoryTree: async () => ["src/check.ts"],
   getFileContent: async () => "return value.name;",
   listReviewComments: async () => [],
-  listPullRequestReviewComments: async () => priorReviewComments,
+  listPullRequestReviewComments: async () => { if (priorCommentsFailure) throw new Error("fixture comment list failure"); return priorReviewComments; },
   listPullRequestIssueComments: async () => [],
   listPullRequestReviews: async () => [],
   getCommentReactions: async () => ({ thumbsUp: 0, thumbsDown: 0 }),
@@ -347,6 +348,8 @@ if (directCommentFailure) {
 }
 if (approveCleanReviews) {
   const cleanReport = report.replace(JSON.stringify([finding]), "[]").replace("| 🟠 High | 1 |", "| 🟠 High | 0 |");
+  const earlierComment = priorReviewComments[0];
+  priorReviewComments.length = 0;
   responseOverride = cleanReport;
   await processReview("pr");
   assert.equal((archived.at(-1)!.coverage as ReviewCoverage).assessment?.state, "completed");
@@ -359,18 +362,30 @@ if (approveCleanReviews) {
   await processReview("pr");
   assert.equal(published.at(-1)!.comments.length, 1);
   assert.equal(published.at(-1)!.event, "COMMENT", "one finding blocks the approval");
-  prior = { ...structuredClone(archived.at(-1)!.coverage as ReviewCoverage), reviewRequestVersion: 1 };
+  priorReviewComments.push(earlierComment);
   responseOverride = cleanReport;
+  await processReview("pr");
+  assert.ok(!received.messages[0].content.includes("RE-REVIEW MODE"));
+  assert.equal(published.at(-1)!.event, "COMMENT", "an earlier inline comment that is open blocks the approval on a full review");
+  prior = { ...structuredClone(archived.at(-1)!.coverage as ReviewCoverage), reviewRequestVersion: 1 };
   await processReview("pr");
   assert.ok(received.messages[0].content.includes("RE-REVIEW MODE"));
   assert.equal(published.at(-1)!.event, "COMMENT", "an earlier inline comment that is open blocks the approval on a re-review");
-  priorReviewComments[0].isOutdated = true;
+  priorReviewComments.push({ id: 6, user: "other[bot]", path: "src/check.ts", line: 1, body: "Automated note.", inReplyToId: 5, isOutdated: false });
+  await processReview("pr");
+  assert.equal(published.at(-1)!.event, "COMMENT", "a reply from another bot does not settle the earlier comment");
+  earlierComment.isOutdated = true;
   await processReview("pr");
   assert.equal(published.at(-1)!.event, "APPROVE", "a re-review approves once every earlier inline comment is outdated");
-  priorReviewComments[0].isOutdated = false;
-  priorReviewComments.push({ id: 6, user: "fixture", path: "src/check.ts", line: 1, body: "Fixed in the last commit.", inReplyToId: 5, isOutdated: false });
+  earlierComment.isOutdated = false;
+  priorReviewComments.push({ id: 7, user: "fixture", path: "src/check.ts", line: 1, body: "Fixed in the last commit.", inReplyToId: 5, isOutdated: false });
   await processReview("pr");
-  assert.equal(published.at(-1)!.event, "APPROVE", "a re-review approves once every earlier inline comment has a reply");
+  assert.equal(published.at(-1)!.event, "APPROVE", "a re-review approves once every earlier inline comment has a reply from a person");
+  priorCommentsFailure = true;
+  const warn = console.warn;
+  console.warn = () => {};
+  try { await processReview("pr"); } finally { console.warn = warn; priorCommentsFailure = false; }
+  assert.equal(published.at(-1)!.event, "COMMENT", "a failed list of the earlier comments never approves");
   console.log("PASS clean reviews approve only with the setting on and settled earlier comments");
   process.exit(0);
 }

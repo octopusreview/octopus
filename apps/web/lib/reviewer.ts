@@ -1333,6 +1333,24 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
 
     console.log(`[reviewer] Diff fetched: ${diff.length} chars, ${filesChanged} files, tree: ${mergedTree.length} files (${mergedTree.length - repoTree.length} added from diff)`);
 
+    // Fetch prior review comments once — shared by the approval gate of the
+    // empty-diff return below, prompt context injection and inline dedup.
+    const appConfig = await getGithubAppConfig();
+    const appSlug = appConfig?.slug ?? "octopus-review";
+    const botLogin = `${appSlug}[bot]`;
+    let allPriorReviewComments: import("@/lib/github").PRReviewComment[] = [];
+    // The approval gate reads the earlier bot comments. A failed list or an
+    // unknown app slug leaves them unknown, and unknown never approves.
+    let priorCommentsKnown = appConfig?.slug != null;
+    if (isGitHub && installationId) {
+      try {
+        allPriorReviewComments = await ghListPullRequestReviewComments(installationId, owner, repoName, pr.number);
+      } catch (err) {
+        priorCommentsKnown = false;
+        console.warn("[reviewer] Failed to fetch prior review comments:", err);
+      }
+    }
+
     // No supplied hunks means there is no safe material for a model review.
     // Preserve missing/ignored inventory rather than interpreting an empty
     // selected diff as an empty PR or spending tokens on unrelated RAG context.
@@ -1344,6 +1362,26 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       if (isGitHub) reviewCommentId = await publishMainComment(body, body);
       else if (reviewCommentId) await providerUpdateComment(reviewCommentId, body);
       else await publishMainComment(body);
+      // Nothing to assess is an approval under the same gate as a clean review.
+      // Only the state `not-required` qualifies: every changed file excluded by
+      // policy with a complete inventory. A failed post leaves the pull request
+      // without an approval, which is the outcome of today.
+      if (isGitHub && installationId && priorCommentsKnown && shouldApproveReview({
+        enabled: org.approveCleanReviews === true,
+        findings: 0,
+        coverageComplete: false,
+        nothingToAssess: coverage.assessment?.state === "not-required",
+        priorBotComments: priorBotCommentSignals(allPriorReviewComments, botLogin),
+      })) {
+        try {
+          await ghCreatePullRequestReview(
+            installationId, owner, repoName, pr.number,
+            "No eligible changes under repository policy. Nothing to review.", "APPROVE", [], undefined, coverage.headSha ?? undefined,
+          );
+        } catch (err) {
+          console.warn("[reviewer] Failed to post the approval for a review with nothing to assess:", err);
+        }
+      }
       const result = reviewCheckResult(coverage, false, 0);
       if (checkRunId && isGitHub && installationId) {
         await ghUpdateCheckRun(installationId, owner, repoName, checkRunId, result.conclusion, { title: result.title, summary: result.summary });
@@ -1555,23 +1593,9 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       console.warn("[reviewer] Failed to fetch feedback context:", err);
     }
 
-    // Fetch prior review comments once — shared by prompt context injection and inline dedup.
-    const appConfig = await getGithubAppConfig();
-    const appSlug = appConfig?.slug ?? "octopus-review";
-    const botLogin = `${appSlug}[bot]`;
-    let allPriorReviewComments: import("@/lib/github").PRReviewComment[] = [];
-    // The approval gate reads the earlier bot comments. A failed list or an
-    // unknown app slug leaves them unknown, and unknown never approves.
-    let priorCommentsKnown = appConfig?.slug != null;
+    // The earlier review comments were fetched above the empty-diff return.
     const priorSummaryTableFindings: PriorFinding[] = [];
     if (isGitHub && installationId) {
-      try {
-        allPriorReviewComments = await ghListPullRequestReviewComments(installationId, owner, repoName, pr.number);
-      } catch (err) {
-        priorCommentsKnown = false;
-        console.warn("[reviewer] Failed to fetch prior review comments:", err);
-      }
-
       // Fetch prior review bodies to extract findings from summary tables.
       // This catches findings that were posted in the collapsed "Additional findings"
       // table rather than as inline comments (e.g., when inline threshold is high).

@@ -807,17 +807,21 @@ export function priorBotCommentSignals(
  * filter and the cap, not the count of comments that reach the provider: the
  * dedup against earlier comments can hide a finding that still exists.
  * `priorBotComments` must be the known list: a caller that could not list the
- * earlier comments must not call this with an empty list.
+ * earlier comments must not call this with an empty list. `nothingToAssess`
+ * stands in for complete coverage when the assessment state is `not-required`:
+ * every changed file is excluded by the repository policy, so there is nothing
+ * to review. It must be false for any other review without supplied hunks.
  */
 export function shouldApproveReview(input: {
   enabled: boolean;
   findings: number;
   coverageComplete: boolean;
   priorBotComments: PriorBotComment[];
+  nothingToAssess?: boolean;
 }): boolean {
   return (
     input.enabled &&
-    input.coverageComplete &&
+    (input.coverageComplete || input.nothingToAssess === true) &&
     input.findings === 0 &&
     input.priorBotComments.every((c) => c.isOutdated || c.hasReply)
   );

@@ -191,6 +191,17 @@ describe("shouldApproveReview", () => {
       { isOutdated: true, hasReply: false }, { isOutdated: false, hasReply: false },
     ] })).toBe(false);
   });
+  it("approves a review with nothing to assess under the repository policy", () => {
+    expect(shouldApproveReview({ ...clean, coverageComplete: false, nothingToAssess: true })).toBe(true);
+  });
+  it("does not approve a review with nothing to assess while an earlier comment is open", () => {
+    expect(shouldApproveReview({ ...clean, coverageComplete: false, nothingToAssess: true, priorBotComments: [
+      { isOutdated: false, hasReply: false },
+    ] })).toBe(false);
+  });
+  it("does not approve a review with nothing to assess while the org setting is off", () => {
+    expect(shouldApproveReview({ ...clean, enabled: false, coverageComplete: false, nothingToAssess: true })).toBe(false);
+  });
 });
 
 describe("priorBotCommentSignals", () => {

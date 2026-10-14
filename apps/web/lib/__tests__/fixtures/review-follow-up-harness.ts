@@ -9,6 +9,9 @@ const preserveAutoReview = process.argv.includes("--preserve-auto-review");
 const firstCompletion = process.argv.includes("--first-review-completion");
 const approveCleanReviews = process.argv.includes("--approve-clean-reviews");
 let priorCommentsFailure = false;
+// With this on, the pull request changes one file under a path that the
+// fixture `.octopusignore` lists, so the review has nothing to assess.
+let excludedOnly = false;
 let completionFailure: "summary" | "check" | null = null;
 const reviewUpdates: unknown[] = [];
 let nativeFailure = false;
@@ -177,7 +180,9 @@ mock.module("@/lib/github", () => ({
   getPullRequestReviewInput: async () => ({ rawDiff: diff, input: {
     provider: "github", headSha: pr.headSha, baseSha: "b".repeat(40), inventoryComplete: true,
     expectedFiles: 1, limitations: [],
-    files: [{ path: "src/check.ts", change: "modified", patch: `@@ -1 +1 @@\n-return value;\n+return value.name;${adaptiveStage ? " ".repeat(400000) : ""}\n`, additions: 1, deletions: 1 }],
+    files: excludedOnly
+      ? [{ path: "openspec/changes/fixture/tasks.md", change: "modified", patch: "@@ -1 +1 @@\n-- [ ] 1.1\n+- [x] 1.1\n", additions: 1, deletions: 1 }]
+      : [{ path: "src/check.ts", change: "modified", patch: `@@ -1 +1 @@\n-return value;\n+return value.name;${adaptiveStage ? " ".repeat(400000) : ""}\n`, additions: 1, deletions: 1 }],
   } }),
   getPullRequestDetails: async () => ({ body: "Handle missing values" }),
   createPullRequestComment: async () => { directComments++; return 123; },
@@ -193,8 +198,8 @@ mock.module("@/lib/github", () => ({
     if (window && adaptiveStage === "check-send") await fetch("https://synthetic.invalid/check", { signal: window.signal });
     checkConclusions.push(conclusion);
   },
-  getRepositoryTree: async () => ["src/check.ts"],
-  getFileContent: async () => "return value.name;",
+  getRepositoryTree: async () => excludedOnly ? ["src/check.ts", ".octopusignore"] : ["src/check.ts"],
+  getFileContent: async (_installation: number, _owner: string, _repo: string, _ref: string, path: string) => path === ".octopusignore" ? "openspec/\n" : "return value.name;",
   listReviewComments: async () => [],
   listPullRequestReviewComments: async () => { if (priorCommentsFailure) throw new Error("fixture comment list failure"); return priorReviewComments; },
   listPullRequestIssueComments: async () => [],
@@ -386,6 +391,24 @@ if (approveCleanReviews) {
   console.warn = () => {};
   try { await processReview("pr"); } finally { console.warn = warn; priorCommentsFailure = false; }
   assert.equal(published.at(-1)!.event, "COMMENT", "a failed list of the earlier comments never approves");
+  excludedOnly = true;
+  priorReviewComments.length = 0;
+  const beforeExcluded = published.length;
+  await processReview("pr");
+  assert.equal((archived.at(-1)!.coverage as ReviewCoverage).assessment?.state, "not-required");
+  assert.equal(checkConclusions.at(-1), "success");
+  assert.equal(published.length, beforeExcluded + 1, "a review with nothing to assess posts one review");
+  assert.equal(published.at(-1)!.event, "APPROVE", "a review with nothing to assess approves with the setting on");
+  assert.equal(published.at(-1)!.comments.length, 0);
+  priorReviewComments.push({ id: 8, user: "fixture[bot]", path: "src/check.ts", line: 1, body: "🟠 Still open", inReplyToId: null, isOutdated: false });
+  await processReview("pr");
+  assert.equal(published.length, beforeExcluded + 1, "an open earlier comment blocks the approval of a review with nothing to assess");
+  priorReviewComments.length = 0;
+  org.approveCleanReviews = false;
+  await processReview("pr");
+  assert.equal(published.length, beforeExcluded + 1, "a review with nothing to assess posts no review while the setting is off");
+  excludedOnly = false;
+  console.log("PASS a review with nothing to assess under policy approves under the same gate");
   console.log("PASS clean reviews approve only with the setting on and settled earlier comments");
   process.exit(0);
 }

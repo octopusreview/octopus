@@ -228,6 +228,8 @@ model Organization {
   incidentComms         IncidentComm[]
 
   @@map("organizations")
+  reviewAttemptOutcomes ReviewAttemptOutcome[]
+
 }
 
 // One row per (incident, organization) admin communication — the idempotency
@@ -1713,4 +1715,24 @@ model MarketingCashObservation {
 
   @@index([sourceId, createdAt], map: "marketing_cash_observations_source_idx")
   @@map("marketing_cash_observations")
+}
+
+// Retained facts use plain repository/PR/archive IDs so deleting a PR preserves them.
+model ReviewAttemptOutcome {
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  repositoryId String
+  pullRequestId String
+  requestVersion Int
+  kind String
+  outcome String?
+  tries Int
+  firstTriedAt DateTime
+  finishedAt DateTime?
+  publishedAt DateTime?
+  resultArchiveId String?
+
+  @@id([pullRequestId, requestVersion])
+  @@index([organizationId, publishedAt])
+  @@map("review_attempt_outcomes")
 }

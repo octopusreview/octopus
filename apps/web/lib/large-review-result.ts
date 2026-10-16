@@ -1,4 +1,5 @@
 import "server-only";
+import { ReviewOutcomeRecorder, startReviewOutcome } from "@/lib/review-attempt-outcome";
 import { isReviewRequestVersion } from "@/lib/review-status-state";
 import { randomUUID } from "node:crypto";
 import { deliverReviewAttempt } from "@/lib/review-attempt-delivery";
@@ -90,6 +91,12 @@ export async function handleLargeReviewResult(
     if (Number.isSafeInteger(data.checkRunId) && data.checkRunId! > 0) coverage.nativeCheckId = String(data.checkRunId);
   }
   const reviewBody = applyReviewCoverage(data.error ? `Large review failed: ${data.error}` : data.reviewBody, coverage, attemptId);
+  const outcomeKey = { organizationId: org.id, repositoryId: repo.id, pullRequestId: pr.id,
+    requestVersion: data.reviewRequestVersion ?? -1 };
+  const outcomeRecord = new ReviewOutcomeRecorder(outcomeKey, true);
+  const recordOutcome = correlated && Number.isInteger(data.reviewRequestVersion) && data.reviewRequestVersion! > 0;
+  if (recordOutcome) await startReviewOutcome(outcomeKey, new Date());
+  try {
   await hasReviewAttempt(attemptId, pr.id, coverage, reviewBody);
   // 1. Parse findings out of the markdown, then apply the SAME per-category
   // confidence filter + severity cap as the standard path (#652) so the largest,
@@ -161,6 +168,7 @@ export async function handleLargeReviewResult(
   // any final comment or native completion. Identical retries cannot promote
   // the same archive again or overwrite a replacement report.
   await saveReviewAttempt(attemptId, pr.id, coverage, reviewBody, data.error ? undefined : merged);
+  outcomeRecord.assessment(coverage, attemptId);
   if (coverage.nativeCheckId) {
     const result = reviewCheckResult(coverage, false, 0);
     await ghUpdateCheckRun(installationId, owner, repoName, Number(coverage.nativeCheckId), result.conclusion, {
@@ -186,9 +194,11 @@ export async function handleLargeReviewResult(
         "> Please try again by commenting `@octopus-review` on this PR.",
       ].join("\n");
       const commentBody = data.error ? applyReviewCoverage(errorBody, coverage, attemptId) : stripDetailedFindings(reviewBody);
-      mainCommentId = await publishReviewSummary({ pullRequestId: pr.id, headSha: coverage.headSha,
+      const postMain = () => publishReviewSummary({ pullRequestId: pr.id, headSha: coverage.headSha,
         reviewRequestVersion: coverage.reviewRequestVersion, installationId, owner, repo: repoName,
-        prNumber: pr.number, body: commentBody, expectedReviewBody: reviewBody });
+        prNumber: pr.number, body: commentBody, expectedReviewBody: reviewBody,
+        onPosted: !data.error && recordOutcome ? outcomeRecord.mainPosted : undefined });
+      mainCommentId = !data.error && recordOutcome ? await outcomeRecord.publish(postMain) : await postMain();
       if (mainCommentId === null) return;
       await checkpoint({ mainCommentId });
     }
@@ -197,6 +207,10 @@ export async function handleLargeReviewResult(
       const failedUpdate = await updateCurrentReview(pr.id, coverage.headSha, coverage.reviewRequestVersion, { status: "failed", errorMessage: data.error }, reviewBody);
       if (failedUpdate.count) eventBus.emit({ type: "review-failed", orgId: org.id, prNumber: pr.number, prTitle: pr.title, error: data.error });
       return;
+    }
+    if (progress.mainCommentId && !data.error && recordOutcome) {
+      outcomeRecord.mainPosted();
+      await outcomeRecord.finish(new Date());
     }
     if (!progress.summaryPublished) {
       const findingsBlock = buildLowSeveritySummary(findings);
@@ -269,4 +283,7 @@ export async function handleLargeReviewResult(
       `[large-review-result] Completed PR #${pr.number} (duration ${data.durationMs ?? "?"}ms)`,
     );
   });
+  } finally {
+    if (recordOutcome) await outcomeRecord.finish(new Date());
+  }
 }

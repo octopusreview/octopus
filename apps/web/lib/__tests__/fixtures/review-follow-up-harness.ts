@@ -1,3 +1,4 @@
+import "./review-outcome-stub";
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
 import type { AiCreateParams } from "@/lib/providers";
@@ -71,7 +72,6 @@ const pr = {
 const db = {
   $transaction: async (run: (tx: unknown) => Promise<unknown>) => {
     const before = structuredClone(repo);
-    indexTransactions++;
     inIndexTransaction = true;
     try { return await run(db); }
     catch (error) { Object.assign(repo, before); throw error; }
@@ -79,6 +79,7 @@ const db = {
   },
   $executeRaw: async (_strings: TemplateStringsArray, completedAt: Date) => {
     assert.ok(inIndexTransaction);
+    indexTransactions++;
     if (!repo.indexedAt) repo.firstIndexedAt = completedAt;
     repo.indexedAt = completedAt;
     return 1;

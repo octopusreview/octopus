@@ -1,4 +1,5 @@
 import "server-only";
+import { supersedeReviewOutcomes } from "./review-attempt-outcome";
 import { prisma, Prisma, type PullRequest } from "@octopus/db";
 import * as github from "@/lib/github";
 import * as bitbucket from "@/lib/bitbucket";
@@ -104,17 +105,25 @@ async function admitReviewRequestInternal(params: ReviewRequestParams, client: P
 
     // UPDATE ... RETURNING keeps the accepted snapshot and its version
     // together. Forgejo callers also wrap admission and enqueue in a transaction.
-    const [pullRequest] = await client.pullRequest.updateManyAndReturn({
-      where: {
-        id: existing.id, headSha: existing.headSha, reviewRequestVersion: existing.reviewRequestVersion,
-        status: existing.status, updatedAt: existing.updatedAt,
-        ...(automatic ? { reviewAttempts: { none: { headSha } } } : {}),
-      },
-      data: {
-        ...data, reviewRequestVersion: { increment: 1 }, reviewBody: null,
-        reviewCoverage: Prisma.DbNull, errorMessage: null,
-      },
-    });
+    const replace = async (tx: Prisma.TransactionClient) => {
+      const [pullRequest] = await tx.pullRequest.updateManyAndReturn({
+        where: {
+          id: existing.id, headSha: existing.headSha, reviewRequestVersion: existing.reviewRequestVersion,
+          status: existing.status, updatedAt: existing.updatedAt,
+          ...(automatic ? { reviewAttempts: { none: { headSha } } } : {}),
+        },
+        data: {
+          ...data, reviewRequestVersion: { increment: 1 }, reviewBody: null,
+          reviewCoverage: Prisma.DbNull, errorMessage: null,
+        },
+      });
+      if (pullRequest) {
+        await supersedeReviewOutcomes(pullRequest.id, pullRequest.reviewRequestVersion, new Date(), tx);
+        return pullRequest;
+      }
+      return null;
+    };
+    const pullRequest = client === prisma ? await prisma.$transaction(replace) : await replace(client);
     if (pullRequest) return { started: true, pullRequest };
   }
   return { started: false, reason: "request_contended", message: "The review request changed during admission; retry the request" };

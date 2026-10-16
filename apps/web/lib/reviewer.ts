@@ -1,4 +1,5 @@
 import "server-only";
+import { ReviewOutcomeRecorder, startReviewOutcome, deferReviewOutcome } from "@/lib/review-attempt-outcome";
 import { runRepositoryIndex, SupersededIndexError } from "@/lib/repository-index-completion";
 import crypto from "node:crypto";
 import { prisma, type Prisma } from "@octopus/db";
@@ -681,23 +682,29 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
   const queueConfig = await loadQueueConfig();
   const reviewingStale = new Date(Date.now() - computeStaleReclaimMs(queueConfig.reviewTimeoutSeconds));
   const queuedStale = new Date(Date.now() - computeStaleReclaimMs(queueConfig.largeReviewTimeoutSeconds));
-  const claimed = await prisma.pullRequest.updateMany({
-    where: {
-      id: pullRequestId,
-      headSha: pr.headSha,
-      reviewRequestVersion: pr.reviewRequestVersion,
-      OR: [
-        // Fresh-claim: never seen / explicitly retryable
-        { status: "pending" },
-        { status: "failed" },
-        // Locked-claim: in-flight reviews block re-claim until their stale window passes.
-        // This prevents webhook retries from double-processing a PR that's still being
-        // reviewed (or whose internal-cli clone+claude is still running).
-        { status: "reviewing", updatedAt: { lt: reviewingStale } },
-        { status: "queued", updatedAt: { lt: queuedStale } },
-      ],
-    },
-    data: { status: "reviewing", updatedAt: new Date() },
+  const outcomeKey = { organizationId: pr.repository.organization.id, repositoryId: pr.repository.id,
+    pullRequestId: pr.id, requestVersion: pr.reviewRequestVersion };
+  const claimed = await prisma.$transaction(async tx => {
+    const claimed = await tx.pullRequest.updateMany({
+      where: {
+        id: pullRequestId,
+        headSha: pr.headSha,
+        reviewRequestVersion: pr.reviewRequestVersion,
+        OR: [
+          // Fresh-claim: never seen / explicitly retryable
+          { status: "pending" },
+          { status: "failed" },
+          // Locked-claim: in-flight reviews block re-claim until their stale window passes.
+          // This prevents webhook retries from double-processing a PR that's still being
+          // reviewed (or whose internal-cli clone+claude is still running).
+          { status: "reviewing", updatedAt: { lt: reviewingStale } },
+          { status: "queued", updatedAt: { lt: queuedStale } },
+        ],
+      },
+      data: { status: "reviewing", updatedAt: new Date() },
+    });
+    if (claimed.count) await startReviewOutcome(outcomeKey, new Date(), tx);
+    return claimed;
   });
   if (claimed.count === 0) {
     console.log(`[reviewer] PR ${pullRequestId} already claimed by another server, skipping on '${serverId}'`);
@@ -711,6 +718,12 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
   let adaptiveProcessingWindow: ReviewExecutionWindow | undefined;
   let attemptCoverage: ReviewCoverage | undefined;
   let attemptSaved = false;
+  const outcomeRecord = new ReviewOutcomeRecorder(outcomeKey);
+  let recordReviewMain = false;
+  let outcomeDeferred = false;
+  let outcomeHandedOff = false;
+  let outcomeArchiveId: string | null = null;
+  try {
 
   // 3-tier config: system defaults -> org defaults -> repo overrides
   let systemConfig: ReviewConfig = {};
@@ -771,16 +784,19 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
   };
 
   const attemptLabel = (id = attemptId) => `Review attempt: ${id}. Head: ${pr.headSha ?? "unknown"}.\n\n`;
-  const providerCreateComment = (prNumber: number, body: string, publishedAttemptId = attemptId, publicationWindow?: ReviewExecutionWindow) =>
-    isGitHub
+  const providerCreateComment = async (prNumber: number, body: string, publishedAttemptId = attemptId, publicationWindow?: ReviewExecutionWindow) => {
+    const id = await (isGitHub
       ? ghCreatePullRequestComment(installationId!, owner, repoName, prNumber, attemptLabel(publishedAttemptId) + body)
       : usesProjectApi
         ? projectProvider.createPullRequestComment(org.id, projectPath, prNumber, attemptLabel(publishedAttemptId) + body, publicationWindow)
-        : bitbucket.createPullRequestComment(org.id, owner, repoName, prNumber, attemptLabel(publishedAttemptId) + body, publicationWindow);
+        : bitbucket.createPullRequestComment(org.id, owner, repoName, prNumber, attemptLabel(publishedAttemptId) + body, publicationWindow));
+    if (recordReviewMain) outcomeRecord.mainPosted();
+    return id;
+  };
 
   const publishMainComment = (body: string, expectedReviewBody?: string, publishedAttemptId = attemptId, publicationWindow?: ReviewExecutionWindow) => isGitHub
     ? publishReviewSummary({ pullRequestId: pr.id, headSha: pr.headSha, reviewRequestVersion: pr.reviewRequestVersion,
-      installationId: installationId!, owner, repo: repoName, prNumber: pr.number, body: attemptLabel(publishedAttemptId) + body, expectedReviewBody, executionWindow: publicationWindow })
+      installationId: installationId!, owner, repo: repoName, prNumber: pr.number, body: attemptLabel(publishedAttemptId) + body, expectedReviewBody, executionWindow: publicationWindow, onPosted: () => { if (recordReviewMain) outcomeRecord.mainPosted(); } })
     : createReviewAttemptComment(pr.id, pr.headSha, pr.reviewRequestVersion, () => providerCreateComment(pr.number, body, publishedAttemptId, publicationWindow));
 
   const providerUpdateComment = async (commentId: number, body: string, publishedAttemptId = attemptId, publicationWindow?: ReviewExecutionWindow) => {
@@ -794,6 +810,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       } else {
         await bitbucket.updatePullRequestComment(org.id, owner, repoName, pr.number, commentId, attemptLabel(publishedAttemptId) + body, publicationWindow);
       }
+      if (recordReviewMain) outcomeRecord.mainPosted();
     } catch (err) {
       // If the comment was deleted externally, create a new one and update the reference
       if (err instanceof Error && err.message.includes("404")) {
@@ -969,6 +986,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
               "> 🐙 **Octopus Review** — Repository indexing is in progress.\n>\n> This review has been re-queued and will start automatically once indexing completes.",
             );
           }
+          outcomeDeferred = true;
           await deferReviewForRepository(pullRequestId, pr.headSha, pr.reviewRequestVersion);
           return;
         } else {
@@ -1155,6 +1173,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           `[reviewer] Low balance + in-flight review for org ${org.id} — re-queuing PR ${pr.id}`,
         );
         await updateCurrentReview(pr.id, pr.headSha, pr.reviewRequestVersion, { status: "queued", updatedAt: new Date() });
+        outcomeDeferred = true;
         await enqueueAfter("process-review", { pullRequestId: pr.id }, 30);
         return;
       }
@@ -1175,6 +1194,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           "> 🐙 **Octopus Review** — Repository indexing or analysis is in progress.\n>\n> This review will retry automatically once repository preparation completes.",
         );
       }
+      outcomeDeferred = true;
       await deferReviewForRepository(pullRequestId, pr.headSha, pr.reviewRequestVersion);
       return;
     }
@@ -1233,6 +1253,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         // enqueue throws we fall through to the outer catch which marks the
         // PR failed; if the post-update fails we still have a job that will
         // drive the PR to "completed"/"failed" via post-large-review-result.
+        outcomeHandedOff = true;
         await enqueue("process-large-review", {
           pullRequestId: pr.id,
           orgId: org.id,
@@ -1321,9 +1342,17 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       const body = applyReviewCoverage("No changed text hunks were supplied for review.", coverage, attemptId);
       await saveReviewAttempt(attemptId, pr.id, coverage, body, []);
       attemptSaved = true;
-      if (isGitHub) reviewCommentId = await publishMainComment(body, body);
-      else if (reviewCommentId) await providerUpdateComment(reviewCommentId, body);
-      else await publishMainComment(body);
+      outcomeArchiveId = attemptId;
+      outcomeRecord.assessment(coverage, attemptId);
+      recordReviewMain = true;
+      try {
+        await outcomeRecord.publish(async () => {
+          if (isGitHub) reviewCommentId = await publishMainComment(body, body);
+          else if (reviewCommentId) await providerUpdateComment(reviewCommentId, body);
+          else return await publishMainComment(body);
+          return reviewCommentId;
+        });
+      } finally { recordReviewMain = false; }
       const result = reviewCheckResult(coverage, false, 0);
       if (checkRunId && isGitHub && installationId) {
         await ghUpdateCheckRun(installationId, owner, repoName, checkRunId, result.conclusion, { title: result.title, summary: result.summary });
@@ -2218,6 +2247,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
             installationId, owner, repoName, pr.number,
             summaryLine, reviewEvent as "COMMENT" | "REQUEST_CHANGES", dedupedComments, undefined, coverage.headSha ?? undefined,
           );
+          if (dedupedComments.length > 0) outcomeRecord.inlinePosted();
           inlineReviewSucceeded = true;
           console.log(`[reviewer] PR review submitted with ${dedupedComments.length} inline comments, ${nonInlineWithUnmappable.length} in summary (${reviewEvent}), reviewId: ${reviewId}`);
 
@@ -2292,6 +2322,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
               comment.path, comment.line, comment.body,
             );
           }
+          outcomeRecord.inlinePosted();
         } catch (err) {
           console.error(`[reviewer] Failed to post inline comment on ${comment.path}:${comment.line}:`, err);
           failedInlineComments.push(comment);
@@ -2394,16 +2425,24 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
 
     // The final scored comment becomes visible only after its immutable outcome is durable.
     assertProcessingActive();
-    if (isGitHub) {
-      reviewCommentId = await publishMainComment(mainCommentBody, effectiveReviewBody, attemptId, completeReviewAdmission?.window);
-    } else if (reviewCommentId) {
-      await providerUpdateComment(reviewCommentId, mainCommentBody, attemptId, completeReviewAdmission?.window);
-      console.log(`[reviewer] Placeholder comment updated — commentId: ${reviewCommentId}`);
-    } else {
-      const newCommentId = await publishMainComment(mainCommentBody, undefined, attemptId, completeReviewAdmission?.window);
-      reviewCommentId = newCommentId;
-      console.log(`[reviewer] New review comment created — commentId: ${newCommentId}`);
-    }
+    outcomeArchiveId = attemptId;
+    outcomeRecord.assessment(coverage, attemptId);
+    recordReviewMain = true;
+    try {
+      await outcomeRecord.publish(async () => {
+        if (isGitHub) {
+          reviewCommentId = await publishMainComment(mainCommentBody, effectiveReviewBody, attemptId, completeReviewAdmission?.window);
+        } else if (reviewCommentId) {
+          await providerUpdateComment(reviewCommentId, mainCommentBody, attemptId, completeReviewAdmission?.window);
+          console.log(`[reviewer] Placeholder comment updated — commentId: ${reviewCommentId}`);
+        } else {
+          const newCommentId = await publishMainComment(mainCommentBody, undefined, attemptId, completeReviewAdmission?.window);
+          reviewCommentId = newCommentId;
+          console.log(`[reviewer] New review comment created — commentId: ${newCommentId}`);
+        }
+        return reviewCommentId;
+      });
+    } finally { recordReviewMain = false; }
 
     if (promoted && mergedIssues.length > 0) {
       console.log(
@@ -2544,6 +2583,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       && (adaptiveProcessingWindow.signal.aborted || adaptiveProcessingWindow.remainingMs() <= 0)) {
       err = new ReviewProcessingExpiredError();
     }
+    outcomeHandedOff = false;
     const errorMessage =
       err instanceof Error ? err.message : "Unknown error";
     console.error(`[reviewer] Review failed for PR #${pr.number}:`, err);
@@ -2567,7 +2607,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
     const failureBody = attemptCoverage?.assessment && !attemptSaved
       ? applyReviewCoverage("## 🐙 Octopus Review\n\nAssessment failed or was interrupted. No complete assessment is available.", attemptCoverage, failureAttemptId) : null;
     if (failureBody && attemptCoverage) {
-      await saveReviewAttempt(failureAttemptId, pr.id, attemptCoverage, failureBody).catch(e => console.error("[reviewer] Failed to archive interrupted assessment:", e));
+      await saveReviewAttempt(failureAttemptId, pr.id, attemptCoverage, failureBody).then(() => { outcomeArchiveId = failureAttemptId; }).catch(e => console.error("[reviewer] Failed to archive interrupted assessment:", e));
     }
 
     // Update placeholder comment with error if possible
@@ -2624,5 +2664,12 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       prTitle: pr.title,
       error: errorMessage,
     });
+  }
+  } finally {
+    if (outcomeDeferred) await deferReviewOutcome(outcomeKey);
+    else if (!outcomeHandedOff) {
+      outcomeRecord.assessment(attemptCoverage, outcomeArchiveId);
+      await outcomeRecord.finish(new Date());
+    }
   }
 }

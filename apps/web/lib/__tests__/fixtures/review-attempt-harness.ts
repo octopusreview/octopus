@@ -1,3 +1,4 @@
+import "./review-outcome-stub";
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
 

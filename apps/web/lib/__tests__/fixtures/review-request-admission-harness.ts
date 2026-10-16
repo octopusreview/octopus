@@ -1,3 +1,4 @@
+import "./review-outcome-stub";
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
 
@@ -37,9 +38,7 @@ function apply(data: Record<string, unknown>) {
   current = { ...current, ...structuredClone(data), reviewRequestVersion: version, updatedAt: new Date() };
 }
 mock.module("server-only", () => ({}));
-mock.module("@octopus/db", () => ({
-  Prisma: { DbNull: null },
-  prisma: {
+const admissionDb = {
     organization: { findUnique: async () => ({ reviewsPaused: false, blockedAuthors: [] }) },
     systemConfig: { findUnique: async () => ({ blockedAuthors: [] }) },
     repository: { findFirst: async () => repository },
@@ -64,8 +63,11 @@ mock.module("@octopus/db", () => ({
         return { count: 1 };
       },
     },
-  },
-}));
+};
+mock.module("@octopus/db", () => ({ Prisma: { DbNull: null }, prisma: {
+  ...admissionDb, $transaction: async (run: (tx: typeof admissionDb) => Promise<unknown>) => run(admissionDb),
+} }));
+
 for (const name of ["github", "bitbucket", "gitlab", "forgejo"]) {
   mock.module(`@/lib/${name}`, () => ({
     runWithForgejoRepository: async (_id: string, callback: () => Promise<unknown>) => callback(),

@@ -6,6 +6,7 @@ import { createPullRequestComment, updatePullRequestComment, getInstallationToke
 import { assertReviewProcessingActive, reviewPublicationSignal, type ReviewExecutionWindow } from "./review-capacity";
 
 type SummaryTarget = {
+  onPosted?: () => void;
   executionWindow?: ReviewExecutionWindow;
   pullRequestId: string;
   headSha: string | null;
@@ -87,6 +88,7 @@ export async function publishReviewSummary(target: SummaryTarget): Promise<numbe
             throw error;
           }
         }
+        target.onPosted?.();
         await tx.pullRequest.updateMany({ where: { id: target.pullRequestId }, data: { reviewCommentId: id } });
         return id;
       }, { timeout: 20_000, maxWait: 10_000 });

@@ -55,7 +55,32 @@ const migration = await readFile(new URL("../../../../../packages/db/prisma/migr
 
 try {
   await start(key, early);
-  if (["substantive", "zero-findings", "partial", "incomplete", "not-required", "empty", "unavailable", "large", "not-assessed"].includes(scenario)) {
+  if (scenario.startsWith("policy-")) {
+    const cases: Record<string, { files: string[]; complete: boolean; state?: string; inventory?: boolean; expected: string }> = {
+      "policy-mixed-covered": { files: ["excluded", "supplied"], complete: true, state: "completed", expected: "substantive" },
+      "policy-all-excluded": { files: ["excluded", "excluded"], complete: true, expected: "not_required" },
+      "policy-unavailable-assessed": { files: ["excluded", "unavailable"], complete: false, state: "completed", expected: "partial" },
+      "policy-unavailable-incomplete": { files: ["excluded", "unavailable"], complete: false, state: "incomplete", expected: "incomplete" },
+      "policy-omitted-assessed": { files: ["excluded", "omitted"], complete: false, state: "completed", expected: "partial" },
+      "policy-covered-incomplete": { files: ["excluded", "supplied"], complete: true, state: "incomplete", expected: "incomplete" },
+      "policy-all-excluded-assessed": { files: ["excluded", "excluded"], complete: true, state: "completed", expected: "not_required" },
+      "policy-inventory-incomplete": { files: ["excluded", "excluded"], complete: false, inventory: false, state: "incomplete", expected: "incomplete" },
+    };
+    const input = cases[scenario];
+    assert.ok(input, "Unknown policy fixture");
+    const c = coverage({ ...input, expected: input.files.length });
+    c.files.forEach((file, index) => {
+      file.path = `fixture-${index}.ts`;
+      if (file.state === "excluded") file.reason = "Repository .octopusignore policy";
+    });
+    if (!input.state) delete c.assessment;
+    assert.equal(reviewKind(c), input.expected);
+    const r = new ReviewOutcomeRecorder(key); r.assessment(c, archive);
+    await r.publish(async () => 1);
+    assert.equal((await read()).kind, input.expected);
+    assert.equal((await read()).outcome, "published");
+    if (input.files.some(state => state !== "excluded")) assert.notEqual((await read()).kind, "not_required");
+  } else if (["substantive", "zero-findings", "partial", "incomplete", "not-required", "empty", "unavailable", "large", "not-assessed"].includes(scenario)) {
     const cases: Record<string, [ReviewCoverage | undefined, boolean, string]> = {
       substantive: [coverage(), false, "substantive"], "zero-findings": [coverage(), false, "substantive"],
       partial: [coverage({ complete: false, files: ["partial"] }), false, "partial"],

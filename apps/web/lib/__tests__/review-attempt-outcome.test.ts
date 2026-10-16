@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { fileURLToPath } from "node:url";
 
 const scenarios = [
+  "policy-mixed-covered", "policy-all-excluded", "policy-unavailable-assessed", "policy-unavailable-incomplete",
+  "policy-omitted-assessed", "policy-covered-incomplete", "policy-all-excluded-assessed", "policy-inventory-incomplete",
   "substantive", "zero-findings", "partial", "incomplete", "not-required", "empty", "unavailable", "large", "not-assessed",
   "completed-not-published", "uncertain-retry", "inline-fallback", "partially-published", "retry", "restart", "new-version",
   "superseded", "published-admission", "superseded-published", "last-assessment", "concurrent", "late-failure", "stale-try", "deferral",

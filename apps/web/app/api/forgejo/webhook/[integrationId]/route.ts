@@ -1,4 +1,5 @@
 import "server-only";
+import { recordReviewAdmissionAfterCommit } from "@/lib/review-attempt-outcome";
 
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { prisma, type Prisma } from "@octopus/db";
@@ -94,7 +95,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ int
   // Read metadata from the configured instance, never from payload URLs. Shared
   // admission checks the head again before a billable review can be queued.
   const details = await runWithForgejoRepository(repo.id, () => getPullRequestDetails(integration.organizationId, repo.fullName, number));
-  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+  let admittedReviewId: string | undefined;
+  const response = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const [lock] = await tx.$queryRaw<{ acquired: boolean }[]>`SELECT pg_try_advisory_xact_lock(hashtextextended(${`forgejo:${deliveryId}`}, 0)) AS acquired`;
     if (!lock.acquired) return Response.json({ retryable: true }, { status: 503, headers: { "Retry-After": "180" } });
     if (await tx.webhookDelivery.findUnique({ where, select: { id: true } })) {
@@ -116,6 +118,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ int
         triggerCommentId: mention ? payload.comment!.id : 0,
         triggerCommentBody: mention ? payload.comment!.body : "",
       }, tx);
+      if (outcome.started) admittedReviewId = outcome.pullRequestId;
       if (!outcome.started && ["already_in_progress", "head_unavailable", "request_contended"].includes(outcome.reason)) {
         // Another delivery may still be enqueueing, or a restart may have left a
         // pending admission with no durable job. Never permanently acknowledge it.
@@ -132,4 +135,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ int
     } });
     return Response.json({ ok: true });
   }, { timeout: 120_000 });
+  if (admittedReviewId) recordReviewAdmissionAfterCommit(admittedReviewId, null);
+  return response;
 }

@@ -7,7 +7,8 @@ const scenarios = [
   "superseded", "published-admission", "superseded-published", "last-assessment", "concurrent", "late-failure", "stale-try", "deferral",
   "retention", "recording-failure", "savepoint", "bounded-lock", "timezone-utc", "timezone-berlin", "migration",
   "main-github", "main-gitlab", "main-bitbucket", "main-forgejo", "main-rejected", "main-unknown", "main-stale", "ack-before-db-failure",
-  "admission", "claim", "large-source", "rejection-classification",
+  "admission", "admission-failure", "admission-slow", "admission-transaction", "admission-rollback", "admission-source",
+  "callback-throws", "callback-rejects", "claim", "large-source", "rejection-classification",
 ] as const;
 
 (process.env.RUN_REVIEW_OUTCOME_DB_TESTS === "1" ? describe : describe.skip)("review attempt outcomes with PostgreSQL", () => {

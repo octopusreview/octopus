@@ -6,7 +6,7 @@ import { createPullRequestComment, updatePullRequestComment, getInstallationToke
 import { assertReviewProcessingActive, reviewPublicationSignal, type ReviewExecutionWindow } from "./review-capacity";
 
 type SummaryTarget = {
-  onPosted?: () => void;
+  onPosted?: () => void | Promise<void>;
   executionWindow?: ReviewExecutionWindow;
   pullRequestId: string;
   headSha: string | null;
@@ -88,7 +88,13 @@ export async function publishReviewSummary(target: SummaryTarget): Promise<numbe
             throw error;
           }
         }
-        target.onPosted?.();
+        try {
+          void Promise.resolve(target.onPosted?.()).catch(() => {
+            console.warn("[review-summary] publication observer failed");
+          });
+        } catch {
+          console.warn("[review-summary] publication observer failed");
+        }
         await tx.pullRequest.updateMany({ where: { id: target.pullRequestId }, data: { reviewCommentId: id } });
         return id;
       }, { timeout: 20_000, maxWait: 10_000 });

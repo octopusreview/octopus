@@ -1,6 +1,6 @@
-import { mock } from "bun:test";
+import { mock, spyOn } from "bun:test";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { ReviewCoverage } from "../../review-coverage";
 
@@ -12,9 +12,18 @@ const timezone = scenario === "timezone-berlin" ? "Europe/Berlin" : "UTC";
 url.searchParams.set("options", `-c timezone=${timezone}`);
 process.env.DATABASE_URL = url.toString();
 mock.module("server-only", () => ({}));
-const { prisma } = await import("@octopus/db");
+const dbModule = await import("@octopus/db");
+const { prisma } = dbModule;
+let interceptTransaction: (() => Promise<never>) | undefined;
+if (scenario === "admission-failure" || scenario === "admission-slow") {
+  const recordingClient = new Proxy(prisma, { get(target, property, receiver) {
+    if (property === "$transaction" && interceptTransaction) return interceptTransaction;
+    return Reflect.get(target, property, receiver);
+  } });
+  mock.module("@octopus/db", () => ({ ...dbModule, prisma: recordingClient }));
+}
 const { reviewKind, mainCommentFailure, startReviewOutcome: start, finishReviewOutcome: finish, supersedeReviewOutcomes: supersede,
-  deferReviewOutcome: defer, ReviewOutcomeRecorder } = await import("../../review-attempt-outcome");
+  deferReviewOutcome: defer, recordReviewAdmissionAfterCommit, ReviewOutcomeRecorder } = await import("../../review-attempt-outcome");
 const id = randomUUID();
 const org = await prisma.organization.create({ data: { name: "Review outcome fixture", slug: `review-outcome-test-${id}` } });
 const repo = await prisma.repository.create({ data: { organizationId: org.id, name: "Review fixture", fullName: "fixture/review", externalId: id } });
@@ -210,18 +219,101 @@ try {
   } else if (scenario === "ack-before-db-failure") {
     const r = recorder(); await assert.rejects(r.publish(async () => { r.mainPosted(); throw new Error("database unavailable after acknowledgement"); }));
     assert.equal((await read()).outcome, "published");
-  } else if (scenario === "admission") {
+  } else if (scenario === "callback-throws" || scenario === "callback-rejects") {
+    const requests: string[] = [];
+    mock.module("@/lib/github", () => ({
+      getInstallationToken: async () => "synthetic-token",
+      createPullRequestComment: async () => { requests.push("create"); return 321; },
+      updatePullRequestComment: async () => { requests.push("update"); },
+      findPullRequestSummaryComment: async () => null,
+    }));
+    const { publishReviewSummary } = await import("../../review-summary-comment");
+    const target = { pullRequestId: pr.id, headSha: pr.headSha, reviewRequestVersion: 1,
+      installationId: 1, owner: "fixture", repo: "review", prNumber: 1, body: "Synthetic report" };
+    const baseline = await publishReviewSummary(target);
+    const baselineSaved = (await prisma.pullRequest.findUniqueOrThrow({ where: { id: pr.id } })).reviewCommentId;
+    const baselineRequests = [...requests]; requests.length = 0;
+    await prisma.pullRequest.update({ where: { id: pr.id }, data: { reviewCommentId: null } });
+    const messages: unknown[][] = [];
+    const warning = spyOn(console, "warn").mockImplementation((...args: unknown[]) => { messages.push(args); });
+    try {
+      const onPosted = scenario === "callback-throws"
+        ? () => { throw new Error("Synthetic observer failure"); }
+        : async () => { throw new Error("Synthetic observer rejection"); };
+      assert.equal(await publishReviewSummary({ ...target, onPosted }), baseline);
+      assert.equal((await prisma.pullRequest.findUniqueOrThrow({ where: { id: pr.id } })).reviewCommentId, baselineSaved);
+      assert.deepEqual(requests, baselineRequests);
+      assert.deepEqual(messages, [["[review-summary] publication observer failed"]]);
+    } finally { warning.mockRestore(); }
+  } else if (scenario.startsWith("admission")) {
     const source = await readFile(new URL("../../review-request-admission.ts", import.meta.url), "utf8");
-    assert.match(source, /await supersedeReviewOutcomes\(pullRequest.id, pullRequest.reviewRequestVersion, new Date\(\), tx\)/);
-    mock.module("@/lib/github", () => ({ getPullRequestDetails: async () => ({ headSha: pr.headSha }) }));
-    mock.module("@/lib/gitlab", () => ({})); mock.module("@/lib/bitbucket", () => ({})); mock.module("@/lib/forgejo", () => ({}));
-    await prisma.pullRequest.update({ where: { id: pr.id }, data: { status: "failed" } });
-    const { admitReviewRequest } = await import("../../review-request-admission");
-    const admitted = await admitReviewRequest({ provider: "github", installationId: 1, organizationId: org.id,
-      repoId: repo.id, repoFullName: "fixture/review", prNumber: 1, prTitle: "Synthetic fixture", prUrl: "", prAuthor: "fixture",
-      headSha: pr.headSha, triggerCommentId: null, triggerCommentBody: null });
-    assert.ok(admitted.started); assert.equal(admitted.pullRequest.reviewRequestVersion, 2);
-    assert.equal((await read()).outcome, "superseded");
+    // Keep the admission loop and SQL byte-for-byte identical to the base.
+    assert.equal(createHash("sha256").update(source.slice(source.indexOf("async function admitReviewRequestInternal"))).digest("hex"), "03d5b3e10855265f7a35392e99e66082caaf4ba689551fc2a669acb857de6b33");
+    assert.ok(!source.includes("$transaction("));
+    if (scenario !== "admission-source") {
+      const details = async () => ({ headSha: pr.headSha });
+      mock.module("@/lib/github", () => ({ getPullRequestDetails: details }));
+      mock.module("@/lib/gitlab", () => ({})); mock.module("@/lib/bitbucket", () => ({}));
+      mock.module("@/lib/forgejo", () => ({ getPullRequestDetails: details,
+        runWithForgejoRepository: async (_id: string, run: () => Promise<unknown>) => run(),
+      }));
+      await prisma.pullRequest.update({ where: { id: pr.id }, data: { status: "failed" } });
+      const { admitReviewRequest } = await import("../../review-request-admission");
+      const params = { provider: "github" as const, installationId: 1, organizationId: org.id,
+        repoId: repo.id, repoFullName: "fixture/review", prNumber: 1, prTitle: "Synthetic fixture", prUrl: "", prAuthor: "fixture",
+        headSha: pr.headSha, triggerCommentId: null, triggerCommentBody: null };
+      const until = async (done: () => Promise<boolean>) => {
+        for (let i = 0; i < 200; i++) { if (await done()) return; await Bun.sleep(5); }
+        assert.fail("Synthetic recording did not settle");
+      };
+      if (scenario === "admission-failure" || scenario === "admission-slow") {
+        let rejectRecording!: (error: Error) => void;
+        const blocked = new Promise<never>((_resolve, reject) => { rejectRecording = reject; });
+        let warned = false;
+        const warning = spyOn(console, "warn").mockImplementation((message: unknown) => {
+          assert.equal(message, "[review-outcome] recording unavailable"); warned = true;
+        });
+        let recordingCalls = 0;
+        interceptTransaction = () => {
+          recordingCalls++;
+          return scenario === "admission-failure" ? Promise.reject(new Error("Synthetic recording failure")) : blocked;
+        };
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const result = await Promise.race([admitReviewRequest(params), new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => reject(new Error("Admission waited for recording")), 1000);
+          })]);
+          assert.ok(result.started); assert.equal(result.pullRequest.reviewRequestVersion, 2);
+          assert.deepEqual(result.pullRequest, await prisma.pullRequest.findUniqueOrThrow({ where: { id: pr.id } }));
+          assert.equal((await read()).outcome, null);
+          assert.equal(recordingCalls, 1);
+          if (scenario === "admission-slow") { assert.equal(warned, false); rejectRecording(new Error("Synthetic delayed recording failure")); }
+          await until(async () => warned);
+        } finally { if (timer) clearTimeout(timer); if (scenario === "admission-slow") rejectRecording(new Error("Synthetic cleanup")); interceptTransaction = undefined; warning.mockRestore(); }
+      } else if (scenario === "admission-transaction" || scenario === "admission-rollback") {
+        const transaction = prisma.$transaction(async tx => {
+          const result = await admitReviewRequest({ ...params, provider: "forgejo" }, tx);
+          assert.ok(result.started); assert.equal(result.pullRequest.reviewRequestVersion, 2);
+          assert.equal((await read()).outcome, null);
+          if (scenario === "admission-rollback") throw new Error("Synthetic admission rollback");
+          return result;
+        });
+        if (scenario === "admission-rollback") {
+          await assert.rejects(transaction, /Synthetic admission rollback/);
+          assert.equal((await prisma.pullRequest.findUniqueOrThrow({ where: { id: pr.id } })).reviewRequestVersion, 1);
+          assert.equal((await read()).outcome, null);
+        } else {
+          await transaction;
+          assert.equal((await read()).outcome, null);
+          recordReviewAdmissionAfterCommit(pr.id, null);
+          await until(async () => (await read()).outcome === "superseded");
+        }
+      } else {
+        const result = await admitReviewRequest(params);
+        assert.ok(result.started); assert.equal(result.pullRequest.reviewRequestVersion, 2);
+        await until(async () => (await read()).outcome === "superseded");
+      }
+    }
   } else if (scenario === "claim" || scenario === "large-source") {
     const source = await readFile(new URL(scenario === "claim" ? "../../reviewer.ts" : "../../large-review-result.ts", import.meta.url), "utf8");
     assert.match(source, /await startReviewOutcome\(outcomeKey, new Date\(\)/);

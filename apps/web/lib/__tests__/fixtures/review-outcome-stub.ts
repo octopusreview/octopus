@@ -6,6 +6,7 @@ mock.module("@/lib/review-attempt-outcome", () => ({
   startReviewOutcome: async () => {},
   deferReviewOutcome: async () => {},
   supersedeReviewOutcomes: async () => {},
+  recordReviewAdmissionAfterCommit: () => {},
   ReviewOutcomeRecorder: class {
     assessment() {}
     mainPosted = () => {};

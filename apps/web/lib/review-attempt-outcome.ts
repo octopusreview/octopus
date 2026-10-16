@@ -79,12 +79,20 @@ export async function finishReviewOutcome(key: ReviewOutcomeKey, kind: ReviewKin
   `);
 }
 
-export async function supersedeReviewOutcomes(pullRequestId: string, version: number, at: Date, client?: Prisma.TransactionClient): Promise<void> {
+export async function supersedeReviewOutcomes(pullRequestId: string, version: number | null, at: Date): Promise<void> {
   await bestEffort(tx => tx.$executeRaw`
     UPDATE review_attempt_outcomes SET outcome = 'superseded', "finishedAt" = ${at}::timestamp
-    WHERE "pullRequestId" = ${pullRequestId} AND "requestVersion" < ${version}
+    WHERE "pullRequestId" = ${pullRequestId} AND "requestVersion" < COALESCE(${version}::integer,
+        (SELECT "reviewRequestVersion" FROM pull_requests WHERE id = ${pullRequestId}))
       AND outcome IS DISTINCT FROM 'published' AND outcome IS DISTINCT FROM 'superseded'
-  `, client);
+  `);
+}
+
+/** Call only after the admission's transaction has committed. Never await telemetry. */
+export function recordReviewAdmissionAfterCommit(pullRequestId: string, version: number | null): void {
+  void supersedeReviewOutcomes(pullRequestId, version, new Date()).catch(() => {
+    console.warn("[review-outcome] recording unavailable");
+  });
 }
 
 export async function deferReviewOutcome(key: ReviewOutcomeKey): Promise<void> {

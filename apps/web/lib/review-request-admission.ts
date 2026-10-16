@@ -1,5 +1,5 @@
 import "server-only";
-import { supersedeReviewOutcomes } from "./review-attempt-outcome";
+import { recordReviewAdmissionAfterCommit } from "./review-attempt-outcome";
 import { prisma, Prisma, type PullRequest } from "@octopus/db";
 import * as github from "@/lib/github";
 import * as bitbucket from "@/lib/bitbucket";
@@ -49,9 +49,13 @@ async function currentProviderHead(params: ReviewRequestParams): Promise<string 
 
 /** Validate provider head before atomically replacing the current request. */
 export async function admitReviewRequest(params: ReviewRequestParams, client: Prisma.TransactionClient = prisma): Promise<AdmissionResult> {
-  return params.provider === "forgejo"
+  const admission = await (params.provider === "forgejo"
     ? forgejo.runWithForgejoRepository(params.repoId, () => admitReviewRequestInternal(params, client))
-    : admitReviewRequestInternal(params, client);
+    : admitReviewRequestInternal(params, client));
+  if (admission.started && client === prisma) {
+    recordReviewAdmissionAfterCommit(admission.pullRequest.id, admission.pullRequest.reviewRequestVersion);
+  }
+  return admission;
 }
 
 async function admitReviewRequestInternal(params: ReviewRequestParams, client: Prisma.TransactionClient): Promise<AdmissionResult> {
@@ -105,25 +109,17 @@ async function admitReviewRequestInternal(params: ReviewRequestParams, client: P
 
     // UPDATE ... RETURNING keeps the accepted snapshot and its version
     // together. Forgejo callers also wrap admission and enqueue in a transaction.
-    const replace = async (tx: Prisma.TransactionClient) => {
-      const [pullRequest] = await tx.pullRequest.updateManyAndReturn({
-        where: {
-          id: existing.id, headSha: existing.headSha, reviewRequestVersion: existing.reviewRequestVersion,
-          status: existing.status, updatedAt: existing.updatedAt,
-          ...(automatic ? { reviewAttempts: { none: { headSha } } } : {}),
-        },
-        data: {
-          ...data, reviewRequestVersion: { increment: 1 }, reviewBody: null,
-          reviewCoverage: Prisma.DbNull, errorMessage: null,
-        },
-      });
-      if (pullRequest) {
-        await supersedeReviewOutcomes(pullRequest.id, pullRequest.reviewRequestVersion, new Date(), tx);
-        return pullRequest;
-      }
-      return null;
-    };
-    const pullRequest = client === prisma ? await prisma.$transaction(replace) : await replace(client);
+    const [pullRequest] = await client.pullRequest.updateManyAndReturn({
+      where: {
+        id: existing.id, headSha: existing.headSha, reviewRequestVersion: existing.reviewRequestVersion,
+        status: existing.status, updatedAt: existing.updatedAt,
+        ...(automatic ? { reviewAttempts: { none: { headSha } } } : {}),
+      },
+      data: {
+        ...data, reviewRequestVersion: { increment: 1 }, reviewBody: null,
+        reviewCoverage: Prisma.DbNull, errorMessage: null,
+      },
+    });
     if (pullRequest) return { started: true, pullRequest };
   }
   return { started: false, reason: "request_contended", message: "The review request changed during admission; retry the request" };

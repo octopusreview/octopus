@@ -99,11 +99,24 @@ try {
   } else if (phase === "manual_rereview") {
     const before = await actual.pullRequest.findFirstOrThrow({ where: { repositoryId: "forgejo-delivery-test" } });
     await actual.pullRequest.update({ where: { id: before.id }, data: { status: "completed" } });
+    await actual.reviewAttemptOutcome.create({ data: {
+      organizationId: "forgejo-delivery-test", repositoryId: "forgejo-delivery-test", pullRequestId: before.id,
+      requestVersion: 1, kind: "not_assessed", tries: 1, firstTriedAt: new Date(),
+    } });
     assert.equal((await deliver()).status, 200);
     const after = await actual.pullRequest.findUniqueOrThrow({ where: { id: before.id } });
     assert.equal(after.reviewRequestVersion, 2);
     assert.equal(after.status, "pending");
     assert.equal(await jobCount(), 2n);
+    let superseded = false;
+    for (let i = 0; i < 200; i++) {
+      const outcome = await actual.reviewAttemptOutcome.findUniqueOrThrow({ where: {
+        pullRequestId_requestVersion: { pullRequestId: before.id, requestVersion: 1 },
+      } });
+      if (outcome.outcome === "superseded") { superseded = true; break; }
+      await Bun.sleep(5);
+    }
+    assert.ok(superseded, "committed webhook admission schedules superseding separately");
   } else if (phase === "replay") {
     const before = await actual.pullRequest.findFirstOrThrow({ where: { repositoryId: "forgejo-delivery-test" } });
     assert.equal(before.reviewRequestVersion, 1);

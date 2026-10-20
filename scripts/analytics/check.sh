@@ -19,6 +19,16 @@ if [[ "${ANALYTICS_TEST_BACKEND:-docker}" == local ]]; then
   psql_fixture() {
     env -i PATH="$PATH" LC_ALL=C psql -X -h "$fixture_dir" -p 5432 -U postgres -d postgres -v ON_ERROR_STOP=1 "$@"
   }
+  psql_fixture <<'SQL'
+DO $$
+DECLARE local_major int := current_setting('server_version_num')::int / 10000;
+BEGIN
+  IF local_major < 17 THEN RAISE EXCEPTION 'PostgreSQL 17 or newer required'; END IF;
+  IF local_major <> 17 THEN
+    RAISE WARNING 'Local PostgreSQL major version % differs from pinned PostgreSQL 17; this run does not validate the pinned Docker version', local_major;
+  END IF;
+END $$;
+SQL
 else
   image=postgres@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317
   container=$(docker run --pull never --rm -d --network none -e POSTGRES_HOST_AUTH_METHOD=trust "$image")
@@ -28,11 +38,13 @@ else
     sleep 1
   done
   psql_fixture() { docker exec -i "$container" psql -X -U postgres -v ON_ERROR_STOP=1 "$@"; }
+  psql_fixture <<'SQL'
+DO $$ BEGIN
+  IF current_setting('server_version_num')::int / 10000 <> 17 THEN RAISE EXCEPTION 'PostgreSQL 17 required'; END IF;
+END $$;
+SQL
 fi
 psql_fixture <<'SQL'
-DO $$ BEGIN
-  IF current_setting('server_version_num')::int / 10000 < 17 THEN RAISE EXCEPTION 'PostgreSQL 17 or newer required'; END IF;
-END $$;
 CREATE TABLE organizations (id text PRIMARY KEY,"createdAt" timestamp NOT NULL DEFAULT now(),type int,"bannedAt" timestamp,"deletedAt" timestamp,"anthropicApiKey" text,"creationSource" text);
 CREATE TABLE users (id text PRIMARY KEY,"createdAt" timestamp NOT NULL DEFAULT now(),"signupMethod" text);
 CREATE TABLE organization_members (id text PRIMARY KEY,"organizationId" text NOT NULL,"userId" text NOT NULL,role text NOT NULL,"createdAt" timestamp NOT NULL DEFAULT now(),"deletedAt" timestamp, UNIQUE ("organizationId","userId"));

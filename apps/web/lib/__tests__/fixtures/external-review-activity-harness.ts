@@ -15,7 +15,8 @@ process.env.DATABASE_URL = url.toString();
 mock.module("server-only", () => ({}));
 const dbModule = await import("@octopus/db");
 const { prisma } = dbModule;
-const { startExternalReviewActivity: start, finishExternalReviewActivity: finish, withExternalReviewActivity: record } = await import("../../external-review-activity");
+const activityModule = await import("../../external-review-activity");
+const { startExternalReviewActivity: start, finishExternalReviewActivity: finish, withExternalReviewActivity: record } = activityModule;
 const id = randomUUID();
 const org = await prisma.organization.create({ data: { id, name: "fixture", slug: id } });
 const repo = await prisma.repository.create({ data: { organizationId: id, name: "fixture", fullName: `${id}/fixture`, externalId: id, indexStatus: "indexed" } });
@@ -118,7 +119,7 @@ try {
     const before = performance.now();
     const response = await record(activity, async () => Response.json({ ok: true }));
     assert.equal(response.status, 200);
-    assert.ok(performance.now() - before < 1000, "pool exhaustion must not hold up a review");
+    assert.ok(performance.now() - before < 500, "pool exhaustion must not hold up a review");
     release(); await Promise.all(holders);
     assert.equal((await rows()).length, 0);
     // Allow late adapter acquisitions to settle, then ensure connections are usable.
@@ -128,7 +129,14 @@ try {
     const rejected = mode === "401" || mode === "403";
     const overLimit = mode === "402";
     let community = false;
-    let observe = mode !== "first-failure" && mode !== "lock";
+    const measuring = mode?.startsWith("latency-") ?? false;
+    let observe = !measuring && mode !== "first-failure" && mode !== "lock";
+    let recordingEnabled = true;
+    if (measuring) mock.module("@/lib/external-review-activity", () => ({
+      ...activityModule,
+      withExternalReviewActivity: (input: Parameters<typeof record>[0], review: Parameters<typeof record>[1]) =>
+        record(recordingEnabled ? input : null, review),
+    }));
     class ReviewConfigError extends Error {}
     const result = { findings: [], summary: "", model: "fixture", usage: { inputTokens: 0, outputTokens: 0 } };
     const generate = async () => {
@@ -172,6 +180,8 @@ try {
       : repo;
     const repository = new Proxy(prisma.repository, { get(target, property, receiver) {
       if (property === "upsert") return async () => actionRepo;
+      // Keep identical admission work independent of the pool being deliberately exhausted.
+      if (measuring && property === "findFirst") return async () => repo;
       return Reflect.get(target, property, receiver);
     } });
     mock.module("@octopus/db", () => ({ ...dbModule, prisma: new Proxy(prisma, { get(target, property, receiver) {
@@ -192,7 +202,60 @@ try {
       if (source === "cli_local") return bare.POST(request);
       return contextual.POST(request, { params: Promise.resolve({ id: mode === "404" ? randomUUID() : repo.id }) });
     };
-    if (scenario === "out-of-scope") {
+    if (measuring) {
+      // Time actual handler Response returns with the same stubbed generation,
+      // admission and request body. Only recording is toggled between each pair.
+      // Setup, response-body assertions, holder release and cleanup are excluded.
+      const samples: Array<{ baselineMs: number; recordedMs: number; extraMs: number }> = [];
+      for (let iteration = 0; iteration < 20; iteration++) {
+        let release!: () => void;
+        const blocked = new Promise<void>(resolve => { release = resolve; });
+        const holders: Array<Promise<unknown>> = [];
+        let acquired = 0;
+        let allAcquired!: () => void;
+        const ready = new Promise<void>(resolve => { allAcquired = resolve; });
+        const holderCount = mode === "latency-pool" ? 10 : mode === "latency-lock" ? 1 : 0;
+        try {
+          for (let index = 0; index < holderCount; index++) holders.push(prisma.$transaction(async tx => {
+            if (mode === "latency-lock") await tx.$executeRawUnsafe("LOCK TABLE external_review_activity IN ACCESS EXCLUSIVE MODE");
+            if (++acquired === holderCount) allAcquired();
+            await blocked;
+          }, { maxWait: 10_000, timeout: 10_000 }));
+          if (holderCount) await ready;
+          const measure = async (enabled: boolean) => {
+            recordingEnabled = enabled;
+            const before = performance.now();
+            const response = await call(7);
+            const elapsed = performance.now() - before;
+            assert.equal(response.status, 200);
+            const body = await response.json();
+            assert.deepEqual(body, source === "github_action"
+              ? { status: "completed", ...result, indexed: false, community: false, firstCommunityReview: false }
+              : source === "cli_local" ? { ...result, bareMode: true } : result);
+            if (enabled && mode !== "latency-normal") assert.ok(elapsed < 500, "recording must return the response within 500ms under contention");
+            return elapsed;
+          };
+          // Alternate ordering to reduce systematic warm-up/order bias.
+          let baselineMs: number, recordedMs: number;
+          if (iteration % 2 === 0) {
+            baselineMs = await measure(false); recordedMs = await measure(true);
+          } else {
+            recordedMs = await measure(true); baselineMs = await measure(false);
+          }
+          samples.push({ baselineMs, recordedMs, extraMs: recordedMs - baselineMs });
+        } finally {
+          release(); await Promise.all(holders);
+          // Let abandoned pool acquisitions settle outside the measured interval.
+          if (mode === "latency-pool") await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      }
+      const current = await rows();
+      assert.equal(current.length, mode === "latency-normal" ? 20 : 0);
+      assert.ok(current.every(row => row.outcome === "generated"));
+      const sorted = samples.map(sample => sample.extraMs).sort((a, b) => a - b);
+      originalLog(JSON.stringify({ source, condition: mode.slice("latency-".length), count: samples.length,
+        medianMs: (sorted[9] + sorted[10]) / 2, maxMs: sorted.at(-1), samples }));
+    } else if (scenario === "out-of-scope") {
       const before = await prisma.externalReviewActivity.count();
       community = true; observe = false;
       assert.equal((await call()).status, 200);
@@ -255,7 +318,7 @@ try {
         if (mode === "caught") assert.deepEqual(json, { error: source === "github_action" ? "Review generation failed" : "Review generation failed: fixture-failure" });
       }
       if (mode === "lock") {
-        assert.ok(performance.now() - before < 1000, "lock timeout must let generation continue");
+        assert.ok(performance.now() - before < 500, "lock timeout must let generation continue");
         releaseLock!(); await heldLock; heldLock = undefined;
       }
       const current = await rows();

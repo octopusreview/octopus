@@ -39,6 +39,10 @@ jobs:
           DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
           BETTER_AUTH_SECRET: "build-time-dummy-secret"
 
+      - name: Test
+        run: bun test
+        working-directory: apps/web
+
       - name: Test Terraform security regressions
         run: >-
           bun test

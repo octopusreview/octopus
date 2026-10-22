@@ -1,3 +1,5 @@
+import "server-only";
+import { withExternalReviewActivity } from "@/lib/external-review-activity";
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { authenticateApiToken } from "@/lib/api-auth";
@@ -61,60 +63,65 @@ export async function POST(request: Request) {
     );
   }
 
-  try {
-    const result = await generateBareLocalReview({
-      diff: body.diff,
-      orgId: auth.org.id,
-      title: body.title,
-      author: body.author,
-      modelOverride: typeof body.model === "string" ? body.model : undefined,
-    });
+  const diff = body.diff;
+  return withExternalReviewActivity({
+    source: "cli_local", organizationId: auth.org.id, repositoryId: null,
+  }, async () => {
+    try {
+      const result = await generateBareLocalReview({
+        diff,
+        orgId: auth.org.id,
+        title: body.title,
+        author: body.author,
+        modelOverride: typeof body.model === "string" ? body.model : undefined,
+      });
 
-    // Audit each CLI review so admins have visibility into who's running
-    // what against the server (powering /settings/cli-usage). Best-effort —
-    // never block the response on the audit write.
-    const reqHeaders = await headers();
-    await writeAuditLog({
-      action: "cli.review_local",
-      category: "review",
-      actorId: auth.user?.id ?? null,
-      actorEmail: auth.user?.email ?? null,
-      organizationId: auth.org.id,
-      targetType: "local-diff",
-      metadata: {
-        mode: "bare",
-        diffBytes: body.diff.length,
-        findingCount: result.findings.length,
+      // Audit each CLI review so admins have visibility into who's running
+      // what against the server (powering /settings/cli-usage). Best-effort —
+      // never block the response on the audit write.
+      const reqHeaders = await headers();
+      await writeAuditLog({
+        action: "cli.review_local",
+        category: "review",
+        actorId: auth.user?.id ?? null,
+        actorEmail: auth.user?.email ?? null,
+        organizationId: auth.org.id,
+        targetType: "local-diff",
+        metadata: {
+          mode: "bare",
+          diffBytes: diff.length,
+          findingCount: result.findings.length,
+          model: result.model,
+          title: body.title ?? null,
+        },
+        ipAddress: reqHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+        userAgent: reqHeaders.get("user-agent") ?? null,
+      }).catch((e) => console.error("[review-local] audit log failed:", e));
+
+      return NextResponse.json({
+        findings: result.findings,
+        summary: result.summary,
         model: result.model,
-        title: body.title ?? null,
-      },
-      ipAddress: reqHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
-      userAgent: reqHeaders.get("user-agent") ?? null,
-    }).catch((e) => console.error("[review-local] audit log failed:", e));
-
-    return NextResponse.json({
-      findings: result.findings,
-      summary: result.summary,
-      model: result.model,
-      usage: result.usage,
-      bareMode: true,
-    });
-  } catch (err) {
-    console.error("[review-local] Review generation failed:", err);
-    // Recoverable config error — the message is safe to surface in
-    // production because it tells the user how to fix the problem
-    // (set an API key / pick a different model) without leaking
-    // internal context. Return 422 so the CLI can distinguish from
-    // generic 500s.
-    if (err instanceof ReviewConfigError) {
-      return NextResponse.json({ error: err.message }, { status: 422 });
+        usage: result.usage,
+        bareMode: true,
+      });
+    } catch (err) {
+      console.error("[review-local] Review generation failed:", err);
+      // Recoverable config error — the message is safe to surface in
+      // production because it tells the user how to fix the problem
+      // (set an API key / pick a different model) without leaking
+      // internal context. Return 422 so the CLI can distinguish from
+      // generic 500s.
+      if (err instanceof ReviewConfigError) {
+        return NextResponse.json({ error: err.message }, { status: 422 });
+      }
+      // Everything else: generic in prod, real error in dev.
+      const isProd = process.env.NODE_ENV === "production";
+      const detail = err instanceof Error ? err.message : String(err);
+      return NextResponse.json(
+        { error: isProd ? "Review generation failed" : `Review generation failed: ${detail}` },
+        { status: 500 },
+      );
     }
-    // Everything else: generic in prod, real error in dev.
-    const isProd = process.env.NODE_ENV === "production";
-    const detail = err instanceof Error ? err.message : String(err);
-    return NextResponse.json(
-      { error: isProd ? "Review generation failed" : `Review generation failed: ${detail}` },
-      { status: 500 },
-    );
-  }
+  });
 }

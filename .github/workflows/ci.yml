@@ -172,3 +172,9 @@ jobs:
         working-directory: apps/web
         env:
           RUN_REVIEW_OUTCOME_DB_TESTS: "1"
+
+      - name: Test external review activity against PostgreSQL
+        run: bun test lib/__tests__/external-review-activity.test.ts
+        working-directory: apps/web
+        env:
+          RUN_EXTERNAL_REVIEW_DB_TESTS: "1"

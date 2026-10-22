@@ -234,6 +234,7 @@ model Organization {
 
   @@map("organizations")
   reviewAttemptOutcomes ReviewAttemptOutcome[]
+  externalReviewActivities ExternalReviewActivity[]
 
 }
 
@@ -1742,4 +1743,20 @@ model ReviewAttemptOutcome {
   @@id([pullRequestId, requestVersion])
   @@index([organizationId, publishedAt])
   @@map("review_attempt_outcomes")
+}
+
+// Retained activity keeps the repository ID even after repository deletion.
+model ExternalReviewActivity {
+  id String @id
+  source String
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  repositoryId String?
+  reportedPrNumber Int?
+  acceptedAt DateTime
+  outcome String?
+  finishedAt DateTime?
+
+  @@index([organizationId, acceptedAt])
+  @@map("external_review_activity")
 }

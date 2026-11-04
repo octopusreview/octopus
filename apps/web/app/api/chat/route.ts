@@ -80,9 +80,14 @@ export async function POST(request: Request) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const { message, conversationId, orgId, repoContext } = await request.json();
-  if (!message || !orgId) {
-    return new Response("Missing message or orgId", { status: 400 });
+  let body: unknown;
+  try { body = await request.json(); } catch { return new Response("Invalid JSON", { status: 400 }); }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return new Response("Invalid chat request", { status: 400 });
+  const { message, conversationId, orgId, repoContext } = body as Record<string, unknown>;
+  const validText = (value: unknown): value is string => typeof value === "string" && !value.includes("\0");
+  if (!validText(message) || !message || !validText(orgId) || !orgId ||
+      (conversationId != null && !validText(conversationId)) || (repoContext != null && !validText(repoContext))) {
+    return new Response("Invalid chat request", { status: 400 });
   }
 
   // Verify org membership. Defense in depth: banned users can't mint sessions

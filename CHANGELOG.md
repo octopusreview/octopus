@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Chat requests reject malformed JSON and invalid input types before database access.
+
 ## [1.3.3] - 2026-10-21
 
 ### Fixed

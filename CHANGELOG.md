@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-04
+
+### Added
+
+- Record CLI and GitHub Action review activity to improve product analytics.
+
 ### Fixed
 
 - Chat requests reject malformed JSON and invalid input types before database access.

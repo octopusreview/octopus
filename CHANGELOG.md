@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Chat requests reject malformed JSON and invalid input types before database access.
 
+### Upgrade notes
+
+- Apply the `20261022120000_external_review_activity` migration before starting 1.4.0 web instances. CLI and authenticated GitHub Action review activity missed before the migration is not recovered.
+
 ## [1.3.3] - 2026-10-21
 
 ### Fixed

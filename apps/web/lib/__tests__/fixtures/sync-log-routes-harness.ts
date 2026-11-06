@@ -59,7 +59,7 @@ for (const [attempt, marker] of [["old-binary", "current"], [null, "current"], [
   assert.deepEqual(calls.splice(0), [["org", "repo", 500, undefined], ["org", "repo", 500, undefined]]);
 }
 for (const batch of [null, "batch"] as const) {
-  repository = { id: "repo", organizationId: "org", indexAttemptId: batch, syncLogAttemptId: "upload", localIndexUpload: { id: "upload", batchAttemptId: batch } };
+  repository = { id: "repo", organizationId: "org", indexAttemptId: batch, syncLogAttemptId: "upload", localIndexUpload: { id: "upload", batchAttemptId: batch, paths: ["synthetic-private-path"] } };
   const userResponse = await getUserLogs(userRequest());
   const adminResponse = await getAdminLogs(adminRequest(), adminParams);
   assert.deepEqual(await userResponse.json(), { logs: [localLog], attempt: "upload", indexAttemptId: batch });

@@ -28,10 +28,12 @@ function getIndexName(name: string): string {
 }
 
 const REPO_SYNC_INDEX = "repo_sync";
+const REPO_SYNC_ATTEMPT_INDEX = "repo_sync_attempts";
 
 export interface SyncLogEntry {
   orgId: string;
   repoId: string;
+  indexAttemptId?: string;
   message: string;
   level: "info" | "success" | "error" | "warning";
   timestamp: number;
@@ -58,10 +60,11 @@ export async function getSyncLogs(
   orgId: string,
   repoId: string,
   limit = 500,
+  indexAttemptId?: string,
 ): Promise<SyncLogEntry[]> {
   try {
     const es = getClient();
-    const index = getIndexName(REPO_SYNC_INDEX);
+    const index = getIndexName(indexAttemptId ? REPO_SYNC_ATTEMPT_INDEX : REPO_SYNC_INDEX);
 
     const exists = await es.indices.exists({ index });
     if (!exists) return [];
@@ -72,8 +75,9 @@ export async function getSyncLogs(
       query: {
         bool: {
           filter: [
-            { term: { orgId } },
-            { term: { repoId } },
+            { term: { [indexAttemptId ? "orgId.keyword" : "orgId"]: orgId } },
+            { term: { [indexAttemptId ? "repoId.keyword" : "repoId"]: repoId } },
+            ...(indexAttemptId ? [{ term: { "indexAttemptId.keyword": indexAttemptId } }] : []),
           ],
         },
       },

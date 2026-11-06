@@ -18,6 +18,7 @@ interface LogEntry {
   message: string;
   level: "info" | "success" | "error" | "warning";
   timestamp: number;
+  indexAttemptId?: string;
 }
 
 function logKey(log: LogEntry): string {
@@ -113,14 +114,76 @@ export function IndexingLogs({
   const router = useRouter();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [logsMayBeMissing, setLogsMayBeMissing] = useState(false);
   const [reload, setReload] = useState(0);
+  const currentAttempt = useRef<string | null | undefined>(undefined);
+  const pendingLogs = useRef<LogEntry[]>([]);
+  const incompleteAttempts = useRef(new Map<string | null, object>());
+  const unattributedMissingLogs = useRef<object | null>(null);
+  const verifiedUnattributed = useRef<object | null>(null);
+  const rejectedAttempts = useRef(new Map<string | null, number>());
+  const refreshingAttempt = useRef(false);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshAt = useRef(0);
+  const retryDelay = useRef(0);
+  const logScope = useRef(JSON.stringify([orgId, repoId]));
+  const previousStatus = useRef(initialStatus);
+
+  function scheduleRefresh(delay: number) {
+    // Once attribution overflows, avoid repeated owner lookups from a stale event stream.
+    if (unattributedMissingLogs.current) delay = Math.max(delay, 5000);
+    const at = Date.now() + delay;
+    if (refreshTimer.current) {
+      if (refreshAt.current <= at) return;
+      clearTimeout(refreshTimer.current);
+    } else if (refreshingAttempt.current) return;
+    refreshingAttempt.current = true;
+    refreshAt.current = at;
+    refreshTimer.current = setTimeout(() => {
+      refreshTimer.current = null;
+      setReload((value) => value + 1);
+    }, delay);
+  }
+
+  function refreshDelay(attempt: string | null) {
+    return Math.max(250, (rejectedAttempts.current.get(attempt) ?? 0) + 5000 - Date.now());
+  }
+
+  useEffect(() => () => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+  }, []);
 
   // A retry starts a new log stream. Reconcile saved logs on every status
   // transition as well, so finishing before the subscription mounts is safe.
   useEffect(() => {
     const controller = new AbortController();
+    let cancelled = false;
+    const timeout = setTimeout(() => controller.abort(), 5000);
     setFetchError(null);
-    if (initialStatus === "indexing") setLogs([]);
+    const scope = JSON.stringify([orgId, repoId]);
+    if (scope !== logScope.current) {
+      logScope.current = scope;
+      pendingLogs.current = [];
+      incompleteAttempts.current.clear();
+      unattributedMissingLogs.current = null;
+      verifiedUnattributed.current = null;
+      setLogsMayBeMissing(false);
+      rejectedAttempts.current.clear();
+      retryDelay.current = 0;
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+      refreshTimer.current = null;
+      refreshingAttempt.current = false;
+      setLogs([]);
+    }
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = null;
+    currentAttempt.current = undefined;
+    refreshingAttempt.current = true;
+    const checked = new Set(pendingLogs.current);
+    const checkedIncomplete = new Map(incompleteAttempts.current);
+    const checkedUnattributed = unattributedMissingLogs.current;
+    if (initialStatus === "indexing" && previousStatus.current !== "indexing") setLogs([]);
+    previousStatus.current = initialStatus;
     fetch(`/api/sync-logs?orgId=${encodeURIComponent(orgId)}&repoId=${encodeURIComponent(repoId)}`, { signal: controller.signal })
       .then((res) => {
         if (!res.ok) throw new Error("Unable to load indexing logs");
@@ -129,16 +192,57 @@ export function IndexingLogs({
       .then((data) => {
         if (controller.signal.aborted) return;
         if (!Array.isArray(data.logs)) throw new Error("Invalid indexing logs response");
+        const attempt = typeof data.attempt === "string" ? data.attempt : null;
+        for (const [id, marker] of checkedIncomplete) {
+          if (id !== attempt && incompleteAttempts.current.get(id) === marker) incompleteAttempts.current.delete(id);
+        }
+        setLogsMayBeMissing(!!unattributedMissingLogs.current || incompleteAttempts.current.has(attempt));
+        retryDelay.current = 0;
+        currentAttempt.current = attempt;
+        refreshingAttempt.current = false;
+        const pending = pendingLogs.current;
+        pendingLogs.current = pending.filter((log) => (log.indexAttemptId ?? null) !== attempt && !checked.has(log));
+        rejectedAttempts.current.delete(attempt);
+        for (const log of pending) {
+          const logAttempt = log.indexAttemptId ?? null;
+          if (logAttempt !== attempt && checked.has(log)) {
+            rejectedAttempts.current.delete(logAttempt);
+            rejectedAttempts.current.set(logAttempt, Date.now());
+            if (rejectedAttempts.current.size > 500) {
+              rejectedAttempts.current.delete(rejectedAttempts.current.keys().next().value!);
+            }
+          }
+        }
         setLogs((current) => {
           const entries = new Map<string, LogEntry>();
-          for (const log of [...data.logs as LogEntry[], ...current]) entries.set(logKey(log), log);
+          for (const log of [...data.logs as LogEntry[], ...current, ...pending]) {
+            if (attempt ? log.indexAttemptId === attempt : !log.indexAttemptId) entries.set(logKey(log), log);
+          }
           return [...entries.values()].sort((a, b) => a.timestamp - b.timestamp);
         });
+        const uncheckedAttempts = [...incompleteAttempts.current.keys()].filter((id) => id !== attempt);
+        verifiedUnattributed.current = checkedUnattributed;
+        const unverifiedOverflow = unattributedMissingLogs.current !== verifiedUnattributed.current;
+        if (pendingLogs.current.length || uncheckedAttempts.length || unverifiedOverflow) {
+          const pendingDelay = pendingLogs.current.reduce((delay, log) => Math.min(delay, refreshDelay(log.indexAttemptId ?? null)), Infinity);
+          const attemptDelay = uncheckedAttempts.reduce((delay, id) => Math.min(delay, refreshDelay(id)), pendingDelay);
+          // Unattributed evictions may belong to a replacement; recheck without a rapid retry loop.
+          scheduleRefresh(unverifiedOverflow ? 5000 : attemptDelay);
+        }
       })
       .catch(() => {
-        if (!controller.signal.aborted) setFetchError("Could not load indexing logs. You can retry loading them without restarting indexing.");
-      });
-    return () => controller.abort();
+        if (!cancelled) {
+          refreshingAttempt.current = false;
+          setFetchError("Could not load indexing logs. You can retry loading them without restarting indexing.");
+          retryDelay.current = Math.min(retryDelay.current ? retryDelay.current * 2 : 1000, 30000);
+          if (pendingLogs.current.length || incompleteAttempts.current.size || unattributedMissingLogs.current !== verifiedUnattributed.current) scheduleRefresh(retryDelay.current);
+        }
+      }).finally(() => clearTimeout(timeout));
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+      controller.abort();
+    };
   }, [orgId, repoId, initialStatus, reload]);
 
   useEffect(() => {
@@ -146,11 +250,28 @@ export function IndexingLogs({
     const channel = pubby.subscribe(`presence-org-${orgId}`);
 
     const handleLog = (raw: unknown) => {
-      const data = raw as { repoId: string; message: string; level: LogEntry["level"]; timestamp: number };
+      const data = raw as LogEntry & { repoId: string };
       if (data.repoId !== repoId) return;
+      if (currentAttempt.current === undefined || (refreshingAttempt.current && !refreshTimer.current) ||
+          (data.indexAttemptId ?? null) !== currentAttempt.current) {
+        // shortcut: old pending messages may be omitted during an outage, add paginated backfill to recover them.
+        if (pendingLogs.current.length >= 1000) {
+          const dropped = pendingLogs.current.shift()!;
+          const droppedAttempt = dropped.indexAttemptId ?? null;
+          if (!incompleteAttempts.current.has(droppedAttempt) && incompleteAttempts.current.size >= 1000) {
+            unattributedMissingLogs.current = {};
+          } else {
+            incompleteAttempts.current.set(droppedAttempt, {});
+          }
+          setLogsMayBeMissing(true);
+        }
+        pendingLogs.current.push(data);
+        scheduleRefresh(currentAttempt.current === undefined ? retryDelay.current || 1000 : refreshDelay(data.indexAttemptId ?? null));
+        return;
+      }
       setLogs((prev) => {
         if (prev.some((l) => logKey(l) === logKey(data))) return prev;
-        return [...prev, { message: data.message, level: data.level, timestamp: data.timestamp }];
+        return [...prev, data];
       });
     };
 
@@ -158,6 +279,12 @@ export function IndexingLogs({
       const data = raw as { repoId: string };
       if (data.repoId !== repoId) return;
       router.refresh();
+      if (refreshTimer.current) {
+        clearTimeout(refreshTimer.current);
+        refreshTimer.current = null;
+      }
+      refreshingAttempt.current = true;
+      setReload((value) => value + 1);
     };
 
     channel.bind("index-log", handleLog);
@@ -213,6 +340,11 @@ export function IndexingLogs({
         ref={scrollRef}
         className="max-h-72 overflow-y-auto p-3 font-mono text-xs leading-relaxed"
       >
+        {logsMayBeMissing && (
+          <div role="alert" className="mb-3 text-amber-300">
+            Some indexing messages may be missing while logs were loading.
+          </div>
+        )}
         {fetchError && (
           <div role="alert" className="mb-3 text-amber-300">
             <p>{fetchError}</p>

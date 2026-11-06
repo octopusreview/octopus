@@ -13,6 +13,7 @@ const repo = {
 const fixture = {
   React, repo, allowed: true, toggleError: "Fixture permission denied", indexError: "Fixture indexing cooldown", syncError: "Fixture sync failed",
   cancelError: "Fixture cancellation failed", logsFail: false, indexCalls: 0, toggleCalls: 0, fastComplete: false, indexDelay: 0,
+  logAttempt: null as string | null, logFetches: 0, logDelay: 0, logHang: false, logAborts: 0,
   logs: [] as Array<{ message: string; level: string; timestamp: number }>,
   channel: {
     bind(event: string, callback: (data: unknown) => void) {
@@ -28,7 +29,16 @@ Object.assign(window, { repositoryFixture: fixture });
 const originalFetch = window.fetch;
 window.fetch = async (input, options) => {
   if (String(input).startsWith("/api/sync-logs")) {
-    return fixture.logsFail ? new Response("fixture failure", { status: 503 }) : Response.json({ logs: fixture.logs });
+    fixture.logFetches++;
+    const snapshot = { logs: fixture.logs, attempt: fixture.logAttempt };
+    if (fixture.logHang) {
+      await new Promise<void>((_, reject) => options?.signal?.addEventListener("abort", () => {
+        fixture.logAborts++;
+        reject(new DOMException("Aborted", "AbortError"));
+      }, { once: true }));
+    }
+    if (fixture.logDelay) await new Promise(resolve => setTimeout(resolve, fixture.logDelay));
+    return fixture.logsFail ? new Response("fixture failure", { status: 503 }) : Response.json(snapshot);
   }
   return originalFetch(input, options);
 };

@@ -110,6 +110,24 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
       f.emit('index-status',{repoId:f.repo.id,status:'failed'});f.refresh();
     }`);
     await page.getByRole("alert").filter({ hasText: "Could not load indexing logs" }).waitFor();
+    const beforeFailedLive = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate(`{
+      const f=window.repositoryFixture;
+      f.emit('index-log',{repoId:'other-repo',message:'Other repository log',level:'info',timestamp:3});
+      f.emit('index-log',{repoId:f.repo.id,message:'Live log after failed fetch',level:'info',timestamp:3});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeFailedLive}`);
+    await page.waitForTimeout(300);
+    expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeFailedLive).toBe(1);
+    expect(await page.getByText("Live log after failed fetch", { exact: true }).count()).toBe(0);
+    expect(await page.getByText("Other repository log", { exact: true }).count()).toBe(0);
+    await page.evaluate("window.repositoryFixture.logsFail=false");
+    await page.getByText("Live log after failed fetch", { exact: true }).waitFor();
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logsFail=true;
+      f.emit('index-status',{repoId:f.repo.id,status:'failed'});
+    }`);
+    await page.getByRole("alert").filter({ hasText: "Could not load indexing logs" }).waitFor();
     await page.evaluate(`{
       const f=window.repositoryFixture;f.logsFail=false;
       f.logs=[{message:'Recovered logs',level:'error',timestamp:3},
@@ -138,6 +156,247 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
       f.emit('index-log',{repoId:f.repo.id,message:'Background retry progress',level:'info',timestamp:4});
     }`);
     await page.getByText("Background retry progress", { exact: true }).waitFor();
+    await page.evaluate("window.repositoryFixture.repo.indexStatus='failed'; window.repositoryFixture.refresh()");
+    await page.getByRole("button", { name: "Retry indexing", exact: true }).waitFor();
+    const beforeAttemptFetch = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logAttempt='current-attempt'; f.logs=[];
+      f.repo.indexStatus='indexing'; f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeAttemptFetch}`);
+    await page.evaluate(`{
+      const f=window.repositoryFixture;
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'old-attempt',message:'Obsolete live log',level:'error',timestamp:5});
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'current-attempt',message:'Current live log',level:'info',timestamp:6});
+    }`);
+    await page.getByText("Current live log", { exact: true }).waitFor();
+    expect(await page.getByText("Obsolete live log", { exact: true }).count()).toBe(0);
+    await page.waitForTimeout(600);
+    const beforeStaleRefresh = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate(`{
+      const f=window.repositoryFixture;
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'old-attempt',message:'Another obsolete log',level:'error',timestamp:7});
+    }`);
+    await page.waitForTimeout(600);
+    expect(await page.evaluate("window.repositoryFixture.logFetches")).toBe(beforeStaleRefresh);
+    await page.getByText("Current live log", { exact: true }).waitFor();
+    expect(await page.getByText("Another obsolete log", { exact: true }).count()).toBe(0);
+    const beforeDelayedFetch = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logAttempt='next-attempt'; f.logDelay=200; f.logs=[];
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeDelayedFetch}`);
+    await page.evaluate(`{
+      const f=window.repositoryFixture;
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'current-attempt',message:'Delayed obsolete log',level:'error',timestamp:7});
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'next-attempt',message:'Buffered current log',level:'info',timestamp:8});
+    }`);
+    await page.getByText("Buffered current log", { exact: true }).waitFor();
+    expect(await page.getByText("Delayed obsolete log", { exact: true }).count()).toBe(0);
+    const beforeSnapshot = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logDelay=400;
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeSnapshot}`);
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logAttempt='snapshot-replacement'; f.logDelay=0;
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'snapshot-replacement',message:'Live log after stale snapshot',level:'info',timestamp:9});
+    }`);
+    await page.getByText("Live log after stale snapshot", { exact: true }).waitFor();
+    expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeSnapshot).toBeGreaterThanOrEqual(2);
+    expect(await page.getByText("Buffered current log", { exact: true }).count()).toBe(0);
+    const beforeNormalStream = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate(`(async()=>{
+      const f=window.repositoryFixture;
+      for(let i=0;i<30;i++){ f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'normal-stale',message:'Normal stale '+i,level:'info',timestamp:100+i}); await new Promise(resolve=>setTimeout(resolve,20)); }
+    })()`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeNormalStream}`, null, { timeout: 5000 });
+    expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeNormalStream).toBe(1);
+    const beforeHangingFetch = await page.evaluate("window.repositoryFixture.logFetches");
+    const beforeHangingAbort = await page.evaluate("window.repositoryFixture.logAborts");
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logHang=true; f.logAttempt='hang-replacement'; f.logs=[];
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeHangingFetch}`);
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logHang=false;
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'snapshot-replacement',message:'Obsolete during hang',level:'info',timestamp:10});
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'hang-replacement',message:'Live log after timeout',level:'info',timestamp:11});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logAborts > ${beforeHangingAbort}`);
+    await page.getByText("Live log after timeout", { exact: true }).waitFor();
+    expect(await page.getByText("Obsolete during hang", { exact: true }).count()).toBe(0);
+    expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeHangingFetch).toBe(2);
+    const beforeOverflowFetch = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logHang=true; f.logAttempt='overflow-attempt'; f.logs=[];
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeOverflowFetch}`);
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logHang=false;
+      for(let i=0;i<550;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'overflow-attempt',message:'Buffered warning '+i,level:'warning',timestamp:1000+i});
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'obsolete-attempt',message:'Obsolete overflow warning',level:'warning',timestamp:2000});
+    }`);
+    await page.getByText("Buffered warning 0", { exact: true }).waitFor();
+    expect(await page.getByText("Buffered warning 549", { exact: true }).count()).toBe(1);
+    expect(await page.getByText("Obsolete overflow warning", { exact: true }).count()).toBe(0);
+    const beforePressureFetch = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logHang=true; f.logAttempt='pressure-attempt'; f.logs=[];
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforePressureFetch}`);
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logHang=false;
+      for(let i=0;i<1100;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'pressure-attempt',message:'Pressure warning '+i,level:'warning',timestamp:3000+i});
+    }`);
+    await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).waitFor({ timeout: 5000 });
+    await page.getByText("Pressure warning 1099", { exact: true }).waitFor();
+    expect(await page.getByText("Pressure warning 0", { exact: true }).count()).toBe(0);
+    expect(await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).count()).toBe(1);
+    const beforeSameAttempt = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate("window.repositoryFixture.emit('index-status',{repoId:window.repositoryFixture.repo.id})");
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeSameAttempt}`);
+    await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).waitFor();
+    const beforeCleanAttempt = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logAttempt='clean-attempt';
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeCleanAttempt}`);
+    await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).waitFor({ state: "hidden" });
+    const beforeReplacementOverflow = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logDelay=400;
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeReplacementOverflow}`);
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logAttempt='overflow-replacement'; f.logDelay=0;
+      for(let i=0;i<1001;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'overflow-replacement',message:'Replacement warning '+i,level:'warning',timestamp:5000+i});
+    }`);
+    await page.getByText("Replacement warning 1000", { exact: true }).waitFor();
+    expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeReplacementOverflow).toBeGreaterThanOrEqual(2);
+    expect(await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).count()).toBe(1);
+    const beforeEvictedAttempt = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logDelay=400;
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeEvictedAttempt}`);
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logAttempt='evicted-attempt'; f.logDelay=0;
+      f.logs=[{indexAttemptId:'evicted-attempt',message:'Evicted attempt loaded',level:'info',timestamp:8000}];
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'evicted-attempt',message:'Evicted live log',level:'info',timestamp:7000});
+      for(let i=0;i<1000;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'overflow-replacement',message:'Old warning '+i,level:'warning',timestamp:7001+i});
+    }`);
+    await page.getByText("Evicted attempt loaded", { exact: true }).waitFor();
+    expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeEvictedAttempt).toBeGreaterThanOrEqual(2);
+    expect(await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).count()).toBe(1);
+    const beforeManyAttempts = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logHang=true; f.logs=[];
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeManyAttempts}`);
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logHang=false; f.logAttempt='untracked-attempt';
+      for(let i=0;i<1100;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:i===1050?'untracked-attempt':'old-'+i,message:'Old attempt '+i,level:'warning',timestamp:9000+i});
+      for(let i=0;i<1000;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'untracked-attempt',message:'Current attempt '+i,level:'warning',timestamp:11000+i});
+    }`);
+    await page.getByText("Current attempt 999", { exact: true }).waitFor();
+    expect(await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).count()).toBe(1);
+    const beforeUnknownAttempt = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logAttempt='later-clean-attempt';
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeUnknownAttempt}`);
+    await page.waitForTimeout(500);
+    expect(await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).count()).toBe(1);
+    const beforeUnknownRace = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logAttempt='owner-a'; f.logHang=true; f.logs=[];
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeUnknownRace}`);
+    await page.evaluate(`{
+      const f=window.repositoryFixture;
+      for(let i=0;i<1000;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'stale-race-'+i,message:'Old race '+i,level:'warning',timestamp:13000+i});
+      for(let i=0;i<1000;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'owner-a',message:'Owner A '+i,level:'warning',timestamp:14000+i});
+      f.logHang=false; f.logDelay=400;
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeUnknownRace + 1}`);
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logAttempt='owner-b'; f.logDelay=0;
+      f.logs=[{indexAttemptId:'owner-b',message:'Recovered owner B',level:'info',timestamp:16000}];
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'owner-b',message:'Evicted B event',level:'info',timestamp:15000});
+      for(let i=0;i<1000;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'owner-a',message:'More A '+i,level:'warning',timestamp:15001+i});
+    }`);
+    await page.getByText("More A 999", { exact: true }).waitFor();
+    await page.evaluate("window.repositoryFixture.logsFail=true");
+    await page.getByRole("alert").filter({ hasText: "Could not load indexing logs" }).waitFor({ timeout: 10000 });
+    const beforeOverflowRetry = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate("window.repositoryFixture.logsFail=false");
+    await page.waitForTimeout(1200);
+    expect(await page.evaluate("window.repositoryFixture.logFetches")).toBe(beforeOverflowRetry);
+    await page.getByText("Recovered owner B", { exact: true }).waitFor({ timeout: 10000 });
+    expect(await page.evaluate("window.repositoryFixture.logFetches")).toBe(beforeOverflowRetry + 1);
+    expect(await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).count()).toBe(1);
+    expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeUnknownRace).toBeLessThanOrEqual(5);
+    const beforeOverflowStream = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate(`(async()=>{
+      const f=window.repositoryFixture;
+      for(let i=0;i<20;i++) { f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'stale-stream-'+i,message:'Stale stream '+i,level:'warning',timestamp:17000+i}); await new Promise(resolve=>setTimeout(resolve,30)); }
+    })()`);
+    await page.waitForTimeout(1200);
+    expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeOverflowStream).toBeLessThanOrEqual(1);
+    const beforeCancelledFetch = await page.evaluate("window.repositoryFixture.logFetches");
+    const beforeCancelledAbort = await page.evaluate("window.repositoryFixture.logAborts");
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logHang=true;
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeCancelledFetch}`);
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logHang=false;
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logAborts > ${beforeCancelledAbort} && window.repositoryFixture.logFetches >= ${beforeCancelledFetch + 2}`);
+    await page.waitForTimeout(1200);
+    expect(await page.evaluate("window.repositoryFixture.logFetches")).toBe(beforeCancelledFetch + 2);
+    expect(await page.getByRole("alert").filter({ hasText: "Could not load indexing logs" }).count()).toBe(0);
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logDelay=0; f.logAttempt=null;
+      f.logs=[{message:'Legacy saved log',level:'info',timestamp:18000}];
+      f.emit('index-status',{repoId:f.repo.id});
+    }`);
+    await page.getByText("Legacy saved log", { exact: true }).waitFor();
+    await page.evaluate(`{
+      const f=window.repositoryFixture;
+      f.emit('index-log',{repoId:f.repo.id,message:'Legacy live log',level:'info',timestamp:18001});
+    }`);
+    await page.getByText("Legacy live log", { exact: true }).waitFor();
+    const beforeMixedEvents = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate(`(async()=>{
+      const f=window.repositoryFixture;
+      for(let i=0;i<30;i++){ f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'mixed-attempt',message:'mixed '+i,level:'info',timestamp:100+i}); await new Promise(resolve=>setTimeout(resolve,20)); }
+    })()`);
+    const mixedFetches = (await page.evaluate("window.repositoryFixture.logFetches")) - beforeMixedEvents;
+    console.log(`Mixed-version log refreshes: ${mixedFetches}`);
+    expect(mixedFetches).toBeLessThanOrEqual(1);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeMixedEvents}`, null, { timeout: 10000 });
+    expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeMixedEvents).toBe(1);
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logAttempt='replacement-attempt';
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'replacement-attempt',message:'Replacement live log',level:'info',timestamp:200});
+    }`);
+    await page.getByText("Replacement live log", { exact: true }).waitFor();
     await page.evaluate(`{
       const f=window.repositoryFixture;f.repo.indexStatus='indexed';
       f.emit('index-status',{repoId:f.repo.id,status:'indexed'});
@@ -183,4 +442,4 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     expect(errors).toEqual([]);
     expect(externalRequests).toEqual([]);
   } finally { await browser.close(); server.stop(true); }
-}, 60_000);
+}, 120_000);

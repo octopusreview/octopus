@@ -51,6 +51,10 @@ octp --version | -v        Print version
 octp --help | -h           Print this help
 ```
 
+For Ollama tasks, `octp agent serve` allows five minutes for the full response,
+including success and error bodies. Set `OCTP_OLLAMA_TIMEOUT_MS` to a positive
+number of milliseconds to change this limit.
+
 The first invocation of bare `octp` triggers the onboarding wizard:
 
 1. **Welcome** — what Octopus is, in three sentences

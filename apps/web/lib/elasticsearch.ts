@@ -77,10 +77,10 @@ export async function getSyncLogs(
           ],
         },
       },
-      sort: [{ timestamp: { order: "asc" } }],
+      sort: [{ timestamp: { order: "desc" } }],
     });
 
-    return result.hits.hits.map((hit) => hit._source!);
+    return result.hits.hits.map((hit) => hit._source!).reverse();
   } catch (err) {
     console.error("Failed to read sync logs from ES:", err);
     return [];

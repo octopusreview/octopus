@@ -26,6 +26,7 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("withholds private live indexing 
     const page = await browser.newPage();
     for (const owner of [null, "bounded-owner"]) {
       await page.goto(server.url.href);
+      await page.addStyleTag({ content: ".max-h-72{max-height:18rem}.overflow-y-auto{overflow-y:auto}" });
       await page.getByText("Indexing Logs", { exact: true }).waitFor();
       await page.evaluate((attempt: string | null) => {
         const f = (window as unknown as { privacyFixture: { attempt: string | null; delay: number; logs: unknown[]; emit: (name: string, data: unknown) => void } }).privacyFixture;
@@ -35,6 +36,17 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("withholds private live indexing 
       }, owner);
       await page.getByText("Processed 500 files, skipped 0", { exact: true }).waitFor();
       await page.getByText(/Showing 301–500 of 500 messages/).waitFor();
+      await page.waitForFunction(() => (document.querySelector('[aria-label="Indexing messages"]')?.parentElement?.scrollTop ?? 0) > 0);
+      expect(await page.evaluate(() => {
+        const messages = document.querySelector('[aria-label="Indexing messages"]')!;
+        const scroller = messages.parentElement!;
+        const warning = Array.from(document.querySelectorAll('[role="status"]')).find((node) => node.textContent?.includes("Saved indexing messages may be incomplete"))!;
+        const older = Array.from(document.querySelectorAll('button')).find((node) => node.textContent === "Show older messages")!;
+        return scroller.scrollHeight > scroller.clientHeight && scroller.scrollTop > 0
+          && !scroller.contains(warning) && !scroller.contains(older)
+          && warning.getBoundingClientRect().bottom <= scroller.getBoundingClientRect().top
+          && older.getBoundingClientRect().bottom <= scroller.getBoundingClientRect().top;
+      })).toBe(true);
       await page.evaluate(`{
         const f=window.privacyFixture; f.attempt='untrusted-owner';
         f.logs=[...f.logs,{indexAttemptId:'untrusted-owner',message:'Error /private/oversized synthetic-secret',level:'error',timestamp:501}];

@@ -417,10 +417,7 @@ export function IndexingLogs({
         )}
       </div>
 
-      <div
-        ref={scrollRef}
-        className="max-h-72 overflow-y-auto p-3 font-mono text-xs leading-relaxed"
-      >
+      <div className="p-3 font-mono text-xs leading-relaxed">
         <div role="status" className="mb-3 text-amber-300">
           Saved indexing messages may be incomplete.
         </div>
@@ -479,6 +476,7 @@ export function IndexingLogs({
             </div>
           </div>
         )}
+        <div ref={scrollRef} className="max-h-72 overflow-y-auto">
         <div role="list" aria-label="Indexing messages">
         {displayLogs.map((log, i) => {
           const progress = parseProgress(log.message);
@@ -506,6 +504,7 @@ export function IndexingLogs({
             </div>
           );
         })}
+        </div>
         </div>
 
         {initialStatus === "failed" && (

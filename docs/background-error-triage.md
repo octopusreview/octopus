@@ -12,7 +12,7 @@ Check new and regressed issues daily. Start with recurring failures that affect 
 
 Repository indexing logs show the latest 500 entries in chronological order; older entries are omitted when the log exceeds that limit.
 
-GitHub tree failures can be grouped by their HTTP status code, for example `failure_code:http_451`. This identifies the upstream response, not its cause or a confirmed fix; response bodies are not included in the event.
+For review preparation failures, the optional `preparation_operation` tag distinguishes `review_input` fetches from `repository_tree` fetches. GitHub tree failures can also be grouped by their HTTP status code, for example `failure_code:http_451`. These identify the failed boundary or upstream response, not its cause or a confirmed fix; response bodies are not included in the event.
 
 Expected credit/spend blocks, known BYOK authentication/quota failures, confirmed cancellations and superseded work do not create platform incidents. Review cancellation is distinguished from queue expiry using the execution deadline; deadline failures remain reportable. Existing queue retries report only at exhaustion. Handled review failures are already terminal and report immediately; adding automatic provider retries is tracked separately in #945. This does not claim every swallowed exception elsewhere in the application is covered. Local CLI uploads and community/legacy large-review pipelines are outside this change.
 

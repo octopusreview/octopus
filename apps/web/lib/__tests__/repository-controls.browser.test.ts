@@ -216,12 +216,14 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     expect(await page.evaluate("window.repositoryFixture.indexCalls")).toBe(callsBeforeLogRetry);
     expect(await page.getByRole("alert").filter({ hasText: "Could not load indexing logs" }).count()).toBe(0);
     // A background retry does not remount RepoDetail or click its index action.
+    const beforeBackgroundRetry = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate(`{
       const f=window.repositoryFixture;f.logs=[];f.indexAttemptId='old-legacy';f.repo.indexStatus='indexing';
       f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
     }`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeBackgroundRetry}`);
     await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
-    await page.getByText("Recovered logs", { exact: true }).waitFor();
+    await page.waitForFunction(`!document.body.textContent.includes('Recovered logs')`);
     await page.evaluate(`{
       const f=window.repositoryFixture;
       f.emit('index-log',{repoId:f.repo.id,message:'Background retry progress',level:'info',timestamp:4});
@@ -282,6 +284,7 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     }`);
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeLegacyReplacement}`);
     await page.getByText("Replacement saved log", { exact: true }).waitFor();
+    expect(await page.getByText("New API snapshot", { exact: true }).count()).toBe(0);
     await page.getByText("Legacy live log", { exact: true }).waitFor();
     await page.getByText("Early replacement live log", { exact: true }).waitFor();
     await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();

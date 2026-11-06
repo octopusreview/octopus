@@ -120,6 +120,7 @@ export function IndexingLogs({
   const [legacyLogsMayBeMixed, setLegacyLogsMayBeMixed] = useState(false);
   const [reload, setReload] = useState(0);
   const currentAttempt = useRef<string | null | undefined>(undefined);
+  const persistedAttempt = useRef<string | null | undefined>(undefined);
   const pendingLogs = useRef<LogEntry[]>([]);
   const hasUnattributedLive = useRef(false);
   const incompleteAttempts = useRef(new Map<string | null, object>());
@@ -167,6 +168,7 @@ export function IndexingLogs({
     const scope = JSON.stringify([orgId, repoId]);
     if (scope !== logScope.current) {
       logScope.current = scope;
+      persistedAttempt.current = undefined;
       previousStatus.current = initialStatus;
       pendingLogs.current = [];
       hasUnattributedLive.current = false;
@@ -201,6 +203,10 @@ export function IndexingLogs({
         if (controller.signal.aborted) return;
         if (!Array.isArray(data.logs)) throw new Error("Invalid indexing logs response");
         const attempt = typeof data.attempt === "string" ? data.attempt : null;
+        const identity = data.indexAttemptId;
+        const validIdentity = identity === null || (typeof identity === "string" && identity.length > 0);
+        const replaced = validIdentity && persistedAttempt.current !== undefined && identity !== persistedAttempt.current;
+        if (validIdentity) persistedAttempt.current = identity;
         setLegacyLogsMayBeMixed(!attempt || hasUnattributedLive.current);
         setTruncated(data.truncated === true);
         for (const [id, marker] of checkedIncomplete) {
@@ -226,7 +232,7 @@ export function IndexingLogs({
         setLogs((current) => {
           const entries = new Map<string, LogEntry>();
           const saved = (data.logs as LogEntry[]).map((log) => ({ ...log, live: false }));
-          for (const log of [...saved, ...current, ...pending]) {
+          for (const log of [...saved, ...current.filter((log) => !replaced || log.live), ...pending]) {
             if (attempt ? log.indexAttemptId === attempt || (log.live && !log.indexAttemptId) : !log.indexAttemptId) entries.set(logKey(log), log);
           }
           return [...entries.values()].sort((a, b) => a.timestamp - b.timestamp);

@@ -127,6 +127,23 @@ try {
     assert.equal(text(tree).split(message).length - 1, 1);
   }
   assert.match(text(tree), /multiple attempts or be missing/);
+  emit("index-status", { repoId: "repo-a" });
+  await flush();
+  await reply(requests.length - 1, { logs: [{ message: "Old saved error", level: "error", timestamp: 30 }, { message: "Collision", level: "info", timestamp: 31 }], attempt: null, indexAttemptId: "legacy-a" });
+  emit("index-log", { repoId: "repo-a", message: "Collision", level: "info", timestamp: 31 });
+  emit("index-log", { repoId: "repo-a", message: "Early replacement", level: "info", timestamp: 32 });
+  await flush();
+  emit("index-status", { repoId: "repo-a" });
+  await flush();
+  await reply(requests.length - 1, { logs: [], attempt: null });
+  assert.match(text(tree), /Old saved error/);
+  emit("index-status", { repoId: "repo-a" });
+  await flush();
+  await reply(requests.length - 1, { logs: [], attempt: null, indexAttemptId: "legacy-b" });
+  assert.doesNotMatch(text(tree), /Old saved error/);
+  assert.match(text(tree), /Collision/);
+  assert.match(text(tree), /Early replacement/);
+  assert.match(text(tree), /multiple attempts or be missing/);
 } finally {
   for (const hook of hooks) hook?.cleanup?.();
 }

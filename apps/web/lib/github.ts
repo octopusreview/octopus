@@ -14,16 +14,17 @@ const RETRY_BASE_DELAY_MS = 1000;
 async function fetchWithRetry(
   url: string,
   init?: RequestInit,
+  retryFirst500 = false,
 ): Promise<Response> {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     init?.signal?.throwIfAborted();
     const res = await fetch(url, init);
-    if (!RETRYABLE_STATUSES.has(res.status) || attempt === MAX_RETRIES) {
+    if ((!RETRYABLE_STATUSES.has(res.status) && !(retryFirst500 && res.status === 500 && attempt === 0)) || attempt === MAX_RETRIES) {
       return res;
     }
     const delay = RETRY_BASE_DELAY_MS * 2 ** attempt;
     console.warn(
-      `[github] ${init?.method ?? "GET"} ${url} returned ${res.status}, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`,
+      `[github] ${init?.method ?? "GET"} ${retryFirst500 ? "PR details" : url} returned ${res.status}, retrying in ${delay}ms (attempt ${attempt + 1}/${retryFirst500 && res.status === 500 ? 1 : MAX_RETRIES})`,
     );
     await new Promise((r) => setTimeout(r, delay));
   }
@@ -301,6 +302,7 @@ export async function getPullRequestDetails(
         Accept: "application/vnd.github+json",
       },
     },
+    true,
   );
 
   if (!res.ok) {

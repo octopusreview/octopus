@@ -33,7 +33,6 @@ const REPO_SYNC_INDEX = "repo_sync";
 export interface SyncLogEntry {
   orgId: string;
   repoId: string;
-  id?: string;
   message: string;
   level: "info" | "success" | "error" | "warning";
   timestamp: number;
@@ -48,7 +47,6 @@ export async function writeSyncLog(entry: SyncLogEntry): Promise<void> {
       index,
       body: {
         ...entry,
-        id: entry.id ?? crypto.randomUUID(),
         message: safeIndexLogMessage(entry.message),
         createdAt: new Date(entry.timestamp).toISOString(),
       },
@@ -88,7 +86,6 @@ export async function getSyncLogs(
       const log = hit._source!;
       return {
         orgId, repoId,
-        ...(typeof log.id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(log.id) ? { id: log.id } : {}),
         message: safeIndexLogMessage(log.message),
         level: ["info", "success", "warning", "error"].includes(log.level) ? log.level : "info" as const,
         timestamp: typeof log.timestamp === "number" && Number.isFinite(log.timestamp) ? log.timestamp : 0,

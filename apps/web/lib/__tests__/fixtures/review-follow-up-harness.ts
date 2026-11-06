@@ -19,6 +19,7 @@ const queuedJobs: string[] = [];
 class FixtureLargePrError extends Error { meta = { reason: "diff_too_large" }; }
 let indexPreparation: "normal" | "fail" | "replace" | "replace-success" = "normal";
 let indexingCalls = 0;
+let peerAlreadyIndexed = false;
 let indexTransactions = 0;
 let inIndexTransaction = false;
 let completionFailure: "summary" | "check" | null = null;
@@ -114,6 +115,7 @@ const db = {
     findUnique: async () => ({ ...repo }),
     findUniqueOrThrow: async () => ({ ...repo }),
     updateMany: async ({ where, data }: { where: { id: string; indexStatus?: string | { notIn: string[] }; indexAttemptId?: string }; data: Record<string, unknown> }) => {
+      if (peerAlreadyIndexed && typeof where.indexStatus === "object") { repo.indexStatus = "indexed"; return { count: 0 }; }
       if (where.id !== repo.id || (where.indexAttemptId !== undefined && where.indexAttemptId !== repo.indexAttemptId)
         || (typeof where.indexStatus === "string" && where.indexStatus !== repo.indexStatus)
         || (typeof where.indexStatus === "object" && where.indexStatus.notIn.includes(repo.indexStatus))) return { count: 0 };
@@ -202,6 +204,7 @@ const published: { body: string; comments: unknown[] }[] = [];
 const checkConclusions: string[] = [];
 const checkOutputs: unknown[] = [];
 mock.module("@/lib/review-summary-comment", () => ({ publishReviewSummary: async (target: { body: string; headSha: string; reviewRequestVersion: number; expectedReviewBody?: string; executionWindow?: ReviewExecutionWindow }) => {
+  if (peerAlreadyIndexed && target.body.includes("Repository already indexed")) throw new Error("synthetic-secret peer comment");
   if (target.body.includes("Indexing in progress")) {
     assert.ok(repo.indexAttemptId, "Preparation must already own the claim");
     if (indexPreparation === "fail") throw new Error("Index setup failed");
@@ -325,7 +328,7 @@ mock.module("@/lib/cost", () => ({ getOrgSpendLimitStatus: async () => ({ blocke
 mock.module("@/lib/pubby", () => ({ pubby: { trigger: async (_channel: string, _name: string, data: { status?: string }) => { events.push({ ...data, status: _name === "index-status" ? repo.indexStatus : data.status, eventName: _name }); } } }));
 mock.module("@/lib/events", () => ({ eventBus: { emit: (event: { type: string }) => { events.push(event); } } }));
 mock.module("@/lib/indexer", () => ({ indexRepository: async () => {
-  if (indexingPrivacy) throw new Error("synthetic-secret clone /private/path");
+  if (indexingPrivacy) { indexingCalls++; throw new Error("synthetic-secret clone /private/path"); }
   if (!preserveAutoReview) throw new Error("unexpected indexing");
   indexingCalls++;
   return { indexedFiles: 1, totalFiles: 1, totalChunks: 1, totalVectors: 1, durationMs: 1, contributorCount: 0, contributors: [] };
@@ -380,16 +383,30 @@ if (indexingPrivacy) {
       events.length = 0; summaries.length = 0; checkOutputs.length = 0; reviewUpdates.length = 0;
       await processReview("pr", undefined, 2);
       assert.equal(repo.indexStatus, "failed");
-      assert.ok(summaries.some(body => body.includes("Repository indexing failed")));
-      assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "Repository indexing failed"; }));
-      assert.ok(events.some((event) => event.type === "review-failed" && event.error === "Repository indexing failed"));
-      assert.ok(events.some((event) => event.status === "failed" && event.error === "Repository indexing failed"));
-      if (provider !== "bitbucket") assert.ok(JSON.stringify(checkOutputs).includes("Repository indexing failed"));
+      assert.ok(summaries.some(body => body.includes("Review failed while preparing the repository")));
+      assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "Review failed while preparing the repository"; }));
+      assert.ok(events.some((event) => event.type === "review-failed" && event.error === "Review failed while preparing the repository"));
+      assert.ok(events.some((event) => event.status === "failed" && event.error === "Review failed while preparing the repository"));
+      if (provider !== "bitbucket") assert.ok(JSON.stringify(checkOutputs).includes("Review failed while preparing the repository"));
       assert.doesNotMatch(JSON.stringify({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }), /synthetic-secret|private\/path/);
       assert.equal(sentryEvents.at(-1)?.tags?.failure_stage, "indexing");
       assert.equal(sentryEvents.at(-1)?.contexts?.background_failure?.retryCount, 2);
     }
     repo.provider = "github";
+    repo.indexStatus = "pending";
+    peerAlreadyIndexed = true;
+    events.length = 0; summaries.length = 0; checkOutputs.length = 0; reviewUpdates.length = 0;
+    const beforePeerIndexing = indexingCalls;
+    await processReview("pr");
+    assert.equal(repo.indexStatus, "indexed");
+    assert.equal(indexingCalls, beforePeerIndexing);
+    assert.ok(summaries.some(body => body.includes("Review failed while preparing the repository")));
+    assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "Review failed while preparing the repository"; }));
+    assert.ok(events.some(event => event.type === "review-failed" && event.error === "Review failed while preparing the repository"));
+    assert.ok(events.some(event => event.status === "failed" && event.error === "Review failed while preparing the repository"));
+    assert.ok(JSON.stringify(checkOutputs).includes("Review failed while preparing the repository"));
+    assert.doesNotMatch(JSON.stringify({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }), /synthetic-secret|private\/path/);
+    peerAlreadyIndexed = false;
     repo.indexStatus = "indexed";
     preparationFetchFailure = "review_input";
     reviewUpdates.length = 0;

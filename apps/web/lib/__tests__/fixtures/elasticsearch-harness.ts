@@ -5,16 +5,15 @@ const entries = Array.from({ length: 600 }, (_, i) => ({ orgId: "org-a", repoId:
 entries[598].message = "synthetic-private-path synthetic-secret";
 Object.assign(entries[598], { extra: "synthetic-secret" });
 entries[599].message = "Processing local batch 1/2";
-Object.assign(entries[599], { id: "e759760f-5980-4b6e-962d-1330e6296812" });
 entries.push({ orgId: "org-b", repoId: "repo-a", timestamp: 1000, message: "other org", level: "error" });
 entries.push({ orgId: "org-a", repoId: "repo-b", timestamp: 1001, message: "other repo", level: "error" });
-const stored: Array<{ id?: string; message: string }> = [];
+const stored: Array<{ message: string }> = [];
 let failRead = false;
 let failWrite = false;
 let failDelete = false;
 mock.module("@elastic/elasticsearch", () => ({ Client: class {
   indices = { exists: async () => true };
-  async index({ body }: { body: { id?: string; message: string } }) { if (failWrite) throw new Error("synthetic-secret"); stored.push(body); }
+  async index({ body }: { body: { message: string } }) { if (failWrite) throw new Error("synthetic-secret"); assert.deepEqual(Object.keys(body).sort(), ["createdAt", "level", "message", "orgId", "repoId", "timestamp"]); stored.push(body); }
   async deleteByQuery() { if (failDelete) throw new Error("synthetic-secret"); }
   async search(query: { size: number; query: { bool: { filter: Array<{ term: Record<string, string> }> } }; sort: Array<{ timestamp: { order: string } }> }) {
     if (failRead) throw new Error("synthetic-secret");
@@ -34,12 +33,10 @@ assert.ok(logs.every(row => row.orgId === "org-a" && row.repoId === "repo-a"));
 assert.equal(logs.at(-2)?.message, "Indexing message withheld for privacy.");
 assert.doesNotMatch(JSON.stringify(logs.at(-2)), /synthetic-secret|synthetic-private-path/);
 assert.equal(logs.at(-1)?.message, "Processing local batch 1/2");
-assert.equal(logs.at(-1)?.id, "e759760f-5980-4b6e-962d-1330e6296812");
 await writeSyncLog({ orgId: "org-a", repoId: "repo-a", timestamp: 1, level: "error", message: "synthetic-private-path synthetic-secret" });
 await writeSyncLog({ orgId: "org-a", repoId: "repo-a", timestamp: 2, level: "info", message: "Processing local batch 1/2" });
 assert.equal(stored[0].message, "Indexing message withheld for privacy.");
 assert.equal(stored[1].message, "Processing local batch 1/2");
-assert.match(stored[0].id!, /^[0-9a-f-]{36}$/);
 const output: unknown[][] = [];
 const originalError = console.error;
 console.error = (...args: unknown[]) => { output.push(args); };

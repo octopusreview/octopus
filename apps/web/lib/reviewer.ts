@@ -1039,10 +1039,8 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         const indexChannel = `presence-org-${org.id}`;
         const emitIndexLog = (message: string, level: LogLevel = "info") => {
           const timestamp = Date.now();
-          const id = crypto.randomUUID();
           pubby.trigger(indexChannel, "index-log", {
             repoId: repo.id,
-            id,
             message: safeIndexLogMessage(message),
             level,
             timestamp,
@@ -1050,7 +1048,6 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           writeSyncLog({
             orgId: org.id,
             repoId: repo.id,
-            id,
             message,
             level,
             timestamp,
@@ -2609,7 +2606,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
     const errorMessage = failureStage === "indexing"
       ? err instanceof SupersededIndexError ? "Indexing attempt is no longer current"
         : err instanceof ReviewProcessingExpiredError ? "Review processing cancelled or expired before completion"
-        : "Repository indexing failed"
+        : "Review failed while preparing the repository"
       : err instanceof Error ? err.message : "Unknown error";
     console.error(`[reviewer] Review failed for PR #${pr.number}:`, failureStage === "indexing" ? errorMessage : err);
 

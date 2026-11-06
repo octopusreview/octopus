@@ -84,10 +84,8 @@ export async function POST(
   const channel = `presence-org-${repo.organizationId}`;
   const emitLog = (message: string, level: LogLevel = "info") => {
     const timestamp = Date.now();
-    const id = randomUUID();
     pubby.trigger(channel, "index-log", {
       repoId: repo.id,
-      id,
       message: safeIndexLogMessage(message),
       level,
       timestamp,
@@ -95,7 +93,6 @@ export async function POST(
     writeSyncLog({
       orgId: repo.organizationId,
       repoId: repo.id,
-      id,
       message,
       level,
       timestamp,

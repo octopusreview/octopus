@@ -16,14 +16,12 @@ import {
 } from "@tabler/icons-react";
 
 interface LogEntry {
-  id?: string;
   message: string;
   level: "info" | "success" | "error" | "warning";
   timestamp: number;
 }
 
 function logKey(log: LogEntry): string | null {
-  if (log.id) return log.id;
   return log.message === WITHHELD_INDEX_LOG ? null : JSON.stringify([log.timestamp, log.level, log.message]);
 }
 
@@ -155,9 +153,9 @@ export function IndexingLogs({
     const channel = pubby.subscribe(`presence-org-${orgId}`);
 
     const handleLog = (raw: unknown) => {
-      const data = raw as { repoId: string; id?: string; message: string; level: LogEntry["level"]; timestamp: number };
+      const data = raw as { repoId: string; message: string; level: LogEntry["level"]; timestamp: number };
       if (data.repoId !== repoId) return;
-      const log = { id: data.id, message: safeIndexLogMessage(data.message), level: data.level, timestamp: data.timestamp };
+      const log = { message: safeIndexLogMessage(data.message), level: data.level, timestamp: data.timestamp };
       setLogs((prev) => {
         const key = logKey(log);
         if (key !== null && prev.some((l) => logKey(l) === key)) return prev;
@@ -235,6 +233,10 @@ export function IndexingLogs({
             <IconLoader2 className="size-3.5 animate-spin" />
             Waiting for logs...
           </div>
+        )}
+
+        {logs.some((log) => log.message === WITHHELD_INDEX_LOG) && (
+          <p className="mb-2 text-zinc-500">Withheld messages may appear more than once when live and saved logs overlap.</p>
         )}
 
         {displayLogs.map((log, i) => {

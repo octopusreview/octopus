@@ -285,7 +285,7 @@ export function IndexingLogs({
         scheduleRefresh(currentAttempt.current === undefined ? retryDelay.current || 1000 : refreshDelay(data.indexAttemptId ?? null));
         return;
       }
-      setLogs((prev) => [...prev, data]);
+      setLogs((prev) => [...prev, data].sort((a, b) => a.timestamp - b.timestamp));
     };
 
     const handleStatus = (raw: unknown) => {

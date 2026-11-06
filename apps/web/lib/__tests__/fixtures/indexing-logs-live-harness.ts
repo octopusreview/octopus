@@ -257,6 +257,23 @@ try {
   await reply(requests.length - 1, { logs: [], attempt: "owner-c" });
   assert.match(text(tree), /Processed 9003 files, skipped 0/);
   assert.doesNotMatch(text(tree), warning);
+  const later = { repoId, indexAttemptId: "owner-c", message: "Processed 9020 files, skipped 0", level: "info", timestamp: 20 };
+  const earlier = { ...later, message: "Processed 9010 files, skipped 0", timestamp: 10 };
+  emit("index-log", later);
+  emit("index-log", earlier);
+  emit("index-log", earlier);
+  await flush();
+  const assertOrdered = () => {
+    const displayed = text(tree);
+    assert.ok(displayed.indexOf(earlier.message) < displayed.indexOf(later.message));
+    assert.equal(displayed.split(earlier.message).length - 1, 2);
+    assert.equal(displayed.split(later.message).length - 1, 1);
+  };
+  assertOrdered();
+  emit("index-status", { repoId });
+  await flush();
+  await reply(requests.length - 1, { logs: [], attempt: "owner-c" });
+  assertOrdered();
 } finally {
   for (const hook of hooks) hook?.cleanup?.();
 }

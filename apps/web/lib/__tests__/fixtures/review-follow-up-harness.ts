@@ -10,6 +10,7 @@ mock.module("@sentry/nextjs", () => ({ captureEvent: (event: typeof sentryEvents
 const directCommentFailure = process.argv.includes("--direct-forgejo-comment-failure");
 const preserveAutoReview = process.argv.includes("--preserve-auto-review");
 const firstCompletion = process.argv.includes("--first-review-completion");
+let preparationFetchFailure: "review_input" | "repository_tree" | null = null;
 let indexPreparation: "normal" | "fail" | "replace" | "replace-success" = "normal";
 let indexingCalls = 0;
 let indexTransactions = 0;
@@ -220,11 +221,11 @@ mock.module("@/lib/review-attempt", () => ({
 }));
 mock.module("@/lib/github", () => ({
   LargePrError: class LargePrError extends Error {},
-  getPullRequestReviewInput: async () => ({ rawDiff: diff, input: {
+  getPullRequestReviewInput: async () => { if (preparationFetchFailure === "review_input") throw new Error("synthetic private input"); return { rawDiff: diff, input: {
     provider: "github", headSha: pr.headSha, baseSha: "b".repeat(40), inventoryComplete: true,
     expectedFiles: 1, limitations: [],
     files: [{ path: "src/check.ts", change: "modified", patch: `@@ -1 +1 @@\n-return value;\n+return value.name;${adaptiveStage ? " ".repeat(400000) : ""}\n`, additions: 1, deletions: 1 }],
-  } }),
+  } }; },
   getPullRequestDetails: async () => ({ body: "Handle missing values" }),
   createPullRequestComment: async () => { directComments++; return 123; },
   updatePullRequestComment: async (_installation: number, _owner: string, _repo: string, _id: number, body: string) => { summaries.push(body); },
@@ -239,7 +240,7 @@ mock.module("@/lib/github", () => ({
     if (window && adaptiveStage === "check-send") await fetch("https://synthetic.invalid/check", { signal: window.signal });
     checkConclusions.push(conclusion);
   },
-  getRepositoryTree: async () => ["src/check.ts"],
+  getRepositoryTree: async () => { if (preparationFetchFailure === "repository_tree") throw new Error("synthetic private tree"); return ["src/check.ts"]; },
   getFileContent: async () => "return value.name;",
   listReviewComments: async () => [],
   listPullRequestReviewComments: async () => [{ id: 5, user: "fixture[bot]", path: "src/check.ts", line: 1, body: "🟠 Previous unrelated partial-review issue", inReplyToId: null }],
@@ -340,6 +341,29 @@ ${JSON.stringify([finding])}
 const { prepareReviewInput } = await import("@/lib/review-coverage");
 const { canRestrictReviewToFollowUp } = await import("@/lib/review-follow-up");
 const { processReview } = await import("@/lib/reviewer");
+if (process.argv.includes("--preparation-diagnostic")) {
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    for (const operation of ["review_input", "repository_tree"] as const) {
+      preparationFetchFailure = operation;
+      pr.status = "pending";
+      const before = sentryEvents.length;
+      await processReview("pr");
+      assert.equal(sentryEvents.length, before + 1);
+      assert.equal(sentryEvents.at(-1)?.tags?.failure_stage, "preparation");
+      assert.equal(sentryEvents.at(-1)?.tags?.preparation_operation, operation);
+      assert.ok(!JSON.stringify(sentryEvents.at(-1)).includes("synthetic private"));
+    }
+    preparationFetchFailure = null;
+    pr.status = "pending";
+    const before = sentryEvents.length;
+    await processReview("pr");
+    assert.equal(sentryEvents.length, before, "successful preparation emits no incident");
+  } finally { console.error = originalError; }
+  console.log("PASS preparation fetch diagnostics");
+  process.exit(0);
+}
 if (firstCompletion) {
   const errors = console.error;
   console.error = () => {};

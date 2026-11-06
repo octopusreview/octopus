@@ -42,7 +42,10 @@ export function scrubEvent(event: ErrorEvent): ErrorEvent {
     delete event.transaction;
     event.contexts = { background_failure: event.contexts?.background_failure };
     event.tags = Object.fromEntries(Object.entries(event.tags).filter(([key]) =>
-      ["error_boundary", "failure_stage", "failure_owner", "failure_code", "provider", "outcome", "synthetic"].includes(key)));
+      ["error_boundary", "failure_stage", "failure_owner", "failure_code", "provider", "outcome", "synthetic", "preparation_operation"].includes(key)));
+    if (event.tags.preparation_operation !== "review_input" && event.tags.preparation_operation !== "repository_tree") {
+      delete event.tags.preparation_operation;
+    }
   }
   if (event.request) {
     delete (event.request as { cookies?: unknown }).cookies;

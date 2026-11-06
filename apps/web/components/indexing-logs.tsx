@@ -129,6 +129,7 @@ export function IndexingLogs({
   const [boundary, setBoundary] = useState<ReturnType<typeof pageBoundary> | null>(null);
   const router = useRouter();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const followLogs = useRef(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [logsMayBeMissing, setLogsMayBeMissing] = useState(false);
   const [truncated, setTruncated] = useState(false);
@@ -185,6 +186,7 @@ export function IndexingLogs({
     setFetchError(null);
     const scope = JSON.stringify([orgId, repoId]);
     if (scope !== logScope.current) {
+      followLogs.current = true;
       logScope.current = scope;
       persistedAttempt.current = undefined;
       previousStatus.current = initialStatus;
@@ -228,7 +230,10 @@ export function IndexingLogs({
         const validIdentity = identity === null || (typeof identity === "string" && identity.length > 0);
         const replaced = validIdentity && persistedAttempt.current !== undefined && identity !== persistedAttempt.current;
         if (validIdentity) persistedAttempt.current = identity;
-        if (replaced) setBoundary(null);
+        if (replaced) {
+          followLogs.current = true;
+          setBoundary(null);
+        }
         setLegacyLogsMayBeMixed(!attempt || hasUnattributedLive.current);
         setOwnerUnconfirmed(false);
         setTruncated(data.truncated === true);
@@ -346,7 +351,7 @@ export function IndexingLogs({
   }, [repoId, orgId, router]);
 
   useEffect(() => {
-    if (scrollRef.current && boundary === null) {
+    if (scrollRef.current && boundary === null && followLogs.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [logs, boundary]);
@@ -472,12 +477,23 @@ export function IndexingLogs({
             <div className="flex gap-3">
               {changedWindow && <button type="button" className="underline underline-offset-2" onClick={() => setBoundary({ ...boundary!, window: currentWindow })}>Refresh this page</button>}
               {!changedWindow && start > 0 && <button type="button" className="underline underline-offset-2" onClick={() => setBoundary(pageBoundary(logs, start))}>Show older messages</button>}
-              {!changedWindow && end < logs.length && <button type="button" className="underline underline-offset-2" onClick={() => setBoundary(end + LOG_PAGE_SIZE >= logs.length ? null : pageBoundary(logs, end + LOG_PAGE_SIZE))}>Show newer messages</button>}
+              {!changedWindow && end < logs.length && <button type="button" className="underline underline-offset-2" onClick={() => {
+                if (end + LOG_PAGE_SIZE >= logs.length) followLogs.current = true;
+                setBoundary(end + LOG_PAGE_SIZE >= logs.length ? null : pageBoundary(logs, end + LOG_PAGE_SIZE));
+              }}>Show newer messages</button>}
             </div>
           </div>
         )}
-        <div ref={scrollRef} className="max-h-72 overflow-y-auto">
-        <div role="list" aria-label="Indexing messages">
+        <div
+          ref={scrollRef}
+          onScroll={(event) => {
+            const { scrollTop, scrollHeight, clientHeight } = event.currentTarget;
+            followLogs.current = scrollHeight - scrollTop - clientHeight < 30;
+          }}
+          className="max-h-72 overflow-y-auto"
+          role="list"
+          aria-label="Indexing messages"
+        >
         {displayLogs.map((log, i) => {
           const progress = parseProgress(log.message);
           return (
@@ -504,7 +520,6 @@ export function IndexingLogs({
             </div>
           );
         })}
-        </div>
         </div>
 
         {initialStatus === "failed" && (

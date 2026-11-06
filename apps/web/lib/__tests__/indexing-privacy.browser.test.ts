@@ -36,10 +36,9 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("withholds private live indexing 
       }, owner);
       await page.getByText("Processed 500 files, skipped 0", { exact: true }).waitFor();
       await page.getByText(/Showing 301–500 of 500 messages/).waitFor();
-      await page.waitForFunction(() => (document.querySelector('[aria-label="Indexing messages"]')?.parentElement?.scrollTop ?? 0) > 0);
+      await page.waitForFunction(() => (document.querySelector('[aria-label="Indexing messages"]')?.scrollTop ?? 0) > 0);
       expect(await page.evaluate(() => {
-        const messages = document.querySelector('[aria-label="Indexing messages"]')!;
-        const scroller = messages.parentElement!;
+        const scroller = document.querySelector('[aria-label="Indexing messages"]')!;
         const warning = Array.from(document.querySelectorAll('[role="status"]')).find((node) => node.textContent?.includes("Saved indexing messages may be incomplete"))!;
         const older = Array.from(document.querySelectorAll('button')).find((node) => node.textContent === "Show older messages")!;
         return scroller.scrollHeight > scroller.clientHeight && scroller.scrollTop > 0

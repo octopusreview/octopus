@@ -7,6 +7,7 @@ let delivered: Record<string, unknown> | undefined;
 let claims = 0;
 const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
   if (new URL(request.url).pathname === "/api/tags") return Response.json({ models: [] });
+  if (scenario === "error-complete") return new Response("synthetic failure", { status: 500 });
   if (complete) return Response.json({ choices: [{ message: { content: "fixture result" } }], usage: { prompt_tokens: 3, completion_tokens: 2 } });
   return new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('{"partial":')); } }), {
     status: scenario === "error-body" ? 500 : 200,
@@ -37,6 +38,8 @@ try {
   if (complete) {
     assert.equal(delivered.text, "fixture result");
     assert.deepEqual(delivered.usage, { inputTokens: 3, outputTokens: 2 });
+  } else if (scenario === "error-complete") {
+    assert.equal(delivered.error, "Ollama returned 500: synthetic failure");
   } else {
     assert.match(String(delivered.error), /timed out/i);
   }

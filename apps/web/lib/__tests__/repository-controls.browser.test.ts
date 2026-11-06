@@ -182,7 +182,10 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
       f.emit('index-status',{repoId:f.repo.id});
     }`);
     await page.getByText("Processed 500051 files, skipped 0", { exact: true }).waitFor();
-    expect(await page.getByText(/^Processed (?:20\d{3}|21000) files, skipped 0$/, { exact: true }).count()).toBe(1001);
+    expect(await page.getByText(/^Processed (?:20\d{3}|21000) files, skipped 0$/, { exact: true }).count()).toBe(199);
+    for (let i = 0; i < 5; i++) await page.getByRole("button", { name: "Show older messages" }).click();
+    await page.getByText("Processed 20000 files, skipped 0", { exact: true }).waitFor();
+    for (let i = 0; i < 5; i++) await page.getByRole("button", { name: "Show newer messages" }).click();
     expect(await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).count()).toBe(0);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logAttempt='later-owner';
@@ -190,7 +193,7 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
       f.emit('index-status',{repoId:f.repo.id});
     }`);
     await page.getByText("Processed 500052 files, skipped 0", { exact: true }).waitFor();
-    expect(await page.getByText(/^Processed (?:20\d{3}|21000) files, skipped 0$/, { exact: true }).count()).toBe(1001);
+    expect(await page.getByText(/^Processed (?:20\d{3}|21000) files, skipped 0$/, { exact: true }).count()).toBe(199);
     expect(await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).count()).toBe(0);
     await page.goto(new URL("?null-api=1", server.url).href);
     await page.getByText("Initial indexing log", { exact: true }).waitFor();
@@ -483,8 +486,10 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
       for(let i=0;i<550;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'overflow-attempt',message:'Processed '+(i+60000)+' files, skipped 0',level:'warning',timestamp:1000+i});
       f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'obsolete-attempt',message:'Processed 500011 files, skipped 0',level:'warning',timestamp:2000});
     }`);
+    await page.getByText("Processed 60549 files, skipped 0", { exact: true }).waitFor();
+    for (let i = 0; i < 2; i++) await page.getByRole("button", { name: "Show older messages" }).click();
     await page.getByText("Processed 60000 files, skipped 0", { exact: true }).waitFor();
-    expect(await page.getByText("Processed 60549 files, skipped 0", { exact: true }).count()).toBe(1);
+    for (let i = 0; i < 2; i++) await page.getByRole("button", { name: "Show newer messages" }).click();
     expect(await page.getByText("Processed 500011 files, skipped 0", { exact: true }).count()).toBe(0);
     const beforePressureFetch = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate(`{

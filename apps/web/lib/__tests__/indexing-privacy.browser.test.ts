@@ -111,6 +111,51 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("withholds private live indexing 
     await page.getByText("Processed 12 files, skipped 0", { exact: true }).waitFor();
     expect(await page.getByText("Indexing message withheld for privacy.", { exact: true }).count()).toBe(4);
     expect(await page.getByText("Processed 13 files, skipped 0", { exact: true }).count()).toBe(0);
+    await page.goto(server.url.href);
+    await page.getByText("Indexing Logs", { exact: true }).waitFor();
+    await page.evaluate(`{
+      const f=window.privacyFixture; f.attempt='bulk-owner';
+      f.logs=[{indexAttemptId:'bulk-owner',message:'Local indexing started',level:'info',timestamp:0}];
+      f.emit('index-status',{repoId:'repo'});
+    }`);
+    await page.getByText("Local indexing started", { exact: true }).waitFor();
+    await page.evaluate(`{
+      const f=window.privacyFixture;
+      for(let i=2100;i>=1;i--) f.emit('index-log',{repoId:'repo',indexAttemptId:'bulk-owner',message:'Processed '+i+' files, skipped 0',level:'info',timestamp:i});
+      for(let i=0;i<2;i++) f.emit('index-log',{repoId:'repo',indexAttemptId:'bulk-owner',message:'Error /private/bulk synthetic-token',level:'error',timestamp:2099.5});
+    }`);
+    const rows = page.getByRole("list", { name: "Indexing messages" }).getByRole("listitem");
+    await page.getByText("Processed 2100 files, skipped 0", { exact: true }).waitFor();
+    expect(await rows.count()).toBe(200);
+    expect(await page.getByText("Indexing message withheld for privacy.", { exact: true }).count()).toBe(2);
+    expect(await page.getByText(/synthetic-token|\/private\/bulk/).count()).toBe(0);
+    expect(await rows.filter({ hasText: "Processed 2100 files, skipped 0" }).locator("svg.animate-spin").count()).toBe(1);
+    const pages: string[][] = [];
+    while (true) {
+      const contents = await rows.allTextContents();
+      expect(contents.length).toBeLessThanOrEqual(200);
+      pages.unshift(contents);
+      const older = page.getByRole("button", { name: "Show older messages" });
+      if (!await older.count()) break;
+      await older.click();
+    }
+    const messages = pages.flat();
+    expect(messages.filter((message) => message === "Indexing message withheld for privacy.").length).toBe(2);
+    const numbers = messages.flatMap((message) => {
+      const match = /^Processed (\d+) files, skipped 0$/.exec(message);
+      return match ? [Number(match[1])] : [];
+    });
+    expect(numbers).toEqual(Array.from({ length: 2100 }, (_, i) => i + 1));
+    expect(await page.getByText("Processed 1 files, skipped 0", { exact: true }).count()).toBe(1);
+    expect(await rows.locator("svg.animate-spin").count()).toBe(0);
+    await page.evaluate(`{
+      const f=window.privacyFixture; f.logs=[{indexAttemptId:'bulk-owner',message:'Local indexing complete',level:'success',timestamp:1}];
+      f.setScope('new-repo');
+    }`);
+    await page.getByText("Local indexing complete", { exact: true }).waitFor();
+    expect(await rows.count()).toBe(1);
+    expect(await page.getByRole("button", { name: "Show older messages" }).count()).toBe(0);
+    expect(await page.getByRole("button", { name: "Show newer messages" }).count()).toBe(0);
     expect(await page.getByText(/synthetic-token|\/private\/outage/).count()).toBe(0);
     await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
     await page.evaluate(() => { (window as unknown as { privacyFixture: { fail: boolean } }).privacyFixture.fail = false; });
@@ -122,4 +167,4 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("withholds private live indexing 
     await browser?.close();
     server.stop(true);
   }
-}, 30000);
+}, 120000);

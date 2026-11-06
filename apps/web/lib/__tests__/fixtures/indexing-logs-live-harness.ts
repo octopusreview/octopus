@@ -221,16 +221,36 @@ try {
     emit("index-log", { repoId: "repo-a", message: `Processed ${30000 + i} files, skipped 0`, level: "warning", timestamp: 30000 + i });
   }
   await flush();
-  const assertUntaggedBatch = () => {
-    const displayed = text(tree);
-    for (let i = 0; i < 1001; i++) assert.equal(displayed.split(`Processed ${30000 + i} files, skipped 0`).length - 1, 1);
-    assert.doesNotMatch(displayed, /Some indexing messages may be missing while logs were loading/);
+  const findButton = (node: unknown, label: string): { props: { onClick: () => void } } | undefined => {
+    if (!node || typeof node !== "object") return undefined;
+    if (Array.isArray(node)) return node.map((child) => findButton(child, label)).find(Boolean);
+    const element = node as { type?: unknown; props?: { children?: unknown; onClick?: () => void } };
+    if (element.type === "button" && text(element.props?.children) === label) return element as { props: { onClick: () => void } };
+    return findButton(element.props?.children, label);
   };
-  assertUntaggedBatch();
+  const assertUntaggedBatch = async () => {
+    const found: string[] = [];
+    while (true) {
+      const displayed = text(tree);
+      found.push(...(displayed.match(/Processed (?:30\d{3}|31000) files, skipped 0/g) ?? []));
+      assert.doesNotMatch(displayed, /Some indexing messages may be missing while logs were loading/);
+      const older = findButton(tree, "Show older messages");
+      if (!older) break;
+      older.props.onClick();
+      await flush();
+    }
+    assert.equal(found.length, 1001);
+    assert.equal(new Set(found).size, 1001);
+    while (findButton(tree, "Show newer messages")) {
+      findButton(tree, "Show newer messages")!.props.onClick();
+      await flush();
+    }
+  };
+  await assertUntaggedBatch();
   await reply(requests.length - 1, { logs: [], attempt: "after-overflow" });
-  assertUntaggedBatch();
+  await assertUntaggedBatch();
   await refresh("later-owner");
-  assertUntaggedBatch();
+  await assertUntaggedBatch();
   repoId = "repo-b";
   render();
   await reply(requests.length - 1, { logs: [{ indexAttemptId: "owner-a", message: "Processed 9001 files, skipped 0", level: "info", timestamp: 1 }], attempt: "owner-a" });

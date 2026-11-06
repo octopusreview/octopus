@@ -23,6 +23,19 @@ interface LogEntry {
   live?: boolean;
 }
 
+const LOG_PAGE_SIZE = 200;
+
+function insertLog(logs: LogEntry[], log: LogEntry): LogEntry[] {
+  let low = 0;
+  let high = logs.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (logs[middle].timestamp <= log.timestamp) low = middle + 1;
+    else high = middle;
+  }
+  return [...logs.slice(0, low), log, ...logs.slice(low)];
+}
+
 function logKey(log: LogEntry): string {
   return JSON.stringify([log.indexAttemptId ?? null, log.timestamp, log.level, log.message]);
 }
@@ -81,6 +94,7 @@ export function IndexingLogs({
   provider: string;
 }) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logPage, setLogPage] = useState(0);
   const router = useRouter();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -157,6 +171,7 @@ export function IndexingLogs({
       refreshTimer.current = null;
       refreshingAttempt.current = false;
       setLogs([]);
+      setLogPage(0);
     }
     if (refreshTimer.current) clearTimeout(refreshTimer.current);
     refreshTimer.current = null;
@@ -261,7 +276,7 @@ export function IndexingLogs({
       if (!data.indexAttemptId) {
         hasUnattributedLive.current = true;
         setLegacyLogsMayBeMixed(true);
-        setLogs((prev) => [...prev, data].sort((a, b) => a.timestamp - b.timestamp));
+        setLogs((prev) => insertLog(prev, data));
         if (currentAttempt.current === undefined) {
           unverifiedUnattributedLive.current = true;
           scheduleRefresh(retryDelay.current || 1000);
@@ -285,7 +300,7 @@ export function IndexingLogs({
         scheduleRefresh(currentAttempt.current === undefined ? retryDelay.current || 1000 : refreshDelay(data.indexAttemptId ?? null));
         return;
       }
-      setLogs((prev) => [...prev, data].sort((a, b) => a.timestamp - b.timestamp));
+      setLogs((prev) => insertLog(prev, data));
     };
 
     const handleStatus = (raw: unknown) => {
@@ -311,13 +326,16 @@ export function IndexingLogs({
   }, [repoId, orgId, router]);
 
   useEffect(() => {
-    if (scrollRef.current) {
+    if (scrollRef.current && logPage === 0) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [logs]);
+  }, [logs, logPage]);
 
   const isComplete = initialStatus !== "indexing";
-  const displayLogs = logs;
+  const page = Math.min(logPage, Math.max(0, Math.ceil(logs.length / LOG_PAGE_SIZE) - 1));
+  const end = Math.max(0, logs.length - page * LOG_PAGE_SIZE);
+  const start = Math.max(0, end - LOG_PAGE_SIZE);
+  const displayLogs = logs.slice(start, end);
   const seenTimes = new Set(logs.filter((log) => !log.live).map((log) => JSON.stringify([log.timestamp, log.level])));
   const mayContainDuplicates = logs.some((log) => {
     if (!log.live) return false;
@@ -331,8 +349,8 @@ export function IndexingLogs({
   // Find the index of the last info log to determine which one should spin
   let lastInfoIndex = -1;
   if (!isComplete) {
-    for (let i = displayLogs.length - 1; i >= 0; i--) {
-      if (displayLogs[i].level === "info") {
+    for (let i = logs.length - 1; i >= 0; i--) {
+      if (logs[i].level === "info") {
         lastInfoIndex = i;
         break;
       }
@@ -407,12 +425,22 @@ export function IndexingLogs({
           <p className="mb-2 text-zinc-500">Withheld messages may appear more than once when live and saved logs overlap.</p>
         )}
 
+        {(start > 0 || end < logs.length) && (
+          <div className="mb-2 text-zinc-400">
+            Showing {start + 1}–{end} of {logs.length} messages. {start} older and {logs.length - end} newer messages are not shown.
+            <div className="flex gap-3">
+              {start > 0 && <button type="button" className="underline underline-offset-2" onClick={() => setLogPage(page + 1)}>Show older messages</button>}
+              {end < logs.length && <button type="button" className="underline underline-offset-2" onClick={() => setLogPage(page - 1)}>Show newer messages</button>}
+            </div>
+          </div>
+        )}
+        <div role="list" aria-label="Indexing messages">
         {displayLogs.map((log, i) => {
           const progress = parseProgress(log.message);
           return (
-            <div key={i} className="flex items-start gap-2 py-0.5">
+            <div key={start + i} role="listitem" className="flex items-start gap-2 py-0.5">
               <span className="mt-0.5">
-                <LogIcon level={log.level} isActive={i === lastInfoIndex} />
+                <LogIcon level={log.level} isActive={start + i === lastInfoIndex} />
               </span>
               {progress ? (
                 <div className="flex flex-1 items-center gap-2">
@@ -433,6 +461,7 @@ export function IndexingLogs({
             </div>
           );
         })}
+        </div>
 
         {initialStatus === "failed" && (
           <div className="mt-3 border-t border-zinc-800 pt-3">

@@ -5,6 +5,8 @@ mock.module("server-only", () => ({}));
 
 // Synthetic keys only: a short key that the settings page now fully masks, stored
 // encrypted and as legacy plaintext. The provider must still receive the plaintext.
+const originalDataKey = process.env.OCTOPUS_DATA_KEY;
+const originalBaseUrl = process.env.OPENAI_BASE_URL;
 process.env.OCTOPUS_DATA_KEY = "ab".repeat(32);
 const SHORT_KEY = "sk-123456";
 let storedKey: string | null = null;
@@ -31,7 +33,13 @@ const server = Bun.serve({
   },
 });
 process.env.OPENAI_BASE_URL = `http://127.0.0.1:${server.port}/v1`;
-afterAll(() => server.stop(true));
+afterAll(() => {
+  server.stop(true);
+  if (originalDataKey === undefined) delete process.env.OCTOPUS_DATA_KEY;
+  else process.env.OCTOPUS_DATA_KEY = originalDataKey;
+  if (originalBaseUrl === undefined) delete process.env.OPENAI_BASE_URL;
+  else process.env.OPENAI_BASE_URL = originalBaseUrl;
+});
 
 const params = { model: "gpt-4o", maxTokens: 16, messages: [{ role: "user" as const, content: "hi" }] };
 

@@ -147,6 +147,8 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
     expect(await page.getByText("Other repository event", { exact: true }).count()).toBe(0);
     expect(await page.getByText("Stale before lookup", { exact: true }).count()).toBe(0);
+    // The stale tagged event can require one follow-up ownership lookup.
+    await page.waitForFunction("window.repositoryFixture.logFetches >= 2");
     const initialFetches = await page.evaluate("window.repositoryFixture.logFetches");
     await page.waitForTimeout(1200);
     expect(await page.evaluate("window.repositoryFixture.logFetches")).toBe(initialFetches);

@@ -63,7 +63,8 @@ globalThis.fetch = ((_url: unknown, options: { signal: AbortSignal }) => new Pro
   options.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
 })) as typeof fetch;
 const { IndexingLogs } = await import("@/components/indexing-logs");
-const component = () => IndexingLogs({ repoId: "repo-a", orgId: "org-a", initialStatus: "indexing", provider: "github" });
+let repoId = "repo-a";
+const component = () => IndexingLogs({ repoId, orgId: "org-a", initialStatus: "indexing", provider: "github" });
 const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 const text = (node: unknown): string => node == null || typeof node === "boolean" ? "" : Array.isArray(node) ? node.map(text).join(" ") : typeof node === "object" ? text((node as { props?: { children?: unknown } }).props?.children) : String(node);
 const emit = (name: string, data: unknown) => { assert.ok(listeners.has(name)); listeners.get(name)!(data); };
@@ -230,6 +231,32 @@ try {
   assertUntaggedBatch();
   await refresh("later-owner");
   assertUntaggedBatch();
+  repoId = "repo-b";
+  render();
+  await reply(requests.length - 1, { logs: [{ indexAttemptId: "owner-a", message: "Processed 9001 files, skipped 0", level: "info", timestamp: 1 }], attempt: "owner-a" });
+  const warning = /may belong to an earlier attempt/;
+  assert.doesNotMatch(text(tree), warning);
+  emit("index-status", { repoId });
+  await flush();
+  assert.match(text(tree), /Processed 9001 files, skipped 0/);
+  assert.match(text(tree), warning);
+  requests[requests.length - 1].reject(new Error("unavailable"));
+  await flush();
+  assert.match(text(tree), warning);
+  emit("index-status", { repoId });
+  await flush();
+  await reply(requests.length - 1, { logs: [{ indexAttemptId: "owner-b", message: "Processed 9002 files, skipped 0", level: "info", timestamp: 2 }], attempt: "owner-b" });
+  assert.doesNotMatch(text(tree), warning);
+  assert.doesNotMatch(text(tree), /Processed 9001 files, skipped 0/);
+  emit("index-log", { repoId, indexAttemptId: "owner-c", message: "Processed 9003 files, skipped 0", level: "info", timestamp: 3 });
+  await flush();
+  assert.match(text(tree), warning);
+  assert.doesNotMatch(text(tree), /Processed 9003 files, skipped 0/);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  await flush();
+  await reply(requests.length - 1, { logs: [], attempt: "owner-c" });
+  assert.match(text(tree), /Processed 9003 files, skipped 0/);
+  assert.doesNotMatch(text(tree), warning);
 } finally {
   for (const hook of hooks) hook?.cleanup?.();
 }

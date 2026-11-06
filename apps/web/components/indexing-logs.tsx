@@ -87,6 +87,7 @@ export function IndexingLogs({
   const [logsMayBeMissing, setLogsMayBeMissing] = useState(false);
   const [truncated, setTruncated] = useState(false);
   const [legacyLogsMayBeMixed, setLegacyLogsMayBeMixed] = useState(false);
+  const [ownerUnconfirmed, setOwnerUnconfirmed] = useState(true);
   const [reload, setReload] = useState(0);
   const currentAttempt = useRef<string | null | undefined>(undefined);
   const persistedAttempt = useRef<string | null | undefined>(undefined);
@@ -105,6 +106,7 @@ export function IndexingLogs({
   const previousStatus = useRef(initialStatus);
 
   function scheduleRefresh(delay: number) {
+    setOwnerUnconfirmed(true);
     // Once attribution overflows, avoid repeated owner lookups from a stale event stream.
     if (unattributedMissingLogs.current) delay = Math.max(delay, 5000);
     const at = Date.now() + delay;
@@ -159,6 +161,7 @@ export function IndexingLogs({
     if (refreshTimer.current) clearTimeout(refreshTimer.current);
     refreshTimer.current = null;
     currentAttempt.current = undefined;
+    setOwnerUnconfirmed(true);
     refreshingAttempt.current = true;
     const checked = new Set(pendingLogs.current);
     const checkedIncomplete = new Map(incompleteAttempts.current);
@@ -179,6 +182,7 @@ export function IndexingLogs({
         const replaced = validIdentity && persistedAttempt.current !== undefined && identity !== persistedAttempt.current;
         if (validIdentity) persistedAttempt.current = identity;
         setLegacyLogsMayBeMixed(!attempt || hasUnattributedLive.current);
+        setOwnerUnconfirmed(false);
         setTruncated(data.truncated === true);
         for (const [id, marker] of checkedIncomplete) {
           if (id !== null && id !== attempt && incompleteAttempts.current.get(id) === marker) incompleteAttempts.current.delete(id);
@@ -288,6 +292,7 @@ export function IndexingLogs({
       const data = raw as { repoId: string };
       if (data.repoId !== repoId) return;
       router.refresh();
+      setOwnerUnconfirmed(true);
       if (refreshTimer.current) {
         clearTimeout(refreshTimer.current);
         refreshTimer.current = null;
@@ -363,6 +368,11 @@ export function IndexingLogs({
         {legacyLogsMayBeMixed && (
           <div role="alert" className="mb-3 text-amber-300">
             Indexing messages may include multiple attempts or be missing.
+          </div>
+        )}
+        {ownerUnconfirmed && logs.length > 0 && (
+          <div role="alert" className="mb-3 text-amber-300">
+            Indexing messages may belong to an earlier attempt while ownership is being checked.
           </div>
         )}
         {mayContainDuplicates && (

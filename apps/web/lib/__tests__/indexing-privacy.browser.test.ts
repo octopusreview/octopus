@@ -25,6 +25,59 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("withholds private live indexing 
     const page = await browser.newPage();
     await page.goto(server.url.href);
     await page.getByText("Indexing Logs", { exact: true }).waitFor();
+    await page.evaluate(`{
+      const f = window.privacyFixture; f.attempt = 'owner-a';
+      f.logs = [0, 1].map(() => ({indexAttemptId:'owner-a',message:'Processed 21 files, skipped 0',level:'info',timestamp:1}));
+      f.emit('index-status', {repoId:'repo'});
+    }`);
+    await page.waitForFunction("document.body.textContent.split('Processed 21 files, skipped 0').length === 3");
+    const ownershipWarning = page.getByRole("alert").filter({ hasText: "may belong to an earlier attempt" });
+    expect(await ownershipWarning.count()).toBe(0);
+    await page.evaluate(`{
+      const f = window.privacyFixture; f.attempt = 'owner-b'; f.fail = true; f.delay = 250;
+      f.logs = [{indexAttemptId:'owner-b',message:'Processed 22 files, skipped 0',level:'info',timestamp:2}];
+      f.emit('index-status', {repoId:'repo'});
+      f.emit('index-log', {repoId:'repo',indexAttemptId:'owner-a',message:'Error /private/status synthetic-secret',level:'error',timestamp:3});
+    }`);
+    await ownershipWarning.waitFor();
+    expect(await page.getByText("Processed 21 files, skipped 0", { exact: true }).count()).toBe(2);
+    await page.getByRole("alert").filter({ hasText: "Could not load indexing logs" }).waitFor();
+    expect(await ownershipWarning.count()).toBe(1);
+    expect(await page.getByText(/synthetic-secret|\/private\/status/).count()).toBe(0);
+    await page.evaluate("window.privacyFixture.fail=false; window.privacyFixture.delay=0");
+    await page.getByRole("button", { name: "Retry loading logs" }).click();
+    await page.getByText("Processed 22 files, skipped 0", { exact: true }).waitFor();
+    expect(await page.getByText("Processed 21 files, skipped 0", { exact: true }).count()).toBe(0);
+    expect(await ownershipWarning.count()).toBe(0);
+    expect(await page.getByText("Indexing message withheld for privacy.", { exact: true }).count()).toBe(0);
+    await page.evaluate(`{
+      const f=window.privacyFixture; f.attempt='owner-c'; f.delay=250; f.logs=[];
+      f.emit('index-log',{repoId:'repo',indexAttemptId:'owner-c',message:'Processed 23 files, skipped 0',level:'info',timestamp:4});
+    }`);
+    await ownershipWarning.waitFor();
+    expect(await page.getByText("Processed 22 files, skipped 0", { exact: true }).count()).toBe(1);
+    await page.getByText("Processed 23 files, skipped 0", { exact: true }).waitFor();
+    expect(await ownershipWarning.count()).toBe(0);
+    expect(await page.getByText("Processed 22 files, skipped 0", { exact: true }).count()).toBe(0);
+    await page.evaluate(`{
+      const f=window.privacyFixture; f.delay=0;
+      f.emit('index-log',{repoId:'repo',message:'Error /private/live synthetic-secret',level:'error',timestamp:5});
+      f.emit('index-log',{repoId:'repo',message:'Error /private/live synthetic-secret',level:'error',timestamp:5});
+      f.emit('index-status',{repoId:'repo'});
+    }`);
+    await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
+    await page.waitForFunction("document.body.textContent.split('Indexing message withheld for privacy.').length === 3");
+    expect(await page.getByText(/synthetic-secret|\/private\/live/).count()).toBe(0);
+    await page.evaluate(`{
+      const f=window.privacyFixture; f.logs=[{indexAttemptId:'owner-c',message:'Processed 24 files, skipped 0',level:'info',timestamp:6}];
+      f.setScope('other-repo');
+    }`);
+    await page.getByText("Processed 24 files, skipped 0", { exact: true }).waitFor();
+    expect(await page.getByText("Indexing message withheld for privacy.", { exact: true }).count()).toBe(0);
+    expect(await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).count()).toBe(0);
+    expect(await ownershipWarning.count()).toBe(0);
+    await page.goto(server.url.href);
+    await page.getByText("Indexing Logs", { exact: true }).waitFor();
     await page.evaluate(() => {
       const f = (window as unknown as { privacyFixture: { emit: (name: string, data: unknown) => void } }).privacyFixture;
       for (let i = 0; i < 2; i++) f.emit("index-log", { repoId: "repo", message: "Error at /private/secret: synthetic-token", level: "error", timestamp: 42 });

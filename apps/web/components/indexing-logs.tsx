@@ -40,6 +40,12 @@ function logKey(log: LogEntry): string {
   return JSON.stringify([log.indexAttemptId ?? null, log.timestamp, log.level, log.message]);
 }
 
+function pageBoundary(logs: LogEntry[], index: number) {
+  const log = logs[index];
+  const key = logKey(log);
+  return { log, occurrence: logs.slice(0, index).filter((entry) => logKey(entry) === key && !!entry.live === !!log.live).length };
+}
+
 function LogIcon({ level, isActive }: { level: LogEntry["level"]; isActive: boolean }) {
   if (level === "success") {
     return <IconCircleCheck className="size-3.5 shrink-0 text-emerald-400" />;
@@ -94,7 +100,7 @@ export function IndexingLogs({
   provider: string;
 }) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [logPage, setLogPage] = useState(0);
+  const [boundary, setBoundary] = useState<ReturnType<typeof pageBoundary> | null>(null);
   const router = useRouter();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -171,7 +177,7 @@ export function IndexingLogs({
       refreshTimer.current = null;
       refreshingAttempt.current = false;
       setLogs([]);
-      setLogPage(0);
+      setBoundary(null);
     }
     if (refreshTimer.current) clearTimeout(refreshTimer.current);
     refreshTimer.current = null;
@@ -196,6 +202,7 @@ export function IndexingLogs({
         const validIdentity = identity === null || (typeof identity === "string" && identity.length > 0);
         const replaced = validIdentity && persistedAttempt.current !== undefined && identity !== persistedAttempt.current;
         if (validIdentity) persistedAttempt.current = identity;
+        if (replaced) setBoundary(null);
         setLegacyLogsMayBeMixed(!attempt || hasUnattributedLive.current);
         setOwnerUnconfirmed(false);
         setTruncated(data.truncated === true);
@@ -326,14 +333,23 @@ export function IndexingLogs({
   }, [repoId, orgId, router]);
 
   useEffect(() => {
-    if (scrollRef.current && logPage === 0) {
+    if (scrollRef.current && boundary === null) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [logs, logPage]);
+  }, [logs, boundary]);
 
   const isComplete = initialStatus !== "indexing";
-  const page = Math.min(logPage, Math.max(0, Math.ceil(logs.length / LOG_PAGE_SIZE) - 1));
-  const end = Math.max(0, logs.length - page * LOG_PAGE_SIZE);
+  let end = logs.length;
+  if (boundary) {
+    const key = logKey(boundary.log);
+    let occurrence = 0;
+    const index = logs.findIndex((entry) => {
+      if (logKey(entry) !== key || !!entry.live !== !!boundary.log.live) return false;
+      return occurrence++ === boundary.occurrence;
+    });
+    end = index >= 0 ? index : logs.findIndex((entry) => entry.timestamp >= boundary.log.timestamp);
+    if (end < 0) end = logs.length;
+  }
   const start = Math.max(0, end - LOG_PAGE_SIZE);
   const displayLogs = logs.slice(start, end);
   const seenTimes = new Set(logs.filter((log) => !log.live).map((log) => JSON.stringify([log.timestamp, log.level])));
@@ -429,8 +445,8 @@ export function IndexingLogs({
           <div className="mb-2 text-zinc-400">
             Showing {start + 1}–{end} of {logs.length} messages. {start} older and {logs.length - end} newer messages are not shown.
             <div className="flex gap-3">
-              {start > 0 && <button type="button" className="underline underline-offset-2" onClick={() => setLogPage(page + 1)}>Show older messages</button>}
-              {end < logs.length && <button type="button" className="underline underline-offset-2" onClick={() => setLogPage(page - 1)}>Show newer messages</button>}
+              {start > 0 && <button type="button" className="underline underline-offset-2" onClick={() => setBoundary(pageBoundary(logs, start))}>Show older messages</button>}
+              {end < logs.length && <button type="button" className="underline underline-offset-2" onClick={() => setBoundary(end + LOG_PAGE_SIZE >= logs.length ? null : pageBoundary(logs, end + LOG_PAGE_SIZE))}>Show newer messages</button>}
             </div>
           </div>
         )}

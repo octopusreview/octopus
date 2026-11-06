@@ -111,6 +111,13 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("withholds private live indexing 
     await page.getByText("Processed 12 files, skipped 0", { exact: true }).waitFor();
     expect(await page.getByText("Indexing message withheld for privacy.", { exact: true }).count()).toBe(4);
     expect(await page.getByText("Processed 13 files, skipped 0", { exact: true }).count()).toBe(0);
+    expect(await page.getByText(/synthetic-token|\/private\/outage/).count()).toBe(0);
+    await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
+    await page.evaluate(() => { (window as unknown as { privacyFixture: { fail: boolean } }).privacyFixture.fail = false; });
+    await page.getByRole("alert").filter({ hasText: "Could not load indexing logs" }).waitFor({ state: "hidden" });
+    expect(await page.getByText("Processed 12 files, skipped 0", { exact: true }).count()).toBe(1);
+    expect(await page.getByText("Indexing message withheld for privacy.", { exact: true }).count()).toBe(4);
+    expect(await page.getByText("Processed 13 files, skipped 0", { exact: true }).count()).toBe(0);
     await page.goto(server.url.href);
     await page.getByText("Indexing Logs", { exact: true }).waitFor();
     await page.evaluate(`{
@@ -130,6 +137,18 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("withholds private live indexing 
     expect(await page.getByText("Indexing message withheld for privacy.", { exact: true }).count()).toBe(2);
     expect(await page.getByText(/synthetic-token|\/private\/bulk/).count()).toBe(0);
     expect(await rows.filter({ hasText: "Processed 2100 files, skipped 0" }).locator("svg.animate-spin").count()).toBe(1);
+    await page.getByRole("button", { name: "Show older messages" }).click();
+    const olderWindow = await rows.allTextContents();
+    await page.evaluate(`{
+      const f=window.privacyFixture;
+      f.emit('index-log',{repoId:'repo',indexAttemptId:'bulk-owner',message:'Processed 2102 files, skipped 0',level:'info',timestamp:2102});
+      for(let i=0;i<2;i++) f.emit('index-log',{repoId:'repo',message:'Error /private/new synthetic-token',level:'error',timestamp:2103});
+    }`);
+    await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
+    expect(await rows.allTextContents()).toEqual(olderWindow);
+    while (await page.getByRole("button", { name: "Show newer messages" }).count()) {
+      await page.getByRole("button", { name: "Show newer messages" }).click();
+    }
     const pages: string[][] = [];
     while (true) {
       const contents = await rows.allTextContents();
@@ -140,29 +159,39 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("withholds private live indexing 
       await older.click();
     }
     const messages = pages.flat();
-    expect(messages.filter((message) => message === "Indexing message withheld for privacy.").length).toBe(2);
+    expect(messages.filter((message) => message === "Indexing message withheld for privacy.").length).toBe(4);
     const numbers = messages.flatMap((message) => {
       const match = /^Processed (\d+) files, skipped 0$/.exec(message);
       return match ? [Number(match[1])] : [];
     });
-    expect(numbers).toEqual(Array.from({ length: 2100 }, (_, i) => i + 1));
+    expect(numbers).toEqual([...Array.from({ length: 2100 }, (_, i) => i + 1), 2102]);
     expect(await page.getByText("Processed 1 files, skipped 0", { exact: true }).count()).toBe(1);
     expect(await rows.locator("svg.animate-spin").count()).toBe(0);
     await page.evaluate(`{
-      const f=window.privacyFixture; f.logs=[{indexAttemptId:'bulk-owner',message:'Local indexing complete',level:'success',timestamp:1}];
+      const f=window.privacyFixture; f.attempt='replacement-owner';
+      f.logs=[{indexAttemptId:'replacement-owner',message:'Local indexing started',level:'info',timestamp:10000}];
+      f.emit('index-status',{repoId:'repo'});
+    }`);
+    await page.getByText("Local indexing started", { exact: true }).waitFor();
+    expect(await page.getByRole("button", { name: "Show newer messages" }).count()).toBe(0);
+    await page.evaluate(`{
+      const f=window.privacyFixture;
+      for(let i=1;i<=250;i++) f.emit('index-log',{repoId:'repo',indexAttemptId:'replacement-owner',message:'Processed '+(5000+i)+' files, skipped 0',level:'info',timestamp:10000+i});
+    }`);
+    await page.getByText("Processed 5250 files, skipped 0", { exact: true }).waitFor();
+    expect(await rows.count()).toBe(200);
+    expect(await page.getByText("Processed 5001 files, skipped 0", { exact: true }).count()).toBe(0);
+    expect(await page.getByRole("button", { name: "Show newer messages" }).count()).toBe(0);
+    expect(await page.getByText(/synthetic-token|\/private\//).count()).toBe(0);
+    await page.evaluate(`{
+      const f=window.privacyFixture; f.logs=[{indexAttemptId:'replacement-owner',message:'Local indexing complete',level:'success',timestamp:1}];
       f.setScope('new-repo');
     }`);
     await page.getByText("Local indexing complete", { exact: true }).waitFor();
     expect(await rows.count()).toBe(1);
     expect(await page.getByRole("button", { name: "Show older messages" }).count()).toBe(0);
     expect(await page.getByRole("button", { name: "Show newer messages" }).count()).toBe(0);
-    expect(await page.getByText(/synthetic-token|\/private\/outage/).count()).toBe(0);
-    await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
-    await page.evaluate(() => { (window as unknown as { privacyFixture: { fail: boolean } }).privacyFixture.fail = false; });
-    await page.getByRole("alert").filter({ hasText: "Could not load indexing logs" }).waitFor({ state: "hidden" });
-    expect(await page.getByText("Processed 12 files, skipped 0", { exact: true }).count()).toBe(1);
-    expect(await page.getByText("Indexing message withheld for privacy.", { exact: true }).count()).toBe(4);
-    expect(await page.getByText("Processed 13 files, skipped 0", { exact: true }).count()).toBe(0);
+
   } finally {
     await browser?.close();
     server.stop(true);

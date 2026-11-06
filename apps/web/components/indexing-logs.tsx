@@ -229,23 +229,18 @@ export function IndexingLogs({
           }
         }
         setLogs((current) => {
-          const entries = new Map<string, LogEntry[]>();
           const saved = (data.logs as LogEntry[]).map((log) => ({ ...log, message: safeIndexLogMessage(log.message), live: false }));
           const matches = (log: LogEntry) => attempt ? log.indexAttemptId === attempt || (log.live && !log.indexAttemptId) : !log.indexAttemptId;
-          for (const log of saved.filter(matches)) {
-            const key = logKey(log);
-            entries.set(key, [...(entries.get(key) ?? []), log]);
-          }
+          const entries = saved.filter(matches);
           const counts = new Map<string, number>();
+          for (const log of entries) counts.set(logKey(log), (counts.get(logKey(log)) ?? 0) + 1);
           for (const log of current.filter((log) => !log.live && !replaced && matches(log))) {
             const key = logKey(log);
-            const bucket = entries.get(key) ?? [];
-            const index = counts.get(key) ?? 0;
-            if (index >= bucket.length) bucket.push(log);
-            entries.set(key, bucket);
-            counts.set(key, index + 1);
+            const remaining = counts.get(key) ?? 0;
+            if (remaining) counts.set(key, remaining - 1);
+            else entries.push(log);
           }
-          return [...entries.values()].flat().concat(current.filter((log) => log.live && matches(log)), pending.filter(matches))
+          return entries.concat(current.filter((log) => log.live && matches(log)), pending.filter(matches))
             .sort((a, b) => a.timestamp - b.timestamp);
         });
         const uncheckedAttempts = [...incompleteAttempts.current.keys()].filter((id) => id !== null && id !== attempt);

@@ -23,6 +23,38 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("withholds private live indexing 
   try {
     browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_BROWSER_CHANNEL });
     const page = await browser.newPage();
+    for (const owner of [null, "order-owner"]) {
+      await page.goto(server.url.href);
+      await page.getByText("Indexing Logs", { exact: true }).waitFor();
+      await page.evaluate((attempt: string | null) => {
+        const f = (window as unknown as { privacyFixture: { attempt: string | null; delay: number; logs: unknown[]; emit: (name: string, data: unknown) => void } }).privacyFixture;
+        f.attempt = attempt; f.delay = 100;
+        f.logs = ["Local indexing started", "Indexing failed", "Local indexing started"].map((message) => ({ ...(attempt ? { indexAttemptId: attempt } : {}), message, level: "info", timestamp: 42 }));
+        f.emit("index-status", { repoId: "repo" });
+      }, owner);
+      const orderedRows = page.getByRole("list", { name: "Indexing messages" }).getByRole("listitem");
+      await page.waitForFunction("document.body.textContent.split('Local indexing started').length === 3");
+      const savedOrder = ["Local indexing started", "Indexing failed", "Local indexing started"];
+      expect(await orderedRows.allTextContents()).toEqual(savedOrder);
+      await page.evaluate((attempt: string | null) => {
+        const f = (window as unknown as { privacyFixture: { emit: (name: string, data: unknown) => void } }).privacyFixture;
+        for (const message of ["Indexing failed", "Local indexing started"]) f.emit("index-log", { repoId: "repo", ...(attempt ? { indexAttemptId: attempt } : {}), message, level: "info", timestamp: 42 });
+      }, owner);
+      await page.waitForFunction("document.body.textContent.split('Indexing failed').length === 3");
+      const mixedOrder = [...savedOrder, "Indexing failed", "Local indexing started"];
+      expect(await orderedRows.allTextContents()).toEqual(mixedOrder);
+      for (const partial of [false, true]) {
+        await page.evaluate((shorter: boolean) => {
+          const f = (window as unknown as { privacyFixture: { logs: unknown[]; emit: (name: string, data: unknown) => void } }).privacyFixture;
+          if (shorter) f.logs = f.logs.slice(0, 2);
+          f.emit("index-status", { repoId: "repo" });
+        }, partial);
+        const checking = page.getByRole("alert").filter({ hasText: "may belong to an earlier attempt" });
+        await checking.waitFor();
+        await checking.waitFor({ state: "hidden" });
+        expect(await orderedRows.allTextContents()).toEqual(mixedOrder);
+      }
+    }
     for (const owner of [null, "saved-owner"]) {
       await page.goto(server.url.href);
       await page.getByText("Indexing Logs", { exact: true }).waitFor();

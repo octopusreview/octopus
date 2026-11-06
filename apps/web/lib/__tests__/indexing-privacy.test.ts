@@ -16,6 +16,10 @@ it("preserves fixed indexing status messages without exposing appended details",
     "Summary generation failed (indexing still succeeded)",
     "Go to GitHub Settings → Applications → Configure to grant access",
     "Indexing cancelled by user",
+    "Starting indexing",
+    "Indexing complete",
+    "Local indexing batch failed",
+    "Local indexing stopped: monthly spend limit reached",
   ]) {
     expect(safeIndexLogMessage(message)).toBe(message);
     expect(safeIndexLogMessage(`${message} synthetic-secret`)).toBe("Indexing message withheld for privacy.");

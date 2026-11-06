@@ -113,9 +113,14 @@ responses.set("/git/trees/main?recursive=1", [404, {}]);
 await assert.rejects(run, /does not have access/);
 assert.equal(writes, 0);
 
-for (const status of [403, 429, 500, 409]) {
+for (const status of [403, 429, 451, 500, 409]) {
   reset(); responses.set("/git/trees/main?recursive=1", [status, { message: "Failure" }]);
-  await assert.rejects(run, new RegExp(`Failed to fetch tree: ${status}`));
+  await assert.rejects(run, (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, new RegExp(`Failed to fetch tree: ${status}`));
+    assert.equal((error as Error & { status?: number }).status, status);
+    return true;
+  });
   assert.equal(writes, 0);
 }
 
@@ -210,6 +215,17 @@ mock.module("@octopus/db", () => ({ prisma: { repository: {
 } } }));
 const { runRepositoryIndex, isIndexingCancelled } = await import("../../repository-index-completion");
 const { reportBackgroundFailure } = await import("../../background-failure");
+reset();
+suppliedToken = undefined;
+responses.set("/git/trees/main?recursive=1", [451, { message: "private upstream details" }]);
+try {
+  await run();
+  assert.fail("Expected the upstream refusal to fail indexing");
+} catch (error) {
+  reportBackgroundFailure(error, { stage: "indexing", retry: { retryCount: 2, retryLimit: 2 } });
+}
+assert.equal((sentryEvents.at(-1) as { tags: { failure_code: string } }).tags.failure_code, "http_451");
+assert.ok(!JSON.stringify(sentryEvents.at(-1)).includes("private upstream details"));
 for (const boundary of ["before-embedding", "after-embedding"]) {
   for (const timeout of [false, true]) {
     reset(); suppliedToken = undefined; indexRow.indexStatus = "indexing";

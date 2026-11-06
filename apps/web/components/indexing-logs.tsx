@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getPubbyClient } from "@/lib/pubby-client";
+import { safeIndexLogMessage } from "@/lib/index-log-safety";
 import { getRepositoryConnectionRecovery } from "@/lib/repository-connection-recovery";
 import {
   IconCircleCheck,
@@ -150,7 +151,7 @@ export function IndexingLogs({
       if (data.repoId !== repoId) return;
       setLogs((prev) => {
         if (prev.some((l) => logKey(l) === logKey(data))) return prev;
-        return [...prev, { message: data.message, level: data.level, timestamp: data.timestamp }];
+        return [...prev, { message: safeIndexLogMessage(data.message) ?? "Live indexing message withheld for privacy.", level: data.level, timestamp: data.timestamp }];
       });
     };
 

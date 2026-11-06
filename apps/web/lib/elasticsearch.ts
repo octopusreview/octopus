@@ -1,3 +1,4 @@
+import { safeIndexLogMessage } from "@/lib/index-log-safety";
 import { Client } from "@elastic/elasticsearch";
 
 let client: Client | null = null;
@@ -46,11 +47,12 @@ export async function writeSyncLog(entry: SyncLogEntry): Promise<void> {
       index,
       body: {
         ...entry,
+        message: safeIndexLogMessage(entry.message) ?? "Saved indexing message withheld for privacy.",
         createdAt: new Date(entry.timestamp).toISOString(),
       },
     });
-  } catch (err) {
-    console.error("Failed to write sync log to ES:", err);
+  } catch {
+    console.error("Failed to write sync log to ES");
   }
 }
 
@@ -80,9 +82,17 @@ export async function getSyncLogs(
       sort: [{ timestamp: { order: "desc" } }],
     });
 
-    return result.hits.hits.map((hit) => hit._source!).reverse();
-  } catch (err) {
-    console.error("Failed to read sync logs from ES:", err);
+    return result.hits.hits.map((hit) => {
+      const log = hit._source!;
+      return {
+        orgId, repoId,
+        message: safeIndexLogMessage(log.message) ?? "Saved indexing message withheld for privacy.",
+        level: ["info", "success", "warning", "error"].includes(log.level) ? log.level : "info" as const,
+        timestamp: typeof log.timestamp === "number" && Number.isFinite(log.timestamp) ? log.timestamp : 0,
+      };
+    }).reverse();
+  } catch {
+    console.error("Failed to read sync logs from ES");
     return [];
   }
 }
@@ -109,7 +119,7 @@ export async function deleteSyncLogs(
         },
       },
     });
-  } catch (err) {
-    console.error("Failed to delete sync logs from ES:", err);
+  } catch {
+    console.error("Failed to delete sync logs from ES");
   }
 }

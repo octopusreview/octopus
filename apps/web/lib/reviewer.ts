@@ -114,6 +114,7 @@ import {
 } from "@/lib/review-dedup";
 import type { LogLevel } from "@/lib/indexer";
 import { ensureRepositoryAnalysis, deferReviewForRepository } from "@/lib/review-repository-preparation";
+import { safeIndexLogMessage } from "@/lib/index-log-safety";
 import { writeSyncLog, deleteSyncLogs } from "@/lib/elasticsearch";
 import { logAiUsage } from "@/lib/ai-usage";
 import { resolveReviewModel } from "@/lib/review-routing";
@@ -1040,10 +1041,10 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           const timestamp = Date.now();
           pubby.trigger(indexChannel, "index-log", {
             repoId: repo.id,
-            message,
+            message: safeIndexLogMessage(message) ?? "Live indexing message withheld for privacy.",
             level,
             timestamp,
-          }).catch((err) => console.error("[reviewer] Pubby index-log trigger failed:", err));
+          }).catch(() => console.error("[reviewer] Pubby index-log trigger failed"));
           writeSyncLog({
             orgId: org.id,
             repoId: repo.id,

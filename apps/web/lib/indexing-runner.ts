@@ -44,8 +44,8 @@ export async function runIndexingInBackground(
       });
 
       emitLog("Repository summary generated", "success");
-    } catch (summarizeError) {
-      console.error("Failed to generate summary:", summarizeError);
+    } catch {
+      console.error("Failed to generate summary");
       emitLog("Summary generation failed (indexing still succeeded)", "warning");
     }
 
@@ -69,17 +69,17 @@ export async function runIndexingInBackground(
     clearAbortController(indexAttemptId);
     if (error instanceof SupersededIndexError) return;
 
-    const errorMsg = error instanceof Error ? error.message : "Unknown error";
+    const errorMsg = "Indexing failed";
     const isCancelled = isIndexingCancelled(abortController.signal);
 
-    console.error(`Failed to index repo ${fullName}:`, error);
+    console.error("Failed to index repository");
 
     if (isCancelled) {
       emitLog("Indexing cancelled by user", "warning");
       void notifyRepositoryIndex(channel, repoId);
     } else {
       reportBackgroundFailure(error, { stage: "indexing", repositoryId: repoId, attemptId: indexAttemptId });
-      emitLog(`Indexing failed: ${errorMsg}`, "error");
+      emitLog("Indexing failed", "error");
       eventBus.emit({
         type: "repo-indexed",
         orgId: organizationId,

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@octopus/db";
 import { pubby } from "@/lib/pubby";
+import { safeIndexLogMessage } from "@/lib/index-log-safety";
 import { writeSyncLog, deleteSyncLogs } from "@/lib/elasticsearch";
 import { runIndexingInBackground } from "@/lib/indexing-runner";
 import { createAbortController, abortIndexing } from "@/lib/indexing-abort";
@@ -85,10 +86,10 @@ export async function POST(
     const timestamp = Date.now();
     pubby.trigger(channel, "index-log", {
       repoId: repo.id,
-      message,
+      message: safeIndexLogMessage(message) ?? "Live indexing message withheld for privacy.",
       level,
       timestamp,
-    }).catch(error => console.warn("[repository-index] log notification failed:", error));
+    }).catch(() => console.warn("[repository-index] log notification failed"));
     writeSyncLog({
       orgId: repo.organizationId,
       repoId: repo.id,

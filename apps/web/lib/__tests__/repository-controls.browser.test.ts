@@ -177,18 +177,21 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeUntaggedOverflow}`);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logHang=false; f.logDelay=0; f.logAttempt='owner-after-overflow';
+      f.logs=[{indexAttemptId:'owner-after-overflow',message:'Processed 500051 files, skipped 0',level:'info',timestamp:1200}];
       for(let i=0;i<1001;i++) f.emit('index-log',{repoId:f.repo.id,message:'Processed '+(i+20000)+' files, skipped 0',level:'warning',timestamp:100+i});
       f.emit('index-status',{repoId:f.repo.id});
     }`);
-    await page.getByText("Processed 21000 files, skipped 0", { exact: true }).waitFor();
-    expect(await page.getByText("Processed 20000 files, skipped 0", { exact: true }).count()).toBe(0);
-    await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).waitFor();
+    await page.getByText("Processed 500051 files, skipped 0", { exact: true }).waitFor();
+    expect(await page.getByText(/^Processed (?:20\d{3}|21000) files, skipped 0$/, { exact: true }).count()).toBe(1001);
+    expect(await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).count()).toBe(0);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logAttempt='later-owner';
+      f.logs=[{indexAttemptId:'later-owner',message:'Processed 500052 files, skipped 0',level:'info',timestamp:1201}];
       f.emit('index-status',{repoId:f.repo.id});
     }`);
-    await page.getByText("Processed 21000 files, skipped 0", { exact: true }).waitFor();
-    await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).waitFor();
+    await page.getByText("Processed 500052 files, skipped 0", { exact: true }).waitFor();
+    expect(await page.getByText(/^Processed (?:20\d{3}|21000) files, skipped 0$/, { exact: true }).count()).toBe(1001);
+    expect(await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).count()).toBe(0);
     await page.goto(new URL("?null-api=1", server.url).href);
     await page.getByText("Initial indexing log", { exact: true }).waitFor();
     await page.getByRole("status").filter({ hasText: "Saved indexing messages may be incomplete" }).waitFor();

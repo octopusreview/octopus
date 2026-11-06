@@ -214,6 +214,22 @@ try {
     await reply(requests.length - 1, { logs: [], attempt: owner ? `replacement-${timestamp}` : null, indexAttemptId: owner ? `replacement-${timestamp}` : `replacement-legacy-${timestamp}` });
     assert.equal(text(tree).split(message).length - 1, owner ? 0 : 2);
   }
+  emit("index-status", { repoId: "repo-a" });
+  await flush();
+  for (let i = 0; i < 1001; i++) {
+    emit("index-log", { repoId: "repo-a", message: `Processed ${30000 + i} files, skipped 0`, level: "warning", timestamp: 30000 + i });
+  }
+  await flush();
+  const assertUntaggedBatch = () => {
+    const displayed = text(tree);
+    for (let i = 0; i < 1001; i++) assert.equal(displayed.split(`Processed ${30000 + i} files, skipped 0`).length - 1, 1);
+    assert.doesNotMatch(displayed, /Some indexing messages may be missing while logs were loading/);
+  };
+  assertUntaggedBatch();
+  await reply(requests.length - 1, { logs: [], attempt: "after-overflow" });
+  assertUntaggedBatch();
+  await refresh("later-owner");
+  assertUntaggedBatch();
 } finally {
   for (const hook of hooks) hook?.cleanup?.();
 }

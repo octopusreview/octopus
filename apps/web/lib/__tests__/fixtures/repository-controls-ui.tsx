@@ -7,17 +7,18 @@ const listeners = new Map<string, Set<(data: unknown) => void>>();
 const oldApi = new URLSearchParams(location.search).has("old-api");
 const nullApi = new URLSearchParams(location.search).has("null-api");
 const invalidApi = new URLSearchParams(location.search).has("invalid-api");
+const taggedDelay = new URLSearchParams(location.search).has("tagged-delay");
 const repo = {
   id: "fixture-repo", name: "project", fullName: "fixture/project", provider: "bitbucket", defaultBranch: "main", isActive: true,
-  autoReview: true, dismissedAt: null, isNew: true, indexStatus: oldApi || nullApi || invalidApi ? "indexing" : "pending", indexedAt: null, indexedFiles: 0,
+  autoReview: true, dismissedAt: null, isNew: true, indexStatus: oldApi || nullApi || invalidApi || taggedDelay ? "indexing" : "pending", indexedAt: null, indexedFiles: 0,
   totalFiles: 0, totalChunks: 0, totalVectors: 0, indexDurationMs: null, contributorCount: 0, analysisStatus: "none",
   analyzedAt: null, reviewModelId: null, embedModelId: null, reviewConfig: {}, pullRequestCount: 0,
 };
 const fixture = {
   React, repo, allowed: true, toggleError: "Fixture permission denied", indexError: "Fixture indexing cooldown", syncError: "Fixture sync failed",
   cancelError: "Fixture cancellation failed", logsFail: false, indexCalls: 0, toggleCalls: 0, fastComplete: false, indexDelay: 0,
-  logAttempt: null as string | null, indexAttemptId: null as string | null, omitIndexAttemptId: oldApi, invalidIndexAttemptId: invalidApi,
-  logFetches: 0, logDelay: 0, logHang: false, logAborts: 0,
+  logAttempt: taggedDelay ? "first-owner" : null as string | null, indexAttemptId: taggedDelay ? "first-owner" : null as string | null, omitIndexAttemptId: oldApi, invalidIndexAttemptId: invalidApi,
+  logFetches: 0, logDelay: taggedDelay ? 500 : 0, logHang: false, logAborts: 0, truncated: false,
   logs: (oldApi || nullApi || invalidApi ? [{ message: "Initial indexing log", level: "info", timestamp: 1 }] : []) as Array<{ message: string; level: string; timestamp: number }>,
   channel: {
     bind(event: string, callback: (data: unknown) => void) {
@@ -34,7 +35,7 @@ const originalFetch = window.fetch;
 window.fetch = async (input, options) => {
   if (String(input).startsWith("/api/sync-logs")) {
     fixture.logFetches++;
-    const snapshot = { logs: fixture.logs,
+    const snapshot = { logs: fixture.logs, truncated: fixture.truncated,
       ...(fixture.omitIndexAttemptId ? {} : { attempt: fixture.logAttempt, indexAttemptId: fixture.invalidIndexAttemptId ? 42 : fixture.indexAttemptId }) };
     if (fixture.logHang) {
       await new Promise<void>((_, reject) => options?.signal?.addEventListener("abort", () => {

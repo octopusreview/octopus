@@ -56,9 +56,62 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
       }
       return route.continue();
     });
+    await page.goto(new URL("?tagged-delay=1", server.url).href);
+    await page.waitForFunction("window.repositoryFixture.logFetches > 0");
+    await page.evaluate(`{
+      const f=window.repositoryFixture;
+      f.emit('index-log',{repoId:f.repo.id,message:'Unattributed before lookup',level:'info',timestamp:1});
+      f.emit('index-log',{repoId:'other-repo',message:'Other repository event',level:'info',timestamp:2});
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'old-owner',message:'Stale before lookup',level:'info',timestamp:3});
+    }`);
+    await page.getByText("Unattributed before lookup", { exact: true }).waitFor();
+    await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
+    expect(await page.getByText("Other repository event", { exact: true }).count()).toBe(0);
+    expect(await page.getByText("Stale before lookup", { exact: true }).count()).toBe(0);
+    const initialFetches = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.waitForTimeout(1200);
+    expect(await page.evaluate("window.repositoryFixture.logFetches")).toBe(initialFetches);
+    await page.evaluate(`{
+      const f=window.repositoryFixture;
+      const tagged={repoId:f.repo.id,indexAttemptId:'first-owner',message:'Same tagged first',level:'warning',timestamp:11};
+      const untagged={repoId:f.repo.id,message:tagged.message,level:tagged.level,timestamp:tagged.timestamp};
+      f.emit('index-log',tagged); f.emit('index-log',untagged);
+      f.emit('index-log',{repoId:f.repo.id,message:'Same untagged first',level:'warning',timestamp:12});
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'first-owner',message:'Same untagged first',level:'warning',timestamp:12});
+    }`);
+    await page.waitForFunction(`document.body.textContent.split('Same tagged first').length === 3 && document.body.textContent.split('Same untagged first').length === 3`);
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logAttempt='replacement-owner'; f.logDelay=0;
+      f.emit('index-status',{repoId:f.repo.id});
+    }`);
+    await page.waitForFunction(`document.body.textContent.split('Same tagged first').length === 2 && document.body.textContent.split('Same untagged first').length === 2`);
+    await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
+    const beforeUntaggedOverflow = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logHang=true;
+      f.emit('index-status',{repoId:f.repo.id});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeUntaggedOverflow}`);
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logHang=false; f.logDelay=0; f.logAttempt='owner-after-overflow';
+      for(let i=0;i<1001;i++) f.emit('index-log',{repoId:f.repo.id,message:'Unknown overflow '+i,level:'warning',timestamp:100+i});
+      f.emit('index-status',{repoId:f.repo.id});
+    }`);
+    await page.getByText("Unknown overflow 1000", { exact: true }).waitFor();
+    expect(await page.getByText("Unknown overflow 0", { exact: true }).count()).toBe(0);
+    await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).waitFor();
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logAttempt='later-owner';
+      f.emit('index-status',{repoId:f.repo.id});
+    }`);
+    await page.getByText("Unknown overflow 1000", { exact: true }).waitFor();
+    await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).waitFor();
     await page.goto(new URL("?null-api=1", server.url).href);
     await page.getByText("Initial indexing log", { exact: true }).waitFor();
-    expect(await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).count()).toBe(0);
+    await page.getByRole("status").filter({ hasText: "Saved indexing messages may be incomplete" }).waitFor();
+    await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
+    await page.evaluate(`window.repositoryFixture.truncated = true; window.repositoryFixture.emit("index-status", { repoId: "fixture-repo" })`);
+    await page.getByRole("alert").filter({ hasText: "Older indexing messages are not shown" }).waitFor();
     await page.goto(new URL("?invalid-api=1", server.url).href);
     await page.getByText("Initial indexing log", { exact: true }).waitFor();
     await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
@@ -240,7 +293,9 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
       f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
     }`);
     await page.getByText("Tagged reset", { exact: true }).waitFor();
-    expect(await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).count()).toBe(0);
+    await page.getByRole("status").filter({ hasText: "Saved indexing messages may be incomplete" }).waitFor();
+    await page.getByText("Replacement legacy live log", { exact: true }).waitFor();
+    await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logAttempt=null; f.indexAttemptId=null;
       f.logs=[{message:'Explicit null identity',level:'info',timestamp:11}];
@@ -281,10 +336,13 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeDelayedFetch}`);
     await page.evaluate(`{
       const f=window.repositoryFixture;
+      f.emit('index-log',{repoId:f.repo.id,message:'Delayed unattributed log',level:'warning',timestamp:7});
       f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'current-attempt',message:'Delayed obsolete log',level:'error',timestamp:7});
       f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'next-attempt',message:'Buffered current log',level:'info',timestamp:8});
     }`);
     await page.getByText("Buffered current log", { exact: true }).waitFor();
+    await page.getByText("Delayed unattributed log", { exact: true }).waitFor();
+    await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
     expect(await page.getByText("Delayed obsolete log", { exact: true }).count()).toBe(0);
     const beforeSnapshot = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate(`{
@@ -299,6 +357,7 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.getByText("Live log after stale snapshot", { exact: true }).waitFor();
     expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeSnapshot).toBeGreaterThanOrEqual(2);
     expect(await page.getByText("Buffered current log", { exact: true }).count()).toBe(0);
+    await page.getByText("Delayed unattributed log", { exact: true }).waitFor();
     const beforeNormalStream = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate(`(async()=>{
       const f=window.repositoryFixture;
@@ -471,9 +530,9 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.getByText("Legacy saved log", { exact: true }).waitFor();
     await page.evaluate(`{
       const f=window.repositoryFixture;
-      f.emit('index-log',{repoId:f.repo.id,message:'Legacy live log',level:'info',timestamp:18001});
+      f.emit('index-log',{repoId:f.repo.id,message:'Later legacy live log',level:'info',timestamp:18001});
     }`);
-    await page.getByText("Legacy live log", { exact: true }).waitFor();
+    await page.getByText("Later legacy live log", { exact: true }).waitFor();
     const beforeMixedEvents = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate(`(async()=>{
       const f=window.repositoryFixture;

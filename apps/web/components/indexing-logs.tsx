@@ -19,10 +19,11 @@ interface LogEntry {
   level: "info" | "success" | "error" | "warning";
   timestamp: number;
   indexAttemptId?: string;
+  live?: boolean;
 }
 
 function logKey(log: LogEntry): string {
-  return JSON.stringify([log.timestamp, log.level, log.message]);
+  return JSON.stringify([log.indexAttemptId ?? null, log.timestamp, log.level, log.message]);
 }
 
 function LogIcon({ level, isActive }: { level: LogEntry["level"]; isActive: boolean }) {
@@ -86,9 +87,9 @@ function mergeProgressLogs(logs: LogEntry[]): LogEntry[] {
   const merged: LogEntry[] = [];
   for (const log of logs) {
     const key = getProgressKey(log.message);
-    if (key) {
+    if (key && !(log.live && !log.indexAttemptId)) {
       // Find the last log with the same progress key and replace it
-      const lastIdx = merged.findLastIndex((l) => getProgressKey(l.message) === key);
+      const lastIdx = merged.findLastIndex((l) => !(l.live && !l.indexAttemptId) && getProgressKey(l.message) === key);
       if (lastIdx !== -1) {
         merged[lastIdx] = log;
         continue;
@@ -115,11 +116,12 @@ export function IndexingLogs({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [logsMayBeMissing, setLogsMayBeMissing] = useState(false);
+  const [truncated, setTruncated] = useState(false);
   const [legacyLogsMayBeMixed, setLegacyLogsMayBeMixed] = useState(false);
   const [reload, setReload] = useState(0);
   const currentAttempt = useRef<string | null | undefined>(undefined);
-  const previousIndexAttempt = useRef<string | null | undefined>(undefined);
   const pendingLogs = useRef<LogEntry[]>([]);
+  const hasUnattributedLive = useRef(false);
   const incompleteAttempts = useRef(new Map<string | null, object>());
   const unattributedMissingLogs = useRef<object | null>(null);
   const verifiedUnattributed = useRef<object | null>(null);
@@ -165,13 +167,14 @@ export function IndexingLogs({
     const scope = JSON.stringify([orgId, repoId]);
     if (scope !== logScope.current) {
       logScope.current = scope;
-      previousIndexAttempt.current = undefined;
       previousStatus.current = initialStatus;
       pendingLogs.current = [];
+      hasUnattributedLive.current = false;
       incompleteAttempts.current.clear();
       unattributedMissingLogs.current = null;
       verifiedUnattributed.current = null;
       setLogsMayBeMissing(false);
+      setTruncated(false);
       setLegacyLogsMayBeMixed(false);
       rejectedAttempts.current.clear();
       retryDelay.current = 0;
@@ -198,25 +201,21 @@ export function IndexingLogs({
         if (controller.signal.aborted) return;
         if (!Array.isArray(data.logs)) throw new Error("Invalid indexing logs response");
         const attempt = typeof data.attempt === "string" ? data.attempt : null;
-        const hasIndexAttempt = typeof data.indexAttemptId === "string" || data.indexAttemptId === null;
-        const indexAttempt = hasIndexAttempt ? data.indexAttemptId : previousIndexAttempt.current;
-        const replaced = previousIndexAttempt.current !== undefined && previousIndexAttempt.current !== indexAttempt;
-        previousIndexAttempt.current = indexAttempt;
-        if (attempt) setLegacyLogsMayBeMixed(false);
-        else if (replaced || !hasIndexAttempt) setLegacyLogsMayBeMixed(true);
+        setLegacyLogsMayBeMixed(!attempt || hasUnattributedLive.current);
+        setTruncated(data.truncated === true);
         for (const [id, marker] of checkedIncomplete) {
-          if (id !== attempt && incompleteAttempts.current.get(id) === marker) incompleteAttempts.current.delete(id);
+          if (id !== null && id !== attempt && incompleteAttempts.current.get(id) === marker) incompleteAttempts.current.delete(id);
         }
-        setLogsMayBeMissing(!!unattributedMissingLogs.current || incompleteAttempts.current.has(attempt));
+        setLogsMayBeMissing(!!unattributedMissingLogs.current || incompleteAttempts.current.has(null) || incompleteAttempts.current.has(attempt));
         retryDelay.current = 0;
         currentAttempt.current = attempt;
         refreshingAttempt.current = false;
         const pending = pendingLogs.current;
-        pendingLogs.current = pending.filter((log) => (log.indexAttemptId ?? null) !== attempt && !checked.has(log));
+        pendingLogs.current = pending.filter((log) => !!log.indexAttemptId && log.indexAttemptId !== attempt && !checked.has(log));
         rejectedAttempts.current.delete(attempt);
         for (const log of pending) {
           const logAttempt = log.indexAttemptId ?? null;
-          if (logAttempt !== attempt && checked.has(log)) {
+          if (logAttempt !== null && logAttempt !== attempt && checked.has(log)) {
             rejectedAttempts.current.delete(logAttempt);
             rejectedAttempts.current.set(logAttempt, Date.now());
             if (rejectedAttempts.current.size > 500) {
@@ -226,12 +225,13 @@ export function IndexingLogs({
         }
         setLogs((current) => {
           const entries = new Map<string, LogEntry>();
-          for (const log of [...data.logs as LogEntry[], ...current, ...pending]) {
-            if (attempt ? log.indexAttemptId === attempt : !log.indexAttemptId) entries.set(logKey(log), log);
+          const saved = (data.logs as LogEntry[]).map((log) => ({ ...log, live: false }));
+          for (const log of [...saved, ...current, ...pending]) {
+            if (attempt ? log.indexAttemptId === attempt || (log.live && !log.indexAttemptId) : !log.indexAttemptId) entries.set(logKey(log), log);
           }
           return [...entries.values()].sort((a, b) => a.timestamp - b.timestamp);
         });
-        const uncheckedAttempts = [...incompleteAttempts.current.keys()].filter((id) => id !== attempt);
+        const uncheckedAttempts = [...incompleteAttempts.current.keys()].filter((id) => id !== null && id !== attempt);
         verifiedUnattributed.current = checkedUnattributed;
         const unverifiedOverflow = unattributedMissingLogs.current !== verifiedUnattributed.current;
         if (pendingLogs.current.length || uncheckedAttempts.length || unverifiedOverflow) {
@@ -261,10 +261,15 @@ export function IndexingLogs({
     const channel = pubby.subscribe(`presence-org-${orgId}`);
 
     const handleLog = (raw: unknown) => {
-      const data = raw as LogEntry & { repoId: string };
-      if (data.repoId !== repoId) return;
+      const event = raw as LogEntry & { repoId: string };
+      if (event.repoId !== repoId) return;
+      const data = { ...event, live: true };
+      if (!data.indexAttemptId) {
+        hasUnattributedLive.current = true;
+        setLegacyLogsMayBeMixed(true);
+      }
       if (currentAttempt.current === undefined || (refreshingAttempt.current && !refreshTimer.current) ||
-          (data.indexAttemptId ?? null) !== currentAttempt.current) {
+          (!!data.indexAttemptId && data.indexAttemptId !== currentAttempt.current)) {
         // shortcut: old pending messages may be omitted during an outage, add paginated backfill to recover them.
         if (pendingLogs.current.length >= 1000) {
           const dropped = pendingLogs.current.shift()!;
@@ -281,7 +286,9 @@ export function IndexingLogs({
         return;
       }
       setLogs((prev) => {
-        if (prev.some((l) => logKey(l) === logKey(data))) return prev;
+        if (prev.some((l) => logKey(l) === logKey(data))) {
+          return prev.map((l) => logKey(l) === logKey(data) && !data.indexAttemptId ? { ...l, live: true } : l);
+        }
         return [...prev, data];
       });
     };
@@ -351,9 +358,17 @@ export function IndexingLogs({
         ref={scrollRef}
         className="max-h-72 overflow-y-auto p-3 font-mono text-xs leading-relaxed"
       >
+        <div role="status" className="mb-3 text-amber-300">
+          Saved indexing messages may be incomplete.
+        </div>
         {legacyLogsMayBeMixed && (
           <div role="alert" className="mb-3 text-amber-300">
             Indexing messages may include multiple attempts or be missing.
+          </div>
+        )}
+        {truncated && (
+          <div role="alert" className="mb-3 text-amber-300">
+            Older indexing messages are not shown.
           </div>
         )}
         {logsMayBeMissing && (

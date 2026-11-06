@@ -7,6 +7,7 @@ import type { ReviewCoverage } from "@/lib/review-coverage";
 mock.module("server-only", () => ({}));
 const sentryEvents: Array<{ tags?: Record<string, unknown>; contexts?: Record<string, Record<string, unknown>> }> = [];
 mock.module("@sentry/nextjs", () => ({ captureEvent: (event: typeof sentryEvents[number]) => { sentryEvents.push(event); return "e".repeat(32); } }));
+const indexingPrivacy = process.argv.includes("--indexing-review-privacy");
 const directCommentFailure = process.argv.includes("--direct-forgejo-comment-failure");
 const preserveAutoReview = process.argv.includes("--preserve-auto-review");
 const firstCompletion = process.argv.includes("--first-review-completion");
@@ -18,6 +19,7 @@ const queuedJobs: string[] = [];
 class FixtureLargePrError extends Error { meta = { reason: "diff_too_large" }; }
 let indexPreparation: "normal" | "fail" | "replace" | "replace-success" = "normal";
 let indexingCalls = 0;
+let peerAlreadyIndexed = false;
 let indexTransactions = 0;
 let inIndexTransaction = false;
 let completionFailure: "summary" | "check" | null = null;
@@ -40,7 +42,7 @@ let adaptiveAbort = new AbortController();
 let adaptiveRemaining = 900000;
 let validatorCalls = 0;
 let usageCount = 0;
-const events: { type?: string; status?: string; eventName?: string }[] = [];
+const events: { type?: string; status?: string; eventName?: string; error?: string }[] = [];
 let completedSnapshot: string | undefined;
 globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
   if (refusalFlow && String(_url) === "https://api.anthropic.com/v1/messages") {
@@ -113,6 +115,7 @@ const db = {
     findUnique: async () => ({ ...repo }),
     findUniqueOrThrow: async () => ({ ...repo }),
     updateMany: async ({ where, data }: { where: { id: string; indexStatus?: string | { notIn: string[] }; indexAttemptId?: string }; data: Record<string, unknown> }) => {
+      if (peerAlreadyIndexed && typeof where.indexStatus === "object") { repo.indexStatus = "indexed"; return { count: 0 }; }
       if (where.id !== repo.id || (where.indexAttemptId !== undefined && where.indexAttemptId !== repo.indexAttemptId)
         || (typeof where.indexStatus === "string" && where.indexStatus !== repo.indexStatus)
         || (typeof where.indexStatus === "object" && where.indexStatus.notIn.includes(repo.indexStatus))) return { count: 0 };
@@ -199,7 +202,9 @@ const archived: { id: string; findings: { title: string }[]; coverage: unknown; 
 const summaries: string[] = [];
 const published: { body: string; comments: unknown[] }[] = [];
 const checkConclusions: string[] = [];
+const checkOutputs: unknown[] = [];
 mock.module("@/lib/review-summary-comment", () => ({ publishReviewSummary: async (target: { body: string; headSha: string; reviewRequestVersion: number; expectedReviewBody?: string; executionWindow?: ReviewExecutionWindow }) => {
+  if (peerAlreadyIndexed && target.body.includes("Repository already indexed")) throw new Error("synthetic-secret peer comment");
   if (target.body.includes("Indexing in progress")) {
     assert.ok(repo.indexAttemptId, "Preparation must already own the claim");
     if (indexPreparation === "fail") throw new Error("Index setup failed");
@@ -230,7 +235,7 @@ mock.module("@/lib/review-attempt", () => ({
   recordFirstReviewCompletion: realReviewAttempt.recordFirstReviewCompletion,
   withForgejoReviewPublication: directCommentFailure ? realReviewAttempt.withForgejoReviewPublication : async (_id: string, _head: string, _version: number, publish: () => Promise<void>) => publish(),
   createReviewAttemptComment: directCommentFailure ? realReviewAttempt.createReviewAttemptComment : async (_id: string, _head: string, _version: number, create: () => Promise<number>) => create(),
-  updateCurrentReview: directCommentFailure || firstCompletion || refusalFlow ? realReviewAttempt.updateCurrentReview : async () => ({ count: 1 }),
+  updateCurrentReview: indexingPrivacy || directCommentFailure || firstCompletion || refusalFlow ? realReviewAttempt.updateCurrentReview : async () => ({ count: 1 }),
   saveReviewAttempt: async (_id: string, _pr: string, _coverage: unknown, _body: string, findings: { title: string }[]) => {
     archived.push({ id: _id, findings, coverage: structuredClone(_coverage), body: _body });
     if (firstCompletion) Object.assign(pr, { status: "completed", reviewBody: _body });
@@ -259,6 +264,7 @@ mock.module("@/lib/github", () => ({
     if (firstCompletion && completionFailure === "check") { completionFailure = null; throw new Error("Fixture final check publication failed"); }
     if (window && adaptiveStage === "check-send") await fetch("https://synthetic.invalid/check", { signal: window.signal });
     checkConclusions.push(conclusion);
+    checkOutputs.push(_output);
   },
   getRepositoryTree: async () => { if (preparationFetchFailure === "repository_tree") throw new Error("synthetic private tree"); return ["src/check.ts"]; },
   getFileContent: async () => "return value.name;",
@@ -283,7 +289,10 @@ mock.module("@/lib/forgejo", () => ({
     if (state === "running") throw new Error("Forgejo API returned 500");
   },
 }));
-mock.module("@/lib/bitbucket", () => ({}));
+mock.module("@/lib/bitbucket", () => ({
+  createPullRequestComment: async (_org: string, _owner: string, _repo: string, _number: number, body: string) => { summaries.push(body); return 123; },
+  updatePullRequestComment: async (_org: string, _owner: string, _repo: string, _number: number, _id: number, body: string) => { summaries.push(body); },
+}));
 mock.module("@/lib/gitlab", () => ({
   getBranchHead: async () => null,
   getPullRequestReviewInput: async () => ({ rawDiff: diff, input: {
@@ -306,6 +315,7 @@ mock.module("@/lib/gitlab", () => ({
       assertReviewProcessingActive(window);
     }
     checkConclusions.push(state);
+    checkOutputs.push(_description);
   },
 }));
 mock.module("@/lib/github-app-config", () => ({ getGithubAppConfig: async () => ({ slug: "fixture" }) }));
@@ -318,6 +328,7 @@ mock.module("@/lib/cost", () => ({ getOrgSpendLimitStatus: async () => ({ blocke
 mock.module("@/lib/pubby", () => ({ pubby: { trigger: async (_channel: string, _name: string, data: { status?: string }) => { events.push({ ...data, status: _name === "index-status" ? repo.indexStatus : data.status, eventName: _name }); } } }));
 mock.module("@/lib/events", () => ({ eventBus: { emit: (event: { type: string }) => { events.push(event); } } }));
 mock.module("@/lib/indexer", () => ({ indexRepository: async () => {
+  if (indexingPrivacy) { indexingCalls++; throw new Error("synthetic-secret clone /private/path"); }
   if (!preserveAutoReview) throw new Error("unexpected indexing");
   indexingCalls++;
   return { indexedFiles: 1, totalFiles: 1, totalChunks: 1, totalVectors: 1, durationMs: 1, contributorCount: 0, contributors: [] };
@@ -361,6 +372,50 @@ ${JSON.stringify([finding])}
 const { prepareReviewInput } = await import("@/lib/review-coverage");
 const { canRestrictReviewToFollowUp } = await import("@/lib/review-follow-up");
 const { processReview } = await import("@/lib/reviewer");
+if (indexingPrivacy) {
+  const errors: unknown[][] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => { errors.push(args.map(arg => arg instanceof Error ? String(arg) : arg)); };
+  try {
+    for (const provider of ["github", "gitlab", "bitbucket"]) {
+      repo.provider = provider;
+      repo.indexStatus = "pending";
+      events.length = 0; summaries.length = 0; checkOutputs.length = 0; reviewUpdates.length = 0;
+      await processReview("pr", undefined, 2);
+      assert.equal(repo.indexStatus, "failed");
+      assert.ok(summaries.some(body => body.includes("Review failed while preparing the repository")));
+      assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "Review failed while preparing the repository"; }));
+      assert.ok(events.some((event) => event.type === "review-failed" && event.error === "Review failed while preparing the repository"));
+      assert.ok(events.some((event) => event.status === "failed" && event.error === "Review failed while preparing the repository"));
+      if (provider !== "bitbucket") assert.ok(JSON.stringify(checkOutputs).includes("Review failed while preparing the repository"));
+      assert.doesNotMatch(JSON.stringify({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }), /synthetic-secret|private\/path/);
+      assert.equal(sentryEvents.at(-1)?.tags?.failure_stage, "indexing");
+      assert.equal(sentryEvents.at(-1)?.contexts?.background_failure?.retryCount, 2);
+    }
+    repo.provider = "github";
+    repo.indexStatus = "pending";
+    peerAlreadyIndexed = true;
+    events.length = 0; summaries.length = 0; checkOutputs.length = 0; reviewUpdates.length = 0;
+    const beforePeerIndexing = indexingCalls;
+    await processReview("pr");
+    assert.equal(repo.indexStatus, "indexed");
+    assert.equal(indexingCalls, beforePeerIndexing);
+    assert.ok(summaries.some(body => body.includes("Review failed while preparing the repository")));
+    assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "Review failed while preparing the repository"; }));
+    assert.ok(events.some(event => event.type === "review-failed" && event.error === "Review failed while preparing the repository"));
+    assert.ok(events.some(event => event.status === "failed" && event.error === "Review failed while preparing the repository"));
+    assert.ok(JSON.stringify(checkOutputs).includes("Review failed while preparing the repository"));
+    assert.doesNotMatch(JSON.stringify({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }), /synthetic-secret|private\/path/);
+    peerAlreadyIndexed = false;
+    repo.indexStatus = "indexed";
+    preparationFetchFailure = "review_input";
+    reviewUpdates.length = 0;
+    await processReview("pr");
+    assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "synthetic private input"; }));
+  } finally { console.error = originalError; }
+  console.log("PASS indexing failures are private across review outputs");
+  process.exit(0);
+}
 if (refusalFlow) {
   const originalError = console.error;
   console.error = () => {};

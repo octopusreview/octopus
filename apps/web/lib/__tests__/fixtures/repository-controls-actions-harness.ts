@@ -6,7 +6,8 @@ mock.module("next/headers", () => ({ headers: async () => new Headers(), cookies
 mock.module("next/navigation", () => ({ redirect: () => { throw new Error("Unexpected redirect"); } }));
 mock.module("next/cache", () => ({ revalidatePath() {} }));
 mock.module("@/lib/auth", () => ({ auth: { api: { getSession: async () => ({ user: { id: "user" } }) } } }));
-mock.module("@/lib/pubby", () => ({ pubby: { trigger: async () => {} } }));
+const broadcasts: unknown[] = [];
+mock.module("@/lib/pubby", () => ({ pubby: { trigger: async (_channel: string, event: string, body: unknown) => { if (event === "index-log") broadcasts.push(body); } } }));
 mock.module("@/lib/elasticsearch", () => ({ writeSyncLog() {}, deleteSyncLogs: async () => {} }));
 mock.module("@/lib/github", () => ({ GithubRateLimitError: class extends Error {} }));
 mock.module("@/lib/repo-sync", () => ({ syncOrgRepos: async () => ({}), syncForgejoRepos: async () => ({}) }));
@@ -26,7 +27,7 @@ let aborts = 0;
 let replaceBeforeCancel = false;
 let abortedAttempt: string | undefined;
 mock.module("@/lib/indexing-abort", () => ({ createAbortController: () => new AbortController(), abortIndexing: (attempt: string) => { aborts++; abortedAttempt = attempt; return true; } }));
-mock.module("@/lib/indexing-runner", () => ({ runIndexingInBackground: async () => { starts++; } }));
+mock.module("@/lib/indexing-runner", () => ({ runIndexingInBackground: async (...args: unknown[]) => { starts++; const emit = args[6] as (value: string) => void; emit("synthetic-private-path synthetic-secret"); emit("Processing local batch 1/2"); } }));
 
 const row = {
   id: "repo", fullName: "team/project", provider: "github", isActive: true, dismissedAt: null as Date | null,
@@ -106,6 +107,8 @@ row.indexStatus = "pending";
 row.autoReview = false;
 assert.deepEqual(await indexRepository("repo"), {});
 assert.equal(starts, 1);
+assert.doesNotMatch(JSON.stringify(broadcasts), /synthetic-private-path|synthetic-secret/);
+assert.match(JSON.stringify(broadcasts), /Processing local batch 1\/2/);
 assert.equal(row.autoReview, false, "manual indexing must preserve disabled automatic reviews");
 assert.equal(row.indexStatus, "indexing");
 const attempt = row.indexAttemptId;

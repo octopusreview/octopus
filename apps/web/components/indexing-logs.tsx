@@ -23,7 +23,7 @@ interface LogEntry {
 }
 
 function logKey(log: LogEntry): string {
-  return JSON.stringify([log.indexAttemptId ?? null, log.timestamp, log.level, log.message, !!log.live && log.message === "Saved indexing message withheld for privacy."]);
+  return JSON.stringify([log.indexAttemptId ?? null, log.timestamp, log.level, log.message]);
 }
 
 function LogIcon({ level, isActive }: { level: LogEntry["level"]; isActive: boolean }) {
@@ -50,21 +50,6 @@ const levelColor: Record<LogEntry["level"], string> = {
   warning: "text-amber-400",
 };
 
-// Patterns that should replace the previous log line instead of appending
-const PROGRESS_PATTERNS = [
-  /^Processing files\.\.\./,
-  /^Processing embedding batch /,
-  /^Storing \d+ vectors/,
-];
-
-
-function getProgressKey(message: string): string | null {
-  for (const p of PROGRESS_PATTERNS) {
-    if (p.test(message)) return p.source;
-  }
-  return null;
-}
-
 function parseProgress(message: string): { label: string; current: number; total: number; percent: number } | null {
   // "Processing files... 30/98"
   const filesMatch = message.match(/^(Processing files\.\.\.)\s*(\d+)\/(\d+)/);
@@ -81,23 +66,6 @@ function parseProgress(message: string): { label: string; current: number; total
     return { label: "Generating embeddings", current, total, percent: Math.round((current / total) * 100) };
   }
   return null;
-}
-
-function mergeProgressLogs(logs: LogEntry[]): LogEntry[] {
-  const merged: LogEntry[] = [];
-  for (const log of logs) {
-    const key = getProgressKey(log.message);
-    if (key && !(log.live && !log.indexAttemptId)) {
-      // Find the last log with the same progress key and replace it
-      const lastIdx = merged.findLastIndex((l) => !(l.live && !l.indexAttemptId) && getProgressKey(l.message) === key);
-      if (lastIdx !== -1) {
-        merged[lastIdx] = log;
-        continue;
-      }
-    }
-    merged.push(log);
-  }
-  return merged;
 }
 
 export function IndexingLogs({
@@ -238,25 +206,16 @@ export function IndexingLogs({
             entries.set(key, [...(entries.get(key) ?? []), log]);
           }
           const counts = new Map<string, number>();
-          for (const log of current.filter((log) => (!replaced || log.live) && matches(log))) {
+          for (const log of current.filter((log) => !log.live && !replaced && matches(log))) {
             const key = logKey(log);
             const bucket = entries.get(key) ?? [];
             const index = counts.get(key) ?? 0;
             if (index >= bucket.length) bucket.push(log);
-            else if (log.live) bucket[index] = log;
             entries.set(key, bucket);
             counts.set(key, index + 1);
           }
-          for (const log of pending.filter(matches)) {
-            const key = logKey(log);
-            const bucket = entries.get(key) ?? [];
-            if (!bucket.some((entry) => entry.live)) {
-              if (bucket.length) bucket[0] = log;
-              else bucket.push(log);
-              entries.set(key, bucket);
-            }
-          }
-          return [...entries.values()].flat().sort((a, b) => a.timestamp - b.timestamp);
+          return [...entries.values()].flat().concat(current.filter((log) => log.live && matches(log)), pending.filter(matches))
+            .sort((a, b) => a.timestamp - b.timestamp);
         });
         const uncheckedAttempts = [...incompleteAttempts.current.keys()].filter((id) => id !== null && id !== attempt);
         verifiedUnattributed.current = checkedUnattributed;
@@ -312,14 +271,7 @@ export function IndexingLogs({
         scheduleRefresh(currentAttempt.current === undefined ? retryDelay.current || 1000 : refreshDelay(data.indexAttemptId ?? null));
         return;
       }
-      setLogs((prev) => {
-        const index = prev.findIndex((l) => logKey(l) === logKey(data));
-        if (index !== -1) {
-          if (data.indexAttemptId || prev[index].live) return prev;
-          return prev.map((l, i) => i === index ? { ...l, live: true } : l);
-        }
-        return [...prev, data];
-      });
+      setLogs((prev) => [...prev, data]);
     };
 
     const handleStatus = (raw: unknown) => {
@@ -350,9 +302,15 @@ export function IndexingLogs({
   }, [logs]);
 
   const isComplete = initialStatus !== "indexing";
-  const displayLogs = mergeProgressLogs(logs);
-  const withheldTimes = new Set(logs.filter((log) => !log.live && log.message === "Saved indexing message withheld for privacy.").map((log) => JSON.stringify([log.timestamp, log.level])));
-  const mayContainDuplicates = logs.some((log) => log.live && withheldTimes.has(JSON.stringify([log.timestamp, log.level])));
+  const displayLogs = logs;
+  const seenTimes = new Set(logs.filter((log) => !log.live).map((log) => JSON.stringify([log.timestamp, log.level])));
+  const mayContainDuplicates = logs.some((log) => {
+    if (!log.live) return false;
+    const key = JSON.stringify([log.timestamp, log.level]);
+    const seen = seenTimes.has(key);
+    seenTimes.add(key);
+    return seen;
+  });
   const recovery = getRepositoryConnectionRecovery(provider, orgId, `/repositories?repo=${repoId}`);
 
   // Find the index of the last info log to determine which one should spin
@@ -399,7 +357,7 @@ export function IndexingLogs({
         )}
         {mayContainDuplicates && (
           <div role="alert" className="mb-3 text-amber-300">
-            Saved and live indexing messages may include duplicates.
+            Indexing messages may include duplicates.
           </div>
         )}
         {truncated && (

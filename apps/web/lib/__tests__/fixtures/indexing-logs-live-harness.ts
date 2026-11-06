@@ -167,7 +167,7 @@ try {
     emit("index-log", { repoId: "repo-a", message: withheld, level: "error", timestamp: 80, ...(owner ? { indexAttemptId: owner } : {}) });
     await flush();
     assert.equal(text(tree).split(withheld).length - 1, owner ? 4 : 3);
-    assert.match(text(tree), /Saved and live indexing messages may include duplicates/);
+    assert.match(text(tree), /Indexing messages may include duplicates/);
     emit("index-status", { repoId: "repo-a" });
     await flush();
     await reply(requests.length - 1, { logs: [], attempt: owner ? "next-owner" : null, indexAttemptId: owner ? "next-owner" : "legacy-replacement" });
@@ -183,13 +183,36 @@ try {
     await reply(requests.length - 1, { logs: [saved], attempt: owner, indexAttemptId: identity });
     if (!buffered) { emit("index-log", live); await flush(); }
     assert.match(text(tree), new RegExp(live.message));
-    assert.match(text(tree), /Saved and live indexing messages may include duplicates/);
+    assert.match(text(tree), /Indexing messages may include duplicates/);
     const count = text(tree).split(withheld).length - 1;
     emit("index-status", { repoId: "repo-a" });
     await flush();
     await reply(requests.length - 1, { logs: [saved], attempt: owner, indexAttemptId: identity });
     assert.equal(text(tree).split(withheld).length - 1, count);
     assert.match(text(tree), new RegExp(live.message));
+  }
+  for (const [owner, buffered, timestamp] of [[null, false, 200], [null, true, 201], ["exact-first", false, 202], ["exact-buffered", true, 203]] as const) {
+    const identity = owner ?? `legacy-exact-${timestamp}`;
+    const message = `Exact collision ${timestamp}`;
+    const entry = { message, level: "warning", timestamp, ...(owner ? { indexAttemptId: owner } : {}) };
+    const live = { ...entry, repoId: "repo-a" };
+    emit("index-status", { repoId: "repo-a" });
+    await flush();
+    if (buffered) { emit("index-log", live); emit("index-log", live); }
+    await reply(requests.length - 1, { logs: [entry], attempt: owner, indexAttemptId: identity });
+    if (!buffered) { emit("index-log", live); emit("index-log", live); await flush(); }
+    assert.equal(text(tree).split(message).length - 1, 3);
+    assert.match(text(tree), /Indexing messages may include duplicates/);
+    emit("index-status", { repoId: "repo-a" });
+    await flush();
+    emit("index-log", { ...live, indexAttemptId: "stale-tagged", message: `Stale collision ${timestamp}` });
+    await reply(requests.length - 1, { logs: [entry], attempt: owner, indexAttemptId: identity });
+    assert.equal(text(tree).split(message).length - 1, 3);
+    assert.doesNotMatch(text(tree), new RegExp(`Stale collision ${timestamp}`));
+    emit("index-status", { repoId: "repo-a" });
+    await flush();
+    await reply(requests.length - 1, { logs: [], attempt: owner ? `replacement-${timestamp}` : null, indexAttemptId: owner ? `replacement-${timestamp}` : `replacement-legacy-${timestamp}` });
+    assert.equal(text(tree).split(message).length - 1, owner ? 0 : 2);
   }
 } finally {
   for (const hook of hooks) hook?.cleanup?.();

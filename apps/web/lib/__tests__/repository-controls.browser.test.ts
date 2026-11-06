@@ -1,5 +1,11 @@
 import { expect, it } from "bun:test";
 
+type FixtureWindow = Window & { repositoryFixture: {
+  logDelay: number; logAttempt: string | null; indexAttemptId: string | null;
+  logs: Array<{ indexAttemptId?: string; message: string; level: string; timestamp: number }>;
+  repo: { id: string }; emit: (event: string, data: { repoId: string }) => void;
+} };
+
 // Real React controls in an isolated browser, with only local action/realtime
 // fixtures. No provider requests, production authentication or paid reviews.
 it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls after rejected actions and failed indexing", async () => {
@@ -56,11 +62,39 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
       }
       return route.continue();
     });
+    for (const [owner, buffered, timestamp] of [[null, false, 200], [null, true, 201], ["chrome-exact", false, 202], ["chrome-buffered", true, 203]] as const) {
+      await page.goto(new URL("?tagged-delay=1", server.url).href);
+      await page.waitForFunction("window.repositoryFixture.logFetches > 0");
+      const message = `Browser exact collision ${timestamp}`;
+      await page.evaluate(({ id, value, time, delay }: { id: string | null; value: string; time: number; delay: number }) => {
+        const f = (window as FixtureWindow).repositoryFixture;
+        f.logDelay = delay; f.logAttempt = id; f.indexAttemptId = id ?? "legacy-exact";
+        f.logs = [{ ...(id ? { indexAttemptId: id } : {}), message: value, level: "warning", timestamp: time }];
+        f.emit("index-status", { repoId: f.repo.id });
+      }, { id: owner, value: message, time: timestamp, delay: buffered ? 250 : 0 });
+      if (!buffered) await page.getByText(message, { exact: true }).waitFor();
+      await page.evaluate(({ id, value, time }: { id: string | null; value: string; time: number }) => {
+        const f = (window as FixtureWindow).repositoryFixture;
+        const live = { repoId: f.repo.id, ...(id ? { indexAttemptId: id } : {}), message: value, level: "warning", timestamp: time };
+        f.emit("index-log", live); f.emit("index-log", live);
+      }, { id: owner, value: message, time: timestamp });
+      await page.waitForFunction((value: string) => document.body.textContent?.split(value).length === 4, message);
+      await page.getByRole("alert").filter({ hasText: "Indexing messages may include duplicates" }).waitFor();
+      await page.evaluate(`{
+        const f=window.repositoryFixture; f.logDelay=100;
+        f.logs=[...f.logs,{...(f.logAttempt?{indexAttemptId:f.logAttempt}:{}),message:'Exact snapshot refreshed',level:'info',timestamp:300}];
+        f.emit('index-status',{repoId:f.repo.id});
+        f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'stale-tagged',message:'Stale exact event',level:'warning',timestamp:301});
+      }`);
+      await page.getByText("Exact snapshot refreshed", { exact: true }).waitFor();
+      expect(await page.getByText(message, { exact: true }).count()).toBe(3);
+      expect(await page.getByText("Stale exact event", { exact: true }).count()).toBe(0);
+    }
     await page.goto(new URL("?tagged-delay=1", server.url).href);
     await page.waitForFunction("window.repositoryFixture.logFetches > 0");
     for (const owner of [null, "browser-owner"]) {
       await page.evaluate((id: string | null) => {
-        const f = (window as any).repositoryFixture; f.logDelay = 0; f.logAttempt = id; f.indexAttemptId = id ?? "legacy-a";
+        const f = (window as FixtureWindow).repositoryFixture; f.logDelay = 0; f.logAttempt = id; f.indexAttemptId = id ?? "legacy-a";
         f.logs = [0, 1].map(() => ({ ...(id ? { indexAttemptId: id } : {}), message: "Saved indexing message withheld for privacy.", level: "error", timestamp: 42 }));
         f.emit("index-status", { repoId: f.repo.id });
       }, owner);
@@ -88,7 +122,7 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     for (const batch of [null, "batch-b"]) {
       const before = await page.evaluate("window.repositoryFixture.logFetches");
       await page.evaluate((id: string | null) => {
-        const f = (window as any).repositoryFixture; f.indexAttemptId = id; f.logs = [];
+        const f = (window as FixtureWindow).repositoryFixture; f.indexAttemptId = id; f.logs = [];
         f.emit("index-status", { repoId: f.repo.id });
       }, batch);
       await page.waitForFunction(`window.repositoryFixture.logFetches > ${before}`);
@@ -218,7 +252,7 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
       f.emit('index-log',{repoId:f.repo.id,message:'Retry access denied',level:'warning',timestamp:2});
     }`);
     await page.getByText("Retry progress received", { exact: true }).waitFor();
-    expect(await page.getByText("Retry access denied", { exact: true }).count()).toBe(2);
+    expect(await page.getByText("Retry access denied", { exact: true }).count()).toBe(3);
     await page.getByRole("button", { name: "Cancel", exact: true }).first().click();
     await page.getByRole("alert").filter({ hasText: "Fixture cancellation failed" }).waitFor();
     await page.evaluate(`{
@@ -255,8 +289,8 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     const callsBeforeLogRetry = await page.evaluate("window.repositoryFixture.indexCalls");
     await page.getByRole("button", { name: "Retry loading logs", exact: true }).click();
     await page.getByText("Recovered logs", { exact: true }).waitFor();
-    expect(await page.getByText("Retry access denied", { exact: true }).count()).toBe(2);
-    expect(await page.getByText("Retry progress received", { exact: true }).count()).toBe(1);
+    expect(await page.getByText("Retry access denied", { exact: true }).count()).toBe(5);
+    expect(await page.getByText("Retry progress received", { exact: true }).count()).toBe(2);
     expect(await page.getByText("Reconnect to restore access", { exact: true }).count()).toBe(1);
     expect(await page.evaluate("window.repositoryFixture.indexCalls")).toBe(callsBeforeLogRetry);
     expect(await page.getByRole("alert").filter({ hasText: "Could not load indexing logs" }).count()).toBe(0);

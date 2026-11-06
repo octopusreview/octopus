@@ -10,6 +10,9 @@ mock.module("@sentry/nextjs", () => ({ captureEvent: (event: typeof sentryEvents
 const directCommentFailure = process.argv.includes("--direct-forgejo-comment-failure");
 const preserveAutoReview = process.argv.includes("--preserve-auto-review");
 const firstCompletion = process.argv.includes("--first-review-completion");
+const refusalFlow = process.argv.includes("--provider-refusal");
+if (refusalFlow) process.env.ANTHROPIC_BASE_URL = "https://api.anthropic.com";
+let refusalCalls = 0;
 let preparationFetchFailure: "review_input" | "repository_tree" | "large_pr" | null = null;
 const queuedJobs: string[] = [];
 class FixtureLargePrError extends Error { meta = { reason: "diff_too_large" }; }
@@ -40,6 +43,15 @@ let usageCount = 0;
 const events: { type?: string; status?: string; eventName?: string }[] = [];
 let completedSnapshot: string | undefined;
 globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+  if (refusalFlow && String(_url) === "https://api.anthropic.com/v1/messages") {
+    refusalCalls++;
+    const messages = [
+      { type: "message_start", message: { id: "fixture", type: "message", role: "assistant", model: "claude-fable-5-1", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } },
+      { type: "message_delta", delta: { stop_reason: "refusal", stop_sequence: null }, usage: { output_tokens: 1 } },
+      { type: "message_stop" },
+    ];
+    return new Response(messages.map(message => `event: ${message.type}\ndata: ${JSON.stringify(message)}\n\n`).join(""), { headers: { "content-type": "text/event-stream" } });
+  }
   assert.ok(init?.signal);
   await Promise.resolve();
   if (adaptiveStage === "transport-control") throw new Error("Unrelated transport error");
@@ -135,11 +147,17 @@ mock.module("@/lib/qdrant", () => ({
 }));
 mock.module("@/lib/reranker", () => ({ rerankDocuments: async () => [] }));
 mock.module("@/lib/knowledge-context", () => ({ getAlwaysIncludeKnowledge: async () => [], mergeKnowledgeChunks: () => [] }));
-mock.module("@/lib/review-routing", () => ({ resolveReviewModel: async () => adaptiveStage ? "claude-fable-5-1" : "gpt-fixture" }));
+mock.module("@/lib/review-routing", () => ({ resolveReviewModel: async () => refusalFlow ? "claude-sonnet-4-6" : adaptiveStage ? "claude-fable-5-1" : "gpt-fixture" }));
 mock.module("@/lib/ai-usage", () => ({ logAiUsage: async () => { usageCount++; if (adaptiveStage === "before-validator") adaptiveAbort.abort(); } }));
 mock.module("@/lib/ai-router", () => ({ getProviderForModel: async () => {
   assert.ok(adaptiveStage, "Legacy fixture must not resolve adaptive capacity"); return "anthropic";
 }, createAiMessage: async (params: AiCreateParams) => {
+  if (refusalFlow) {
+    const { anthropicProvider } = await import("@/lib/providers/anthropic");
+    const { AiProviderFailure } = await import("@/lib/provider-failure");
+    try { return await anthropicProvider.create(params, "synthetic-key"); }
+    catch (error) { throw new AiProviderFailure(error, "anthropic", params.model, "platform"); }
+  }
   if (adaptiveStage) {
     assert.ok(params.completeReviewAdmission, "Oversized complete input must use capacity admission");
     const { observeAiRequest } = await import("@/lib/providers/request-evidence");
@@ -212,7 +230,7 @@ mock.module("@/lib/review-attempt", () => ({
   recordFirstReviewCompletion: realReviewAttempt.recordFirstReviewCompletion,
   withForgejoReviewPublication: directCommentFailure ? realReviewAttempt.withForgejoReviewPublication : async (_id: string, _head: string, _version: number, publish: () => Promise<void>) => publish(),
   createReviewAttemptComment: directCommentFailure ? realReviewAttempt.createReviewAttemptComment : async (_id: string, _head: string, _version: number, create: () => Promise<number>) => create(),
-  updateCurrentReview: directCommentFailure || firstCompletion ? realReviewAttempt.updateCurrentReview : async () => ({ count: 1 }),
+  updateCurrentReview: directCommentFailure || firstCompletion || refusalFlow ? realReviewAttempt.updateCurrentReview : async () => ({ count: 1 }),
   saveReviewAttempt: async (_id: string, _pr: string, _coverage: unknown, _body: string, findings: { title: string }[]) => {
     archived.push({ id: _id, findings, coverage: structuredClone(_coverage), body: _body });
     if (firstCompletion) Object.assign(pr, { status: "completed", reviewBody: _body });
@@ -296,7 +314,7 @@ mock.module("@/lib/queue", () => ({
   computeStaleReclaimMs: () => 120000,
   enqueue: async (name: string) => { queuedJobs.push(name); }, enqueueAfter: async () => {},
 }));
-mock.module("@/lib/cost", () => ({ getOrgSpendLimitStatus: async () => ({ blocked: false }), shouldGuardConcurrency: async () => false }));
+mock.module("@/lib/cost", () => ({ getOrgSpendLimitStatus: async () => ({ blocked: false }), shouldGuardConcurrency: async () => false, getModelPricing: async () => null, estimateCompleteReviewCost: () => 0 }));
 mock.module("@/lib/pubby", () => ({ pubby: { trigger: async (_channel: string, _name: string, data: { status?: string }) => { events.push({ ...data, status: _name === "index-status" ? repo.indexStatus : data.status, eventName: _name }); } } }));
 mock.module("@/lib/events", () => ({ eventBus: { emit: (event: { type: string }) => { events.push(event); } } }));
 mock.module("@/lib/indexer", () => ({ indexRepository: async () => {
@@ -343,6 +361,24 @@ ${JSON.stringify([finding])}
 const { prepareReviewInput } = await import("@/lib/review-coverage");
 const { canRestrictReviewToFollowUp } = await import("@/lib/review-follow-up");
 const { processReview } = await import("@/lib/reviewer");
+if (refusalFlow) {
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    await processReview("pr");
+    assert.equal(refusalCalls, 1);
+    assert.equal(usageCount, 0, "refused generation must not log usage as a completed response");
+    assert.equal(sentryEvents.length, 1);
+    assert.equal(sentryEvents[0].tags?.failure_code, "PROVIDER_REFUSAL");
+    assert.equal(sentryEvents[0].tags?.failure_stage, "generation");
+    assert.equal((archived.at(-1)?.coverage as ReviewCoverage).assessment?.state, "incomplete");
+    assert.ok(reviewUpdates.some((update) => (update as { data: { status?: string } }).data.status === "failed"));
+    assert.equal(published.length, 0, "failed generation must not publish a scored review");
+    assert.ok(!/\|[^\n]*[1-5]\/5/.test(summaries.at(-1) ?? ""), "failed summary must not claim a score");
+  } finally { console.error = originalError; }
+  console.log("PASS refusal remains an incomplete failed review");
+  process.exit(0);
+}
 if (process.argv.includes("--preparation-diagnostic")) {
   const originalError = console.error;
   console.error = () => {};

@@ -190,6 +190,7 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     expect(await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).count()).toBe(0);
     const scrollStyle = await page.addStyleTag({ content: ".max-h-72 { max-height: 18rem; } .overflow-y-auto { overflow-y: auto; }" });
     const messages = page.getByRole("list", { name: "Indexing messages" });
+    await messages.evaluate((list: HTMLElement) => { list.scrollTop = list.scrollHeight; list.dispatchEvent(new Event("scroll")); });
     await page.waitForFunction(() => {
       const list = document.querySelector('[aria-label="Indexing messages"]')!;
       return list.scrollHeight > list.clientHeight && list.scrollTop + list.clientHeight >= list.scrollHeight - 1;
@@ -203,6 +204,9 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.getByRole("button", { name: "Show older messages" }).click();
     await page.getByText("Processed 20800 files, skipped 0", { exact: true }).waitFor();
     await page.evaluate(`window.repositoryFixture.emit('index-log',{repoId:'fixture-repo',indexAttemptId:'owner-after-overflow',message:'Processed 500054 files, skipped 0',level:'info',timestamp:1203})`);
+    await page.getByText(/201 newer messages are not shown/).waitFor();
+    await page.getByRole("button", { name: "Show newer messages" }).click();
+    await page.getByText(/1 newer messages are not shown/).waitFor();
     await page.getByRole("button", { name: "Show newer messages" }).click();
     await page.getByText("Processed 500054 files, skipped 0", { exact: true }).waitFor();
     await page.waitForFunction(() => {

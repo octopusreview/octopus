@@ -41,5 +41,5 @@ export async function GET(request: NextRequest) {
   const attempt = repo.indexAttemptId && repo.indexAttemptId === repo.syncLogAttemptId ? repo.indexAttemptId : undefined;
   const logs = await getSyncLogs(orgId, repoId, 500, attempt);
 
-  return NextResponse.json({ logs, attempt: attempt ?? null });
+  return NextResponse.json({ logs, attempt: attempt ?? null, indexAttemptId: repo.indexAttemptId });
 }

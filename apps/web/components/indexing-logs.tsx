@@ -117,6 +117,7 @@ export function IndexingLogs({
   const [logsMayBeMissing, setLogsMayBeMissing] = useState(false);
   const [reload, setReload] = useState(0);
   const currentAttempt = useRef<string | null | undefined>(undefined);
+  const previousIndexAttempt = useRef<string | null | undefined>(undefined);
   const pendingLogs = useRef<LogEntry[]>([]);
   const incompleteAttempts = useRef(new Map<string | null, object>());
   const unattributedMissingLogs = useRef<object | null>(null);
@@ -163,6 +164,7 @@ export function IndexingLogs({
     const scope = JSON.stringify([orgId, repoId]);
     if (scope !== logScope.current) {
       logScope.current = scope;
+      previousIndexAttempt.current = undefined;
       pendingLogs.current = [];
       incompleteAttempts.current.clear();
       unattributedMissingLogs.current = null;
@@ -193,6 +195,9 @@ export function IndexingLogs({
         if (controller.signal.aborted) return;
         if (!Array.isArray(data.logs)) throw new Error("Invalid indexing logs response");
         const attempt = typeof data.attempt === "string" ? data.attempt : null;
+        const indexAttempt = typeof data.indexAttemptId === "string" ? data.indexAttemptId : null;
+        const replaced = previousIndexAttempt.current !== undefined && previousIndexAttempt.current !== indexAttempt;
+        previousIndexAttempt.current = indexAttempt;
         for (const [id, marker] of checkedIncomplete) {
           if (id !== attempt && incompleteAttempts.current.get(id) === marker) incompleteAttempts.current.delete(id);
         }
@@ -215,7 +220,7 @@ export function IndexingLogs({
         }
         setLogs((current) => {
           const entries = new Map<string, LogEntry>();
-          for (const log of [...data.logs as LogEntry[], ...current, ...pending]) {
+          for (const log of [...data.logs as LogEntry[], ...(replaced ? [] : current), ...pending]) {
             if (attempt ? log.indexAttemptId === attempt : !log.indexAttemptId) entries.set(logKey(log), log);
           }
           return [...entries.values()].sort((a, b) => a.timestamp - b.timestamp);

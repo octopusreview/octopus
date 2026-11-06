@@ -41,7 +41,7 @@ const currentUserResponse = await getUserLogs(userRequest());
 const currentAdminResponse = await getAdminLogs(adminRequest(), adminParams);
 assert.equal(currentUserResponse.status, 200);
 assert.equal(currentAdminResponse.status, 200);
-assert.deepEqual(await currentUserResponse.json(), { logs: [currentLog], attempt: "current" });
+assert.deepEqual(await currentUserResponse.json(), { logs: [currentLog], attempt: "current", indexAttemptId: "current" });
 assert.deepEqual(await currentAdminResponse.json(), { logs: [currentLog] });
 assert.deepEqual(calls.splice(0), [["org", "repo", 500, "current"], ["org", "repo", 500, "current"]]);
 for (const [attempt, marker] of [["old-binary", "current"], [null, "current"], ["legacy", null]] as const) {
@@ -50,7 +50,7 @@ for (const [attempt, marker] of [["old-binary", "current"], [null, "current"], [
   const adminResponse = await getAdminLogs(adminRequest(), adminParams);
   assert.equal(userResponse.status, 200);
   assert.equal(adminResponse.status, 200);
-  assert.deepEqual(await userResponse.json(), { logs: [legacyLog], attempt: null });
+  assert.deepEqual(await userResponse.json(), { logs: [legacyLog], attempt: null, indexAttemptId: attempt });
   assert.deepEqual(await adminResponse.json(), { logs: [legacyLog] });
   assert.deepEqual(calls.splice(0), [["org", "repo", 500, undefined], ["org", "repo", 500, undefined]]);
 }

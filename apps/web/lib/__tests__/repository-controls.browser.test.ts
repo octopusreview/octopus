@@ -146,7 +146,7 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     expect(await page.getByRole("alert").filter({ hasText: "Could not load indexing logs" }).count()).toBe(0);
     // A background retry does not remount RepoDetail or click its index action.
     await page.evaluate(`{
-      const f=window.repositoryFixture;f.logs=[];f.repo.indexStatus='indexing';
+      const f=window.repositoryFixture;f.logs=[];f.indexAttemptId='old-legacy';f.repo.indexStatus='indexing';
       f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
     }`);
     await page.getByText("Waiting for logs...", { exact: true }).waitFor();
@@ -156,6 +156,25 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
       f.emit('index-log',{repoId:f.repo.id,message:'Background retry progress',level:'info',timestamp:4});
     }`);
     await page.getByText("Background retry progress", { exact: true }).waitFor();
+    const beforeLegacyReload = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logs=[{message:'Same attempt saved log',level:'info',timestamp:5}];
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeLegacyReload}`);
+    await page.getByText("Same attempt saved log", { exact: true }).waitFor();
+    await page.getByText("Background retry progress", { exact: true }).waitFor();
+    const beforeLegacyReplacement = await page.evaluate("window.repositoryFixture.logFetches");
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.indexAttemptId='replacement-legacy';
+      f.logs=[{message:'Replacement saved log',level:'info',timestamp:5}];
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeLegacyReplacement}`);
+    await page.getByText("Replacement saved log", { exact: true }).waitFor();
+    expect(await page.getByText("Background retry progress", { exact: true }).count()).toBe(0);
+    await page.evaluate(`window.repositoryFixture.emit('index-log',{repoId:'fixture-repo',message:'Replacement legacy live log',level:'info',timestamp:6})`);
+    await page.getByText("Replacement legacy live log", { exact: true }).waitFor();
     await page.evaluate("window.repositoryFixture.repo.indexStatus='failed'; window.repositoryFixture.refresh()");
     await page.getByRole("button", { name: "Retry indexing", exact: true }).waitFor();
     const beforeAttemptFetch = await page.evaluate("window.repositoryFixture.logFetches");

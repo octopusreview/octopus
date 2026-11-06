@@ -23,6 +23,46 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("withholds private live indexing 
   try {
     browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_BROWSER_CHANNEL });
     const page = await browser.newPage();
+    for (const owner of [null, "bounded-owner"]) {
+      await page.goto(server.url.href);
+      await page.getByText("Indexing Logs", { exact: true }).waitFor();
+      await page.evaluate((attempt: string | null) => {
+        const f = (window as unknown as { privacyFixture: { attempt: string | null; delay: number; logs: unknown[]; emit: (name: string, data: unknown) => void } }).privacyFixture;
+        f.attempt = attempt; f.delay = 100;
+        f.logs = Array.from({ length: 500 }, (_, i) => ({ ...(attempt ? { indexAttemptId: attempt } : {}), message: `Processed ${i + 1} files, skipped 0`, level: "info", timestamp: i + 1 }));
+        f.emit("index-status", { repoId: "repo" });
+      }, owner);
+      await page.getByText("Processed 500 files, skipped 0", { exact: true }).waitFor();
+      await page.getByText(/Showing 301–500 of 500 messages/).waitFor();
+      await page.evaluate(`{
+        const f=window.privacyFixture; f.attempt='untrusted-owner';
+        f.logs=[...f.logs,{indexAttemptId:'untrusted-owner',message:'Error /private/oversized synthetic-secret',level:'error',timestamp:501}];
+        f.emit('index-status',{repoId:'repo'});
+      }`);
+      await page.getByRole("alert").filter({ hasText: "Could not load indexing logs" }).waitFor();
+      await page.getByRole("alert").filter({ hasText: "may belong to an earlier attempt" }).waitFor();
+      expect(await page.getByText("Processed 500 files, skipped 0", { exact: true }).count()).toBe(1);
+      expect(await page.getByText(/synthetic-secret|\/private\/oversized/).count()).toBe(0);
+      await page.evaluate(`{
+        const f=window.privacyFixture;
+        for(let i=0;i<2;i++) f.emit('index-log',{repoId:'repo',message:'Error /private/live-limit synthetic-secret',level:'error',timestamp:2000});
+        f.emit('index-log',{repoId:'repo',indexAttemptId:'untrusted-owner',message:'Processed 9999 files, skipped 0',level:'info',timestamp:2001});
+      }`);
+      await page.waitForFunction("document.body.textContent.split('Indexing message withheld for privacy.').length === 3");
+      expect(await page.getByText("Processed 9999 files, skipped 0", { exact: true }).count()).toBe(0);
+      expect(await page.getByText(/synthetic-secret|\/private\/live-limit/).count()).toBe(0);
+      await page.evaluate((attempt: string | null) => {
+        const f = (window as unknown as { privacyFixture: { attempt: string | null; logs: unknown[] } }).privacyFixture;
+        f.attempt = attempt;
+        f.logs = Array.from({ length: 500 }, (_, i) => ({ ...(attempt ? { indexAttemptId: attempt } : {}), message: `Processed ${i === 499 ? 7000 : i + 1} files, skipped 0`, level: "info", timestamp: i === 499 ? 1000 : i + 1 }));
+      }, owner);
+      await page.getByRole("button", { name: "Retry loading logs" }).click();
+      await page.getByText("Processed 7000 files, skipped 0", { exact: true }).waitFor();
+      expect(await page.getByRole("alert").filter({ hasText: "Could not load indexing logs" }).count()).toBe(0);
+      expect(await page.getByText("Processed 9999 files, skipped 0", { exact: true }).count()).toBe(0);
+      expect(await page.getByText("Indexing message withheld for privacy.", { exact: true }).count()).toBe(2);
+      await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
+    }
     const entry = (value: number, timestamp = 42) => ({ message: `Processed ${value} files, skipped 0`, level: "info", timestamp });
     const advancingCases = [
       { old: [entry(1), entry(2), entry(1)], next: [entry(2), entry(1)], expected: [1, 2, 1] },

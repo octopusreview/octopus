@@ -24,6 +24,7 @@ interface LogEntry {
 }
 
 const LOG_PAGE_SIZE = 200;
+const MAX_SAVED_LOGS = 500;
 
 function insertLog(logs: LogEntry[], log: LogEntry): LogEntry[] {
   let low = 0;
@@ -43,18 +44,8 @@ function logKey(log: LogEntry): string {
 function mergeSavedLogs(previous: LogEntry[], saved: LogEntry[]): LogEntry[] {
   if (!previous.length) return saved;
   if (!saved.length) return previous;
-  const prefix = previous.slice(0, -500);
-  const old = previous.slice(-500);
-  if (saved.length > 500) {
-    const remaining = new Map<string, number>();
-    for (const log of previous) remaining.set(logKey(log), (remaining.get(logKey(log)) ?? 0) + 1);
-    return previous.concat(saved.filter((log) => {
-      const key = logKey(log);
-      const count = remaining.get(key) ?? 0;
-      if (count) remaining.set(key, count - 1);
-      return !count;
-    }));
-  }
+  const prefix = previous.slice(0, -MAX_SAVED_LOGS);
+  const old = previous.slice(-MAX_SAVED_LOGS);
   const oldKeys = old.map(logKey);
   const newKeys = saved.map(logKey);
   const lengths = Array.from({ length: old.length + 1 }, () => new Uint16Array(saved.length + 1));
@@ -231,7 +222,7 @@ export function IndexingLogs({
       })
       .then((data) => {
         if (controller.signal.aborted) return;
-        if (!Array.isArray(data.logs)) throw new Error("Invalid indexing logs response");
+        if (!Array.isArray(data.logs) || data.logs.length > MAX_SAVED_LOGS) throw new Error("Invalid indexing logs response");
         const attempt = typeof data.attempt === "string" ? data.attempt : null;
         const identity = attempt || data.indexAttemptId;
         const validIdentity = identity === null || (typeof identity === "string" && identity.length > 0);

@@ -154,6 +154,23 @@ try {
   await flush();
   await reply(requests.length - 1, { logs: [], attempt: "new-upload", indexAttemptId: "new-batch" });
   assert.doesNotMatch(text(tree), /First batch saved/);
+  const withheld = "Saved indexing message withheld for privacy.";
+  for (const owner of [null, "collision-owner"] as const) {
+    const pair = [{ message: withheld, level: "error", timestamp: 80, ...(owner ? { indexAttemptId: owner } : {}) },
+      { message: withheld, level: "error", timestamp: 80, ...(owner ? { indexAttemptId: owner } : {}) }];
+    for (let i = 0; i < 2; i++) {
+      emit("index-status", { repoId: "repo-a" });
+      await flush();
+      await reply(requests.length - 1, { logs: pair, attempt: owner, indexAttemptId: owner ?? "legacy-collision" });
+      assert.equal(text(tree).split(withheld).length - 1, owner ? 3 : 2);
+    }
+    emit("index-log", { repoId: "repo-a", message: withheld, level: "error", timestamp: 80, ...(owner ? { indexAttemptId: owner } : {}) });
+    await flush();
+    emit("index-status", { repoId: "repo-a" });
+    await flush();
+    await reply(requests.length - 1, { logs: [], attempt: owner ? "next-owner" : null, indexAttemptId: owner ? "next-owner" : "legacy-replacement" });
+    assert.equal(text(tree).split(withheld).length - 1, 1);
+  }
 } finally {
   for (const hook of hooks) hook?.cleanup?.();
 }

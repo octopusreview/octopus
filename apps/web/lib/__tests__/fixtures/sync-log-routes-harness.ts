@@ -88,6 +88,22 @@ for (const [batch, upload, selected] of [
   await getAdminLogs(adminRequest(), adminParams);
   assert.deepEqual(calls.splice(0), [["org", "repo", 500, selected], ["org", "repo", 500, selected]]);
 }
+const safeTexts = ["Processed 5 files, skipped 0", "Processing files... 3/10", "Processing embedding batch 2/5...", "Repository cloned successfully", "Generating embeddings for 5 chunks (1 batch)...", "Storing 5 vectors in database (2 batches)..."];
+const unsafeTexts = ["synthetic-secret", "/private/synthetic/file.ts", "Processed 5 files, skipped 0 synthetic-secret", "Processed 5 files, skipped 0\n", "Indexing failed: synthetic-secret"];
+for (const attempt of [undefined, "current"] as const) {
+  repository = { id: "repo", organizationId: "org", indexAttemptId: attempt ?? "legacy", syncLogAttemptId: attempt ?? null };
+  const target = attempt ? attemptLogs : legacyLogs;
+  const original = target.splice(0);
+  for (const message of [...safeTexts, ...unsafeTexts]) target.push({ orgId: "org", repoId: "repo", ...(attempt ? { indexAttemptId: attempt } : {}), message, level: "info", timestamp: 99 } as never);
+  const expected = [...safeTexts, ...unsafeTexts.map(() => "Saved indexing message withheld for privacy.")];
+  for (const response of [await getUserLogs(userRequest()), await getAdminLogs(adminRequest(), adminParams)]) {
+    const body = await response.json();
+    assert.deepEqual(body.logs.map((log: { message: string }) => log.message), expected);
+    assert.ok(body.logs.every((log: Record<string, unknown>) => Object.keys(log).every(key => ["orgId", "repoId", "indexAttemptId", "message", "level", "timestamp"].includes(key))));
+  }
+  target.splice(0, target.length, ...original as never[]);
+  calls.splice(0);
+}
 repository = { id: "repo", organizationId: "other", indexAttemptId: "current", syncLogAttemptId: "current" };
 assert.deepEqual(await (await getUserLogs(userRequest())).json(), { logs: [] });
 assert.equal(calls.length, 0);

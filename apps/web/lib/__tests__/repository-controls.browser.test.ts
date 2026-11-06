@@ -58,6 +58,27 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     });
     await page.goto(new URL("?tagged-delay=1", server.url).href);
     await page.waitForFunction("window.repositoryFixture.logFetches > 0");
+    for (const owner of [null, "browser-owner"]) {
+      await page.evaluate((id: string | null) => {
+        const f = (window as any).repositoryFixture; f.logDelay = 0; f.logAttempt = id; f.indexAttemptId = id ?? "legacy-a";
+        f.logs = [0, 1].map(() => ({ ...(id ? { indexAttemptId: id } : {}), message: "Saved indexing message withheld for privacy.", level: "error", timestamp: 42 }));
+        f.emit("index-status", { repoId: f.repo.id });
+      }, owner);
+      await page.waitForFunction(`document.body.textContent.split('Saved indexing message withheld for privacy.').length === 3`);
+      await page.evaluate(`{
+        const f=window.repositoryFixture; f.logs=[...f.logs,{...(f.logAttempt?{indexAttemptId:f.logAttempt}:{}),message:'Repeated snapshot received',level:'info',timestamp:43}];
+        f.emit('index-status',{repoId:f.repo.id});
+      }`);
+      await page.getByText("Repeated snapshot received", { exact: true }).waitFor();
+      expect(await page.getByText("Saved indexing message withheld for privacy.", { exact: true }).count()).toBe(2);
+      await page.evaluate(`{
+        const f=window.repositoryFixture; f.logAttempt=f.logAttempt?'other-owner':null; f.indexAttemptId=f.logAttempt||'legacy-b';
+        f.logs=[{...(f.logAttempt?{indexAttemptId:f.logAttempt}:{}),message:'Collision replacement received',level:'info',timestamp:44}];
+        f.emit('index-status',{repoId:f.repo.id});
+      }`);
+      await page.getByText("Collision replacement received", { exact: true }).waitFor();
+      expect(await page.getByText("Saved indexing message withheld for privacy.", { exact: true }).count()).toBe(0);
+    }
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logDelay=0; f.logAttempt='upload'; f.indexAttemptId='batch-a';
       f.logs=[{indexAttemptId:'upload',message:'Upload batch A',level:'info',timestamp:1}];

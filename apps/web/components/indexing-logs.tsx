@@ -230,12 +230,33 @@ export function IndexingLogs({
           }
         }
         setLogs((current) => {
-          const entries = new Map<string, LogEntry>();
+          const entries = new Map<string, LogEntry[]>();
           const saved = (data.logs as LogEntry[]).map((log) => ({ ...log, live: false }));
-          for (const log of [...saved, ...current.filter((log) => !replaced || log.live), ...pending]) {
-            if (attempt ? log.indexAttemptId === attempt || (log.live && !log.indexAttemptId) : !log.indexAttemptId) entries.set(logKey(log), log);
+          const matches = (log: LogEntry) => attempt ? log.indexAttemptId === attempt || (log.live && !log.indexAttemptId) : !log.indexAttemptId;
+          for (const log of saved.filter(matches)) {
+            const key = logKey(log);
+            entries.set(key, [...(entries.get(key) ?? []), log]);
           }
-          return [...entries.values()].sort((a, b) => a.timestamp - b.timestamp);
+          const counts = new Map<string, number>();
+          for (const log of current.filter((log) => (!replaced || log.live) && matches(log))) {
+            const key = logKey(log);
+            const bucket = entries.get(key) ?? [];
+            const index = counts.get(key) ?? 0;
+            if (index >= bucket.length) bucket.push(log);
+            else if (log.live) bucket[index] = log;
+            entries.set(key, bucket);
+            counts.set(key, index + 1);
+          }
+          for (const log of pending.filter(matches)) {
+            const key = logKey(log);
+            const bucket = entries.get(key) ?? [];
+            if (!bucket.some((entry) => entry.live)) {
+              if (bucket.length) bucket[0] = log;
+              else bucket.push(log);
+              entries.set(key, bucket);
+            }
+          }
+          return [...entries.values()].flat().sort((a, b) => a.timestamp - b.timestamp);
         });
         const uncheckedAttempts = [...incompleteAttempts.current.keys()].filter((id) => id !== null && id !== attempt);
         verifiedUnattributed.current = checkedUnattributed;
@@ -292,8 +313,10 @@ export function IndexingLogs({
         return;
       }
       setLogs((prev) => {
-        if (prev.some((l) => logKey(l) === logKey(data))) {
-          return prev.map((l) => logKey(l) === logKey(data) && !data.indexAttemptId ? { ...l, live: true } : l);
+        const index = prev.findIndex((l) => logKey(l) === logKey(data));
+        if (index !== -1) {
+          if (data.indexAttemptId || prev[index].live) return prev;
+          return prev.map((l, i) => i === index ? { ...l, live: true } : l);
         }
         return [...prev, data];
       });

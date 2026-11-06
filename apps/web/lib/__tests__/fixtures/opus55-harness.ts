@@ -5,8 +5,12 @@ import type { AiCreateParams } from "../../providers";
 
 mock.module("server-only", () => ({}));
 mock.module("@octopus/db", () => ({ prisma: {} }));
+const incidents: Array<{ tags: Record<string, unknown> }> = [];
+mock.module("@sentry/nextjs", () => ({ captureEvent: (event: typeof incidents[number]) => { incidents.push(event); return "event"; } }));
 process.env.ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 const { anthropicProvider } = await import("../../providers/anthropic");
+const { AiProviderFailure, safeErrorDetails } = await import("../../provider-failure");
+const { reportBackgroundFailure } = await import("../../background-failure");
 
 const schema = { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false };
 const params: AiCreateParams = {
@@ -114,6 +118,17 @@ for (const [request, blocks] of [[params, native], [sonnet, native], [legacy, [t
 
 nextResponse = response(native, null);
 assert.deepEqual((await anthropicProvider.create(params, "synthetic-only")).completion, { state: "unknown", reason: null });
+for (const request of [params, legacy]) {
+  nextResponse = response([], "refusal");
+  await assert.rejects(() => anthropicProvider.create(request, "synthetic-only"), (error: unknown) => {
+    assert.equal(safeErrorDetails(error).code, "PROVIDER_REFUSAL");
+    const failure = new AiProviderFailure(error, "anthropic", request.model, "platform");
+    reportBackgroundFailure(failure, { stage: "generation" });
+    assert.equal(incidents.at(-1)?.tags.failure_code, "PROVIDER_REFUSAL");
+    assert.ok(!JSON.stringify(incidents.at(-1)).includes("synthetic-only"));
+    return true;
+  });
+}
 nextResponse = response([native[0]], "max_tokens");
 await assert.rejects(() => anthropicProvider.create(params, "synthetic-only"), /returned no text/);
 nextResponse = response(native);

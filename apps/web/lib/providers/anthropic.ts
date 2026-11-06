@@ -94,9 +94,9 @@ export const anthropicProvider: Provider = {
     if (useTool) {
       const toolUse = response.content.find((block) => block.type === "tool_use");
       if (!toolUse || toolUse.type !== "tool_use") {
-        throw new Error(
+        throw Object.assign(new Error(
           `Anthropic returned no tool_use (stop_reason: ${response.stop_reason}, blocks: ${response.content.map((b) => b.type).join(",") || "none"})`,
-        );
+        ), response.stop_reason === "refusal" ? { code: "PROVIDER_REFUSAL" } : {});
       }
       text = JSON.stringify(toolUse.input);
       if (!text || text === "{}") {
@@ -115,9 +115,9 @@ export const anthropicProvider: Provider = {
       // Surface empty responses as errors instead of silently returning an empty
       // review that downstream code would PATCH to GitHub as a blank comment (422).
       if (!text) {
-        throw new Error(
+        throw Object.assign(new Error(
           `Anthropic returned no text (stop_reason: ${response.stop_reason}, blocks: ${response.content.map((b) => b.type).join(",") || "none"})`,
-        );
+        ), response.stop_reason === "refusal" ? { code: "PROVIDER_REFUSAL" } : {});
       }
     }
 

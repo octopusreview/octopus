@@ -30,12 +30,12 @@ assert.equal(logs.length, 500);
 assert.deepEqual(logs.map(row => row.timestamp), Array.from({ length: 500 }, (_, i) => i + 100));
 assert.ok(logs.every(row => row.orgId === "org-a" && row.repoId === "repo-a"));
 
-assert.equal(logs.at(-2)?.message, "Saved indexing message withheld for privacy.");
+assert.equal(logs.at(-2)?.message, "Indexing message withheld for privacy.");
 assert.doesNotMatch(JSON.stringify(logs.at(-2)), /synthetic-secret|synthetic-private-path/);
 assert.equal(logs.at(-1)?.message, "Processing local batch 1/2");
 await writeSyncLog({ orgId: "org-a", repoId: "repo-a", timestamp: 1, level: "error", message: "synthetic-private-path synthetic-secret" });
 await writeSyncLog({ orgId: "org-a", repoId: "repo-a", timestamp: 2, level: "info", message: "Processing local batch 1/2" });
-assert.equal(stored[0].message, "Saved indexing message withheld for privacy.");
+assert.equal(stored[0].message, "Indexing message withheld for privacy.");
 assert.equal(stored[1].message, "Processing local batch 1/2");
 const output: unknown[][] = [];
 const originalError = console.error;

@@ -1041,7 +1041,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           const timestamp = Date.now();
           pubby.trigger(indexChannel, "index-log", {
             repoId: repo.id,
-            message: safeIndexLogMessage(message) ?? "Live indexing message withheld for privacy.",
+            message: safeIndexLogMessage(message),
             level,
             timestamp,
           }).catch(() => console.error("[reviewer] Pubby index-log trigger failed"));

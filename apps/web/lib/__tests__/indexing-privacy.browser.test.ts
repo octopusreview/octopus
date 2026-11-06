@@ -22,10 +22,15 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)('withholds synthetic private live
     await page.evaluate(`{
       const f=window.privacyFixture;
       f.emit({repoId:'repo',message:'synthetic-private-path synthetic-secret',level:'error',timestamp:1});
+      f.emit({repoId:'repo',message:'synthetic-private-path synthetic-secret',level:'error',timestamp:1});
       f.emit({repoId:'repo',message:'Processing local batch 1/2',level:'info',timestamp:2});
     }`);
     await page.getByText('Processing local batch 1/2').waitFor();
-    expect(await page.getByText('Live indexing message withheld for privacy.',{exact:true}).count()).toBe(1);
+    expect(await page.getByText('Indexing message withheld for privacy.',{exact:true}).count()).toBe(1);
+    await page.evaluate(`window.privacyFixture.finish([{message:'Saved indexing message withheld for privacy.',level:'error',timestamp:1},{message:'Repository summary generated',level:'success',timestamp:3}])`);
+    await page.getByText('Completed',{exact:true}).waitFor();
+    await page.getByText('Repository summary generated',{exact:true}).waitFor();
+    expect(await page.getByText('Indexing message withheld for privacy.',{exact:true}).count()).toBe(1);
     expect(await page.locator('body').innerText()).not.toContain('synthetic-private-path');
     expect(await page.locator('body').innerText()).not.toContain('synthetic-secret');
   } finally { await browser.close(); server.stop(true); }

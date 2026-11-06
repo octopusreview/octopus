@@ -132,7 +132,10 @@ export function IndexingLogs({
         if (!Array.isArray(data.logs)) throw new Error("Invalid indexing logs response");
         setLogs((current) => {
           const entries = new Map<string, LogEntry>();
-          for (const log of [...data.logs as LogEntry[], ...current]) entries.set(logKey(log), log);
+          for (const log of [...data.logs as LogEntry[], ...current]) {
+            const safeLog = { ...log, message: safeIndexLogMessage(log.message) };
+            entries.set(logKey(safeLog), safeLog);
+          }
           return [...entries.values()].sort((a, b) => a.timestamp - b.timestamp);
         });
       })
@@ -149,9 +152,10 @@ export function IndexingLogs({
     const handleLog = (raw: unknown) => {
       const data = raw as { repoId: string; message: string; level: LogEntry["level"]; timestamp: number };
       if (data.repoId !== repoId) return;
+      const log = { message: safeIndexLogMessage(data.message), level: data.level, timestamp: data.timestamp };
       setLogs((prev) => {
-        if (prev.some((l) => logKey(l) === logKey(data))) return prev;
-        return [...prev, { message: safeIndexLogMessage(data.message) ?? "Live indexing message withheld for privacy.", level: data.level, timestamp: data.timestamp }];
+        if (prev.some((l) => logKey(l) === logKey(log))) return prev;
+        return [...prev, log];
       });
     };
 

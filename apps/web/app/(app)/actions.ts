@@ -690,7 +690,7 @@ export async function indexRepository(repoId: string): Promise<{ error?: string 
     const timestamp = Date.now();
     pubby.trigger(channel, "index-log", {
       repoId: repo.id,
-      message: safeIndexLogMessage(message) ?? "Live indexing message withheld for privacy.",
+      message: safeIndexLogMessage(message),
       level,
       timestamp,
     }).catch(() => console.warn("[repository-index] log notification failed"));

@@ -47,7 +47,7 @@ export async function writeSyncLog(entry: SyncLogEntry): Promise<void> {
       index,
       body: {
         ...entry,
-        message: safeIndexLogMessage(entry.message) ?? "Saved indexing message withheld for privacy.",
+        message: safeIndexLogMessage(entry.message),
         createdAt: new Date(entry.timestamp).toISOString(),
       },
     });
@@ -86,7 +86,7 @@ export async function getSyncLogs(
       const log = hit._source!;
       return {
         orgId, repoId,
-        message: safeIndexLogMessage(log.message) ?? "Saved indexing message withheld for privacy.",
+        message: safeIndexLogMessage(log.message),
         level: ["info", "success", "warning", "error"].includes(log.level) ? log.level : "info" as const,
         timestamp: typeof log.timestamp === "number" && Number.isFinite(log.timestamp) ? log.timestamp : 0,
       };

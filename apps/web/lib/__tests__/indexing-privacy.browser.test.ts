@@ -21,17 +21,20 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)('withholds synthetic private live
     await page.getByText('Waiting for logs...').waitFor();
     await page.evaluate(`{
       const f=window.privacyFixture;
-      f.emit({repoId:'repo',message:'synthetic-private-path synthetic-secret',level:'error',timestamp:1});
-      f.emit({repoId:'repo',message:'synthetic-private-path synthetic-secret',level:'error',timestamp:1});
+      f.emit({repoId:'repo',id:'e759760f-5980-4b6e-962d-1330e6296812',message:'synthetic-private-path synthetic-secret',level:'error',timestamp:1});
+      f.emit({repoId:'repo',id:'e759760f-5980-4b6e-962d-1330e6296812',message:'synthetic-private-path synthetic-secret',level:'error',timestamp:1});
+      f.emit({repoId:'repo',message:'synthetic-legacy-one',level:'error',timestamp:1});
+      f.emit({repoId:'repo',message:'synthetic-legacy-two',level:'error',timestamp:1});
       f.emit({repoId:'repo',message:'Processing local batch 1/2',level:'info',timestamp:2});
     }`);
     await page.getByText('Processing local batch 1/2').waitFor();
-    expect(await page.getByText('Indexing message withheld for privacy.',{exact:true}).count()).toBe(1);
-    await page.evaluate(`window.privacyFixture.finish([{message:'Saved indexing message withheld for privacy.',level:'error',timestamp:1},{message:'Repository summary generated',level:'success',timestamp:3}])`);
+    expect(await page.getByText('Indexing message withheld for privacy.',{exact:true}).count()).toBe(3);
+    await page.evaluate(`window.privacyFixture.finish([{id:'e759760f-5980-4b6e-962d-1330e6296812',message:'Indexing message withheld for privacy.',level:'error',timestamp:1},{message:'synthetic-legacy-stored-one',level:'error',timestamp:1},{message:'synthetic-legacy-stored-two',level:'error',timestamp:1},{message:'Repository summary generated',level:'success',timestamp:3}])`);
     await page.getByText('Completed',{exact:true}).waitFor();
     await page.getByText('Repository summary generated',{exact:true}).waitFor();
-    expect(await page.getByText('Indexing message withheld for privacy.',{exact:true}).count()).toBe(1);
+    expect(await page.getByText('Indexing message withheld for privacy.',{exact:true}).count()).toBe(5);
     expect(await page.locator('body').innerText()).not.toContain('synthetic-private-path');
     expect(await page.locator('body').innerText()).not.toContain('synthetic-secret');
+    expect(await page.locator('body').innerText()).not.toContain('synthetic-legacy');
   } finally { await browser.close(); server.stop(true); }
 },120000);

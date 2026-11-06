@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getPubbyClient } from "@/lib/pubby-client";
-import { safeIndexLogMessage } from "@/lib/index-log-safety";
+import { safeIndexLogMessage, WITHHELD_INDEX_LOG } from "@/lib/index-log-safety";
 import { getRepositoryConnectionRecovery } from "@/lib/repository-connection-recovery";
 import {
   IconCircleCheck,
@@ -16,13 +16,15 @@ import {
 } from "@tabler/icons-react";
 
 interface LogEntry {
+  id?: string;
   message: string;
   level: "info" | "success" | "error" | "warning";
   timestamp: number;
 }
 
-function logKey(log: LogEntry): string {
-  return JSON.stringify([log.timestamp, log.level, log.message]);
+function logKey(log: LogEntry): string | null {
+  if (log.id) return log.id;
+  return log.message === WITHHELD_INDEX_LOG ? null : JSON.stringify([log.timestamp, log.level, log.message]);
 }
 
 function LogIcon({ level, isActive }: { level: LogEntry["level"]; isActive: boolean }) {
@@ -131,12 +133,15 @@ export function IndexingLogs({
         if (controller.signal.aborted) return;
         if (!Array.isArray(data.logs)) throw new Error("Invalid indexing logs response");
         setLogs((current) => {
-          const entries = new Map<string, LogEntry>();
-          for (const log of [...data.logs as LogEntry[], ...current]) {
-            const safeLog = { ...log, message: safeIndexLogMessage(log.message) };
-            entries.set(logKey(safeLog), safeLog);
-          }
-          return [...entries.values()].sort((a, b) => a.timestamp - b.timestamp);
+          const seen = new Set<string>();
+          return [...data.logs as LogEntry[], ...current].map((log) => ({ ...log, message: safeIndexLogMessage(log.message) }))
+            .filter((log) => {
+              const key = logKey(log);
+              if (key === null) return true;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            }).sort((a, b) => a.timestamp - b.timestamp);
         });
       })
       .catch(() => {
@@ -150,11 +155,12 @@ export function IndexingLogs({
     const channel = pubby.subscribe(`presence-org-${orgId}`);
 
     const handleLog = (raw: unknown) => {
-      const data = raw as { repoId: string; message: string; level: LogEntry["level"]; timestamp: number };
+      const data = raw as { repoId: string; id?: string; message: string; level: LogEntry["level"]; timestamp: number };
       if (data.repoId !== repoId) return;
-      const log = { message: safeIndexLogMessage(data.message), level: data.level, timestamp: data.timestamp };
+      const log = { id: data.id, message: safeIndexLogMessage(data.message), level: data.level, timestamp: data.timestamp };
       setLogs((prev) => {
-        if (prev.some((l) => logKey(l) === logKey(log))) return prev;
+        const key = logKey(log);
+        if (key !== null && prev.some((l) => logKey(l) === key)) return prev;
         return [...prev, log];
       });
     };

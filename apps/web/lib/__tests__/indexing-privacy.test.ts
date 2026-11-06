@@ -21,3 +21,18 @@ it("preserves fixed indexing status messages without exposing appended details",
     expect(safeIndexLogMessage(`${message} synthetic-secret`)).toBe("Indexing message withheld for privacy.");
   }
 });
+
+it("preserves bounded rate-limit progress without extra text", () => {
+  expect(safeIndexLogMessage("Rate limited, waiting 60s...")).toBe("Rate limited, waiting 60s...");
+  for (const message of ["Rate limited, waiting 60s... synthetic-secret", "Rate limited, waiting 1234567890123s...", "Rate limited, waiting NaNs..."]) {
+    expect(safeIndexLogMessage(message)).toBe("Indexing message withheld for privacy.");
+  }
+});
+
+it("keeps indexing errors private through hosted review outputs", async () => {
+  const child = Bun.spawn([process.execPath, "lib/__tests__/fixtures/review-follow-up-harness.ts", "--indexing-review-privacy"], {
+    cwd: import.meta.dir + "/../..", stdout: "pipe", stderr: "pipe",
+  });
+  const [exit, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+  expect(exit, `${stdout}\n${stderr}`).toBe(0);
+});

@@ -688,8 +688,10 @@ export async function indexRepository(repoId: string): Promise<{ error?: string 
 
   const emitLog = (message: string, level: LogLevel = "info") => {
     const timestamp = Date.now();
+    const id = randomUUID();
     pubby.trigger(channel, "index-log", {
       repoId: repo.id,
+      id,
       message: safeIndexLogMessage(message),
       level,
       timestamp,
@@ -697,6 +699,7 @@ export async function indexRepository(repoId: string): Promise<{ error?: string 
     writeSyncLog({
       orgId: repo.organizationId,
       repoId: repo.id,
+      id,
       message,
       level,
       timestamp,

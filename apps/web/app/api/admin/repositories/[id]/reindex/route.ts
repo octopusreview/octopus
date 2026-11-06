@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@octopus/db";
 import { pubby } from "@/lib/pubby";
-import { safeIndexingLogMessage } from "@/lib/indexing-log-message";
+import { safeIndexLogMessage } from "@/lib/index-log-safety";
 import { writeSyncLog, deleteSyncLogs } from "@/lib/elasticsearch";
 import { runIndexingInBackground } from "@/lib/indexing-runner";
 import { createAbortController, abortIndexing } from "@/lib/indexing-abort";
@@ -86,7 +86,7 @@ export async function POST(
     const timestamp = Date.now();
     pubby.trigger(channel, "index-log", {
       repoId: repo.id,
-      message: safeIndexingLogMessage(message),
+      message: safeIndexLogMessage(message),
       level,
       timestamp,
     }).catch(() => console.warn("[repository-index] log notification failed"));

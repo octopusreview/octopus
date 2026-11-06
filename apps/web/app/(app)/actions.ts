@@ -14,7 +14,7 @@ import { prisma } from "@octopus/db";
 import { hasOrgPermission } from "@/lib/org-permissions";
 import { pubby } from "@/lib/pubby";
 import { notifyRepositoryIndex } from "@/lib/repository-index-notifications";
-import { safeIndexingLogMessage } from "@/lib/indexing-log-message";
+import { safeIndexLogMessage } from "@/lib/index-log-safety";
 import { writeSyncLog, deleteSyncLogs } from "@/lib/elasticsearch";
 import { GithubRateLimitError } from "@/lib/github";
 import { syncOrgRepos } from "@/lib/repo-sync";
@@ -690,7 +690,7 @@ export async function indexRepository(repoId: string): Promise<{ error?: string 
     const timestamp = Date.now();
     pubby.trigger(channel, "index-log", {
       repoId: repo.id,
-      message: safeIndexingLogMessage(message),
+      message: safeIndexLogMessage(message),
       level,
       timestamp,
     }).catch(() => console.warn("[repository-index] log notification failed"));

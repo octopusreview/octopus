@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { safeIndexingLogMessage } from "@/lib/indexing-log-message";
 import { getPubbyClient } from "@/lib/pubby-client";
+import { safeIndexLogMessage, WITHHELD_INDEX_LOG } from "@/lib/index-log-safety";
 import { getRepositoryConnectionRecovery } from "@/lib/repository-connection-recovery";
 import {
   IconCircleCheck,
@@ -200,7 +200,7 @@ export function IndexingLogs({
         }
         setLogs((current) => {
           const entries = new Map<string, LogEntry[]>();
-          const saved = (data.logs as LogEntry[]).map((log) => ({ ...log, live: false }));
+          const saved = (data.logs as LogEntry[]).map((log) => ({ ...log, message: safeIndexLogMessage(log.message), live: false }));
           const matches = (log: LogEntry) => attempt ? log.indexAttemptId === attempt || (log.live && !log.indexAttemptId) : !log.indexAttemptId;
           for (const log of saved.filter(matches)) {
             const key = logKey(log);
@@ -250,7 +250,7 @@ export function IndexingLogs({
     const handleLog = (raw: unknown) => {
       const event = raw as LogEntry & { repoId: string };
       if (event.repoId !== repoId) return;
-      const data = { ...event, message: safeIndexingLogMessage(event.message), live: true };
+      const data = { ...event, message: safeIndexLogMessage(event.message), live: true };
       if (!data.indexAttemptId) {
         hasUnattributedLive.current = true;
         setLegacyLogsMayBeMixed(true);
@@ -382,6 +382,10 @@ export function IndexingLogs({
             <IconLoader2 className="size-3.5 animate-spin" />
             Waiting for logs...
           </div>
+        )}
+
+        {logs.some((log) => log.message === WITHHELD_INDEX_LOG) && (
+          <p className="mb-2 text-zinc-500">Withheld messages may appear more than once when live and saved logs overlap.</p>
         )}
 
         {displayLogs.map((log, i) => {

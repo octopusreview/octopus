@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 
 type Entry = { orgId: string; repoId: string; timestamp: number; message: string; level: "info" | "error"; indexAttemptId?: string; createdAt?: string };
 const legacy: Entry[] = Array.from({ length: 600 }, (_, i) => ({ orgId: "org-a", repoId: "repo-a", timestamp: i, message: `event ${i}`, level: "info" }));
+legacy[598].message = "synthetic-private-path synthetic-secret";
+Object.assign(legacy[598], { extra: "synthetic-secret" });
+legacy[599].message = "Processing local batch 1/2";
 legacy.push({ orgId: "org-b", repoId: "repo-a", timestamp: 1000, message: "other org", level: "error" });
 legacy.push({ orgId: "org-a", repoId: "repo-b", timestamp: 1001, message: "other repo", level: "error" });
 const tagged: Entry[] = [
@@ -38,7 +41,10 @@ const logs = await getSyncLogs("org-a", "repo-a", 500);
 assert.equal(logs.length, 500);
 assert.deepEqual(logs.map(row => row.timestamp), Array.from({ length: 500 }, (_, i) => i + 100));
 assert.ok(logs.every(row => row.orgId === "org-a" && row.repoId === "repo-a"));
-assert.deepEqual((await getSyncLogs("org-a", "repo-a", 500, "current")).map(row => row.message), ["current"]);
+assert.equal(logs.at(-2)?.message, "Indexing message withheld for privacy.");
+assert.doesNotMatch(JSON.stringify(logs.at(-2)), /synthetic-secret|synthetic-private-path/);
+assert.equal(logs.at(-1)?.message, "Processing local batch 1/2");
+assert.deepEqual((await getSyncLogs("org-a", "repo-a", 500, "current")).map(row => row.message), ["Indexing message withheld for privacy."]);
 await writeSyncLog({ orgId: "org-a", repoId: "repo-a", timestamp: 0, message: "legacy write", level: "info" });
 assert.equal(writes[0].index, "octopus_repo_sync");
 assert.equal(writes[0].body.indexAttemptId, undefined);
@@ -75,9 +81,12 @@ const expected = [
   { ...currentEntry, createdAt: "1970-01-01T00:00:00.200Z" },
 ];
 assert.deepEqual(await oldReader("compat-org", "compat-repo"), expected);
-assert.deepEqual(await getSyncLogs("compat-org", "compat-repo"), expected);
+assert.deepEqual(await getSyncLogs("compat-org", "compat-repo"), [
+  { orgId: "compat-org", repoId: "compat-repo", timestamp: 100, message: "Indexing message withheld for privacy.", level: "info" },
+  { orgId: "compat-org", repoId: "compat-repo", timestamp: 200, message: "Processed 5 files, skipped 0", level: "info" },
+]);
 assert.deepEqual((await oldReader("other-org", "compat-repo")).map(row => row.message), ["other tenant"]);
-assert.deepEqual((await getSyncLogs("other-org", "compat-repo")).map(row => row.message), ["other tenant"]);
+assert.deepEqual((await getSyncLogs("other-org", "compat-repo")).map(row => row.message), ["Indexing message withheld for privacy."]);
 const errors: unknown[][] = [];
 const originalError = console.error;
 console.error = (...args) => { errors.push(args); };

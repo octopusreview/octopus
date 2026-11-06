@@ -114,7 +114,7 @@ import {
 } from "@/lib/review-dedup";
 import type { LogLevel } from "@/lib/indexer";
 import { ensureRepositoryAnalysis, deferReviewForRepository } from "@/lib/review-repository-preparation";
-import { safeIndexingLogMessage } from "@/lib/indexing-log-message";
+import { safeIndexLogMessage } from "@/lib/index-log-safety";
 import { writeSyncLog, deleteSyncLogs } from "@/lib/elasticsearch";
 import { logAiUsage } from "@/lib/ai-usage";
 import { resolveReviewModel } from "@/lib/review-routing";
@@ -1041,7 +1041,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           const timestamp = Date.now();
           pubby.trigger(indexChannel, "index-log", {
             repoId: repo.id,
-            message: safeIndexingLogMessage(message),
+            message: safeIndexLogMessage(message),
             level,
             timestamp,
           }).catch(() => console.error("[reviewer] Pubby index-log trigger failed"));
@@ -2603,9 +2603,12 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       err = new ReviewProcessingExpiredError();
     }
     outcomeHandedOff = false;
-    const errorMessage =
-      err instanceof Error ? err.message : "Unknown error";
-    console.error(`[reviewer] Review failed for PR #${pr.number}:`, err);
+    const errorMessage = failureStage === "indexing"
+      ? err instanceof SupersededIndexError ? "Indexing attempt is no longer current"
+        : err instanceof ReviewProcessingExpiredError ? "Review processing cancelled or expired before completion"
+        : "Review failed while preparing the repository"
+      : err instanceof Error ? err.message : "Unknown error";
+    console.error(`[reviewer] Review failed for PR #${pr.number}:`, failureStage === "indexing" ? errorMessage : err);
 
     // A deadline can expire while a completed assessment is being committed. Keep that immutable
     // record and append the interrupted processing outcome before publishing any scored completion.

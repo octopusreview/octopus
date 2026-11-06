@@ -2,7 +2,7 @@ import "server-only";
 import { prisma, type Prisma } from "@octopus/db";
 import type { IndexStats } from "@/lib/indexer";
 import type { SyncLogEntry } from "@/lib/elasticsearch";
-import { safeIndexingLogMessage } from "@/lib/indexing-log-message";
+import { safeIndexLogMessage } from "@/lib/index-log-safety";
 
 /** A replacement attempt or cancellation owns the row now. */
 export class SupersededIndexError extends Error {
@@ -102,7 +102,7 @@ export function safeSyncLogs(logs: SyncLogEntry[], orgId: string, repoId: string
   return logs.map(log => ({
     orgId, repoId,
     ...(attempt && log.indexAttemptId === attempt ? { indexAttemptId: attempt } : {}),
-    message: safeIndexingLogMessage(log.message),
+    message: safeIndexLogMessage(log.message),
     level: ["info", "success", "warning", "error"].includes(log.level) ? log.level : "info",
     timestamp: typeof log.timestamp === "number" && Number.isFinite(log.timestamp) ? log.timestamp : 0,
   }));

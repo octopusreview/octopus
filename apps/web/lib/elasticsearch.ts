@@ -1,5 +1,5 @@
+import { safeIndexLogMessage } from "@/lib/index-log-safety";
 import { Client } from "@elastic/elasticsearch";
-import { safeIndexingLogMessage } from "@/lib/indexing-log-message";
 
 let client: Client | null = null;
 
@@ -49,7 +49,7 @@ export async function writeSyncLog(entry: SyncLogEntry): Promise<void> {
       index,
       body: {
         ...entry,
-        message: safeIndexingLogMessage(entry.message),
+        message: safeIndexLogMessage(entry.message),
         createdAt: new Date(entry.timestamp).toISOString(),
       },
     });
@@ -86,7 +86,16 @@ export async function getSyncLogs(
       sort: [{ timestamp: { order: "desc" } }],
     });
 
-    return result.hits.hits.map((hit) => hit._source!).reverse();
+    return result.hits.hits.map((hit) => {
+      const log = hit._source!;
+      return {
+        orgId, repoId,
+        ...(indexAttemptId && log.indexAttemptId === indexAttemptId ? { indexAttemptId } : {}),
+        message: safeIndexLogMessage(log.message),
+        level: ["info", "success", "warning", "error"].includes(log.level) ? log.level : "info" as const,
+        timestamp: typeof log.timestamp === "number" && Number.isFinite(log.timestamp) ? log.timestamp : 0,
+      };
+    }).reverse();
   } catch {
     console.error("Failed to read sync logs from ES");
     return [];

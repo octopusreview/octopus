@@ -19,6 +19,8 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
         "@/components/chat-provider": `export function useChat(){return {openWithRepoContext(){}};}`,
         "@/components/mermaid-diagram": `export function MermaidDiagram(){return null;}`,
         "@/lib/pubby-client": `export function getPubbyClient(){return {subscribe:()=>window.repositoryFixture.channel};}`,
+        // This fixture uses distinct synthetic labels to test attribution; privacy has separate browser coverage.
+        "@/lib/index-log-safety": `export const WITHHELD_INDEX_LOG="Indexing message withheld for privacy."; export function safeIndexLogMessage(message){return message;}`,
         "../actions": `
           export async function indexRepository(){const f=window.repositoryFixture;f.indexCalls++;if(f.indexDelay)await new Promise(resolve=>setTimeout(resolve,f.indexDelay));if(f.indexError)return {error:f.indexError};f.logs=[];f.repo.indexStatus=f.fastComplete?'indexed':'indexing';f.emit('index-status',{repoId:f.repo.id,status:f.repo.indexStatus});return {};}
           export async function cancelIndexing(){const f=window.repositoryFixture;if(f.cancelError)return {error:f.cancelError};f.repo.indexStatus='pending';f.emit('index-status',{repoId:f.repo.id,status:'cancelled'});return {};}

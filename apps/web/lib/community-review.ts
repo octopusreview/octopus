@@ -126,7 +126,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
             LOG(jobId, "indexing repository...");
             return indexRepository(
               { repoId: repo.id, indexAttemptId }, fullName, repo.defaultBranch, 0,
-              (msg, level) => LOG(jobId, `[index] ${level ?? "info"}: ${msg}`),
+              () => {},
               undefined, "github", job.organizationId, githubToken,
             );
           });
@@ -141,8 +141,8 @@ export async function processCommunityReview(jobId: string): Promise<void> {
               data: { summary, purpose },
             });
             LOG(jobId, "summarize done");
-          } catch (err) {
-            ERR(jobId, "summarize failed (non-fatal):", err);
+          } catch {
+            ERR(jobId, "summarize failed (non-fatal)");
           }
 
           try {
@@ -157,11 +157,11 @@ export async function processCommunityReview(jobId: string): Promise<void> {
               repoFullName: fullName,
             });
             LOG(jobId, "analyze done");
-          } catch (err) {
-            ERR(jobId, "analyze failed (non-fatal):", err);
+          } catch {
+            ERR(jobId, "analyze failed (non-fatal)");
           }
-        } catch (err) {
-          ERR(jobId, "indexing failed:", err);
+        } catch {
+          ERR(jobId, "indexing failed");
           // Continue — generateLocalReview works without index
         }
       }

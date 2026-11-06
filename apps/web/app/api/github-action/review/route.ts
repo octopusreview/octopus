@@ -270,8 +270,8 @@ export async function POST(request: NextRequest) {
         try {
           const { summary, purpose } = await summarizeRepository(repo.id, fullName, orgId);
           await prisma.repository.update({ where: { id: repo.id }, data: { summary, purpose } });
-        } catch (err) {
-          ERR("summarize failed:", err);
+        } catch {
+          ERR("summarize failed");
         }
         try {
           const analysis = await analyzeRepository(repo.id, fullName, orgId);
@@ -280,12 +280,12 @@ export async function POST(request: NextRequest) {
             data: { analysis, analysisStatus: "analyzed", analyzedAt: new Date() },
           });
           eventBus.emit({ type: "repo-analyzed", orgId, repoFullName: fullName });
-        } catch (err) {
-          ERR("analyze failed:", err);
+        } catch {
+          ERR("analyze failed");
         }
         indexed = true;
-      } catch (err) {
-        ERR("inline indexing failed:", err);
+      } catch {
+        ERR("inline indexing failed");
       }
     }
 

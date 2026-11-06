@@ -13,6 +13,9 @@ const firstCompletion = process.argv.includes("--first-review-completion");
 const refusalFlow = process.argv.includes("--provider-refusal");
 if (refusalFlow) process.env.ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 let refusalCalls = 0;
+let preparationFetchFailure: "review_input" | "repository_tree" | "large_pr" | null = null;
+const queuedJobs: string[] = [];
+class FixtureLargePrError extends Error { meta = { reason: "diff_too_large" }; }
 let indexPreparation: "normal" | "fail" | "replace" | "replace-success" = "normal";
 let indexingCalls = 0;
 let indexTransactions = 0;
@@ -237,12 +240,12 @@ mock.module("@/lib/review-attempt", () => ({
   },
 }));
 mock.module("@/lib/github", () => ({
-  LargePrError: class LargePrError extends Error {},
-  getPullRequestReviewInput: async () => ({ rawDiff: diff, input: {
+  LargePrError: FixtureLargePrError,
+  getPullRequestReviewInput: async () => { if (preparationFetchFailure === "large_pr") throw new FixtureLargePrError(); if (preparationFetchFailure === "review_input") throw new Error("synthetic private input"); return { rawDiff: diff, input: {
     provider: "github", headSha: pr.headSha, baseSha: "b".repeat(40), inventoryComplete: true,
     expectedFiles: 1, limitations: [],
     files: [{ path: "src/check.ts", change: "modified", patch: `@@ -1 +1 @@\n-return value;\n+return value.name;${adaptiveStage ? " ".repeat(400000) : ""}\n`, additions: 1, deletions: 1 }],
-  } }),
+  } }; },
   getPullRequestDetails: async () => ({ body: "Handle missing values" }),
   createPullRequestComment: async () => { directComments++; return 123; },
   updatePullRequestComment: async (_installation: number, _owner: string, _repo: string, _id: number, body: string) => { summaries.push(body); },
@@ -257,7 +260,7 @@ mock.module("@/lib/github", () => ({
     if (window && adaptiveStage === "check-send") await fetch("https://synthetic.invalid/check", { signal: window.signal });
     checkConclusions.push(conclusion);
   },
-  getRepositoryTree: async () => ["src/check.ts"],
+  getRepositoryTree: async () => { if (preparationFetchFailure === "repository_tree") throw new Error("synthetic private tree"); return ["src/check.ts"]; },
   getFileContent: async () => "return value.name;",
   listReviewComments: async () => [],
   listPullRequestReviewComments: async () => [{ id: 5, user: "fixture[bot]", path: "src/check.ts", line: 1, body: "🟠 Previous unrelated partial-review issue", inReplyToId: null }],
@@ -309,7 +312,7 @@ mock.module("@/lib/github-app-config", () => ({ getGithubAppConfig: async () => 
 mock.module("@/lib/queue", () => ({
   loadQueueConfig: async () => ({ reviewTimeoutSeconds: 60, largeReviewTimeoutSeconds: 60 }),
   computeStaleReclaimMs: () => 120000,
-  enqueue: async () => {}, enqueueAfter: async () => {},
+  enqueue: async (name: string) => { queuedJobs.push(name); }, enqueueAfter: async () => {},
 }));
 mock.module("@/lib/cost", () => ({ getOrgSpendLimitStatus: async () => ({ blocked: false }), shouldGuardConcurrency: async () => false, getModelPricing: async () => null, estimateCompleteReviewCost: () => 0 }));
 mock.module("@/lib/pubby", () => ({ pubby: { trigger: async (_channel: string, _name: string, data: { status?: string }) => { events.push({ ...data, status: _name === "index-status" ? repo.indexStatus : data.status, eventName: _name }); } } }));
@@ -374,6 +377,34 @@ if (refusalFlow) {
     assert.ok(!/\|[^\n]*[1-5]\/5/.test(summaries.at(-1) ?? ""), "failed summary must not claim a score");
   } finally { console.error = originalError; }
   console.log("PASS refusal remains an incomplete failed review");
+  process.exit(0);
+}
+if (process.argv.includes("--preparation-diagnostic")) {
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    for (const operation of ["review_input", "repository_tree"] as const) {
+      preparationFetchFailure = operation;
+      pr.status = "pending";
+      const before = sentryEvents.length;
+      await processReview("pr");
+      assert.equal(sentryEvents.length, before + 1);
+      assert.equal(sentryEvents.at(-1)?.tags?.failure_stage, "preparation");
+      assert.equal(sentryEvents.at(-1)?.tags?.preparation_operation, operation);
+      assert.ok(!JSON.stringify(sentryEvents.at(-1)).includes("synthetic private"));
+    }
+    preparationFetchFailure = null;
+    pr.status = "pending";
+    const before = sentryEvents.length;
+    await processReview("pr");
+    assert.equal(sentryEvents.length, before, "successful preparation emits no incident");
+    preparationFetchFailure = "large_pr";
+    pr.status = "pending";
+    await processReview("pr");
+    assert.ok(queuedJobs.includes("process-large-review"), "oversized GitHub review is handed off");
+    assert.equal(sentryEvents.length, before, "handled large review emits no incident");
+  } finally { console.error = originalError; }
+  console.log("PASS preparation fetch diagnostics");
   process.exit(0);
 }
 if (firstCompletion) {

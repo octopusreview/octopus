@@ -46,6 +46,20 @@ mock.module("@/lib/providers", () => ({ getProvider: (name: string) => adapters[
 const { createAiMessage } = await import("../../ai-router");
 const { reportBackgroundFailure } = await import("../../background-failure");
 const { AiProviderFailure, providerKeyOwner, safeErrorDetails } = await import("../../provider-failure");
+for (const operation of ["review_input", "repository_tree"] as const) {
+  reportBackgroundFailure(new Error("private-url-and-content"), { stage: "preparation", preparationOperation: operation });
+  assert.equal(events.at(-1)?.tags?.preparation_operation, operation);
+  assert.ok(!JSON.stringify(events.at(-1)).includes("private-url-and-content"));
+}
+reportBackgroundFailure(new Error("private"), { stage: "generation", preparationOperation: "review_input" });
+assert.equal(events.at(-1)?.tags?.preparation_operation, undefined);
+assert.equal(scrubEvent({ tags: { error_boundary: "background", preparation_operation: "private-url" } }).tags?.preparation_operation, undefined);
+assert.equal(scrubEvent({ tags: { error_boundary: "background", indexing_deadline: "private-url" } }).tags?.indexing_deadline, undefined);
+reportBackgroundFailure(new DOMException("private", "TimeoutError"), { stage: "indexing", indexingDeadline: true });
+assert.equal(events.at(-1)?.tags?.indexing_deadline, "worker_25m");
+reportBackgroundFailure(new DOMException("private", "TimeoutError"), { stage: "preparation", indexingDeadline: true });
+assert.equal(events.at(-1)?.tags?.indexing_deadline, undefined);
+events.length = 0;
 const originalError = console.error;
 console.error = () => {};
 const request = { model: "claude-fixture", maxTokens: 10, messages: [{ role: "user" as const, content: "secret prompt" }] };

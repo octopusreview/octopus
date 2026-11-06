@@ -3,9 +3,12 @@ import { AiProviderFailure, safeErrorDetails } from "./provider-failure";
 import { CapacityAdmissionError } from "./review-capacity";
 
 export type FailureStage = "review" | "indexing" | "preparation" | "generation" | "publication";
+export type PreparationOperation = "review_input" | "repository_tree";
 export type RetryState = { retryCount: number; retryLimit: number };
 export type FailureContext = {
   stage: FailureStage;
+  preparationOperation?: PreparationOperation;
+  indexingDeadline?: boolean;
   attemptId?: string;
   repositoryId?: string;
   pullRequestId?: string;
@@ -46,11 +49,13 @@ export function reportBackgroundFailure(error: unknown, context: FailureContext)
     const code = capacityFailure ? `capacity_${capacityFailure.receipt.reason ?? "final-check-failed"}` : details.code ?? (status ? `http_${status}` : "unclassified");
     const provider = providerFailure?.provider ?? capacityFailure?.provider ?? "unknown";
     const stage = capacityFailure ? "preparation" : providerFailure && context.stage === "review" ? "generation" : context.stage;
+    const operation = stage === "preparation" && (context.preparationOperation === "review_input" || context.preparationOperation === "repository_tree")
+      ? context.preparationOperation : undefined;
     const eventId = Sentry.captureEvent({
       level: "error",
       message: `Background ${stage} failed: ${provider} / ${code}`,
       fingerprint: [context.synthetic ? "background-failure-synthetic" : "background-failure", stage, provider, code],
-      tags: { error_boundary: "background", failure_stage: stage, failure_owner: ownership, failure_code: code, provider, outcome: "failed", synthetic: context.synthetic ? "true" : "false" },
+      tags: { error_boundary: "background", failure_stage: stage, failure_owner: ownership, failure_code: code, provider, outcome: "failed", synthetic: context.synthetic ? "true" : "false", ...(operation ? { preparation_operation: operation } : {}), ...(stage === "indexing" && context.indexingDeadline === true ? { indexing_deadline: "worker_25m" } : {}) },
       contexts: { background_failure: {
         ...details,
         stage, ownership, keyOwner,

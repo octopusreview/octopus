@@ -719,6 +719,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
   let adaptiveProcessingWindow: ReviewExecutionWindow | undefined;
   let attemptCoverage: ReviewCoverage | undefined;
   let failureStage: FailureStage = "review";
+  let preparationOperation: "review_input" | "repository_tree" | undefined;
   let failureIndexAttemptId: string | undefined;
   let attemptSaved = false;
   const outcomeRecord = new ReviewOutcomeRecorder(outcomeKey);
@@ -1280,10 +1281,17 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         await updateCurrentReview(pr.id, pr.headSha, pr.reviewRequestVersion, { status: "queued", updatedAt: new Date() });
         return;
       }
+      preparationOperation = "review_input";
       throw err;
     }
     const inputBaseRef = reviewInput.baseSha ?? repo.defaultBranch;
-    const repoTree = await getRepoTreeCached(inputBaseRef);
+    let repoTree: string[];
+    try {
+      repoTree = await getRepoTreeCached(inputBaseRef);
+    } catch (err) {
+      preparationOperation = "repository_tree";
+      throw err;
+    }
 
     // Detect committed build artifacts / dependency folders
     const badFiles = detectBadCommits(rawDiff);
@@ -2660,7 +2668,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       .catch((e) => console.error("[reviewer] Failed to update PR status:", e));
     if (failedUpdate?.count === 0) return;
     if (!(err instanceof SupersededIndexError)) {
-      reportBackgroundFailure(reportingError, { stage: failureStage,
+      reportBackgroundFailure(reportingError, { stage: failureStage, preparationOperation,
         attemptId: failureStage === "indexing" ? failureIndexAttemptId : failureAttemptId,
         repositoryId: repo.id, pullRequestId: pr.id, headSha: pr.headSha, requestVersion: pr.reviewRequestVersion,
         retryCount, cancelled });

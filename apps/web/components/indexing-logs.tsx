@@ -43,7 +43,8 @@ function logKey(log: LogEntry): string {
 function pageBoundary(logs: LogEntry[], index: number) {
   const log = logs[index];
   const key = logKey(log);
-  return { log, occurrence: logs.slice(0, index).filter((entry) => logKey(entry) === key && !!entry.live === !!log.live).length };
+  return { log, occurrence: logs.slice(0, index).filter((entry) => logKey(entry) === key && !!entry.live === !!log.live).length,
+    window: logs.slice(Math.max(0, index - LOG_PAGE_SIZE), index) };
 }
 
 function LogIcon({ level, isActive }: { level: LogEntry["level"]; isActive: boolean }) {
@@ -351,7 +352,19 @@ export function IndexingLogs({
     if (end < 0) end = logs.length;
   }
   const start = Math.max(0, end - LOG_PAGE_SIZE);
-  const displayLogs = logs.slice(start, end);
+  const currentWindow = logs.slice(start, end);
+  const changedWindow = !!boundary && (boundary.window.length !== currentWindow.length || boundary.window.some((log, i) => log !== currentWindow[i]));
+  const available = new Map<string, LogEntry[]>();
+  if (boundary) for (const log of logs) {
+    const key = JSON.stringify([logKey(log), !!log.live]);
+    const entries = available.get(key) ?? [];
+    entries.push(log);
+    available.set(key, entries);
+  }
+  const displayLogs = boundary ? boundary.window.map((log) => {
+    const key = JSON.stringify([logKey(log), !!log.live]);
+    return available.get(key)?.shift();
+  }).filter((log): log is LogEntry => !!log) : currentWindow;
   const seenTimes = new Set(logs.filter((log) => !log.live).map((log) => JSON.stringify([log.timestamp, log.level])));
   const mayContainDuplicates = logs.some((log) => {
     if (!log.live) return false;
@@ -443,10 +456,11 @@ export function IndexingLogs({
 
         {(start > 0 || end < logs.length) && (
           <div className="mb-2 text-zinc-400">
-            Showing {start + 1}–{end} of {logs.length} messages. {start} older and {logs.length - end} newer messages are not shown.
+            {changedWindow ? "Messages in this range have changed." : <>Showing {start + 1}–{end} of {logs.length} messages. {start} older and {logs.length - end} newer messages are not shown.</>}
             <div className="flex gap-3">
-              {start > 0 && <button type="button" className="underline underline-offset-2" onClick={() => setBoundary(pageBoundary(logs, start))}>Show older messages</button>}
-              {end < logs.length && <button type="button" className="underline underline-offset-2" onClick={() => setBoundary(end + LOG_PAGE_SIZE >= logs.length ? null : pageBoundary(logs, end + LOG_PAGE_SIZE))}>Show newer messages</button>}
+              {changedWindow && <button type="button" className="underline underline-offset-2" onClick={() => setBoundary({ ...boundary!, window: currentWindow })}>Refresh this page</button>}
+              {!changedWindow && start > 0 && <button type="button" className="underline underline-offset-2" onClick={() => setBoundary(pageBoundary(logs, start))}>Show older messages</button>}
+              {!changedWindow && end < logs.length && <button type="button" className="underline underline-offset-2" onClick={() => setBoundary(end + LOG_PAGE_SIZE >= logs.length ? null : pageBoundary(logs, end + LOG_PAGE_SIZE))}>Show newer messages</button>}
             </div>
           </div>
         )}
@@ -456,7 +470,7 @@ export function IndexingLogs({
           return (
             <div key={start + i} role="listitem" className="flex items-start gap-2 py-0.5">
               <span className="mt-0.5">
-                <LogIcon level={log.level} isActive={start + i === lastInfoIndex} />
+                <LogIcon level={log.level} isActive={logs[lastInfoIndex] === log} />
               </span>
               {progress ? (
                 <div className="flex flex-1 items-center gap-2">

@@ -65,11 +65,12 @@ function mergeSavedLogs(previous: LogEntry[], saved: LogEntry[]): LogEntry[] {
   return merged.concat(old.slice(i), saved.slice(j));
 }
 
-function pageBoundary(logs: LogEntry[], index: number) {
+function pageBoundary(logs: LogEntry[], index: number, paused = false) {
   const log = logs[index];
   const key = logKey(log);
+  const end = index + (paused ? 1 : 0);
   return { log, occurrence: logs.slice(0, index).filter((entry) => logKey(entry) === key && !!entry.live === !!log.live).length,
-    window: logs.slice(Math.max(0, index - LOG_PAGE_SIZE), index) };
+    paused, window: logs.slice(Math.max(0, end - LOG_PAGE_SIZE), end) };
 }
 
 function LogIcon({ level, isActive }: { level: LogEntry["level"]; isActive: boolean }) {
@@ -365,7 +366,7 @@ export function IndexingLogs({
       if (logKey(entry) !== key || !!entry.live !== !!boundary.log.live) return false;
       return occurrence++ === boundary.occurrence;
     });
-    end = index >= 0 ? index : logs.findIndex((entry) => entry.timestamp >= boundary.log.timestamp);
+    end = index >= 0 ? index + (boundary.paused ? 1 : 0) : logs.findIndex((entry) => entry.timestamp >= boundary.log.timestamp);
     if (end < 0) end = logs.length;
   }
   const start = Math.max(0, end - LOG_PAGE_SIZE);
@@ -488,7 +489,10 @@ export function IndexingLogs({
           ref={scrollRef}
           onScroll={(event) => {
             const { scrollTop, scrollHeight, clientHeight } = event.currentTarget;
-            followLogs.current = scrollHeight - scrollTop - clientHeight < 30;
+            const atBottom = scrollHeight - scrollTop - clientHeight < 30;
+            followLogs.current = atBottom;
+            if (!atBottom && boundary === null && logs.length) setBoundary(pageBoundary(logs, logs.length - 1, true));
+            else if (atBottom && boundary?.paused) setBoundary(null);
           }}
           className="max-h-72 overflow-y-auto"
           role="list"

@@ -197,10 +197,16 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     });
     expect(await messages.evaluate((list: Element) => list.contains(document.querySelector('[role="alert"]')))).toBe(false);
     expect(await messages.evaluate((list: Element) => list.contains([...document.querySelectorAll("button")].find((button) => button.textContent === "Show older messages")!))).toBe(false);
+    const firstVisible = await messages.getByRole("listitem").first().textContent();
     await messages.evaluate((list: HTMLElement) => { list.scrollTop = 0; list.dispatchEvent(new Event("scroll")); });
     await page.evaluate(`window.repositoryFixture.emit('index-log',{repoId:'fixture-repo',indexAttemptId:'owner-after-overflow',message:'Processed 500053 files, skipped 0',level:'info',timestamp:1202})`);
-    await page.getByText("Processed 500053 files, skipped 0", { exact: true }).waitFor();
+    await page.getByText(/1 newer messages are not shown/).waitFor();
     expect(await messages.evaluate((list: HTMLElement) => list.scrollTop)).toBe(0);
+    expect(await messages.getByRole("listitem").first().textContent()).toBe(firstVisible);
+    expect(await page.getByText("Processed 500053 files, skipped 0", { exact: true }).count()).toBe(0);
+    await messages.evaluate((list: HTMLElement) => { list.scrollTop = list.scrollHeight; list.dispatchEvent(new Event("scroll")); });
+    await page.getByText("Processed 500053 files, skipped 0", { exact: true }).waitFor();
+    await messages.evaluate((list: HTMLElement) => { list.scrollTop = 0; list.dispatchEvent(new Event("scroll")); });
     await page.getByRole("button", { name: "Show older messages" }).click();
     await page.getByText("Processed 20800 files, skipped 0", { exact: true }).waitFor();
     await page.evaluate(`window.repositoryFixture.emit('index-log',{repoId:'fixture-repo',indexAttemptId:'owner-after-overflow',message:'Processed 500054 files, skipped 0',level:'info',timestamp:1203})`);

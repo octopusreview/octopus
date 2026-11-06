@@ -198,12 +198,12 @@ export function IndexingLogs({
         if (controller.signal.aborted) return;
         if (!Array.isArray(data.logs)) throw new Error("Invalid indexing logs response");
         const attempt = typeof data.attempt === "string" ? data.attempt : null;
-        const indexAttempt = typeof data.indexAttemptId === "string" || data.indexAttemptId === null
-          ? data.indexAttemptId : previousIndexAttempt.current;
+        const hasIndexAttempt = typeof data.indexAttemptId === "string" || data.indexAttemptId === null;
+        const indexAttempt = hasIndexAttempt ? data.indexAttemptId : previousIndexAttempt.current;
         const replaced = previousIndexAttempt.current !== undefined && previousIndexAttempt.current !== indexAttempt;
         previousIndexAttempt.current = indexAttempt;
         if (attempt) setLegacyLogsMayBeMixed(false);
-        else if (replaced) setLegacyLogsMayBeMixed(true);
+        else if (replaced || !hasIndexAttempt) setLegacyLogsMayBeMixed(true);
         for (const [id, marker] of checkedIncomplete) {
           if (id !== attempt && incompleteAttempts.current.get(id) === marker) incompleteAttempts.current.delete(id);
         }

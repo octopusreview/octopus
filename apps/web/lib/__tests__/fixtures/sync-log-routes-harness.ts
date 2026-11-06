@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import { NextRequest } from "next/server";
 
 let session = true;
-let member = true;
+let memberships: Array<{ id: string; organizationId: string; userId: string; deletedAt: Date | null }> = [
+  { id: "member", organizationId: "org", userId: "user", deletedAt: null },
+];
 let repository: { id: string; organizationId: string; indexAttemptId: string | null; syncLogAttemptId: string | null } | null = {
   id: "repo", organizationId: "org", indexAttemptId: "current", syncLogAttemptId: "current",
 };
@@ -23,7 +25,8 @@ mock.module("@/lib/elasticsearch", () => ({ getSyncLogs: async (...args: [string
   return logs.filter(log => log.orgId === orgId && log.repoId === repoId).slice(0, limit);
 } }));
 mock.module("@octopus/db", () => ({ prisma: {
-  organizationMember: { findFirst: async () => member ? { id: "member" } : null },
+  organizationMember: { findFirst: async ({ where }: { where: Partial<(typeof memberships)[number]> }) =>
+    memberships.find(member => Object.entries(where).every(([key, value]) => member[key as keyof typeof member] === value)) ?? null },
   repository: {
     findFirst: async ({ where }: { where: { id: string; organizationId: string } }) =>
       repository?.id === where.id && repository.organizationId === where.organizationId ? repository : null,
@@ -57,8 +60,16 @@ for (const [attempt, marker] of [["old-binary", "current"], [null, "current"], [
 repository = { id: "repo", organizationId: "other", indexAttemptId: "current", syncLogAttemptId: "current" };
 assert.deepEqual(await (await getUserLogs(userRequest())).json(), { logs: [] });
 assert.equal(calls.length, 0);
-member = false;
-assert.equal((await getUserLogs(userRequest())).status, 403);
+repository = { id: "repo", organizationId: "org", indexAttemptId: "current", syncLogAttemptId: "current" };
+for (const membership of [
+  { id: "member", organizationId: "other", userId: "user", deletedAt: null },
+  { id: "member", organizationId: "org", userId: "other", deletedAt: null },
+  { id: "member", organizationId: "org", userId: "user", deletedAt: new Date("2020-01-01T00:00:00Z") },
+]) {
+  memberships = [membership];
+  assert.equal((await getUserLogs(userRequest())).status, 403);
+  assert.equal(calls.length, 0);
+}
 session = false;
 assert.equal((await getUserLogs(userRequest())).status, 401);
 assert.equal((await getAdminLogs(adminRequest(false), adminParams)).status, 401);

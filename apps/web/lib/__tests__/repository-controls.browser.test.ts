@@ -56,6 +56,24 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
       }
       return route.continue();
     });
+    await page.goto(new URL("?null-api=1", server.url).href);
+    await page.getByText("Initial indexing log", { exact: true }).waitFor();
+    expect(await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).count()).toBe(0);
+    await page.goto(new URL("?invalid-api=1", server.url).href);
+    await page.getByText("Initial indexing log", { exact: true }).waitFor();
+    await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
+    await page.goto(new URL("?old-api=1", server.url).href);
+    await page.getByText("Initial indexing log", { exact: true }).waitFor();
+    await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
+    await page.evaluate(`window.repositoryFixture.emit('index-log',{repoId:'fixture-repo',message:'Early old API live log',level:'info',timestamp:2})`);
+    await page.getByText("Early old API live log", { exact: true }).waitFor();
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logs=[{message:'Old API replacement log',level:'info',timestamp:3}];
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.getByText("Old API replacement log", { exact: true }).waitFor();
+    await page.getByText("Early old API live log", { exact: true }).waitFor();
+    await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
     await page.goto(server.url.href);
     const toggle = page.getByRole("switch", { name: "Auto Review", exact: true });
     await toggle.waitFor();
@@ -185,14 +203,14 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     }`);
     await page.getByText("Old API snapshot", { exact: true }).waitFor();
     await page.getByText("Legacy live log", { exact: true }).waitFor();
-    expect(await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).count()).toBe(0);
+    expect(await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).count()).toBe(1);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.omitIndexAttemptId=false; f.invalidIndexAttemptId=true;
       f.logs=[{message:'Invalid identity snapshot',level:'info',timestamp:7}];
       f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
     }`);
     await page.getByText("Invalid identity snapshot", { exact: true }).waitFor();
-    expect(await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).count()).toBe(0);
+    expect(await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).count()).toBe(1);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.invalidIndexAttemptId=false;
       f.logs=[{message:'New API snapshot',level:'info',timestamp:8}];
@@ -200,7 +218,7 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     }`);
     await page.getByText("New API snapshot", { exact: true }).waitFor();
     await page.getByText("Legacy live log", { exact: true }).waitFor();
-    expect(await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).count()).toBe(0);
+    expect(await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).count()).toBe(1);
     await page.evaluate(`window.repositoryFixture.emit('index-log',{repoId:'fixture-repo',message:'Early replacement live log',level:'info',timestamp:9})`);
     await page.getByText("Early replacement live log", { exact: true }).waitFor();
     const beforeLegacyReplacement = await page.evaluate("window.repositoryFixture.logFetches");

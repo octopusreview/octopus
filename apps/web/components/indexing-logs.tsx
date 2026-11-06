@@ -23,7 +23,7 @@ interface LogEntry {
 }
 
 function logKey(log: LogEntry): string {
-  return JSON.stringify([log.indexAttemptId ?? null, log.timestamp, log.level, log.message]);
+  return JSON.stringify([log.indexAttemptId ?? null, log.timestamp, log.level, log.message, !!log.live && log.message === "Saved indexing message withheld for privacy."]);
 }
 
 function LogIcon({ level, isActive }: { level: LogEntry["level"]; isActive: boolean }) {
@@ -351,6 +351,8 @@ export function IndexingLogs({
 
   const isComplete = initialStatus !== "indexing";
   const displayLogs = mergeProgressLogs(logs);
+  const withheldTimes = new Set(logs.filter((log) => !log.live && log.message === "Saved indexing message withheld for privacy.").map((log) => JSON.stringify([log.timestamp, log.level])));
+  const mayContainDuplicates = logs.some((log) => log.live && withheldTimes.has(JSON.stringify([log.timestamp, log.level])));
   const recovery = getRepositoryConnectionRecovery(provider, orgId, `/repositories?repo=${repoId}`);
 
   // Find the index of the last info log to determine which one should spin
@@ -393,6 +395,11 @@ export function IndexingLogs({
         {legacyLogsMayBeMixed && (
           <div role="alert" className="mb-3 text-amber-300">
             Indexing messages may include multiple attempts or be missing.
+          </div>
+        )}
+        {mayContainDuplicates && (
+          <div role="alert" className="mb-3 text-amber-300">
+            Saved and live indexing messages may include duplicates.
           </div>
         )}
         {truncated && (

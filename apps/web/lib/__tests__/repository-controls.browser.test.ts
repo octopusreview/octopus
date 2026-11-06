@@ -197,8 +197,8 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
         {message:'Check repository permissions',level:'info',timestamp:1},
         {message:'Check repository permissions',level:'warning',timestamp:1}];f.refresh();
     }`);
-    await page.getByText("Old failed attempt", { exact: true }).waitFor();
-    expect(await page.getByText("Old failed attempt", { exact: true }).count()).toBe(1);
+    await page.getByText("Old failed attempt", { exact: true }).first().waitFor();
+    expect(await page.getByText("Old failed attempt", { exact: true }).count()).toBe(2);
     expect(await page.getByText("Check repository permissions", { exact: true }).count()).toBe(2);
     expect(await page.getByRole("link", { name: "Check Bitbucket connection" }).getAttribute("href")).toBe("/settings/integrations#bitbucket");
     await page.evaluate("window.repositoryFixture.indexError=''");

@@ -1,7 +1,7 @@
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
 
-const row: Record<string, any> = {
+const row: { id: string; externalId: string; installationId: null; indexStatus: string; indexAttemptId: string | null; syncLogAttemptId: string | null; localIndexUpload: unknown; updatedAt: Date } = {
   id: "repo", externalId: "cli:github:fixture/repo", installationId: null,
   indexStatus: "indexed", indexAttemptId: null, syncLogAttemptId: "old-upload",
   localIndexUpload: { id: "old-upload" }, updatedAt: new Date(),
@@ -9,7 +9,7 @@ const row: Record<string, any> = {
 const repository = {
   findFirst: async () => row,
   findUniqueOrThrow: async () => ({ ...row }),
-  updateMany: async ({ where, data }: { where: Record<string, any>; data: Record<string, any> }) => {
+  updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
     if (where.indexAttemptId !== undefined && where.indexAttemptId !== row.indexAttemptId) return { count: 0 };
     if (typeof where.indexStatus === "string" && where.indexStatus !== row.indexStatus) return { count: 0 };
     Object.assign(row, data);

@@ -166,10 +166,30 @@ try {
     }
     emit("index-log", { repoId: "repo-a", message: withheld, level: "error", timestamp: 80, ...(owner ? { indexAttemptId: owner } : {}) });
     await flush();
+    assert.equal(text(tree).split(withheld).length - 1, owner ? 4 : 3);
+    assert.match(text(tree), /Saved and live indexing messages may include duplicates/);
     emit("index-status", { repoId: "repo-a" });
     await flush();
     await reply(requests.length - 1, { logs: [], attempt: owner ? "next-owner" : null, indexAttemptId: owner ? "next-owner" : "legacy-replacement" });
     assert.equal(text(tree).split(withheld).length - 1, 1);
+  }
+  for (const [owner, buffered, timestamp] of [[null, false, 100], [null, true, 101], ["tagged-ambiguous", false, 102], ["tagged-buffered", true, 103]] as const) {
+    const identity = owner ?? `legacy-${timestamp}`;
+    const saved = { message: withheld, level: "warning", timestamp, ...(owner ? { indexAttemptId: owner } : {}) };
+    const live = { repoId: "repo-a", message: `Skipped synthetic path ${timestamp}`, level: "warning", timestamp, ...(owner ? { indexAttemptId: owner } : {}) };
+    emit("index-status", { repoId: "repo-a" });
+    await flush();
+    if (buffered) emit("index-log", live);
+    await reply(requests.length - 1, { logs: [saved], attempt: owner, indexAttemptId: identity });
+    if (!buffered) { emit("index-log", live); await flush(); }
+    assert.match(text(tree), new RegExp(live.message));
+    assert.match(text(tree), /Saved and live indexing messages may include duplicates/);
+    const count = text(tree).split(withheld).length - 1;
+    emit("index-status", { repoId: "repo-a" });
+    await flush();
+    await reply(requests.length - 1, { logs: [saved], attempt: owner, indexAttemptId: identity });
+    assert.equal(text(tree).split(withheld).length - 1, count);
+    assert.match(text(tree), new RegExp(live.message));
   }
 } finally {
   for (const hook of hooks) hook?.cleanup?.();

@@ -88,8 +88,8 @@ for (const [batch, upload, selected] of [
   await getAdminLogs(adminRequest(), adminParams);
   assert.deepEqual(calls.splice(0), [["org", "repo", 500, selected], ["org", "repo", 500, selected]]);
 }
-const safeTexts = ["Processed 5 files, skipped 0", "Processing files... 3/10", "Processing embedding batch 2/5...", "Repository cloned successfully", "Generating embeddings for 5 chunks (1 batch)...", "Storing 5 vectors in database (2 batches)..."];
-const unsafeTexts = ["synthetic-secret", "/private/synthetic/file.ts", "Processed 5 files, skipped 0 synthetic-secret", "Processed 5 files, skipped 0\n", "Indexing failed: synthetic-secret"];
+const safeTexts = ["Processed 5 files, skipped 0", "Processing files... 3/10", "Processing embedding batch 2/5...", "Repository cloned successfully", "Generating embeddings for 5 chunks (1 batch)...", "Storing 5 vectors in database (2 batches)...", "Local indexing started", "Local indexing batch complete", "Local indexing complete", "Indexing failed", "Processing local batch 1/2"];
+const unsafeTexts = ["synthetic-secret", "/private/synthetic/file.ts", "Processed 5 files, skipped 0 synthetic-secret", "Processed 5 files, skipped 0\n", "Indexing failed: synthetic-secret", "Processing local batch 1/2 synthetic-secret", "Local indexing complete\nsynthetic-secret"];
 for (const attempt of [undefined, "current"] as const) {
   repository = { id: "repo", organizationId: "org", indexAttemptId: attempt ?? "legacy", syncLogAttemptId: attempt ?? null };
   const target = attempt ? attemptLogs : legacyLogs;

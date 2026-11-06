@@ -472,7 +472,7 @@ export function IndexingLogs({
           <p className="mb-2 text-zinc-500">Withheld messages may appear more than once when live and saved logs overlap.</p>
         )}
 
-        {(start > 0 || end < logs.length) && (
+        {(changedWindow || start > 0 || end < logs.length) && (
           <div className="mb-2 text-zinc-400">
             {changedWindow ? "Messages in this range have changed." : <>Showing {start + 1}–{end} of {logs.length} messages. {start} older and {logs.length - end} newer messages are not shown.</>}
             <div className="flex gap-3">

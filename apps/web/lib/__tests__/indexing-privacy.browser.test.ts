@@ -24,6 +24,32 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("withholds private live indexing 
   try {
     browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_BROWSER_CHANNEL });
     const page = await browser.newPage();
+    for (const tagged of [false, true]) {
+      await page.goto(server.url.href);
+      await page.addStyleTag({ content: ".max-h-72{max-height:18rem}.overflow-y-auto{overflow-y:auto}" });
+      await page.getByText("Indexing Logs", { exact: true }).waitFor();
+      await page.evaluate(() => {
+        const f = (window as unknown as { privacyFixture: { attempt: string | null; logs: unknown[]; emit: (name: string, data: unknown) => void } }).privacyFixture;
+        f.attempt = "short-owner";
+        f.logs = Array.from({ length: 60 }, (_, i) => ({ indexAttemptId: "short-owner", message: `Processed ${i + 1} files, skipped 0`, level: "info", timestamp: i + 1 }));
+        f.emit("index-status", { repoId: "repo" });
+      });
+      await page.getByText("Processed 60 files, skipped 0", { exact: true }).waitFor();
+      const rows = page.getByRole("list", { name: "Indexing messages" }).getByRole("listitem");
+      await page.waitForFunction(() => (document.querySelector('[aria-label="Indexing messages"]')?.scrollTop ?? 0) > 30);
+      await page.locator('[aria-label="Indexing messages"]').evaluate((element: HTMLElement) => { element.scrollTop = 0; element.dispatchEvent(new Event("scroll")); });
+      const frozen = await rows.allTextContents();
+      await page.evaluate((isTagged: boolean) => {
+        const f = (window as unknown as { privacyFixture: { emit: (name: string, data: unknown) => void } }).privacyFixture;
+        f.emit("index-log", { repoId: "repo", ...(isTagged ? { indexAttemptId: "short-owner" } : {}), message: "Processed 999 files, skipped 0", level: "info", timestamp: 0 });
+      }, tagged);
+      const refresh = page.getByRole("button", { name: "Refresh this page" });
+      await refresh.waitFor();
+      expect(await rows.allTextContents()).toEqual(frozen);
+      await refresh.click();
+      expect(await rows.first().textContent()).toBe("Processed 999 files, skipped 0");
+      expect(await rows.count()).toBe(61);
+    }
     for (const owner of [null, "bounded-owner"]) {
       await page.goto(server.url.href);
       await page.addStyleTag({ content: ".max-h-72{max-height:18rem}.overflow-y-auto{overflow-y:auto}" });

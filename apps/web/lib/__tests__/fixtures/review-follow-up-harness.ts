@@ -10,7 +10,9 @@ mock.module("@sentry/nextjs", () => ({ captureEvent: (event: typeof sentryEvents
 const directCommentFailure = process.argv.includes("--direct-forgejo-comment-failure");
 const preserveAutoReview = process.argv.includes("--preserve-auto-review");
 const firstCompletion = process.argv.includes("--first-review-completion");
-let preparationFetchFailure: "review_input" | "repository_tree" | null = null;
+let preparationFetchFailure: "review_input" | "repository_tree" | "large_pr" | null = null;
+const queuedJobs: string[] = [];
+class FixtureLargePrError extends Error { meta = { reason: "diff_too_large" }; }
 let indexPreparation: "normal" | "fail" | "replace" | "replace-success" = "normal";
 let indexingCalls = 0;
 let indexTransactions = 0;
@@ -220,8 +222,8 @@ mock.module("@/lib/review-attempt", () => ({
   },
 }));
 mock.module("@/lib/github", () => ({
-  LargePrError: class LargePrError extends Error {},
-  getPullRequestReviewInput: async () => { if (preparationFetchFailure === "review_input") throw new Error("synthetic private input"); return { rawDiff: diff, input: {
+  LargePrError: FixtureLargePrError,
+  getPullRequestReviewInput: async () => { if (preparationFetchFailure === "large_pr") throw new FixtureLargePrError(); if (preparationFetchFailure === "review_input") throw new Error("synthetic private input"); return { rawDiff: diff, input: {
     provider: "github", headSha: pr.headSha, baseSha: "b".repeat(40), inventoryComplete: true,
     expectedFiles: 1, limitations: [],
     files: [{ path: "src/check.ts", change: "modified", patch: `@@ -1 +1 @@\n-return value;\n+return value.name;${adaptiveStage ? " ".repeat(400000) : ""}\n`, additions: 1, deletions: 1 }],
@@ -292,7 +294,7 @@ mock.module("@/lib/github-app-config", () => ({ getGithubAppConfig: async () => 
 mock.module("@/lib/queue", () => ({
   loadQueueConfig: async () => ({ reviewTimeoutSeconds: 60, largeReviewTimeoutSeconds: 60 }),
   computeStaleReclaimMs: () => 120000,
-  enqueue: async () => {}, enqueueAfter: async () => {},
+  enqueue: async (name: string) => { queuedJobs.push(name); }, enqueueAfter: async () => {},
 }));
 mock.module("@/lib/cost", () => ({ getOrgSpendLimitStatus: async () => ({ blocked: false }), shouldGuardConcurrency: async () => false }));
 mock.module("@/lib/pubby", () => ({ pubby: { trigger: async (_channel: string, _name: string, data: { status?: string }) => { events.push({ ...data, status: _name === "index-status" ? repo.indexStatus : data.status, eventName: _name }); } } }));
@@ -360,6 +362,11 @@ if (process.argv.includes("--preparation-diagnostic")) {
     const before = sentryEvents.length;
     await processReview("pr");
     assert.equal(sentryEvents.length, before, "successful preparation emits no incident");
+    preparationFetchFailure = "large_pr";
+    pr.status = "pending";
+    await processReview("pr");
+    assert.ok(queuedJobs.includes("process-large-review"), "oversized GitHub review is handed off");
+    assert.equal(sentryEvents.length, before, "handled large review emits no incident");
   } finally { console.error = originalError; }
   console.log("PASS preparation fetch diagnostics");
   process.exit(0);

@@ -42,6 +42,14 @@ assert.deepEqual((await getSyncLogs("org-a", "repo-a", 500, "current")).map(row 
 await writeSyncLog({ orgId: "org-a", repoId: "repo-a", timestamp: 0, message: "legacy write", level: "info" });
 assert.equal(writes[0].index, "octopus_repo_sync");
 assert.equal(writes[0].body.indexAttemptId, undefined);
+assert.equal(writes[0].body.message, "Indexing message withheld for privacy.");
+for (const indexAttemptId of [undefined, "synthetic-attempt"]) {
+  await writeSyncLog({ orgId: "privacy-org", repoId: "privacy-repo", indexAttemptId, timestamp: 1, message: "Failed /private/path: synthetic-token", level: "error" });
+  assert.equal(writes.at(-1)?.body.message, "Indexing message withheld for privacy.");
+  await writeSyncLog({ orgId: "privacy-org", repoId: "privacy-repo", indexAttemptId, timestamp: 2, message: "Processed 5 files, skipped 0", level: "info" });
+  assert.equal(writes.at(-1)?.body.message, "Processed 5 files, skipped 0");
+}
+
 
 const es = new SyntheticElasticsearch();
 const oldWriter = async (entry: Entry) => es.index({
@@ -57,7 +65,7 @@ const oldReader = async (orgId: string, repoId: string) => {
   return result.hits.hits.map(hit => hit._source).reverse();
 };
 const oldEntry: Entry = { orgId: "compat-org", repoId: "compat-repo", timestamp: 100, message: "old writer", level: "info" };
-const currentEntry: Entry = { orgId: "compat-org", repoId: "compat-repo", timestamp: 200, message: "current writer", level: "info" };
+const currentEntry: Entry = { orgId: "compat-org", repoId: "compat-repo", timestamp: 200, message: "Processed 5 files, skipped 0", level: "info" };
 await oldWriter(oldEntry);
 await oldWriter({ ...oldEntry, orgId: "other-org", message: "other tenant" });
 await oldWriter({ ...oldEntry, repoId: "other-repo", message: "other repository" });

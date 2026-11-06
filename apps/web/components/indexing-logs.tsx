@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { safeIndexingLogMessage } from "@/lib/indexing-log-message";
 import { getPubbyClient } from "@/lib/pubby-client";
 import { getRepositoryConnectionRecovery } from "@/lib/repository-connection-recovery";
 import {
@@ -249,7 +250,7 @@ export function IndexingLogs({
     const handleLog = (raw: unknown) => {
       const event = raw as LogEntry & { repoId: string };
       if (event.repoId !== repoId) return;
-      const data = { ...event, live: true };
+      const data = { ...event, message: safeIndexingLogMessage(event.message), live: true };
       if (!data.indexAttemptId) {
         hasUnattributedLive.current = true;
         setLegacyLogsMayBeMixed(true);

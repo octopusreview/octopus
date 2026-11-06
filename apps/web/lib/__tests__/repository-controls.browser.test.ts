@@ -65,7 +65,7 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     for (const [owner, buffered, timestamp] of [[null, false, 200], [null, true, 201], ["chrome-exact", false, 202], ["chrome-buffered", true, 203]] as const) {
       await page.goto(new URL("?tagged-delay=1", server.url).href);
       await page.waitForFunction("window.repositoryFixture.logFetches > 0");
-      const message = `Browser exact collision ${timestamp}`;
+      const message = `Processed ${timestamp+2000} files, skipped 0`;
       await page.evaluate(({ id, value, time, delay }: { id: string | null; value: string; time: number; delay: number }) => {
         const f = (window as FixtureWindow).repositoryFixture;
         f.logDelay = delay; f.logAttempt = id; f.indexAttemptId = id ?? "legacy-exact";
@@ -82,43 +82,43 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
       await page.getByRole("alert").filter({ hasText: "Indexing messages may include duplicates" }).waitFor();
       await page.evaluate(`{
         const f=window.repositoryFixture; f.logDelay=100;
-        f.logs=[...f.logs,{...(f.logAttempt?{indexAttemptId:f.logAttempt}:{}),message:'Exact snapshot refreshed',level:'info',timestamp:300}];
+        f.logs=[...f.logs,{...(f.logAttempt?{indexAttemptId:f.logAttempt}:{}),message:'Processed 500013 files, skipped 0',level:'info',timestamp:300}];
         f.emit('index-status',{repoId:f.repo.id});
-        f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'stale-tagged',message:'Stale exact event',level:'warning',timestamp:301});
+        f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'stale-tagged',message:'Processed 500038 files, skipped 0',level:'warning',timestamp:301});
       }`);
-      await page.getByText("Exact snapshot refreshed", { exact: true }).waitFor();
+      await page.getByText("Processed 500013 files, skipped 0", { exact: true }).waitFor();
       expect(await page.getByText(message, { exact: true }).count()).toBe(3);
-      expect(await page.getByText("Stale exact event", { exact: true }).count()).toBe(0);
+      expect(await page.getByText("Processed 500038 files, skipped 0", { exact: true }).count()).toBe(0);
     }
     await page.goto(new URL("?tagged-delay=1", server.url).href);
     await page.waitForFunction("window.repositoryFixture.logFetches > 0");
     for (const owner of [null, "browser-owner"]) {
       await page.evaluate((id: string | null) => {
         const f = (window as FixtureWindow).repositoryFixture; f.logDelay = 0; f.logAttempt = id; f.indexAttemptId = id ?? "legacy-a";
-        f.logs = [0, 1].map(() => ({ ...(id ? { indexAttemptId: id } : {}), message: "Saved indexing message withheld for privacy.", level: "error", timestamp: 42 }));
+        f.logs = [0, 1].map(() => ({ ...(id ? { indexAttemptId: id } : {}), message: "Indexing message withheld for privacy.", level: "error", timestamp: 42 }));
         f.emit("index-status", { repoId: f.repo.id });
       }, owner);
-      await page.waitForFunction(`document.body.textContent.split('Saved indexing message withheld for privacy.').length === 3`);
+      await page.waitForFunction(`document.body.textContent.split('Indexing message withheld for privacy.').length === 3`);
       await page.evaluate(`{
-        const f=window.repositoryFixture; f.logs=[...f.logs,{...(f.logAttempt?{indexAttemptId:f.logAttempt}:{}),message:'Repeated snapshot received',level:'info',timestamp:43}];
+        const f=window.repositoryFixture; f.logs=[...f.logs,{...(f.logAttempt?{indexAttemptId:f.logAttempt}:{}),message:'Processed 500007 files, skipped 0',level:'info',timestamp:43}];
         f.emit('index-status',{repoId:f.repo.id});
       }`);
-      await page.getByText("Repeated snapshot received", { exact: true }).waitFor();
-      expect(await page.getByText("Saved indexing message withheld for privacy.", { exact: true }).count()).toBe(2);
+      await page.getByText("Processed 500007 files, skipped 0", { exact: true }).waitFor();
+      expect(await page.getByText("Indexing message withheld for privacy.", { exact: true }).count()).toBe(2);
       await page.evaluate(`{
         const f=window.repositoryFixture; f.logAttempt=f.logAttempt?'other-owner':null; f.indexAttemptId=f.logAttempt||'legacy-b';
-        f.logs=[{...(f.logAttempt?{indexAttemptId:f.logAttempt}:{}),message:'Collision replacement received',level:'info',timestamp:44}];
+        f.logs=[{...(f.logAttempt?{indexAttemptId:f.logAttempt}:{}),message:'Processed 500000 files, skipped 0',level:'info',timestamp:44}];
         f.emit('index-status',{repoId:f.repo.id});
       }`);
-      await page.getByText("Collision replacement received", { exact: true }).waitFor();
-      expect(await page.getByText("Saved indexing message withheld for privacy.", { exact: true }).count()).toBe(0);
+      await page.getByText("Processed 500000 files, skipped 0", { exact: true }).waitFor();
+      expect(await page.getByText("Indexing message withheld for privacy.", { exact: true }).count()).toBe(0);
     }
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logDelay=0; f.logAttempt='upload'; f.indexAttemptId='batch-a';
-      f.logs=[{indexAttemptId:'upload',message:'Upload batch A',level:'info',timestamp:1}];
+      f.logs=[{indexAttemptId:'upload',message:'Processed 500049 files, skipped 0',level:'info',timestamp:1}];
       f.emit('index-status',{repoId:f.repo.id});
     }`);
-    await page.getByText("Upload batch A", { exact: true }).waitFor();
+    await page.getByText("Processed 500049 files, skipped 0", { exact: true }).waitFor();
     for (const batch of [null, "batch-b"]) {
       const before = await page.evaluate("window.repositoryFixture.logFetches");
       await page.evaluate((id: string | null) => {
@@ -126,27 +126,27 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
         f.emit("index-status", { repoId: f.repo.id });
       }, batch);
       await page.waitForFunction(`window.repositoryFixture.logFetches > ${before}`);
-      await page.getByText("Upload batch A", { exact: true }).waitFor();
+      await page.getByText("Processed 500049 files, skipped 0", { exact: true }).waitFor();
     }
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logAttempt='new-upload'; f.indexAttemptId='new-batch';
-      f.logs=[{indexAttemptId:'new-upload',message:'Replacement upload',level:'info',timestamp:2}];
+      f.logs=[{indexAttemptId:'new-upload',message:'Processed 500034 files, skipped 0',level:'info',timestamp:2}];
       f.emit('index-status',{repoId:f.repo.id});
     }`);
-    await page.getByText("Replacement upload", { exact: true }).waitFor();
-    expect(await page.getByText("Upload batch A", { exact: true }).count()).toBe(0);
+    await page.getByText("Processed 500034 files, skipped 0", { exact: true }).waitFor();
+    expect(await page.getByText("Processed 500049 files, skipped 0", { exact: true }).count()).toBe(0);
     await page.goto(new URL("?tagged-delay=1", server.url).href);
     await page.waitForFunction("window.repositoryFixture.logFetches > 0");
     await page.evaluate(`{
       const f=window.repositoryFixture;
-      f.emit('index-log',{repoId:f.repo.id,message:'Unattributed before lookup',level:'info',timestamp:1});
-      f.emit('index-log',{repoId:'other-repo',message:'Other repository event',level:'info',timestamp:2});
-      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'old-owner',message:'Stale before lookup',level:'info',timestamp:3});
+      f.emit('index-log',{repoId:f.repo.id,message:'Processed 500008 files, skipped 0',level:'info',timestamp:1});
+      f.emit('index-log',{repoId:'other-repo',message:'Processed 500020 files, skipped 0',level:'info',timestamp:2});
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'old-owner',message:'Processed 500032 files, skipped 0',level:'info',timestamp:3});
     }`);
-    await page.getByText("Unattributed before lookup", { exact: true }).waitFor();
+    await page.getByText("Processed 500008 files, skipped 0", { exact: true }).waitFor();
     await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
-    expect(await page.getByText("Other repository event", { exact: true }).count()).toBe(0);
-    expect(await page.getByText("Stale before lookup", { exact: true }).count()).toBe(0);
+    expect(await page.getByText("Processed 500020 files, skipped 0", { exact: true }).count()).toBe(0);
+    expect(await page.getByText("Processed 500032 files, skipped 0", { exact: true }).count()).toBe(0);
     // The stale tagged event can require one follow-up ownership lookup.
     await page.waitForFunction("window.repositoryFixture.logFetches >= 2");
     const initialFetches = await page.evaluate("window.repositoryFixture.logFetches");
@@ -154,18 +154,18 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     expect(await page.evaluate("window.repositoryFixture.logFetches")).toBe(initialFetches);
     await page.evaluate(`{
       const f=window.repositoryFixture;
-      const tagged={repoId:f.repo.id,indexAttemptId:'first-owner',message:'Same tagged first',level:'warning',timestamp:11};
+      const tagged={repoId:f.repo.id,indexAttemptId:'first-owner',message:'Processed 500037 files, skipped 0',level:'warning',timestamp:11};
       const untagged={repoId:f.repo.id,message:tagged.message,level:tagged.level,timestamp:tagged.timestamp};
       f.emit('index-log',tagged); f.emit('index-log',untagged);
-      f.emit('index-log',{repoId:f.repo.id,message:'Same untagged first',level:'warning',timestamp:12});
-      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'first-owner',message:'Same untagged first',level:'warning',timestamp:12});
+      f.emit('index-log',{repoId:f.repo.id,message:'Processed 500031 files, skipped 0',level:'warning',timestamp:12});
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'first-owner',message:'Processed 500031 files, skipped 0',level:'warning',timestamp:12});
     }`);
-    await page.waitForFunction(`document.body.textContent.split('Same tagged first').length === 3 && document.body.textContent.split('Same untagged first').length === 3`);
+    await page.waitForFunction(`document.body.textContent.split('Processed 500037 files, skipped 0').length === 3 && document.body.textContent.split('Processed 500031 files, skipped 0').length === 3`);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logAttempt='replacement-owner'; f.logDelay=0;
       f.emit('index-status',{repoId:f.repo.id});
     }`);
-    await page.waitForFunction(`document.body.textContent.split('Same tagged first').length === 2 && document.body.textContent.split('Same untagged first').length === 2`);
+    await page.waitForFunction(`document.body.textContent.split('Processed 500037 files, skipped 0').length === 2 && document.body.textContent.split('Processed 500031 files, skipped 0').length === 2`);
     await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
     const beforeUntaggedOverflow = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate(`{
@@ -175,17 +175,17 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeUntaggedOverflow}`);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logHang=false; f.logDelay=0; f.logAttempt='owner-after-overflow';
-      for(let i=0;i<1001;i++) f.emit('index-log',{repoId:f.repo.id,message:'Unknown overflow '+i,level:'warning',timestamp:100+i});
+      for(let i=0;i<1001;i++) f.emit('index-log',{repoId:f.repo.id,message:'Processed '+(i+20000)+' files, skipped 0',level:'warning',timestamp:100+i});
       f.emit('index-status',{repoId:f.repo.id});
     }`);
-    await page.getByText("Unknown overflow 1000", { exact: true }).waitFor();
-    expect(await page.getByText("Unknown overflow 0", { exact: true }).count()).toBe(0);
+    await page.getByText("Processed 21000 files, skipped 0", { exact: true }).waitFor();
+    expect(await page.getByText("Processed 20000 files, skipped 0", { exact: true }).count()).toBe(0);
     await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).waitFor();
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logAttempt='later-owner';
       f.emit('index-status',{repoId:f.repo.id});
     }`);
-    await page.getByText("Unknown overflow 1000", { exact: true }).waitFor();
+    await page.getByText("Processed 21000 files, skipped 0", { exact: true }).waitFor();
     await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).waitFor();
     await page.goto(new URL("?null-api=1", server.url).href);
     await page.getByText("Initial indexing log", { exact: true }).waitFor();
@@ -199,14 +199,14 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.goto(new URL("?old-api=1", server.url).href);
     await page.getByText("Initial indexing log", { exact: true }).waitFor();
     await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
-    await page.evaluate(`window.repositoryFixture.emit('index-log',{repoId:'fixture-repo',message:'Early old API live log',level:'info',timestamp:2})`);
-    await page.getByText("Early old API live log", { exact: true }).waitFor();
+    await page.evaluate(`window.repositoryFixture.emit('index-log',{repoId:'fixture-repo',message:'Processed 500016 files, skipped 0',level:'info',timestamp:2})`);
+    await page.getByText("Processed 500016 files, skipped 0", { exact: true }).waitFor();
     await page.evaluate(`{
-      const f=window.repositoryFixture; f.logs=[{message:'Old API replacement log',level:'info',timestamp:3}];
+      const f=window.repositoryFixture; f.logs=[{message:'Processed 500014 files, skipped 0',level:'info',timestamp:3}];
       f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
     }`);
-    await page.getByText("Old API replacement log", { exact: true }).waitFor();
-    await page.getByText("Early old API live log", { exact: true }).waitFor();
+    await page.getByText("Processed 500014 files, skipped 0", { exact: true }).waitFor();
+    await page.getByText("Processed 500016 files, skipped 0", { exact: true }).waitFor();
     await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
     await page.goto(server.url.href);
     const toggle = page.getByRole("switch", { name: "Auto Review", exact: true });
@@ -228,19 +228,19 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.getByRole("alert").filter({ hasText: "Fixture sync failed" }).waitFor();
     await page.evaluate(`{
       const f=window.repositoryFixture;f.repo.indexStatus='failed';
-      f.logs=[{message:'Old failed attempt',level:'error',timestamp:1},
-        {message:'Old failed attempt',level:'error',timestamp:1},
-        {message:'Check repository permissions',level:'info',timestamp:1},
-        {message:'Check repository permissions',level:'warning',timestamp:1}];f.refresh();
+      f.logs=[{message:'Processed 500033 files, skipped 0',level:'error',timestamp:1},
+        {message:'Processed 500033 files, skipped 0',level:'error',timestamp:1},
+        {message:'Processed 500002 files, skipped 0',level:'info',timestamp:1},
+        {message:'Processed 500002 files, skipped 0',level:'warning',timestamp:1}];f.refresh();
     }`);
-    await page.getByText("Old failed attempt", { exact: true }).first().waitFor();
-    expect(await page.getByText("Old failed attempt", { exact: true }).count()).toBe(2);
-    expect(await page.getByText("Check repository permissions", { exact: true }).count()).toBe(2);
+    await page.getByText("Processed 500033 files, skipped 0", { exact: true }).first().waitFor();
+    expect(await page.getByText("Processed 500033 files, skipped 0", { exact: true }).count()).toBe(2);
+    expect(await page.getByText("Processed 500002 files, skipped 0", { exact: true }).count()).toBe(2);
     expect(await page.getByRole("link", { name: "Check Bitbucket connection" }).getAttribute("href")).toBe("/settings/integrations#bitbucket");
     await page.evaluate("window.repositoryFixture.indexError=''");
     await page.getByRole("button", { name: "Retry indexing", exact: true }).click();
     await page.getByText("Waiting for logs...", { exact: true }).waitFor();
-    expect(await page.getByText("Old failed attempt", { exact: true }).count()).toBe(0);
+    expect(await page.getByText("Processed 500033 files, skipped 0", { exact: true }).count()).toBe(0);
     expect(await toggle.getAttribute("aria-checked")).toBe("false");
     await toggle.click();
     await page.waitForFunction("window.repositoryFixture.repo.autoReview === true");
@@ -248,13 +248,13 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.waitForFunction("window.repositoryFixture.repo.autoReview === false");
     await page.evaluate(`{
       const f=window.repositoryFixture;
-      f.emit('index-log',{repoId:f.repo.id,message:'Retry progress received',level:'info',timestamp:2});
-      f.emit('index-log',{repoId:f.repo.id,message:'Retry access denied',level:'error',timestamp:2});
-      f.emit('index-log',{repoId:f.repo.id,message:'Retry access denied',level:'error',timestamp:2});
-      f.emit('index-log',{repoId:f.repo.id,message:'Retry access denied',level:'warning',timestamp:2});
+      f.emit('index-log',{repoId:f.repo.id,message:'Processed 500015 files, skipped 0',level:'info',timestamp:2});
+      f.emit('index-log',{repoId:f.repo.id,message:'Processed 500030 files, skipped 0',level:'error',timestamp:2});
+      f.emit('index-log',{repoId:f.repo.id,message:'Processed 500030 files, skipped 0',level:'error',timestamp:2});
+      f.emit('index-log',{repoId:f.repo.id,message:'Processed 500030 files, skipped 0',level:'warning',timestamp:2});
     }`);
-    await page.getByText("Retry progress received", { exact: true }).waitFor();
-    expect(await page.getByText("Retry access denied", { exact: true }).count()).toBe(3);
+    await page.getByText("Processed 500015 files, skipped 0", { exact: true }).waitFor();
+    expect(await page.getByText("Processed 500030 files, skipped 0", { exact: true }).count()).toBe(3);
     await page.getByRole("button", { name: "Cancel", exact: true }).first().click();
     await page.getByRole("alert").filter({ hasText: "Fixture cancellation failed" }).waitFor();
     await page.evaluate(`{
@@ -265,16 +265,16 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     const beforeFailedLive = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate(`{
       const f=window.repositoryFixture;
-      f.emit('index-log',{repoId:'other-repo',message:'Other repository log',level:'info',timestamp:3});
-      f.emit('index-log',{repoId:f.repo.id,message:'Live log after failed fetch',level:'info',timestamp:3});
+      f.emit('index-log',{repoId:'other-repo',message:'Processed 500028 files, skipped 0',level:'info',timestamp:3});
+      f.emit('index-log',{repoId:f.repo.id,message:'Processed 500003 files, skipped 0',level:'info',timestamp:3});
     }`);
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeFailedLive}`);
     await page.waitForTimeout(300);
     expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeFailedLive).toBe(1);
-    expect(await page.getByText("Live log after failed fetch", { exact: true }).count()).toBe(0);
-    expect(await page.getByText("Other repository log", { exact: true }).count()).toBe(0);
+    expect(await page.getByText("Processed 500003 files, skipped 0", { exact: true }).count()).toBe(0);
+    expect(await page.getByText("Processed 500028 files, skipped 0", { exact: true }).count()).toBe(0);
     await page.evaluate("window.repositoryFixture.logsFail=false");
-    await page.getByText("Live log after failed fetch", { exact: true }).waitFor();
+    await page.getByText("Processed 500003 files, skipped 0", { exact: true }).waitFor();
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logsFail=true;
       f.emit('index-status',{repoId:f.repo.id,status:'failed'});
@@ -282,18 +282,18 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.getByRole("alert").filter({ hasText: "Could not load indexing logs" }).waitFor();
     await page.evaluate(`{
       const f=window.repositoryFixture;f.logsFail=false;
-      f.logs=[{message:'Recovered logs',level:'error',timestamp:3},
-        {message:'Retry access denied',level:'error',timestamp:2},
-        {message:'Retry access denied',level:'warning',timestamp:2},
-        {message:'Retry progress received',level:'info',timestamp:2},
-        {message:'Reconnect to restore access',level:'info',timestamp:2}];
+      f.logs=[{message:'Processed 500048 files, skipped 0',level:'error',timestamp:3},
+        {message:'Processed 500030 files, skipped 0',level:'error',timestamp:2},
+        {message:'Processed 500030 files, skipped 0',level:'warning',timestamp:2},
+        {message:'Processed 500015 files, skipped 0',level:'info',timestamp:2},
+        {message:'Processed 500004 files, skipped 0',level:'info',timestamp:2}];
     }`);
     const callsBeforeLogRetry = await page.evaluate("window.repositoryFixture.indexCalls");
     await page.getByRole("button", { name: "Retry loading logs", exact: true }).click();
-    await page.getByText("Recovered logs", { exact: true }).waitFor();
-    expect(await page.getByText("Retry access denied", { exact: true }).count()).toBe(5);
-    expect(await page.getByText("Retry progress received", { exact: true }).count()).toBe(2);
-    expect(await page.getByText("Reconnect to restore access", { exact: true }).count()).toBe(1);
+    await page.getByText("Processed 500048 files, skipped 0", { exact: true }).waitFor();
+    expect(await page.getByText("Processed 500030 files, skipped 0", { exact: true }).count()).toBe(5);
+    expect(await page.getByText("Processed 500015 files, skipped 0", { exact: true }).count()).toBe(2);
+    expect(await page.getByText("Processed 500004 files, skipped 0", { exact: true }).count()).toBe(1);
     expect(await page.evaluate("window.repositoryFixture.indexCalls")).toBe(callsBeforeLogRetry);
     expect(await page.getByRole("alert").filter({ hasText: "Could not load indexing logs" }).count()).toBe(0);
     // A background retry does not remount RepoDetail or click its index action.
@@ -304,88 +304,88 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     }`);
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeBackgroundRetry}`);
     await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
-    await page.waitForFunction(`!document.body.textContent.includes('Recovered logs')`);
+    await page.waitForFunction(`!document.body.textContent.includes('Processed 500048 files, skipped 0')`);
     await page.evaluate(`{
       const f=window.repositoryFixture;
-      f.emit('index-log',{repoId:f.repo.id,message:'Background retry progress',level:'info',timestamp:4});
+      f.emit('index-log',{repoId:f.repo.id,message:'Processed 500009 files, skipped 0',level:'info',timestamp:4});
     }`);
-    await page.getByText("Background retry progress", { exact: true }).waitFor();
+    await page.getByText("Processed 500009 files, skipped 0", { exact: true }).waitFor();
     const beforeLegacyReload = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate(`{
-      const f=window.repositoryFixture; f.logs=[{message:'Same attempt saved log',level:'info',timestamp:5}];
+      const f=window.repositoryFixture; f.logs=[{message:'Processed 500021 files, skipped 0',level:'info',timestamp:5}];
       f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
     }`);
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeLegacyReload}`);
-    await page.getByText("Same attempt saved log", { exact: true }).waitFor();
-    await page.getByText("Background retry progress", { exact: true }).waitFor();
+    await page.getByText("Processed 500021 files, skipped 0", { exact: true }).waitFor();
+    await page.getByText("Processed 500009 files, skipped 0", { exact: true }).waitFor();
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logAttempt='old-legacy';
-      f.logs=[{indexAttemptId:'old-legacy',message:'Tagged baseline',level:'info',timestamp:5}];
+      f.logs=[{indexAttemptId:'old-legacy',message:'Processed 500047 files, skipped 0',level:'info',timestamp:5}];
       f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
     }`);
-    await page.getByText("Tagged baseline", { exact: true }).waitFor();
+    await page.getByText("Processed 500047 files, skipped 0", { exact: true }).waitFor();
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logAttempt=null;
-      f.logs=[{message:'Legacy baseline',level:'info',timestamp:5}];
+      f.logs=[{message:'Processed 500045 files, skipped 0',level:'info',timestamp:5}];
       f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
     }`);
-    await page.getByText("Legacy baseline", { exact: true }).waitFor();
-    await page.evaluate(`window.repositoryFixture.emit('index-log',{repoId:'fixture-repo',message:'Legacy live log',level:'info',timestamp:5})`);
-    await page.getByText("Legacy live log", { exact: true }).waitFor();
+    await page.getByText("Processed 500045 files, skipped 0", { exact: true }).waitFor();
+    await page.evaluate(`window.repositoryFixture.emit('index-log',{repoId:'fixture-repo',message:'Processed 500046 files, skipped 0',level:'info',timestamp:5})`);
+    await page.getByText("Processed 500046 files, skipped 0", { exact: true }).waitFor();
     await page.evaluate(`{
       const f=window.repositoryFixture; f.omitIndexAttemptId=true;
-      f.logs=[{message:'Old API snapshot',level:'info',timestamp:6}];
+      f.logs=[{message:'Processed 500043 files, skipped 0',level:'info',timestamp:6}];
       f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
     }`);
-    await page.getByText("Old API snapshot", { exact: true }).waitFor();
-    await page.getByText("Legacy live log", { exact: true }).waitFor();
+    await page.getByText("Processed 500043 files, skipped 0", { exact: true }).waitFor();
+    await page.getByText("Processed 500046 files, skipped 0", { exact: true }).waitFor();
     expect(await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).count()).toBe(1);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.omitIndexAttemptId=false; f.invalidIndexAttemptId=true;
-      f.logs=[{message:'Invalid identity snapshot',level:'info',timestamp:7}];
+      f.logs=[{message:'Processed 500010 files, skipped 0',level:'info',timestamp:7}];
       f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
     }`);
-    await page.getByText("Invalid identity snapshot", { exact: true }).waitFor();
+    await page.getByText("Processed 500010 files, skipped 0", { exact: true }).waitFor();
     expect(await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).count()).toBe(1);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.invalidIndexAttemptId=false;
-      f.logs=[{message:'New API snapshot',level:'info',timestamp:8}];
+      f.logs=[{message:'Processed 500042 files, skipped 0',level:'info',timestamp:8}];
       f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
     }`);
-    await page.getByText("New API snapshot", { exact: true }).waitFor();
-    await page.getByText("Legacy live log", { exact: true }).waitFor();
+    await page.getByText("Processed 500042 files, skipped 0", { exact: true }).waitFor();
+    await page.getByText("Processed 500046 files, skipped 0", { exact: true }).waitFor();
     expect(await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).count()).toBe(1);
-    await page.evaluate(`window.repositoryFixture.emit('index-log',{repoId:'fixture-repo',message:'Early replacement live log',level:'info',timestamp:9})`);
-    await page.getByText("Early replacement live log", { exact: true }).waitFor();
+    await page.evaluate(`window.repositoryFixture.emit('index-log',{repoId:'fixture-repo',message:'Processed 500006 files, skipped 0',level:'info',timestamp:9})`);
+    await page.getByText("Processed 500006 files, skipped 0", { exact: true }).waitFor();
     const beforeLegacyReplacement = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate(`{
       const f=window.repositoryFixture; f.indexAttemptId='replacement-legacy';
-      f.logs=[{message:'Replacement saved log',level:'info',timestamp:5}];
+      f.logs=[{message:'Processed 500023 files, skipped 0',level:'info',timestamp:5}];
       f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
     }`);
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeLegacyReplacement}`);
-    await page.getByText("Replacement saved log", { exact: true }).waitFor();
-    expect(await page.getByText("New API snapshot", { exact: true }).count()).toBe(0);
-    await page.getByText("Legacy live log", { exact: true }).waitFor();
-    await page.getByText("Early replacement live log", { exact: true }).waitFor();
+    await page.getByText("Processed 500023 files, skipped 0", { exact: true }).waitFor();
+    expect(await page.getByText("Processed 500042 files, skipped 0", { exact: true }).count()).toBe(0);
+    await page.getByText("Processed 500046 files, skipped 0", { exact: true }).waitFor();
+    await page.getByText("Processed 500006 files, skipped 0", { exact: true }).waitFor();
     await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
-    await page.evaluate(`window.repositoryFixture.emit('index-log',{repoId:'fixture-repo',message:'Replacement legacy live log',level:'info',timestamp:6})`);
-    await page.getByText("Replacement legacy live log", { exact: true }).waitFor();
+    await page.evaluate(`window.repositoryFixture.emit('index-log',{repoId:'fixture-repo',message:'Processed 500005 files, skipped 0',level:'info',timestamp:6})`);
+    await page.getByText("Processed 500005 files, skipped 0", { exact: true }).waitFor();
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logAttempt='replacement-legacy';
-      f.logs=[{indexAttemptId:'replacement-legacy',message:'Tagged reset',level:'info',timestamp:10}];
+      f.logs=[{indexAttemptId:'replacement-legacy',message:'Processed 500050 files, skipped 0',level:'info',timestamp:10}];
       f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
     }`);
-    await page.getByText("Tagged reset", { exact: true }).waitFor();
+    await page.getByText("Processed 500050 files, skipped 0", { exact: true }).waitFor();
     await page.getByRole("status").filter({ hasText: "Saved indexing messages may be incomplete" }).waitFor();
-    await page.getByText("Replacement legacy live log", { exact: true }).waitFor();
+    await page.getByText("Processed 500005 files, skipped 0", { exact: true }).waitFor();
     await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logAttempt=null; f.indexAttemptId=null;
-      f.logs=[{message:'Explicit null identity',level:'info',timestamp:11}];
+      f.logs=[{message:'Processed 500018 files, skipped 0',level:'info',timestamp:11}];
       f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
     }`);
-    await page.getByText("Explicit null identity", { exact: true }).waitFor();
+    await page.getByText("Processed 500018 files, skipped 0", { exact: true }).waitFor();
     await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
     await page.evaluate("window.repositoryFixture.repo.indexStatus='failed'; window.repositoryFixture.refresh()");
     await page.getByRole("button", { name: "Retry indexing", exact: true }).waitFor();
@@ -397,21 +397,21 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeAttemptFetch}`);
     await page.evaluate(`{
       const f=window.repositoryFixture;
-      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'old-attempt',message:'Obsolete live log',level:'error',timestamp:5});
-      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'current-attempt',message:'Current live log',level:'info',timestamp:6});
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'old-attempt',message:'Processed 500035 files, skipped 0',level:'error',timestamp:5});
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'current-attempt',message:'Processed 500039 files, skipped 0',level:'info',timestamp:6});
     }`);
-    await page.getByText("Current live log", { exact: true }).waitFor();
-    expect(await page.getByText("Obsolete live log", { exact: true }).count()).toBe(0);
+    await page.getByText("Processed 500039 files, skipped 0", { exact: true }).waitFor();
+    expect(await page.getByText("Processed 500035 files, skipped 0", { exact: true }).count()).toBe(0);
     await page.waitForTimeout(600);
     const beforeStaleRefresh = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate(`{
       const f=window.repositoryFixture;
-      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'old-attempt',message:'Another obsolete log',level:'error',timestamp:7});
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'old-attempt',message:'Processed 500024 files, skipped 0',level:'error',timestamp:7});
     }`);
     await page.waitForTimeout(600);
     expect(await page.evaluate("window.repositoryFixture.logFetches")).toBe(beforeStaleRefresh);
-    await page.getByText("Current live log", { exact: true }).waitFor();
-    expect(await page.getByText("Another obsolete log", { exact: true }).count()).toBe(0);
+    await page.getByText("Processed 500039 files, skipped 0", { exact: true }).waitFor();
+    expect(await page.getByText("Processed 500024 files, skipped 0", { exact: true }).count()).toBe(0);
     const beforeDelayedFetch = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logAttempt='next-attempt'; f.logDelay=200; f.logs=[];
@@ -420,14 +420,14 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeDelayedFetch}`);
     await page.evaluate(`{
       const f=window.repositoryFixture;
-      f.emit('index-log',{repoId:f.repo.id,message:'Delayed unattributed log',level:'warning',timestamp:7});
-      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'current-attempt',message:'Delayed obsolete log',level:'error',timestamp:7});
-      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'next-attempt',message:'Buffered current log',level:'info',timestamp:8});
+      f.emit('index-log',{repoId:f.repo.id,message:'Processed 500012 files, skipped 0',level:'warning',timestamp:7});
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'current-attempt',message:'Processed 500026 files, skipped 0',level:'error',timestamp:7});
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'next-attempt',message:'Processed 500025 files, skipped 0',level:'info',timestamp:8});
     }`);
-    await page.getByText("Buffered current log", { exact: true }).waitFor();
-    await page.getByText("Delayed unattributed log", { exact: true }).waitFor();
+    await page.getByText("Processed 500025 files, skipped 0", { exact: true }).waitFor();
+    await page.getByText("Processed 500012 files, skipped 0", { exact: true }).waitFor();
     await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
-    expect(await page.getByText("Delayed obsolete log", { exact: true }).count()).toBe(0);
+    expect(await page.getByText("Processed 500026 files, skipped 0", { exact: true }).count()).toBe(0);
     const beforeSnapshot = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logDelay=400;
@@ -436,16 +436,16 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeSnapshot}`);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logAttempt='snapshot-replacement'; f.logDelay=0;
-      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'snapshot-replacement',message:'Live log after stale snapshot',level:'info',timestamp:9});
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'snapshot-replacement',message:'Processed 500001 files, skipped 0',level:'info',timestamp:9});
     }`);
-    await page.getByText("Live log after stale snapshot", { exact: true }).waitFor();
+    await page.getByText("Processed 500001 files, skipped 0", { exact: true }).waitFor();
     expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeSnapshot).toBeGreaterThanOrEqual(2);
-    expect(await page.getByText("Buffered current log", { exact: true }).count()).toBe(0);
-    await page.getByText("Delayed unattributed log", { exact: true }).waitFor();
+    expect(await page.getByText("Processed 500025 files, skipped 0", { exact: true }).count()).toBe(0);
+    await page.getByText("Processed 500012 files, skipped 0", { exact: true }).waitFor();
     const beforeNormalStream = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate(`(async()=>{
       const f=window.repositoryFixture;
-      for(let i=0;i<30;i++){ f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'normal-stale',message:'Normal stale '+i,level:'info',timestamp:100+i}); await new Promise(resolve=>setTimeout(resolve,20)); }
+      for(let i=0;i<30;i++){ f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'normal-stale',message:'Processed '+(i+40000)+' files, skipped 0',level:'info',timestamp:100+i}); await new Promise(resolve=>setTimeout(resolve,20)); }
     })()`);
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeNormalStream}`, null, { timeout: 5000 });
     expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeNormalStream).toBe(1);
@@ -458,12 +458,12 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeHangingFetch}`);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logHang=false;
-      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'snapshot-replacement',message:'Obsolete during hang',level:'info',timestamp:10});
-      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'hang-replacement',message:'Live log after timeout',level:'info',timestamp:11});
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'snapshot-replacement',message:'Processed 500027 files, skipped 0',level:'info',timestamp:10});
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'hang-replacement',message:'Processed 500019 files, skipped 0',level:'info',timestamp:11});
     }`);
     await page.waitForFunction(`window.repositoryFixture.logAborts > ${beforeHangingAbort}`);
-    await page.getByText("Live log after timeout", { exact: true }).waitFor();
-    expect(await page.getByText("Obsolete during hang", { exact: true }).count()).toBe(0);
+    await page.getByText("Processed 500019 files, skipped 0", { exact: true }).waitFor();
+    expect(await page.getByText("Processed 500027 files, skipped 0", { exact: true }).count()).toBe(0);
     expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeHangingFetch).toBe(2);
     const beforeOverflowFetch = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate(`{
@@ -473,12 +473,12 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeOverflowFetch}`);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logHang=false;
-      for(let i=0;i<550;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'overflow-attempt',message:'Buffered warning '+i,level:'warning',timestamp:1000+i});
-      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'obsolete-attempt',message:'Obsolete overflow warning',level:'warning',timestamp:2000});
+      for(let i=0;i<550;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'overflow-attempt',message:'Processed '+(i+60000)+' files, skipped 0',level:'warning',timestamp:1000+i});
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'obsolete-attempt',message:'Processed 500011 files, skipped 0',level:'warning',timestamp:2000});
     }`);
-    await page.getByText("Buffered warning 0", { exact: true }).waitFor();
-    expect(await page.getByText("Buffered warning 549", { exact: true }).count()).toBe(1);
-    expect(await page.getByText("Obsolete overflow warning", { exact: true }).count()).toBe(0);
+    await page.getByText("Processed 60000 files, skipped 0", { exact: true }).waitFor();
+    expect(await page.getByText("Processed 60549 files, skipped 0", { exact: true }).count()).toBe(1);
+    expect(await page.getByText("Processed 500011 files, skipped 0", { exact: true }).count()).toBe(0);
     const beforePressureFetch = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logHang=true; f.logAttempt='pressure-attempt'; f.logs=[];
@@ -487,11 +487,11 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforePressureFetch}`);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logHang=false;
-      for(let i=0;i<1100;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'pressure-attempt',message:'Pressure warning '+i,level:'warning',timestamp:3000+i});
+      for(let i=0;i<1100;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'pressure-attempt',message:'Processed '+(i+80000)+' files, skipped 0',level:'warning',timestamp:3000+i});
     }`);
     await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).waitFor({ timeout: 5000 });
-    await page.getByText("Pressure warning 1099", { exact: true }).waitFor();
-    expect(await page.getByText("Pressure warning 0", { exact: true }).count()).toBe(0);
+    await page.getByText("Processed 81099 files, skipped 0", { exact: true }).waitFor();
+    expect(await page.getByText("Processed 80000 files, skipped 0", { exact: true }).count()).toBe(0);
     expect(await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).count()).toBe(1);
     const beforeSameAttempt = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate("window.repositoryFixture.emit('index-status',{repoId:window.repositoryFixture.repo.id})");
@@ -512,9 +512,9 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeReplacementOverflow}`);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logAttempt='overflow-replacement'; f.logDelay=0;
-      for(let i=0;i<1001;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'overflow-replacement',message:'Replacement warning '+i,level:'warning',timestamp:5000+i});
+      for(let i=0;i<1001;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'overflow-replacement',message:'Processed '+(i+100000)+' files, skipped 0',level:'warning',timestamp:5000+i});
     }`);
-    await page.getByText("Replacement warning 1000", { exact: true }).waitFor();
+    await page.getByText("Processed 101000 files, skipped 0", { exact: true }).waitFor();
     expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeReplacementOverflow).toBeGreaterThanOrEqual(2);
     expect(await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).count()).toBe(1);
     const beforeEvictedAttempt = await page.evaluate("window.repositoryFixture.logFetches");
@@ -525,11 +525,11 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeEvictedAttempt}`);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logAttempt='evicted-attempt'; f.logDelay=0;
-      f.logs=[{indexAttemptId:'evicted-attempt',message:'Evicted attempt loaded',level:'info',timestamp:8000}];
-      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'evicted-attempt',message:'Evicted live log',level:'info',timestamp:7000});
-      for(let i=0;i<1000;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'overflow-replacement',message:'Old warning '+i,level:'warning',timestamp:7001+i});
+      f.logs=[{indexAttemptId:'evicted-attempt',message:'Processed 500017 files, skipped 0',level:'info',timestamp:8000}];
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'evicted-attempt',message:'Processed 500040 files, skipped 0',level:'info',timestamp:7000});
+      for(let i=0;i<1000;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'overflow-replacement',message:'Processed '+(i+120000)+' files, skipped 0',level:'warning',timestamp:7001+i});
     }`);
-    await page.getByText("Evicted attempt loaded", { exact: true }).waitFor();
+    await page.getByText("Processed 500017 files, skipped 0", { exact: true }).waitFor();
     expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeEvictedAttempt).toBeGreaterThanOrEqual(2);
     expect(await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).count()).toBe(1);
     const beforeManyAttempts = await page.evaluate("window.repositoryFixture.logFetches");
@@ -540,10 +540,10 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeManyAttempts}`);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logHang=false; f.logAttempt='untracked-attempt';
-      for(let i=0;i<1100;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:i===1050?'untracked-attempt':'old-'+i,message:'Old attempt '+i,level:'warning',timestamp:9000+i});
-      for(let i=0;i<1000;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'untracked-attempt',message:'Current attempt '+i,level:'warning',timestamp:11000+i});
+      for(let i=0;i<1100;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:i===1050?'untracked-attempt':'old-'+i,message:'Processed '+(i+140000)+' files, skipped 0',level:'warning',timestamp:9000+i});
+      for(let i=0;i<1000;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'untracked-attempt',message:'Processed '+(i+160000)+' files, skipped 0',level:'warning',timestamp:11000+i});
     }`);
-    await page.getByText("Current attempt 999", { exact: true }).waitFor();
+    await page.getByText("Processed 160999 files, skipped 0", { exact: true }).waitFor();
     expect(await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).count()).toBe(1);
     const beforeUnknownAttempt = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate(`{
@@ -561,33 +561,33 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeUnknownRace}`);
     await page.evaluate(`{
       const f=window.repositoryFixture;
-      for(let i=0;i<1000;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'stale-race-'+i,message:'Old race '+i,level:'warning',timestamp:13000+i});
-      for(let i=0;i<1000;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'owner-a',message:'Owner A '+i,level:'warning',timestamp:14000+i});
+      for(let i=0;i<1000;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'stale-race-'+i,message:'Processed '+(i+180000)+' files, skipped 0',level:'warning',timestamp:13000+i});
+      for(let i=0;i<1000;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'owner-a',message:'Processed '+(i+200000)+' files, skipped 0',level:'warning',timestamp:14000+i});
       f.logHang=false; f.logDelay=400;
       f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
     }`);
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeUnknownRace + 1}`);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logAttempt='owner-b'; f.logDelay=0;
-      f.logs=[{indexAttemptId:'owner-b',message:'Recovered owner B',level:'info',timestamp:16000}];
-      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'owner-b',message:'Evicted B event',level:'info',timestamp:15000});
-      for(let i=0;i<1000;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'owner-a',message:'More A '+i,level:'warning',timestamp:15001+i});
+      f.logs=[{indexAttemptId:'owner-b',message:'Processed 500036 files, skipped 0',level:'info',timestamp:16000}];
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'owner-b',message:'Processed 500044 files, skipped 0',level:'info',timestamp:15000});
+      for(let i=0;i<1000;i++) f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'owner-a',message:'Processed '+(i+220000)+' files, skipped 0',level:'warning',timestamp:15001+i});
     }`);
-    await page.getByText("More A 999", { exact: true }).waitFor();
+    await page.getByText("Processed 220999 files, skipped 0", { exact: true }).waitFor();
     await page.evaluate("window.repositoryFixture.logsFail=true");
     await page.getByRole("alert").filter({ hasText: "Could not load indexing logs" }).waitFor({ timeout: 10000 });
     const beforeOverflowRetry = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate("window.repositoryFixture.logsFail=false");
     await page.waitForTimeout(1200);
     expect(await page.evaluate("window.repositoryFixture.logFetches")).toBe(beforeOverflowRetry);
-    await page.getByText("Recovered owner B", { exact: true }).waitFor({ timeout: 10000 });
+    await page.getByText("Processed 500036 files, skipped 0", { exact: true }).waitFor({ timeout: 10000 });
     expect(await page.evaluate("window.repositoryFixture.logFetches")).toBe(beforeOverflowRetry + 1);
     expect(await page.getByRole("alert").filter({ hasText: "Some indexing messages may be missing" }).count()).toBe(1);
     expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeUnknownRace).toBeLessThanOrEqual(5);
     const beforeOverflowStream = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate(`(async()=>{
       const f=window.repositoryFixture;
-      for(let i=0;i<20;i++) { f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'stale-stream-'+i,message:'Stale stream '+i,level:'warning',timestamp:17000+i}); await new Promise(resolve=>setTimeout(resolve,30)); }
+      for(let i=0;i<20;i++) { f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'stale-stream-'+i,message:'Processed '+(i+240000)+' files, skipped 0',level:'warning',timestamp:17000+i}); await new Promise(resolve=>setTimeout(resolve,30)); }
     })()`);
     await page.waitForTimeout(1200);
     expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeOverflowStream).toBeLessThanOrEqual(1);
@@ -608,19 +608,19 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     expect(await page.getByRole("alert").filter({ hasText: "Could not load indexing logs" }).count()).toBe(0);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logDelay=0; f.logAttempt=null;
-      f.logs=[{message:'Legacy saved log',level:'info',timestamp:18000}];
+      f.logs=[{message:'Processed 500041 files, skipped 0',level:'info',timestamp:18000}];
       f.emit('index-status',{repoId:f.repo.id});
     }`);
-    await page.getByText("Legacy saved log", { exact: true }).waitFor();
+    await page.getByText("Processed 500041 files, skipped 0", { exact: true }).waitFor();
     await page.evaluate(`{
       const f=window.repositoryFixture;
-      f.emit('index-log',{repoId:f.repo.id,message:'Later legacy live log',level:'info',timestamp:18001});
+      f.emit('index-log',{repoId:f.repo.id,message:'Processed 500022 files, skipped 0',level:'info',timestamp:18001});
     }`);
-    await page.getByText("Later legacy live log", { exact: true }).waitFor();
+    await page.getByText("Processed 500022 files, skipped 0", { exact: true }).waitFor();
     const beforeMixedEvents = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate(`(async()=>{
       const f=window.repositoryFixture;
-      for(let i=0;i<30;i++){ f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'mixed-attempt',message:'mixed '+i,level:'info',timestamp:100+i}); await new Promise(resolve=>setTimeout(resolve,20)); }
+      for(let i=0;i<30;i++){ f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'mixed-attempt',message:'Processed '+(i+260000)+' files, skipped 0',level:'info',timestamp:100+i}); await new Promise(resolve=>setTimeout(resolve,20)); }
     })()`);
     const mixedFetches = (await page.evaluate("window.repositoryFixture.logFetches")) - beforeMixedEvents;
     console.log(`Mixed-version log refreshes: ${mixedFetches}`);
@@ -629,9 +629,9 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeMixedEvents).toBe(1);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logAttempt='replacement-attempt';
-      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'replacement-attempt',message:'Replacement live log',level:'info',timestamp:200});
+      f.emit('index-log',{repoId:f.repo.id,indexAttemptId:'replacement-attempt',message:'Processed 500029 files, skipped 0',level:'info',timestamp:200});
     }`);
-    await page.getByText("Replacement live log", { exact: true }).waitFor();
+    await page.getByText("Processed 500029 files, skipped 0", { exact: true }).waitFor();
     await page.evaluate(`{
       const f=window.repositoryFixture;f.repo.indexStatus='indexed';
       f.emit('index-status',{repoId:f.repo.id,status:'indexed'});

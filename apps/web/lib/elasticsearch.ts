@@ -1,4 +1,5 @@
 import { Client } from "@elastic/elasticsearch";
+import { safeIndexingLogMessage } from "@/lib/indexing-log-message";
 
 let client: Client | null = null;
 
@@ -48,6 +49,7 @@ export async function writeSyncLog(entry: SyncLogEntry): Promise<void> {
       index,
       body: {
         ...entry,
+        message: safeIndexingLogMessage(entry.message),
         createdAt: new Date(entry.timestamp).toISOString(),
       },
     });

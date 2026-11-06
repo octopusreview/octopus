@@ -70,52 +70,52 @@ const emit = (name: string, data: unknown) => { assert.ok(listeners.has(name)); 
 const reply = async (index: number, body: unknown) => { requests[index].resolve(Response.json(body)); await flush(); };
 try {
   render();
-  emit("index-log", { repoId: "repo-a", message: "Before owner lookup", level: "info", timestamp: 1 });
-  emit("index-log", { repoId: "other-repo", message: "Other tenant", level: "info", timestamp: 2 });
+  emit("index-log", { repoId: "repo-a", message: "Processed 4000 files, skipped 0", level: "info", timestamp: 1 });
+  emit("index-log", { repoId: "other-repo", message: "Processed 4010 files, skipped 0", level: "info", timestamp: 2 });
   await reply(0, { logs: [], attempt: "owner-a" });
-  assert.match(text(tree), /Before owner lookup/);
+  assert.match(text(tree), /Processed 4000 files, skipped 0/);
   assert.match(text(tree), /multiple attempts or be missing/);
-  assert.doesNotMatch(text(tree), /Other tenant/);
+  assert.doesNotMatch(text(tree), /Processed 4010 files, skipped 0/);
   emit("index-status", { repoId: "repo-a" });
   await flush();
-  emit("index-log", { repoId: "repo-a", message: "Delayed untagged", level: "warning", timestamp: 3 });
-  emit("index-log", { repoId: "repo-a", indexAttemptId: "owner-a", message: "Stale tagged", level: "error", timestamp: 4 });
-  emit("index-log", { repoId: "repo-a", indexAttemptId: "owner-b", message: "New tagged", level: "info", timestamp: 5 });
+  emit("index-log", { repoId: "repo-a", message: "Processed 4006 files, skipped 0", level: "warning", timestamp: 3 });
+  emit("index-log", { repoId: "repo-a", indexAttemptId: "owner-a", message: "Processed 4011 files, skipped 0", level: "error", timestamp: 4 });
+  emit("index-log", { repoId: "repo-a", indexAttemptId: "owner-b", message: "Processed 4012 files, skipped 0", level: "info", timestamp: 5 });
   await reply(1, { logs: [], attempt: "owner-b" });
-  assert.match(text(tree), /Before owner lookup/);
-  assert.match(text(tree), /Delayed untagged/);
-  assert.match(text(tree), /New tagged/);
+  assert.match(text(tree), /Processed 4000 files, skipped 0/);
+  assert.match(text(tree), /Processed 4006 files, skipped 0/);
+  assert.match(text(tree), /Processed 4012 files, skipped 0/);
   assert.match(text(tree), /multiple attempts or be missing/);
-  assert.doesNotMatch(text(tree), /Stale tagged/);
+  assert.doesNotMatch(text(tree), /Processed 4011 files, skipped 0/);
   emit("index-status", { repoId: "repo-a" });
   await flush();
-  await reply(2, { logs: [{ message: "Legacy snapshot", level: "info", timestamp: 6 }] });
-  assert.match(text(tree), /Legacy snapshot/);
-  assert.match(text(tree), /Delayed untagged/);
-  assert.doesNotMatch(text(tree), /New tagged/);
+  await reply(2, { logs: [{ message: "Processed 4007 files, skipped 0", level: "info", timestamp: 6 }] });
+  assert.match(text(tree), /Processed 4007 files, skipped 0/);
+  assert.match(text(tree), /Processed 4006 files, skipped 0/);
+  assert.doesNotMatch(text(tree), /Processed 4012 files, skipped 0/);
   const refresh = async (attempt: string, logs: unknown[] = []) => {
     emit("index-status", { repoId: "repo-a" });
     await flush();
     await reply(requests.length - 1, { logs, attempt });
   };
   await refresh("owner-c");
-  for (const [message, timestamp, taggedFirst] of [["Same tagged first", 20, true], ["Same untagged first", 21, false]] as const) {
+  for (const [message, timestamp, taggedFirst] of [["Processed 4005 files, skipped 0", 20, true], ["Processed 4002 files, skipped 0", 21, false]] as const) {
     const untagged = { repoId: "repo-a", message, level: "warning", timestamp };
     const tagged = { ...untagged, indexAttemptId: "owner-c" };
     for (const event of taggedFirst ? [tagged, untagged] : [untagged, tagged]) emit("index-log", event);
   }
   await flush();
-  for (const message of ["Same tagged first", "Same untagged first"]) {
+  for (const message of ["Processed 4005 files, skipped 0", "Processed 4002 files, skipped 0"]) {
     assert.equal(text(tree).split(message).length - 1, 2);
   }
   await refresh("owner-d");
-  for (const message of ["Same tagged first", "Same untagged first"]) {
+  for (const message of ["Processed 4005 files, skipped 0", "Processed 4002 files, skipped 0"]) {
     assert.equal(text(tree).split(message).length - 1, 1);
   }
-  const snapshotFirst = { message: "Same snapshot first", level: "warning", timestamp: 22, indexAttemptId: "owner-d" };
+  const snapshotFirst = { message: "Processed 4001 files, skipped 0", level: "warning", timestamp: 22, indexAttemptId: "owner-d" };
   await refresh("owner-d", [snapshotFirst]);
   emit("index-log", { repoId: "repo-a", message: snapshotFirst.message, level: snapshotFirst.level, timestamp: snapshotFirst.timestamp });
-  const liveFirst = { message: "Same live first", level: "warning", timestamp: 23 };
+  const liveFirst = { message: "Processed 4009 files, skipped 0", level: "warning", timestamp: 23 };
   emit("index-log", { repoId: "repo-a", ...liveFirst });
   await flush();
   await refresh("owner-d", [snapshotFirst, { ...liveFirst, indexAttemptId: "owner-d" }]);
@@ -129,32 +129,32 @@ try {
   assert.match(text(tree), /multiple attempts or be missing/);
   emit("index-status", { repoId: "repo-a" });
   await flush();
-  await reply(requests.length - 1, { logs: [{ message: "Old saved error", level: "error", timestamp: 30 }, { message: "Collision", level: "info", timestamp: 31 }], attempt: null, indexAttemptId: "legacy-a" });
-  emit("index-log", { repoId: "repo-a", message: "Collision", level: "info", timestamp: 31 });
-  emit("index-log", { repoId: "repo-a", message: "Early replacement", level: "info", timestamp: 32 });
+  await reply(requests.length - 1, { logs: [{ message: "Processed 4008 files, skipped 0", level: "error", timestamp: 30 }, { message: "Processed 4013 files, skipped 0", level: "info", timestamp: 31 }], attempt: null, indexAttemptId: "legacy-a" });
+  emit("index-log", { repoId: "repo-a", message: "Processed 4013 files, skipped 0", level: "info", timestamp: 31 });
+  emit("index-log", { repoId: "repo-a", message: "Processed 4003 files, skipped 0", level: "info", timestamp: 32 });
   await flush();
   emit("index-status", { repoId: "repo-a" });
   await flush();
   await reply(requests.length - 1, { logs: [], attempt: null });
-  assert.match(text(tree), /Old saved error/);
+  assert.match(text(tree), /Processed 4008 files, skipped 0/);
   emit("index-status", { repoId: "repo-a" });
   await flush();
   await reply(requests.length - 1, { logs: [], attempt: null, indexAttemptId: "legacy-b" });
-  assert.doesNotMatch(text(tree), /Old saved error/);
-  assert.match(text(tree), /Collision/);
-  assert.match(text(tree), /Early replacement/);
+  assert.doesNotMatch(text(tree), /Processed 4008 files, skipped 0/);
+  assert.match(text(tree), /Processed 4013 files, skipped 0/);
+  assert.match(text(tree), /Processed 4003 files, skipped 0/);
   assert.match(text(tree), /multiple attempts or be missing/);
-  for (const [batch, logs] of [["batch-a", [{ indexAttemptId: "upload", message: "First batch saved", level: "info", timestamp: 40 }]], [null, []], ["batch-b", []]] as const) {
+  for (const [batch, logs] of [["batch-a", [{ indexAttemptId: "upload", message: "Processed 4004 files, skipped 0", level: "info", timestamp: 40 }]], [null, []], ["batch-b", []]] as const) {
     emit("index-status", { repoId: "repo-a" });
     await flush();
     await reply(requests.length - 1, { logs, attempt: "upload", indexAttemptId: batch });
-    assert.match(text(tree), /First batch saved/);
+    assert.match(text(tree), /Processed 4004 files, skipped 0/);
   }
   emit("index-status", { repoId: "repo-a" });
   await flush();
   await reply(requests.length - 1, { logs: [], attempt: "new-upload", indexAttemptId: "new-batch" });
-  assert.doesNotMatch(text(tree), /First batch saved/);
-  const withheld = "Saved indexing message withheld for privacy.";
+  assert.doesNotMatch(text(tree), /Processed 4004 files, skipped 0/);
+  const withheld = "Indexing message withheld for privacy.";
   for (const owner of [null, "collision-owner"] as const) {
     const pair = [{ message: withheld, level: "error", timestamp: 80, ...(owner ? { indexAttemptId: owner } : {}) },
       { message: withheld, level: "error", timestamp: 80, ...(owner ? { indexAttemptId: owner } : {}) }];
@@ -176,7 +176,7 @@ try {
   for (const [owner, buffered, timestamp] of [[null, false, 100], [null, true, 101], ["tagged-ambiguous", false, 102], ["tagged-buffered", true, 103]] as const) {
     const identity = owner ?? `legacy-${timestamp}`;
     const saved = { message: withheld, level: "warning", timestamp, ...(owner ? { indexAttemptId: owner } : {}) };
-    const live = { repoId: "repo-a", message: `Skipped synthetic path ${timestamp}`, level: "warning", timestamp, ...(owner ? { indexAttemptId: owner } : {}) };
+    const live = { repoId: "repo-a", message: `Processed ${timestamp+1000} files, skipped 0`, level: "warning", timestamp, ...(owner ? { indexAttemptId: owner } : {}) };
     emit("index-status", { repoId: "repo-a" });
     await flush();
     if (buffered) emit("index-log", live);
@@ -193,7 +193,7 @@ try {
   }
   for (const [owner, buffered, timestamp] of [[null, false, 200], [null, true, 201], ["exact-first", false, 202], ["exact-buffered", true, 203]] as const) {
     const identity = owner ?? `legacy-exact-${timestamp}`;
-    const message = `Exact collision ${timestamp}`;
+    const message = `Processed ${timestamp+2000} files, skipped 0`;
     const entry = { message, level: "warning", timestamp, ...(owner ? { indexAttemptId: owner } : {}) };
     const live = { ...entry, repoId: "repo-a" };
     emit("index-status", { repoId: "repo-a" });
@@ -205,10 +205,10 @@ try {
     assert.match(text(tree), /Indexing messages may include duplicates/);
     emit("index-status", { repoId: "repo-a" });
     await flush();
-    emit("index-log", { ...live, indexAttemptId: "stale-tagged", message: `Stale collision ${timestamp}` });
+    emit("index-log", { ...live, indexAttemptId: "stale-tagged", message: `Processed ${timestamp+3000} files, skipped 0` });
     await reply(requests.length - 1, { logs: [entry], attempt: owner, indexAttemptId: identity });
     assert.equal(text(tree).split(message).length - 1, 3);
-    assert.doesNotMatch(text(tree), new RegExp(`Stale collision ${timestamp}`));
+    assert.doesNotMatch(text(tree), new RegExp(`Processed ${timestamp+3000} files, skipped 0`));
     emit("index-status", { repoId: "repo-a" });
     await flush();
     await reply(requests.length - 1, { logs: [], attempt: owner ? `replacement-${timestamp}` : null, indexAttemptId: owner ? `replacement-${timestamp}` : `replacement-legacy-${timestamp}` });

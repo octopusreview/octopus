@@ -6,7 +6,8 @@ mock.module("next/headers", () => ({ headers: async () => new Headers(), cookies
 mock.module("next/navigation", () => ({ redirect: () => { throw new Error("Unexpected redirect"); } }));
 mock.module("next/cache", () => ({ revalidatePath() {} }));
 mock.module("@/lib/auth", () => ({ auth: { api: { getSession: async () => ({ user: { id: "user" } }) } } }));
-mock.module("@/lib/pubby", () => ({ pubby: { trigger: async () => {} } }));
+const notifications: Array<{ event: string; data: { message?: string } }> = [];
+mock.module("@/lib/pubby", () => ({ pubby: { trigger: async (_channel: string, event: string, data: { message?: string }) => { notifications.push({ event, data }); } } }));
 mock.module("@/lib/elasticsearch", () => ({ writeSyncLog() {}, deleteSyncLogs: async () => {} }));
 mock.module("@/lib/github", () => ({ GithubRateLimitError: class extends Error {} }));
 mock.module("@/lib/repo-sync", () => ({ syncOrgRepos: async () => ({}), syncForgejoRepos: async () => ({}) }));
@@ -26,7 +27,7 @@ let aborts = 0;
 let replaceBeforeCancel = false;
 let abortedAttempt: string | undefined;
 mock.module("@/lib/indexing-abort", () => ({ createAbortController: () => new AbortController(), abortIndexing: (attempt: string) => { aborts++; abortedAttempt = attempt; return true; } }));
-mock.module("@/lib/indexing-runner", () => ({ runIndexingInBackground: async () => { starts++; } }));
+mock.module("@/lib/indexing-runner", () => ({ runIndexingInBackground: async (_id: string, _name: string, _branch: string, _org: string, _installation: number, _channel: string, emitLog: (message: string) => void) => { starts++; emitLog("Processed 5 files, skipped 0"); emitLog("Error /private/path synthetic-token"); } }));
 
 const row = {
   id: "repo", fullName: "team/project", provider: "github", isActive: true, dismissedAt: null as Date | null,
@@ -106,6 +107,7 @@ row.indexStatus = "pending";
 row.autoReview = false;
 assert.deepEqual(await indexRepository("repo"), {});
 assert.equal(starts, 1);
+assert.deepEqual(notifications.filter(item => item.event === "index-log").map(item => item.data.message), ["Processed 5 files, skipped 0", "Indexing message withheld for privacy."]);
 assert.equal(row.autoReview, false, "manual indexing must preserve disabled automatic reviews");
 assert.equal(row.indexStatus, "indexing");
 const attempt = row.indexAttemptId;

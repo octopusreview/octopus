@@ -14,9 +14,9 @@ const oldLog = { orgId: "org", repoId: "repo", indexAttemptId: "old", message: "
 const currentLog = { orgId: "org", repoId: "repo", indexAttemptId: "current", message: "synthetic-secret", level: "success", timestamp: 2 };
 const legacyLog = { orgId: "org", repoId: "repo", message: "synthetic-private-path", level: "info", timestamp: 3, extra: "synthetic-secret" };
 const localLog = { orgId: "org", repoId: "repo", indexAttemptId: "upload", message: "synthetic-secret", level: "info", timestamp: 4 };
-const safeCurrent = { orgId: "org", repoId: "repo", indexAttemptId: "current", message: "Saved indexing message withheld for privacy.", level: "success", timestamp: 2 };
-const safeLegacy = { orgId: "org", repoId: "repo", message: "Saved indexing message withheld for privacy.", level: "info", timestamp: 3 };
-const safeLocal = { orgId: "org", repoId: "repo", indexAttemptId: "upload", message: "Saved indexing message withheld for privacy.", level: "info", timestamp: 4 };
+const safeCurrent = { orgId: "org", repoId: "repo", indexAttemptId: "current", message: "Indexing message withheld for privacy.", level: "success", timestamp: 2 };
+const safeLegacy = { orgId: "org", repoId: "repo", message: "Indexing message withheld for privacy.", level: "info", timestamp: 3 };
+const safeLocal = { orgId: "org", repoId: "repo", indexAttemptId: "upload", message: "Indexing message withheld for privacy.", level: "info", timestamp: 4 };
 const attemptLogs = [oldLog, currentLog, localLog];
 const legacyLogs = [legacyLog];
 mock.module("server-only", () => ({}));
@@ -95,7 +95,7 @@ for (const attempt of [undefined, "current"] as const) {
   const target = attempt ? attemptLogs : legacyLogs;
   const original = target.splice(0);
   for (const message of [...safeTexts, ...unsafeTexts]) target.push({ orgId: "org", repoId: "repo", ...(attempt ? { indexAttemptId: attempt } : {}), message, level: "info", timestamp: 99 } as never);
-  const expected = [...safeTexts, ...unsafeTexts.map(() => "Saved indexing message withheld for privacy.")];
+  const expected = [...safeTexts, ...unsafeTexts.map(() => "Indexing message withheld for privacy.")];
   for (const response of [await getUserLogs(userRequest()), await getAdminLogs(adminRequest(), adminParams)]) {
     const body = await response.json();
     assert.deepEqual(body.logs.map((log: { message: string }) => log.message), expected);

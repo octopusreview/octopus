@@ -40,7 +40,7 @@ let adaptiveAbort = new AbortController();
 let adaptiveRemaining = 900000;
 let validatorCalls = 0;
 let usageCount = 0;
-const events: { type?: string; status?: string; eventName?: string }[] = [];
+const events: { type?: string; status?: string; eventName?: string; message?: string }[] = [];
 let completedSnapshot: string | undefined;
 globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
   if (refusalFlow && String(_url) === "https://api.anthropic.com/v1/messages") {
@@ -315,11 +315,13 @@ mock.module("@/lib/queue", () => ({
   enqueue: async (name: string) => { queuedJobs.push(name); }, enqueueAfter: async () => {},
 }));
 mock.module("@/lib/cost", () => ({ getOrgSpendLimitStatus: async () => ({ blocked: false }), shouldGuardConcurrency: async () => false, getModelPricing: async () => null, estimateCompleteReviewCost: () => 0 }));
-mock.module("@/lib/pubby", () => ({ pubby: { trigger: async (_channel: string, _name: string, data: { status?: string }) => { events.push({ ...data, status: _name === "index-status" ? repo.indexStatus : data.status, eventName: _name }); } } }));
+mock.module("@/lib/pubby", () => ({ pubby: { trigger: async (_channel: string, _name: string, data: { status?: string; message?: string }) => { events.push({ ...data, status: _name === "index-status" ? repo.indexStatus : data.status, eventName: _name }); } } }));
 mock.module("@/lib/events", () => ({ eventBus: { emit: (event: { type: string }) => { events.push(event); } } }));
-mock.module("@/lib/indexer", () => ({ indexRepository: async () => {
+mock.module("@/lib/indexer", () => ({ indexRepository: async (_scope: unknown, _name: string, _branch: string, _installation: number, emit: (message: string) => void) => {
   if (!preserveAutoReview) throw new Error("unexpected indexing");
   indexingCalls++;
+  emit("Processed 5 files, skipped 0");
+  emit("Error /private/path synthetic-token");
   return { indexedFiles: 1, totalFiles: 1, totalChunks: 1, totalVectors: 1, durationMs: 1, contributorCount: 0, contributors: [] };
 } }));
 mock.module("@/lib/review-repository-preparation", () => ({
@@ -441,6 +443,7 @@ if (preserveAutoReview) {
   assert.equal(repo.autoReview, false, "a one-off review must not enable automatic reviews");
   assert.equal(archived.at(-1)?.coverage.assessment?.state, "completed");
   assert.equal(indexingCalls, 1);
+  assert.deepEqual(events.filter(event => event.eventName === "index-log").map(event => event.message), ["Processed 5 files, skipped 0", "Indexing message withheld for privacy.", "Indexing complete: 1 files, 1 vectors"]);
   assert.equal(indexTransactions, 1);
   assert.ok(repo.firstIndexedAt);
   const firstIndex = repo.firstIndexedAt;

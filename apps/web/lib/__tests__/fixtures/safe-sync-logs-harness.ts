@@ -8,7 +8,7 @@ const safe = ["Processed 5 files, skipped 0", "Processing files... 3/10", "Proce
 const unsafe = ["synthetic-secret", "/private/synthetic/file.ts", "Processed 5 files, skipped 0 synthetic-secret", "Processed 5 files, skipped 0\n", "Indexing failed: synthetic-secret", "Processing local batch 1/2 synthetic-secret", "Local indexing complete\nsynthetic-secret"];
 for (const attempt of [undefined, "current"]) {
   const logs = [...safe, ...unsafe].map(message => ({ orgId: "org", repoId: "repo", indexAttemptId: attempt, message, level: "info" as const, timestamp: 42, extra: "synthetic-secret" }));
-  assert.deepEqual(safeSyncLogs(logs, "org", "repo", attempt), [...safe, ...unsafe.map(() => "Saved indexing message withheld for privacy.")].map(message => ({
+  assert.deepEqual(safeSyncLogs(logs, "org", "repo", attempt), [...safe, ...unsafe.map(() => "Indexing message withheld for privacy.")].map(message => ({
     orgId: "org", repoId: "repo", ...(attempt ? { indexAttemptId: attempt } : {}), message, level: "info", timestamp: 42,
   })));
 }

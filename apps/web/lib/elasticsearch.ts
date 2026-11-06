@@ -51,8 +51,8 @@ export async function writeSyncLog(entry: SyncLogEntry): Promise<void> {
         createdAt: new Date(entry.timestamp).toISOString(),
       },
     });
-  } catch (err) {
-    console.error("Failed to write sync log to ES:", err);
+  } catch {
+    console.error("Failed to write sync log to ES");
   }
 }
 
@@ -85,8 +85,8 @@ export async function getSyncLogs(
     });
 
     return result.hits.hits.map((hit) => hit._source!).reverse();
-  } catch (err) {
-    console.error("Failed to read sync logs from ES:", err);
+  } catch {
+    console.error("Failed to read sync logs from ES");
     return [];
   }
 }
@@ -113,7 +113,7 @@ export async function deleteSyncLogs(
         },
       },
     });
-  } catch (err) {
-    console.error("Failed to delete sync logs from ES:", err);
+  } catch {
+    console.error("Failed to delete sync logs from ES");
   }
 }

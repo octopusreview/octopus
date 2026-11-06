@@ -144,6 +144,16 @@ try {
   assert.match(text(tree), /Collision/);
   assert.match(text(tree), /Early replacement/);
   assert.match(text(tree), /multiple attempts or be missing/);
+  for (const [batch, logs] of [["batch-a", [{ indexAttemptId: "upload", message: "First batch saved", level: "info", timestamp: 40 }]], [null, []], ["batch-b", []]] as const) {
+    emit("index-status", { repoId: "repo-a" });
+    await flush();
+    await reply(requests.length - 1, { logs, attempt: "upload", indexAttemptId: batch });
+    assert.match(text(tree), /First batch saved/);
+  }
+  emit("index-status", { repoId: "repo-a" });
+  await flush();
+  await reply(requests.length - 1, { logs: [], attempt: "new-upload", indexAttemptId: "new-batch" });
+  assert.doesNotMatch(text(tree), /First batch saved/);
 } finally {
   for (const hook of hooks) hook?.cleanup?.();
 }

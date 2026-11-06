@@ -11,9 +11,12 @@ let repository: { id: string; organizationId: string; indexAttemptId: string | n
 };
 const calls: Array<[string, string, number, string | undefined]> = [];
 const oldLog = { orgId: "org", repoId: "repo", indexAttemptId: "old", message: "old", level: "info", timestamp: 1 };
-const currentLog = { orgId: "org", repoId: "repo", indexAttemptId: "current", message: "current", level: "success", timestamp: 2 };
-const legacyLog = { orgId: "org", repoId: "repo", message: "legacy", level: "info", timestamp: 3 };
-const localLog = { orgId: "org", repoId: "repo", indexAttemptId: "upload", message: "local upload", level: "info", timestamp: 4 };
+const currentLog = { orgId: "org", repoId: "repo", indexAttemptId: "current", message: "synthetic-secret", level: "success", timestamp: 2 };
+const legacyLog = { orgId: "org", repoId: "repo", message: "synthetic-private-path", level: "info", timestamp: 3, extra: "synthetic-secret" };
+const localLog = { orgId: "org", repoId: "repo", indexAttemptId: "upload", message: "synthetic-secret", level: "info", timestamp: 4 };
+const safeCurrent = { orgId: "org", repoId: "repo", indexAttemptId: "current", message: "Saved indexing message withheld for privacy.", level: "success", timestamp: 2 };
+const safeLegacy = { orgId: "org", repoId: "repo", message: "Saved indexing message withheld for privacy.", level: "info", timestamp: 3 };
+const safeLocal = { orgId: "org", repoId: "repo", indexAttemptId: "upload", message: "Saved indexing message withheld for privacy.", level: "info", timestamp: 4 };
 const attemptLogs = [oldLog, currentLog, localLog];
 const legacyLogs = [legacyLog];
 mock.module("server-only", () => ({}));
@@ -45,8 +48,8 @@ const currentUserResponse = await getUserLogs(userRequest());
 const currentAdminResponse = await getAdminLogs(adminRequest(), adminParams);
 assert.equal(currentUserResponse.status, 200);
 assert.equal(currentAdminResponse.status, 200);
-assert.deepEqual(await currentUserResponse.json(), { logs: [currentLog], attempt: "current", indexAttemptId: "current" });
-assert.deepEqual(await currentAdminResponse.json(), { logs: [currentLog] });
+assert.deepEqual(await currentUserResponse.json(), { logs: [safeCurrent], attempt: "current", indexAttemptId: "current" });
+assert.deepEqual(await currentAdminResponse.json(), { logs: [safeCurrent] });
 assert.deepEqual(calls.splice(0), [["org", "repo", 500, "current"], ["org", "repo", 500, "current"]]);
 for (const [attempt, marker] of [["old-binary", "current"], [null, "current"], ["legacy", null]] as const) {
   repository = { id: "repo", organizationId: "org", indexAttemptId: attempt, syncLogAttemptId: marker };
@@ -54,23 +57,36 @@ for (const [attempt, marker] of [["old-binary", "current"], [null, "current"], [
   const adminResponse = await getAdminLogs(adminRequest(), adminParams);
   assert.equal(userResponse.status, 200);
   assert.equal(adminResponse.status, 200);
-  assert.deepEqual(await userResponse.json(), { logs: [legacyLog], attempt: null, indexAttemptId: attempt });
-  assert.deepEqual(await adminResponse.json(), { logs: [legacyLog] });
+  assert.deepEqual(await userResponse.json(), { logs: [safeLegacy], attempt: null, indexAttemptId: attempt });
+  assert.deepEqual(await adminResponse.json(), { logs: [safeLegacy] });
   assert.deepEqual(calls.splice(0), [["org", "repo", 500, undefined], ["org", "repo", 500, undefined]]);
 }
 for (const batch of [null, "batch"] as const) {
   repository = { id: "repo", organizationId: "org", indexAttemptId: batch, syncLogAttemptId: "upload", localIndexUpload: { id: "upload", batchAttemptId: batch, paths: ["synthetic-private-path"] } };
   const userResponse = await getUserLogs(userRequest());
   const adminResponse = await getAdminLogs(adminRequest(), adminParams);
-  assert.deepEqual(await userResponse.json(), { logs: [localLog], attempt: "upload", indexAttemptId: batch });
-  assert.deepEqual(await adminResponse.json(), { logs: [localLog] });
+  assert.deepEqual(await userResponse.json(), { logs: [safeLocal], attempt: "upload", indexAttemptId: batch });
+  assert.deepEqual(await adminResponse.json(), { logs: [safeLocal] });
   assert.deepEqual(calls.splice(0), [["org", "repo", 500, "upload"], ["org", "repo", 500, "upload"]]);
 }
 for (const state of [{ id: "old-upload", batchAttemptId: "batch" }, { id: "upload", batchAttemptId: "old-batch" }, null]) {
   repository = { id: "repo", organizationId: "org", indexAttemptId: "batch", syncLogAttemptId: "upload", localIndexUpload: state };
-  assert.deepEqual(await (await getUserLogs(userRequest())).json(), { logs: [legacyLog], attempt: null, indexAttemptId: "batch" });
-  assert.deepEqual(await (await getAdminLogs(adminRequest(), adminParams)).json(), { logs: [legacyLog] });
+  assert.deepEqual(await (await getUserLogs(userRequest())).json(), { logs: [safeLegacy], attempt: null, indexAttemptId: "batch" });
+  assert.deepEqual(await (await getAdminLogs(adminRequest(), adminParams)).json(), { logs: [safeLegacy] });
   assert.deepEqual(calls.splice(0), [["org", "repo", 500, undefined], ["org", "repo", 500, undefined]]);
+}
+for (const [batch, upload, selected] of [
+  ["batch-a", { id: "upload", batchAttemptId: "batch-a" }, "upload"],
+  [null, { id: "upload", batchAttemptId: null }, "upload"],
+  ["batch-b", { id: "upload", batchAttemptId: "batch-b" }, "upload"],
+  [null, { id: "upload", batchAttemptId: null }, "upload"],
+  ["replacement", { id: "upload", batchAttemptId: null }, undefined],
+  ["batch-c", { id: "replacement-upload", batchAttemptId: "batch-c" }, undefined],
+] as const) {
+  repository = { id: "repo", organizationId: "org", indexAttemptId: batch, syncLogAttemptId: "upload", localIndexUpload: upload };
+  await getUserLogs(userRequest());
+  await getAdminLogs(adminRequest(), adminParams);
+  assert.deepEqual(calls.splice(0), [["org", "repo", 500, selected], ["org", "repo", 500, selected]]);
 }
 repository = { id: "repo", organizationId: "other", indexAttemptId: "current", syncLogAttemptId: "current" };
 assert.deepEqual(await (await getUserLogs(userRequest())).json(), { logs: [] });

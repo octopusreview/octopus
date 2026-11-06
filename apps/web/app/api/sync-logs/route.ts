@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { getSyncLogs } from "@/lib/elasticsearch";
-import { getSyncLogAttempt } from "@/lib/repository-index-completion";
+import { getSyncLogAttempt, safeSyncLogs } from "@/lib/repository-index-completion";
 
 export async function GET(request: NextRequest) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -42,5 +42,5 @@ export async function GET(request: NextRequest) {
   const attempt = getSyncLogAttempt(repo);
   const logs = await getSyncLogs(orgId, repoId, 500, attempt);
 
-  return NextResponse.json({ logs, attempt: attempt ?? null, indexAttemptId: repo.indexAttemptId });
+  return NextResponse.json({ logs: safeSyncLogs(logs, orgId, repoId, attempt), attempt: attempt ?? null, indexAttemptId: repo.indexAttemptId });
 }

@@ -11,14 +11,17 @@ const tagged: Entry[] = [
   { orgId: "org-b", repoId: "repo-a", indexAttemptId: "current", timestamp: 3, message: "other org", level: "info" },
 ];
 const writes: Array<{ index: string; body: Entry }> = [];
+let fail: "write" | "read" | "delete" | null = null;
 class SyntheticElasticsearch {
   indices = { exists: async () => true };
   async index(request: { index: string; body: Entry }) {
+    if (fail === "write") throw new Error("synthetic-private-exception");
     writes.push(request);
     if (request.index === "octopus_repo_sync") legacy.push(request.body);
     if (request.index === "octopus_repo_sync_attempts") tagged.push(request.body);
   }
   async search(query: { index: string; size: number; query: { bool: { filter: Array<{ term: Record<string, string> }> } }; sort: Array<{ timestamp: { order: string } }> }) {
+    if (fail === "read") throw new Error("synthetic-private-exception");
     const terms = Object.assign({}, ...query.query.bool.filter.map(filter => filter.term));
     const scoped = query.index === "octopus_repo_sync_attempts";
     assert.equal(query.index, scoped ? "octopus_repo_sync_attempts" : "octopus_repo_sync");
@@ -26,10 +29,11 @@ class SyntheticElasticsearch {
     return { hits: { hits: (scoped ? tagged : legacy).filter(row => row.orgId === terms[scoped ? "orgId.keyword" : "orgId"] && row.repoId === terms[scoped ? "repoId.keyword" : "repoId"] && (!scoped || row.indexAttemptId === terms["indexAttemptId.keyword"]))
       .sort((a, b) => direction * (a.timestamp - b.timestamp)).slice(0, query.size).map(row => ({ _source: row })) } };
   }
+  async deleteByQuery() { if (fail === "delete") throw new Error("synthetic-private-exception"); }
 }
 mock.module("@elastic/elasticsearch", () => ({ Client: SyntheticElasticsearch }));
 process.env.ELASTICSEARCH_URL = "http://localhost:9200";
-const { getSyncLogs, writeSyncLog } = await import("../../elasticsearch");
+const { getSyncLogs, writeSyncLog, deleteSyncLogs } = await import("../../elasticsearch");
 const logs = await getSyncLogs("org-a", "repo-a", 500);
 assert.equal(logs.length, 500);
 assert.deepEqual(logs.map(row => row.timestamp), Array.from({ length: 500 }, (_, i) => i + 100));
@@ -66,3 +70,15 @@ assert.deepEqual(await oldReader("compat-org", "compat-repo"), expected);
 assert.deepEqual(await getSyncLogs("compat-org", "compat-repo"), expected);
 assert.deepEqual((await oldReader("other-org", "compat-repo")).map(row => row.message), ["other tenant"]);
 assert.deepEqual((await getSyncLogs("other-org", "compat-repo")).map(row => row.message), ["other tenant"]);
+const errors: unknown[][] = [];
+const originalError = console.error;
+console.error = (...args) => { errors.push(args); };
+try {
+  fail = "write";
+  await writeSyncLog(currentEntry);
+  fail = "read";
+  assert.deepEqual(await getSyncLogs("org-a", "repo-a"), []);
+  fail = "delete";
+  await deleteSyncLogs("org-a", "repo-a");
+  assert.deepEqual(errors, [["Failed to write sync log to ES"], ["Failed to read sync logs from ES"], ["Failed to delete sync logs from ES"]]);
+} finally { console.error = originalError; }

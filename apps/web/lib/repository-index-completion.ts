@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma, type Prisma } from "@octopus/db";
 import type { IndexStats } from "@/lib/indexer";
+import type { SyncLogEntry } from "@/lib/elasticsearch";
 
 /** A replacement attempt or cancellation owns the row now. */
 export class SupersededIndexError extends Error {
@@ -94,4 +95,14 @@ export function getSyncLogAttempt(repo: { indexAttemptId: string | null; syncLog
   const state = upload as { id?: unknown; batchAttemptId?: unknown };
   if (state.id === marker && (repo.indexAttemptId === null || state.batchAttemptId === repo.indexAttemptId)) return marker;
   return undefined;
+}
+
+export function safeSyncLogs(logs: SyncLogEntry[], orgId: string, repoId: string, attempt?: string): SyncLogEntry[] {
+  return logs.map(log => ({
+    orgId, repoId,
+    ...(attempt && log.indexAttemptId === attempt ? { indexAttemptId: attempt } : {}),
+    message: "Saved indexing message withheld for privacy.",
+    level: ["info", "success", "warning", "error"].includes(log.level) ? log.level : "info",
+    timestamp: typeof log.timestamp === "number" && Number.isFinite(log.timestamp) ? log.timestamp : 0,
+  }));
 }

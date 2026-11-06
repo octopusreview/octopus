@@ -203,7 +203,7 @@ export function IndexingLogs({
         if (controller.signal.aborted) return;
         if (!Array.isArray(data.logs)) throw new Error("Invalid indexing logs response");
         const attempt = typeof data.attempt === "string" ? data.attempt : null;
-        const identity = data.indexAttemptId;
+        const identity = attempt || data.indexAttemptId;
         const validIdentity = identity === null || (typeof identity === "string" && identity.length > 0);
         const replaced = validIdentity && persistedAttempt.current !== undefined && identity !== persistedAttempt.current;
         if (validIdentity) persistedAttempt.current = identity;

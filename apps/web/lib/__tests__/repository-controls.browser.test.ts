@@ -59,6 +59,30 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.goto(new URL("?tagged-delay=1", server.url).href);
     await page.waitForFunction("window.repositoryFixture.logFetches > 0");
     await page.evaluate(`{
+      const f=window.repositoryFixture; f.logDelay=0; f.logAttempt='upload'; f.indexAttemptId='batch-a';
+      f.logs=[{indexAttemptId:'upload',message:'Upload batch A',level:'info',timestamp:1}];
+      f.emit('index-status',{repoId:f.repo.id});
+    }`);
+    await page.getByText("Upload batch A", { exact: true }).waitFor();
+    for (const batch of [null, "batch-b"]) {
+      const before = await page.evaluate("window.repositoryFixture.logFetches");
+      await page.evaluate((id: string | null) => {
+        const f = (window as any).repositoryFixture; f.indexAttemptId = id; f.logs = [];
+        f.emit("index-status", { repoId: f.repo.id });
+      }, batch);
+      await page.waitForFunction(`window.repositoryFixture.logFetches > ${before}`);
+      await page.getByText("Upload batch A", { exact: true }).waitFor();
+    }
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logAttempt='new-upload'; f.indexAttemptId='new-batch';
+      f.logs=[{indexAttemptId:'new-upload',message:'Replacement upload',level:'info',timestamp:2}];
+      f.emit('index-status',{repoId:f.repo.id});
+    }`);
+    await page.getByText("Replacement upload", { exact: true }).waitFor();
+    expect(await page.getByText("Upload batch A", { exact: true }).count()).toBe(0);
+    await page.goto(new URL("?tagged-delay=1", server.url).href);
+    await page.waitForFunction("window.repositoryFixture.logFetches > 0");
+    await page.evaluate(`{
       const f=window.repositoryFixture;
       f.emit('index-log',{repoId:f.repo.id,message:'Unattributed before lookup',level:'info',timestamp:1});
       f.emit('index-log',{repoId:'other-repo',message:'Other repository event',level:'info',timestamp:2});

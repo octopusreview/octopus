@@ -2,7 +2,7 @@ import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@octopus/db";
 import { getSyncLogs } from "@/lib/elasticsearch";
-import { getSyncLogAttempt } from "@/lib/repository-index-completion";
+import { getSyncLogAttempt, safeSyncLogs } from "@/lib/repository-index-completion";
 
 function isAuthorized(request: NextRequest): boolean {
   const expected = process.env.ADMIN_API_SECRET;
@@ -34,5 +34,5 @@ export async function GET(
 
   const attempt = getSyncLogAttempt(repo);
   const logs = await getSyncLogs(repo.organizationId, repo.id, 500, attempt);
-  return NextResponse.json({ logs });
+  return NextResponse.json({ logs: safeSyncLogs(logs, repo.organizationId, repo.id, attempt) });
 }

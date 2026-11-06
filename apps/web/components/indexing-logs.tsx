@@ -92,6 +92,7 @@ export function IndexingLogs({
   const persistedAttempt = useRef<string | null | undefined>(undefined);
   const pendingLogs = useRef<LogEntry[]>([]);
   const hasUnattributedLive = useRef(false);
+  const unverifiedUnattributedLive = useRef(false);
   const incompleteAttempts = useRef(new Map<string | null, object>());
   const unattributedMissingLogs = useRef<object | null>(null);
   const verifiedUnattributed = useRef<object | null>(null);
@@ -141,6 +142,7 @@ export function IndexingLogs({
       previousStatus.current = initialStatus;
       pendingLogs.current = [];
       hasUnattributedLive.current = false;
+      unverifiedUnattributedLive.current = false;
       incompleteAttempts.current.clear();
       unattributedMissingLogs.current = null;
       verifiedUnattributed.current = null;
@@ -183,6 +185,7 @@ export function IndexingLogs({
         }
         setLogsMayBeMissing(!!unattributedMissingLogs.current || incompleteAttempts.current.has(null) || incompleteAttempts.current.has(attempt));
         retryDelay.current = 0;
+        unverifiedUnattributedLive.current = false;
         currentAttempt.current = attempt;
         refreshingAttempt.current = false;
         const pending = pendingLogs.current;
@@ -233,7 +236,7 @@ export function IndexingLogs({
           refreshingAttempt.current = false;
           setFetchError("Could not load indexing logs. You can retry loading them without restarting indexing.");
           retryDelay.current = Math.min(retryDelay.current ? retryDelay.current * 2 : 1000, 30000);
-          if (pendingLogs.current.length || incompleteAttempts.current.size || unattributedMissingLogs.current !== verifiedUnattributed.current) scheduleRefresh(retryDelay.current);
+          if (unverifiedUnattributedLive.current || pendingLogs.current.length || incompleteAttempts.current.size || unattributedMissingLogs.current !== verifiedUnattributed.current) scheduleRefresh(retryDelay.current);
         }
       }).finally(() => clearTimeout(timeout));
     return () => {
@@ -254,6 +257,12 @@ export function IndexingLogs({
       if (!data.indexAttemptId) {
         hasUnattributedLive.current = true;
         setLegacyLogsMayBeMixed(true);
+        setLogs((prev) => [...prev, data].sort((a, b) => a.timestamp - b.timestamp));
+        if (currentAttempt.current === undefined) {
+          unverifiedUnattributedLive.current = true;
+          scheduleRefresh(retryDelay.current || 1000);
+        }
+        return;
       }
       if (currentAttempt.current === undefined || (refreshingAttempt.current && !refreshTimer.current) ||
           (!!data.indexAttemptId && data.indexAttemptId !== currentAttempt.current)) {

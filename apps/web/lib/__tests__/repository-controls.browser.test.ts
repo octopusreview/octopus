@@ -273,10 +273,12 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeFailedLive}`);
     await page.waitForTimeout(300);
     expect((await page.evaluate("window.repositoryFixture.logFetches")) - beforeFailedLive).toBe(1);
-    expect(await page.getByText("Processed 500003 files, skipped 0", { exact: true }).count()).toBe(0);
+    expect(await page.getByText("Processed 500003 files, skipped 0", { exact: true }).count()).toBe(1);
     expect(await page.getByText("Processed 500028 files, skipped 0", { exact: true }).count()).toBe(0);
     await page.evaluate("window.repositoryFixture.logsFail=false");
     await page.getByText("Processed 500003 files, skipped 0", { exact: true }).waitFor();
+    await page.waitForFunction("!document.body.textContent.includes('Could not load indexing logs')");
+    expect(await page.getByText("Processed 500003 files, skipped 0", { exact: true }).count()).toBe(1);
     await page.evaluate(`{
       const f=window.repositoryFixture; f.logsFail=true;
       f.emit('index-status',{repoId:f.repo.id,status:'failed'});

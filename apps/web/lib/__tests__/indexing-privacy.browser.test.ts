@@ -43,6 +43,28 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("withholds private live indexing 
     await page.getByText("Processed 8 files, skipped 0", { exact: true }).waitFor();
     expect(await page.getByText("Indexing message withheld for privacy.", { exact: true }).count()).toBe(3);
     expect(await page.getByText(/synthetic-token/).count()).toBe(0);
+    await page.evaluate(() => {
+      const f = (window as unknown as { privacyFixture: { fail: boolean; emit: (name: string, data: unknown) => void } }).privacyFixture;
+      f.fail = true;
+      f.emit("index-status", { repoId: "repo" });
+    });
+    await page.getByRole("alert").filter({ hasText: "Could not load indexing logs" }).waitFor();
+    await page.evaluate(() => {
+      const f = (window as unknown as { privacyFixture: { emit: (name: string, data: unknown) => void } }).privacyFixture;
+      f.emit("index-log", { repoId: "repo", message: "Processed 12 files, skipped 0", level: "info", timestamp: 47 });
+      f.emit("index-log", { repoId: "repo", message: "Error /private/outage synthetic-token", level: "error", timestamp: 46 });
+      f.emit("index-log", { repoId: "repo", indexAttemptId: "stale", message: "Processed 13 files, skipped 0", level: "info", timestamp: 48 });
+    });
+    await page.getByText("Processed 12 files, skipped 0", { exact: true }).waitFor();
+    expect(await page.getByText("Indexing message withheld for privacy.", { exact: true }).count()).toBe(4);
+    expect(await page.getByText("Processed 13 files, skipped 0", { exact: true }).count()).toBe(0);
+    expect(await page.getByText(/synthetic-token|\/private\/outage/).count()).toBe(0);
+    await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
+    await page.evaluate(() => { (window as unknown as { privacyFixture: { fail: boolean } }).privacyFixture.fail = false; });
+    await page.getByRole("alert").filter({ hasText: "Could not load indexing logs" }).waitFor({ state: "hidden" });
+    expect(await page.getByText("Processed 12 files, skipped 0", { exact: true }).count()).toBe(1);
+    expect(await page.getByText("Indexing message withheld for privacy.", { exact: true }).count()).toBe(4);
+    expect(await page.getByText("Processed 13 files, skipped 0", { exact: true }).count()).toBe(0);
   } finally {
     await browser?.close();
     server.stop(true);

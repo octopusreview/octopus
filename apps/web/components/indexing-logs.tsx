@@ -115,6 +115,7 @@ export function IndexingLogs({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [logsMayBeMissing, setLogsMayBeMissing] = useState(false);
+  const [legacyLogsMayBeMixed, setLegacyLogsMayBeMixed] = useState(false);
   const [reload, setReload] = useState(0);
   const currentAttempt = useRef<string | null | undefined>(undefined);
   const previousIndexAttempt = useRef<string | null | undefined>(undefined);
@@ -165,11 +166,13 @@ export function IndexingLogs({
     if (scope !== logScope.current) {
       logScope.current = scope;
       previousIndexAttempt.current = undefined;
+      previousStatus.current = initialStatus;
       pendingLogs.current = [];
       incompleteAttempts.current.clear();
       unattributedMissingLogs.current = null;
       verifiedUnattributed.current = null;
       setLogsMayBeMissing(false);
+      setLegacyLogsMayBeMixed(false);
       rejectedAttempts.current.clear();
       retryDelay.current = 0;
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
@@ -184,7 +187,7 @@ export function IndexingLogs({
     const checked = new Set(pendingLogs.current);
     const checkedIncomplete = new Map(incompleteAttempts.current);
     const checkedUnattributed = unattributedMissingLogs.current;
-    if (initialStatus === "indexing" && previousStatus.current !== "indexing") setLogs([]);
+    if (initialStatus === "indexing" && previousStatus.current !== "indexing") setLegacyLogsMayBeMixed(true);
     previousStatus.current = initialStatus;
     fetch(`/api/sync-logs?orgId=${encodeURIComponent(orgId)}&repoId=${encodeURIComponent(repoId)}`, { signal: controller.signal })
       .then((res) => {
@@ -195,9 +198,12 @@ export function IndexingLogs({
         if (controller.signal.aborted) return;
         if (!Array.isArray(data.logs)) throw new Error("Invalid indexing logs response");
         const attempt = typeof data.attempt === "string" ? data.attempt : null;
-        const indexAttempt = typeof data.indexAttemptId === "string" ? data.indexAttemptId : null;
+        const indexAttempt = typeof data.indexAttemptId === "string" || data.indexAttemptId === null
+          ? data.indexAttemptId : previousIndexAttempt.current;
         const replaced = previousIndexAttempt.current !== undefined && previousIndexAttempt.current !== indexAttempt;
         previousIndexAttempt.current = indexAttempt;
+        if (attempt) setLegacyLogsMayBeMixed(false);
+        else if (replaced) setLegacyLogsMayBeMixed(true);
         for (const [id, marker] of checkedIncomplete) {
           if (id !== attempt && incompleteAttempts.current.get(id) === marker) incompleteAttempts.current.delete(id);
         }
@@ -220,7 +226,7 @@ export function IndexingLogs({
         }
         setLogs((current) => {
           const entries = new Map<string, LogEntry>();
-          for (const log of [...data.logs as LogEntry[], ...(replaced ? [] : current), ...pending]) {
+          for (const log of [...data.logs as LogEntry[], ...current, ...pending]) {
             if (attempt ? log.indexAttemptId === attempt : !log.indexAttemptId) entries.set(logKey(log), log);
           }
           return [...entries.values()].sort((a, b) => a.timestamp - b.timestamp);
@@ -345,6 +351,11 @@ export function IndexingLogs({
         ref={scrollRef}
         className="max-h-72 overflow-y-auto p-3 font-mono text-xs leading-relaxed"
       >
+        {legacyLogsMayBeMixed && (
+          <div role="alert" className="mb-3 text-amber-300">
+            Indexing messages may include multiple attempts or be missing.
+          </div>
+        )}
         {logsMayBeMissing && (
           <div role="alert" className="mb-3 text-amber-300">
             Some indexing messages may be missing while logs were loading.

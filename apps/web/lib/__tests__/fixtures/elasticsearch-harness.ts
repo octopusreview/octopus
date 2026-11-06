@@ -1,7 +1,7 @@
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
 
-type Entry = { orgId: string; repoId: string; timestamp: number; message: string; level: "info" | "error"; indexAttemptId?: string };
+type Entry = { orgId: string; repoId: string; timestamp: number; message: string; level: "info" | "error"; indexAttemptId?: string; createdAt?: string };
 const legacy: Entry[] = Array.from({ length: 600 }, (_, i) => ({ orgId: "org-a", repoId: "repo-a", timestamp: i, message: `event ${i}`, level: "info" }));
 legacy.push({ orgId: "org-b", repoId: "repo-a", timestamp: 1000, message: "other org", level: "error" });
 legacy.push({ orgId: "org-a", repoId: "repo-b", timestamp: 1001, message: "other repo", level: "error" });
@@ -11,9 +11,13 @@ const tagged: Entry[] = [
   { orgId: "org-b", repoId: "repo-a", indexAttemptId: "current", timestamp: 3, message: "other org", level: "info" },
 ];
 const writes: Array<{ index: string; body: Entry }> = [];
-mock.module("@elastic/elasticsearch", () => ({ Client: class {
+class SyntheticElasticsearch {
   indices = { exists: async () => true };
-  async index(request: { index: string; body: Entry }) { writes.push(request); }
+  async index(request: { index: string; body: Entry }) {
+    writes.push(request);
+    if (request.index === "octopus_repo_sync") legacy.push(request.body);
+    if (request.index === "octopus_repo_sync_attempts") tagged.push(request.body);
+  }
   async search(query: { index: string; size: number; query: { bool: { filter: Array<{ term: Record<string, string> }> } }; sort: Array<{ timestamp: { order: string } }> }) {
     const terms = Object.assign({}, ...query.query.bool.filter.map(filter => filter.term));
     const scoped = query.index === "octopus_repo_sync_attempts";
@@ -22,7 +26,8 @@ mock.module("@elastic/elasticsearch", () => ({ Client: class {
     return { hits: { hits: (scoped ? tagged : legacy).filter(row => row.orgId === terms[scoped ? "orgId.keyword" : "orgId"] && row.repoId === terms[scoped ? "repoId.keyword" : "repoId"] && (!scoped || row.indexAttemptId === terms["indexAttemptId.keyword"]))
       .sort((a, b) => direction * (a.timestamp - b.timestamp)).slice(0, query.size).map(row => ({ _source: row })) } };
   }
-} }));
+}
+mock.module("@elastic/elasticsearch", () => ({ Client: SyntheticElasticsearch }));
 process.env.ELASTICSEARCH_URL = "http://localhost:9200";
 const { getSyncLogs, writeSyncLog } = await import("../../elasticsearch");
 const logs = await getSyncLogs("org-a", "repo-a", 500);
@@ -33,3 +38,31 @@ assert.deepEqual((await getSyncLogs("org-a", "repo-a", 500, "current")).map(row 
 await writeSyncLog({ orgId: "org-a", repoId: "repo-a", timestamp: 0, message: "legacy write", level: "info" });
 assert.equal(writes[0].index, "octopus_repo_sync");
 assert.equal(writes[0].body.indexAttemptId, undefined);
+
+const es = new SyntheticElasticsearch();
+const oldWriter = async (entry: Entry) => es.index({
+  index: "octopus_repo_sync",
+  body: { ...entry, createdAt: new Date(entry.timestamp).toISOString() },
+});
+const oldReader = async (orgId: string, repoId: string) => {
+  const result = await es.search({
+    index: "octopus_repo_sync", size: 500,
+    query: { bool: { filter: [{ term: { orgId } }, { term: { repoId } }] } },
+    sort: [{ timestamp: { order: "desc" } }],
+  });
+  return result.hits.hits.map(hit => hit._source).reverse();
+};
+const oldEntry: Entry = { orgId: "compat-org", repoId: "compat-repo", timestamp: 100, message: "old writer", level: "info" };
+const currentEntry: Entry = { orgId: "compat-org", repoId: "compat-repo", timestamp: 200, message: "current writer", level: "info" };
+await oldWriter(oldEntry);
+await oldWriter({ ...oldEntry, orgId: "other-org", message: "other tenant" });
+await oldWriter({ ...oldEntry, repoId: "other-repo", message: "other repository" });
+await writeSyncLog(currentEntry);
+const expected = [
+  { ...oldEntry, createdAt: "1970-01-01T00:00:00.100Z" },
+  { ...currentEntry, createdAt: "1970-01-01T00:00:00.200Z" },
+];
+assert.deepEqual(await oldReader("compat-org", "compat-repo"), expected);
+assert.deepEqual(await getSyncLogs("compat-org", "compat-repo"), expected);
+assert.deepEqual((await oldReader("other-org", "compat-repo")).map(row => row.message), ["other tenant"]);
+assert.deepEqual((await getSyncLogs("other-org", "compat-repo")).map(row => row.message), ["other tenant"]);

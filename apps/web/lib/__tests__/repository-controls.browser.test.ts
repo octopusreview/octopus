@@ -149,8 +149,8 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
       const f=window.repositoryFixture;f.logs=[];f.indexAttemptId='old-legacy';f.repo.indexStatus='indexing';
       f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
     }`);
-    await page.getByText("Waiting for logs...", { exact: true }).waitFor();
-    expect(await page.getByText("Recovered logs", { exact: true }).count()).toBe(0);
+    await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
+    await page.getByText("Recovered logs", { exact: true }).waitFor();
     await page.evaluate(`{
       const f=window.repositoryFixture;
       f.emit('index-log',{repoId:f.repo.id,message:'Background retry progress',level:'info',timestamp:4});
@@ -164,6 +164,45 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeLegacyReload}`);
     await page.getByText("Same attempt saved log", { exact: true }).waitFor();
     await page.getByText("Background retry progress", { exact: true }).waitFor();
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logAttempt='old-legacy';
+      f.logs=[{indexAttemptId:'old-legacy',message:'Tagged baseline',level:'info',timestamp:5}];
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.getByText("Tagged baseline", { exact: true }).waitFor();
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logAttempt=null;
+      f.logs=[{message:'Legacy baseline',level:'info',timestamp:5}];
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.getByText("Legacy baseline", { exact: true }).waitFor();
+    await page.evaluate(`window.repositoryFixture.emit('index-log',{repoId:'fixture-repo',message:'Legacy live log',level:'info',timestamp:5})`);
+    await page.getByText("Legacy live log", { exact: true }).waitFor();
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.omitIndexAttemptId=true;
+      f.logs=[{message:'Old API snapshot',level:'info',timestamp:6}];
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.getByText("Old API snapshot", { exact: true }).waitFor();
+    await page.getByText("Legacy live log", { exact: true }).waitFor();
+    expect(await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).count()).toBe(0);
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.omitIndexAttemptId=false; f.invalidIndexAttemptId=true;
+      f.logs=[{message:'Invalid identity snapshot',level:'info',timestamp:7}];
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.getByText("Invalid identity snapshot", { exact: true }).waitFor();
+    expect(await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).count()).toBe(0);
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.invalidIndexAttemptId=false;
+      f.logs=[{message:'New API snapshot',level:'info',timestamp:8}];
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.getByText("New API snapshot", { exact: true }).waitFor();
+    await page.getByText("Legacy live log", { exact: true }).waitFor();
+    expect(await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).count()).toBe(0);
+    await page.evaluate(`window.repositoryFixture.emit('index-log',{repoId:'fixture-repo',message:'Early replacement live log',level:'info',timestamp:9})`);
+    await page.getByText("Early replacement live log", { exact: true }).waitFor();
     const beforeLegacyReplacement = await page.evaluate("window.repositoryFixture.logFetches");
     await page.evaluate(`{
       const f=window.repositoryFixture; f.indexAttemptId='replacement-legacy';
@@ -172,9 +211,25 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
     }`);
     await page.waitForFunction(`window.repositoryFixture.logFetches > ${beforeLegacyReplacement}`);
     await page.getByText("Replacement saved log", { exact: true }).waitFor();
-    expect(await page.getByText("Background retry progress", { exact: true }).count()).toBe(0);
+    await page.getByText("Legacy live log", { exact: true }).waitFor();
+    await page.getByText("Early replacement live log", { exact: true }).waitFor();
+    await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
     await page.evaluate(`window.repositoryFixture.emit('index-log',{repoId:'fixture-repo',message:'Replacement legacy live log',level:'info',timestamp:6})`);
     await page.getByText("Replacement legacy live log", { exact: true }).waitFor();
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logAttempt='replacement-legacy';
+      f.logs=[{indexAttemptId:'replacement-legacy',message:'Tagged reset',level:'info',timestamp:10}];
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.getByText("Tagged reset", { exact: true }).waitFor();
+    expect(await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).count()).toBe(0);
+    await page.evaluate(`{
+      const f=window.repositoryFixture; f.logAttempt=null; f.indexAttemptId=null;
+      f.logs=[{message:'Explicit null identity',level:'info',timestamp:11}];
+      f.emit('index-status',{repoId:f.repo.id,status:'indexing'});
+    }`);
+    await page.getByText("Explicit null identity", { exact: true }).waitFor();
+    await page.getByRole("alert").filter({ hasText: "multiple attempts or be missing" }).waitFor();
     await page.evaluate("window.repositoryFixture.repo.indexStatus='failed'; window.repositoryFixture.refresh()");
     await page.getByRole("button", { name: "Retry indexing", exact: true }).waitFor();
     const beforeAttemptFetch = await page.evaluate("window.repositoryFixture.logFetches");

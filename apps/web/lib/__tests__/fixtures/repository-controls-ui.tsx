@@ -13,7 +13,8 @@ const repo = {
 const fixture = {
   React, repo, allowed: true, toggleError: "Fixture permission denied", indexError: "Fixture indexing cooldown", syncError: "Fixture sync failed",
   cancelError: "Fixture cancellation failed", logsFail: false, indexCalls: 0, toggleCalls: 0, fastComplete: false, indexDelay: 0,
-  logAttempt: null as string | null, indexAttemptId: null as string | null, logFetches: 0, logDelay: 0, logHang: false, logAborts: 0,
+  logAttempt: null as string | null, indexAttemptId: null as string | null, omitIndexAttemptId: false, invalidIndexAttemptId: false,
+  logFetches: 0, logDelay: 0, logHang: false, logAborts: 0,
   logs: [] as Array<{ message: string; level: string; timestamp: number }>,
   channel: {
     bind(event: string, callback: (data: unknown) => void) {
@@ -30,7 +31,8 @@ const originalFetch = window.fetch;
 window.fetch = async (input, options) => {
   if (String(input).startsWith("/api/sync-logs")) {
     fixture.logFetches++;
-    const snapshot = { logs: fixture.logs, attempt: fixture.logAttempt, indexAttemptId: fixture.indexAttemptId };
+    const snapshot = { logs: fixture.logs,
+      ...(fixture.omitIndexAttemptId ? {} : { attempt: fixture.logAttempt, indexAttemptId: fixture.invalidIndexAttemptId ? 42 : fixture.indexAttemptId }) };
     if (fixture.logHang) {
       await new Promise<void>((_, reject) => options?.signal?.addEventListener("abort", () => {
         fixture.logAborts++;

@@ -40,6 +40,40 @@ function logKey(log: LogEntry): string {
   return JSON.stringify([log.indexAttemptId ?? null, log.timestamp, log.level, log.message]);
 }
 
+function mergeSavedLogs(previous: LogEntry[], saved: LogEntry[]): LogEntry[] {
+  if (!previous.length) return saved;
+  if (!saved.length) return previous;
+  const prefix = previous.slice(0, -500);
+  const old = previous.slice(-500);
+  if (saved.length > 500) {
+    const remaining = new Map<string, number>();
+    for (const log of previous) remaining.set(logKey(log), (remaining.get(logKey(log)) ?? 0) + 1);
+    return previous.concat(saved.filter((log) => {
+      const key = logKey(log);
+      const count = remaining.get(key) ?? 0;
+      if (count) remaining.set(key, count - 1);
+      return !count;
+    }));
+  }
+  const oldKeys = old.map(logKey);
+  const newKeys = saved.map(logKey);
+  const lengths = Array.from({ length: old.length + 1 }, () => new Uint16Array(saved.length + 1));
+  for (let i = old.length - 1; i >= 0; i--) {
+    for (let j = saved.length - 1; j >= 0; j--) {
+      lengths[i][j] = oldKeys[i] === newKeys[j] ? 1 + lengths[i + 1][j + 1] : Math.max(lengths[i + 1][j], lengths[i][j + 1]);
+    }
+  }
+  const merged = [...prefix];
+  let i = 0;
+  let j = 0;
+  while (i < old.length && j < saved.length) {
+    if (oldKeys[i] === newKeys[j]) { merged.push(saved[j++]); i++; }
+    else if (lengths[i + 1][j] >= lengths[i][j + 1]) merged.push(old[i++]);
+    else merged.push(saved[j++]);
+  }
+  return merged.concat(old.slice(i), saved.slice(j));
+}
+
 function pageBoundary(logs: LogEntry[], index: number) {
   const log = logs[index];
   const key = logKey(log);
@@ -231,15 +265,7 @@ export function IndexingLogs({
         setLogs((current) => {
           const saved = (data.logs as LogEntry[]).map((log) => ({ ...log, message: safeIndexLogMessage(log.message), live: false }));
           const matches = (log: LogEntry) => attempt ? log.indexAttemptId === attempt || (log.live && !log.indexAttemptId) : !log.indexAttemptId;
-          const entries = saved.filter(matches);
-          const counts = new Map<string, number>();
-          for (const log of entries) counts.set(logKey(log), (counts.get(logKey(log)) ?? 0) + 1);
-          for (const log of current.filter((log) => !log.live && !replaced && matches(log))) {
-            const key = logKey(log);
-            const remaining = counts.get(key) ?? 0;
-            if (remaining) counts.set(key, remaining - 1);
-            else entries.push(log);
-          }
+          const entries = mergeSavedLogs(current.filter((log) => !log.live && !replaced && matches(log)), saved.filter(matches));
           return entries.concat(current.filter((log) => log.live && matches(log)), pending.filter(matches))
             .sort((a, b) => a.timestamp - b.timestamp);
         });
@@ -406,6 +432,9 @@ export function IndexingLogs({
       >
         <div role="status" className="mb-3 text-amber-300">
           Saved indexing messages may be incomplete.
+        </div>
+        <div role="status" className="mb-3 text-amber-300">
+          Saved messages may overlap or be ordered ambiguously across snapshots.
         </div>
         {legacyLogsMayBeMixed && (
           <div role="alert" className="mb-3 text-amber-300">

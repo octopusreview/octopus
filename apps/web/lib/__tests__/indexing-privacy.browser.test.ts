@@ -23,6 +23,44 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("withholds private live indexing 
   try {
     browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_BROWSER_CHANNEL });
     const page = await browser.newPage();
+    const entry = (value: number, timestamp = 42) => ({ message: `Processed ${value} files, skipped 0`, level: "info", timestamp });
+    const advancingCases = [
+      { old: [entry(1), entry(2), entry(1)], next: [entry(2), entry(1)], expected: [1, 2, 1] },
+      { old: [entry(1), entry(2), entry(1)], next: [entry(1), entry(2)], expected: [1, 2, 1] },
+      { old: [entry(1), entry(1), entry(2)], next: [entry(1), entry(2), entry(1)], expected: [1, 1, 2, 1] },
+      { old: [entry(1), entry(2)], next: [entry(2), entry(3)], expected: [1, 2, 3] },
+      { old: [entry(1, 1), entry(2, 2), entry(1, 3)], next: [entry(2, 2), entry(1, 3), entry(3, 4)], expected: [1, 2, 1, 3] },
+      { old: Array.from({ length: 500 }, (_, i) => entry(i + 1, i + 1)), next: Array.from({ length: 500 }, (_, i) => entry(i + 2, i + 2)), expected: Array.from({ length: 501 }, (_, i) => i + 1) },
+    ];
+    for (const owner of [null, "advancing-owner"]) for (const scenario of advancingCases) {
+      await page.goto(server.url.href);
+      await page.getByText("Indexing Logs", { exact: true }).waitFor();
+      await page.evaluate(({ attempt, items }: { attempt: string | null; items: typeof scenario.old }) => {
+        const f = (window as unknown as { privacyFixture: { attempt: string | null; delay: number; logs: unknown[]; emit: (name: string, data: unknown) => void } }).privacyFixture;
+        f.attempt = attempt; f.delay = 100;
+        f.logs = items.map((log) => ({ ...log, ...(attempt ? { indexAttemptId: attempt } : {}) }));
+        f.emit("index-status", { repoId: "repo" });
+      }, { attempt: owner, items: scenario.old });
+      await page.getByText(scenario.old[scenario.old.length - 1].message, { exact: true }).first().waitFor();
+      await page.evaluate(({ attempt, items }: { attempt: string | null; items: typeof scenario.next }) => {
+        const f = (window as unknown as { privacyFixture: { logs: unknown[]; emit: (name: string, data: unknown) => void } }).privacyFixture;
+        f.logs = items.map((log) => ({ ...log, ...(attempt ? { indexAttemptId: attempt } : {}) }));
+        f.emit("index-status", { repoId: "repo" });
+      }, { attempt: owner, items: scenario.next });
+      const checking = page.getByRole("alert").filter({ hasText: "may belong to an earlier attempt" });
+      await checking.waitFor();
+      await checking.waitFor({ state: "hidden" });
+      const rows = page.getByRole("list", { name: "Indexing messages" }).getByRole("listitem");
+      const pages: string[][] = [];
+      while (true) {
+        pages.unshift(await rows.allTextContents());
+        const older = page.getByRole("button", { name: "Show older messages" });
+        if (!await older.count()) break;
+        await older.click();
+      }
+      expect(pages.flat()).toEqual(scenario.expected.map((value) => `Processed ${value} files, skipped 0`));
+      await page.getByRole("status").filter({ hasText: "ordered ambiguously across snapshots" }).waitFor();
+    }
     for (const owner of [null, "order-owner"]) {
       await page.goto(server.url.href);
       await page.getByText("Indexing Logs", { exact: true }).waitFor();

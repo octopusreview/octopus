@@ -79,7 +79,8 @@ export async function processRepositoryIndex(job: RepositoryIndexJob, retry?: Re
 
   const controller = createAbortController(indexAttemptId);
   // Abort before pg-boss expires the attempt, so the catch can release its claim.
-  const timeout = setTimeout(() => controller.abort(new DOMException("Repository indexing timed out", "TimeoutError")), 25 * 60_000);
+  const deadlineError = new DOMException("Repository indexing timed out", "TimeoutError");
+  const timeout = setTimeout(() => controller.abort(deadlineError), 25 * 60_000);
   const channel = `presence-org-${job.organizationId}`;
   const log = (message: string, level: LogLevel = "info") => {
     writeSyncLog({ orgId: job.organizationId, repoId: repo.id, message, level, timestamp: Date.now() });
@@ -102,7 +103,8 @@ export async function processRepositoryIndex(job: RepositoryIndexJob, retry?: Re
     log(`Indexing failed: ${error instanceof Error ? error.message : String(error)}`, "error");
     void notifyRepositoryIndex(channel, repo.id);
     if (!isCancelled) {
-      reportBackgroundFailure(error, { stage: "indexing", attemptId: indexAttemptId, repositoryId: repo.id, retry });
+      reportBackgroundFailure(error, { stage: "indexing", attemptId: indexAttemptId, repositoryId: repo.id, retry,
+        indexingDeadline: error === deadlineError && controller.signal.reason === deadlineError });
       throw error;
     }
   } finally {

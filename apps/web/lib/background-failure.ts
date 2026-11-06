@@ -8,6 +8,7 @@ export type RetryState = { retryCount: number; retryLimit: number };
 export type FailureContext = {
   stage: FailureStage;
   preparationOperation?: PreparationOperation;
+  indexingDeadline?: boolean;
   attemptId?: string;
   repositoryId?: string;
   pullRequestId?: string;
@@ -54,7 +55,7 @@ export function reportBackgroundFailure(error: unknown, context: FailureContext)
       level: "error",
       message: `Background ${stage} failed: ${provider} / ${code}`,
       fingerprint: [context.synthetic ? "background-failure-synthetic" : "background-failure", stage, provider, code],
-      tags: { error_boundary: "background", failure_stage: stage, failure_owner: ownership, failure_code: code, provider, outcome: "failed", synthetic: context.synthetic ? "true" : "false", ...(operation ? { preparation_operation: operation } : {}) },
+      tags: { error_boundary: "background", failure_stage: stage, failure_owner: ownership, failure_code: code, provider, outcome: "failed", synthetic: context.synthetic ? "true" : "false", ...(operation ? { preparation_operation: operation } : {}), ...(stage === "indexing" && context.indexingDeadline === true ? { indexing_deadline: "worker_25m" } : {}) },
       contexts: { background_failure: {
         ...details,
         stage, ownership, keyOwner,

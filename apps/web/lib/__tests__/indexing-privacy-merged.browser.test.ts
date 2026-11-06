@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { expect, it } from 'bun:test';
 it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)('withholds synthetic private live text while preserving events and progress', async () => {
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE_PATH!);
@@ -6,9 +7,9 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)('withholds synthetic private live
     '@/lib/pubby-client': 'export function getPubbyClient(){return {subscribe(){return window.privacyFixture.channel}}}',
     '@/lib/repository-connection-recovery': 'export function getRepositoryConnectionRecovery(){return {href:"/",label:"Reconnect"}}',
   };
-  const build = await Bun.build({ entrypoints:[new URL('./fixtures/indexing-privacy-browser.tsx',import.meta.url).pathname],target:'browser',plugins:[{name:'privacy-prototype',setup(builder){
+  const build = await Bun.build({ entrypoints:[fileURLToPath(new URL('./fixtures/indexing-privacy-browser.tsx', import.meta.url))],target:'browser',plugins:[{name:'privacy-prototype',setup(builder){
     builder.onResolve({filter:/^(next\/navigation|@\/lib\/pubby-client|@\/lib\/repository-connection-recovery)$/},({path})=>({path,namespace:'fixture'}));
-    builder.onResolve({filter:/^@\//},({path})=>({path:Bun.resolveSync(`./${path.slice(2)}`,new URL('../../',import.meta.url).pathname)}));
+    builder.onResolve({filter:/^@\//},({path})=>({path:Bun.resolveSync(`./${path.slice(2)}`,fileURLToPath(new URL('../../', import.meta.url)))}));
     builder.onLoad({filter:/.*/,namespace:'fixture'},({path})=>({loader:'js',contents:modules[path]}));
   }}] });
   expect(build.success,build.logs.join('\n')).toBe(true);

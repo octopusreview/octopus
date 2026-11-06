@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { expect, it } from "bun:test";
 
 type FixtureWindow = Window & { repositoryFixture: {
@@ -11,7 +12,7 @@ type FixtureWindow = Window & { repositoryFixture: {
 it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls after rejected actions and failed indexing", async () => {
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE_PATH!);
   const build = await Bun.build({
-    entrypoints: [new URL("./fixtures/repository-controls-ui.tsx", import.meta.url).pathname], target: "browser",
+    entrypoints: [fileURLToPath(new URL("./fixtures/repository-controls-ui.tsx", import.meta.url))], target: "browser",
     plugins: [{ name: "isolated-repository-controls", setup(builder) {
       const modules: Record<string, string> = {
         "next/navigation": `export function useRouter(){return {refresh:()=>window.repositoryFixture.refresh(),push:()=>{}};} export function useSearchParams(){return new URLSearchParams();}`,
@@ -41,7 +42,7 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("recovers repository controls aft
       };
       modules["@/app/(app)/actions"] = modules["../actions"];
       builder.onResolve({ filter: /^(next\/navigation|@\/components\/(link|chat-provider|mermaid-diagram)|@\/lib\/pubby-client|\.\.?\/actions)$/ }, ({ path }) => ({ path, namespace: "repository-fixture" }));
-      builder.onResolve({ filter: /^@\// }, ({ path }) => modules[path] ? { path, namespace: "repository-fixture" } : { path: Bun.resolveSync(`./${path.slice(2)}`, new URL("../../", import.meta.url).pathname) });
+      builder.onResolve({ filter: /^@\// }, ({ path }) => modules[path] ? { path, namespace: "repository-fixture" } : { path: Bun.resolveSync(`./${path.slice(2)}`, fileURLToPath(new URL("../../", import.meta.url))) });
       builder.onLoad({ filter: /.*/, namespace: "repository-fixture" }, ({ path }) => ({ loader: "js", contents: modules[path] }));
     }}],
   });

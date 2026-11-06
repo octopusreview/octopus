@@ -1,16 +1,17 @@
+import { fileURLToPath } from "node:url";
 import { expect, it } from "bun:test";
 
 it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("withholds private live indexing messages in Chrome", async () => {
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE_PATH!);
   const build = await Bun.build({
-    entrypoints: [new URL("./fixtures/indexing-privacy-ui.tsx", import.meta.url).pathname], target: "browser",
+    entrypoints: [fileURLToPath(new URL("./fixtures/indexing-privacy-ui.tsx", import.meta.url))], target: "browser",
     plugins: [{ name: "privacy-fixture", setup(builder) {
       const modules: Record<string, string> = {
         "next/navigation": "export function useRouter(){return {refresh(){}}}",
         "@/lib/pubby-client": "export function getPubbyClient(){return {subscribe:()=>window.privacyFixture.channel}}",
       };
       builder.onResolve({ filter: /^(next\/navigation|@\/lib\/pubby-client)$/ }, ({ path }) => ({ path, namespace: "fixture" }));
-      builder.onResolve({ filter: /^@\// }, ({ path }) => ({ path: Bun.resolveSync(`./${path.slice(2)}`, new URL("../../", import.meta.url).pathname) }));
+      builder.onResolve({ filter: /^@\// }, ({ path }) => ({ path: Bun.resolveSync(`./${path.slice(2)}`, fileURLToPath(new URL("../../", import.meta.url))) }));
       builder.onLoad({ filter: /.*/, namespace: "fixture" }, ({ path }) => ({ loader: "js", contents: modules[path] }));
     } }],
   });

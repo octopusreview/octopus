@@ -6,14 +6,15 @@ let session = true;
 let memberships: Array<{ id: string; organizationId: string; userId: string; deletedAt: Date | null }> = [
   { id: "member", organizationId: "org", userId: "user", deletedAt: null },
 ];
-let repository: { id: string; organizationId: string; indexAttemptId: string | null; syncLogAttemptId: string | null } | null = {
+let repository: { id: string; organizationId: string; indexAttemptId: string | null; syncLogAttemptId: string | null; localIndexUpload?: unknown } | null = {
   id: "repo", organizationId: "org", indexAttemptId: "current", syncLogAttemptId: "current",
 };
 const calls: Array<[string, string, number, string | undefined]> = [];
 const oldLog = { orgId: "org", repoId: "repo", indexAttemptId: "old", message: "old", level: "info", timestamp: 1 };
 const currentLog = { orgId: "org", repoId: "repo", indexAttemptId: "current", message: "current", level: "success", timestamp: 2 };
 const legacyLog = { orgId: "org", repoId: "repo", message: "legacy", level: "info", timestamp: 3 };
-const attemptLogs = [oldLog, currentLog];
+const localLog = { orgId: "org", repoId: "repo", indexAttemptId: "upload", message: "local upload", level: "info", timestamp: 4 };
+const attemptLogs = [oldLog, currentLog, localLog];
 const legacyLogs = [legacyLog];
 mock.module("server-only", () => ({}));
 mock.module("next/headers", () => ({ headers: async () => new Headers() }));
@@ -55,6 +56,20 @@ for (const [attempt, marker] of [["old-binary", "current"], [null, "current"], [
   assert.equal(adminResponse.status, 200);
   assert.deepEqual(await userResponse.json(), { logs: [legacyLog], attempt: null, indexAttemptId: attempt });
   assert.deepEqual(await adminResponse.json(), { logs: [legacyLog] });
+  assert.deepEqual(calls.splice(0), [["org", "repo", 500, undefined], ["org", "repo", 500, undefined]]);
+}
+for (const batch of [null, "batch"] as const) {
+  repository = { id: "repo", organizationId: "org", indexAttemptId: batch, syncLogAttemptId: "upload", localIndexUpload: { id: "upload", batchAttemptId: batch } };
+  const userResponse = await getUserLogs(userRequest());
+  const adminResponse = await getAdminLogs(adminRequest(), adminParams);
+  assert.deepEqual(await userResponse.json(), { logs: [localLog], attempt: "upload", indexAttemptId: batch });
+  assert.deepEqual(await adminResponse.json(), { logs: [localLog] });
+  assert.deepEqual(calls.splice(0), [["org", "repo", 500, "upload"], ["org", "repo", 500, "upload"]]);
+}
+for (const state of [{ id: "old-upload", batchAttemptId: "batch" }, { id: "upload", batchAttemptId: "old-batch" }, null]) {
+  repository = { id: "repo", organizationId: "org", indexAttemptId: "batch", syncLogAttemptId: "upload", localIndexUpload: state };
+  assert.deepEqual(await (await getUserLogs(userRequest())).json(), { logs: [legacyLog], attempt: null, indexAttemptId: "batch" });
+  assert.deepEqual(await (await getAdminLogs(adminRequest(), adminParams)).json(), { logs: [legacyLog] });
   assert.deepEqual(calls.splice(0), [["org", "repo", 500, undefined], ["org", "repo", 500, undefined]]);
 }
 repository = { id: "repo", organizationId: "other", indexAttemptId: "current", syncLogAttemptId: "current" };

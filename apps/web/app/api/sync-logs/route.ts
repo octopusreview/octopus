@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { getSyncLogs } from "@/lib/elasticsearch";
+import { getSyncLogAttempt } from "@/lib/repository-index-completion";
 
 export async function GET(request: NextRequest) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -35,10 +36,10 @@ export async function GET(request: NextRequest) {
 
   const repo = await prisma.repository.findFirst({
     where: { id: repoId, organizationId: orgId },
-    select: { indexAttemptId: true, syncLogAttemptId: true },
+    select: { indexAttemptId: true, syncLogAttemptId: true, localIndexUpload: true },
   });
   if (!repo) return NextResponse.json({ logs: [] });
-  const attempt = repo.indexAttemptId && repo.indexAttemptId === repo.syncLogAttemptId ? repo.indexAttemptId : undefined;
+  const attempt = getSyncLogAttempt(repo);
   const logs = await getSyncLogs(orgId, repoId, 500, attempt);
 
   return NextResponse.json({ logs, attempt: attempt ?? null, indexAttemptId: repo.indexAttemptId });

@@ -84,3 +84,14 @@ export async function recordRepositoryIndexCompletion(
     WHERE "id" = ${repositoryId}
   `;
 }
+
+export function getSyncLogAttempt(repo: { indexAttemptId: string | null; syncLogAttemptId: string | null; localIndexUpload: unknown }): string | undefined {
+  const marker = repo.syncLogAttemptId;
+  if (!marker) return undefined;
+  if (repo.indexAttemptId === marker) return marker;
+  const upload = repo.localIndexUpload;
+  if (!upload || typeof upload !== "object" || Array.isArray(upload)) return undefined;
+  const state = upload as { id?: unknown; batchAttemptId?: unknown };
+  if (state.id === marker && (repo.indexAttemptId === null || state.batchAttemptId === repo.indexAttemptId)) return marker;
+  return undefined;
+}

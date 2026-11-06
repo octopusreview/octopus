@@ -2,6 +2,7 @@ import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@octopus/db";
 import { getSyncLogs } from "@/lib/elasticsearch";
+import { getSyncLogAttempt } from "@/lib/repository-index-completion";
 
 function isAuthorized(request: NextRequest): boolean {
   const expected = process.env.ADMIN_API_SECRET;
@@ -24,14 +25,14 @@ export async function GET(
 
   const repo = await prisma.repository.findUnique({
     where: { id },
-    select: { id: true, organizationId: true, indexAttemptId: true, syncLogAttemptId: true },
+    select: { id: true, organizationId: true, indexAttemptId: true, syncLogAttemptId: true, localIndexUpload: true },
   });
 
   if (!repo) {
     return NextResponse.json({ error: "Repository not found" }, { status: 404 });
   }
 
-  const attempt = repo.indexAttemptId && repo.indexAttemptId === repo.syncLogAttemptId ? repo.indexAttemptId : undefined;
+  const attempt = getSyncLogAttempt(repo);
   const logs = await getSyncLogs(repo.organizationId, repo.id, 500, attempt);
   return NextResponse.json({ logs });
 }

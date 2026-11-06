@@ -353,7 +353,7 @@ export function IndexingLogs({
   }
   const start = Math.max(0, end - LOG_PAGE_SIZE);
   const currentWindow = logs.slice(start, end);
-  const changedWindow = !!boundary && (boundary.window.length !== currentWindow.length || boundary.window.some((log, i) => log !== currentWindow[i]));
+  const changedWindow = !!boundary && (boundary.window.length !== currentWindow.length || boundary.window.some((log, i) => logKey(log) !== logKey(currentWindow[i]) || !!log.live !== !!currentWindow[i].live));
   const available = new Map<string, LogEntry[]>();
   if (boundary) for (const log of logs) {
     const key = JSON.stringify([logKey(log), !!log.live]);

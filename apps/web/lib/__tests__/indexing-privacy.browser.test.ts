@@ -23,6 +23,38 @@ it.skipIf(!process.env.PLAYWRIGHT_MODULE_PATH)("withholds private live indexing 
   try {
     browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_BROWSER_CHANNEL });
     const page = await browser.newPage();
+    for (const owner of [null, "saved-owner"]) {
+      await page.goto(server.url.href);
+      await page.getByText("Indexing Logs", { exact: true }).waitFor();
+      await page.evaluate((attempt: string | null) => {
+        const f = (window as unknown as { privacyFixture: { attempt: string | null; delay: number; logs: unknown[]; emit: (name: string, data: unknown) => void } }).privacyFixture;
+        f.attempt = attempt;
+        f.delay = 100;
+        f.logs = Array.from({ length: 450 }, (_, i) => ({ ...(attempt ? { indexAttemptId: attempt } : {}), message: `Processed ${i + 1} files, skipped 0`, level: "info", timestamp: i + 1 }));
+        f.emit("index-status", { repoId: "repo" });
+      }, owner);
+      await page.getByText("Processed 450 files, skipped 0", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Show older messages" }).click();
+      const savedRows = page.getByRole("list", { name: "Indexing messages" }).getByRole("listitem");
+      const originalPage = await savedRows.allTextContents();
+      await page.evaluate("window.privacyFixture.emit('index-status', {repoId:'repo'})");
+      const checking = page.getByRole("alert").filter({ hasText: "may belong to an earlier attempt" });
+      await checking.waitFor();
+      await checking.waitFor({ state: "hidden" });
+      expect(await savedRows.allTextContents()).toEqual(originalPage);
+      expect(await page.getByRole("button", { name: "Refresh this page" }).count()).toBe(0);
+      expect(await page.getByRole("button", { name: "Show older messages" }).count()).toBe(1);
+      expect(await page.getByRole("button", { name: "Show newer messages" }).count()).toBe(1);
+      await page.evaluate(`{
+        const f=window.privacyFixture; f.logs=[...f.logs, {...f.logs[149]}];
+        f.emit('index-status', {repoId:'repo'});
+      }`);
+      await page.getByRole("button", { name: "Refresh this page" }).waitFor();
+      expect(await savedRows.allTextContents()).toEqual(originalPage);
+      await page.getByRole("button", { name: "Refresh this page" }).click();
+      expect(await page.getByText("Processed 150 files, skipped 0", { exact: true }).count()).toBe(2);
+      expect(await page.getByRole("button", { name: "Show newer messages" }).count()).toBe(1);
+    }
     await page.goto(server.url.href);
     await page.getByText("Indexing Logs", { exact: true }).waitFor();
     await page.evaluate(`{

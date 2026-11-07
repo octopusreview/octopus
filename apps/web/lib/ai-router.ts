@@ -157,6 +157,7 @@ function getOrgKeyForProvider(keys: OrgKeys, provider: AiProvider): string | nul
 export async function createAiMessage(
   params: AiCreateParams,
   orgId: string,
+  /** Prevents provider entry after cancellation; does not interrupt a provider already entered. */
   signal?: AbortSignal,
 ): Promise<AiResponse> {
   signal?.throwIfAborted();

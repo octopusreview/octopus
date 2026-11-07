@@ -9,8 +9,9 @@ mock.module("server-only", () => ({}));
 mock.module("@/lib/github-app-config", () => ({ getGithubAppConfig: async () => null }));
 let upserts = 0;
 let embeddings = 0;
-mock.module("@/lib/qdrant", () => ({ ensureCollection: async () => {}, upsertChunks: async () => { upserts++; }, deleteRepoFileChunks: async () => {} }));
-mock.module("@/lib/embeddings", () => ({ createEmbeddings: async () => { embeddings++; return []; } }));
+const indexedPaths: string[] = [];
+mock.module("@/lib/qdrant", () => ({ ensureCollection: async () => {}, upsertChunks: async (points: { payload: { filePath: string } }[]) => { upserts++; indexedPaths.push(...points.map(point => point.payload.filePath)); }, deleteRepoFileChunks: async () => {} }));
+mock.module("@/lib/embeddings", () => ({ createEmbeddings: async (texts: string[]) => { embeddings++; return texts.map(() => [1]); } }));
 let entered!: () => void;
 const started = new Promise<void>(resolve => { entered = resolve; });
 let metadataRequests = 0;
@@ -19,16 +20,22 @@ const server = createServer((req, res) => {
   const detailsScenario = scenario.startsWith("details");
   if (path.includes("/git/trees/")) {
     if (detailsScenario && path.endsWith("/main")) { res.statusCode = 404; return res.end("{}"); }
-    return res.end(JSON.stringify({ tree: detailsScenario ? [] : [{ path: ".octopusignore", type: "blob", sha: "fixture", size: 10 }] }));
+    const tree = detailsScenario ? [] : [{ path: ".octopusignore", type: "blob", sha: "fixture", size: 10 }];
+    if (scenario === "ignore-success") tree.push(
+      { path: "ignored.ts", type: "blob", sha: "ignored", size: 20 },
+      { path: "kept.ts", type: "blob", sha: "kept", size: 20 },
+    );
+    return res.end(JSON.stringify({ tree }));
   }
   if (path.endsWith("/contributors")) return res.end("[]");
+  if (path.includes("/git/blobs/")) return res.end(JSON.stringify({ encoding: "base64", content: Buffer.from("export const value = 1;\n").toString("base64") }));
   if (path.endsWith("/contents/.octopusignore") || path === "/repos/fixture/repo") {
     metadataRequests++;
     if (scenario.endsWith("headers")) { entered(); return; }
     if (scenario.endsWith("body")) { res.write(detailsScenario ? '{"default_branch":' : "# partial"); entered(); return; }
     if (scenario.endsWith("backoff")) { res.statusCode = 503; res.end("{}"); entered(); return; }
     if (scenario.startsWith("details-retry") && metadataRequests === 1) { res.statusCode = 503; return res.end("{}"); }
-    return res.end(detailsScenario ? JSON.stringify({ id: 1, name: "repo", full_name: "fixture/repo", private: false, default_branch: "other", html_url: "" }) : "*.secret\n");
+    return res.end(detailsScenario ? JSON.stringify({ id: 1, name: "repo", full_name: "fixture/repo", private: false, default_branch: "other", html_url: "" }) : "ignored.ts\n");
   }
   res.statusCode = 404;
   res.end();
@@ -57,6 +64,10 @@ try {
       const outcome = await result;
       assert.ok("stats" in outcome);
       if (scenario.startsWith("details")) assert.equal(outcome.stats.resolvedDefaultBranch, "other");
+      if (scenario === "ignore-success") {
+        assert.equal(outcome.stats.indexedFiles, 1);
+        assert.deepEqual(indexedPaths, ["kept.ts"]);
+      }
       assert.equal(metadataRequests, scenario === "details-retry-success" ? 2 : 1);
     } else {
       await started;
@@ -71,8 +82,8 @@ try {
       if (scenario.endsWith("backoff")) assert.equal(outcome.error, reason);
       assert.equal(metadataRequests, 1);
     }
-    assert.equal(upserts, 0);
-    assert.equal(embeddings, 0);
+    assert.equal(upserts, scenario === "ignore-success" ? 1 : 0);
+    assert.equal(embeddings, scenario === "ignore-success" ? 1 : 0);
   }
 } finally {
   globalThis.fetch = originalFetch;

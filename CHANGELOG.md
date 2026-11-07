@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Indexing that supplies a cancellation signal no longer starts collection creation or updates if cancelled during a Qdrant collection lookup. The in-flight lookup itself is not interrupted.
 - Chat requests reject malformed JSON and invalid input types before database access.
 - GitHub repository indexing now times out stalled blob downloads, including after response headers arrive.
 - Cancelling indexing now interrupts GitHub blob rate-limit retry waits.

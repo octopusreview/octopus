@@ -62,9 +62,9 @@ try {
     .then((stats) => ({ stats }), (error) => ({ error }));
   await entered;
   controller.abort(reason);
-  assert.equal(await Promise.race([result, delay(300).then(() => "still-pending")]), "still-pending");
-  release();
-  const outcome = await result;
+  const outcome = await Promise.race([result, delay(750, undefined, { ref: false }).then(() => "still-pending" as const)]);
+  assert.notEqual(outcome, "still-pending");
+  assert.ok(typeof outcome === "object");
   assert.ok("error" in outcome);
   assert.equal(outcome.error, reason);
   assert.equal(embeddings, 0);

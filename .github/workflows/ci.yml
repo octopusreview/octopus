@@ -129,6 +129,10 @@ jobs:
         run: bun test lib/__tests__/agent-task-security.db.test.ts
         working-directory: apps/web
 
+      - name: Test queue database safety guard
+        run: bun test lib/__tests__/queue-test-database.test.ts
+        working-directory: apps/web
+
       - name: Test queue attempt fencing against PostgreSQL
         run: bun test lib/__tests__/queue-attempt-fence.db.test.ts
         working-directory: apps/web

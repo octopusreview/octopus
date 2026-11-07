@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Chat requests reject malformed JSON and invalid input types before database access.
 - GitHub repository indexing now times out stalled blob downloads, including after response headers arrive.
 - Cancelling indexing now interrupts GitHub blob rate-limit retry waits.
+- GitHub indexing now interrupts installation-token requests and retry waits when an indexing cancellation signal is available.
 
 ## [1.3.3] - 2026-10-21
 

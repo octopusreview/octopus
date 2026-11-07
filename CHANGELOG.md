@@ -9,8 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Prevent abandoned queue workers from settling a later review or indexing retry.
 - Stop fetching later repository file batches when GitHub continues to deny blob requests after a retry.
 - Repository analysis stops before entering the model provider if cancelled during model selection or routing; calls already in progress may still finish.
+
+### Upgrade notes
+
+- Do not deploy this change until the old-worker drain, pg-boss migration and rollback have been audited and production evidence reviewed. Synthetic mixed-version tests showed that a pg-boss 12.15 worker can complete a newer retry with 12.37.1 on schema 45 and with 12.38.1 on schema 46; keeping old workers running or immediately rolling back to them is unsafe. The normal blue-green traffic flip alone does not establish a safe rollout or rollback.
 
 ## [1.4.0] - 2026-11-04
 
@@ -23,7 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cancelled indexing stops waiting for or starting another Qdrant vector upsert retry; an already dispatched write may still finish.
 - Indexing that supplies a cancellation signal interrupts an in-flight Qdrant collection lookup and does not start collection setup after a cancelled lookup. Creation already underway may still finish.
 - Chat requests reject malformed JSON and invalid input types before database access.
-- Prevent abandoned queue workers from settling a later review or indexing retry.
 - GitHub repository indexing now times out stalled blob downloads, including after response headers arrive.
 - Cancelling indexing now interrupts GitHub blob rate-limit retry waits.
 - GitHub indexing now interrupts installation-token requests and retry waits when an indexing cancellation signal is available.
@@ -31,7 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Upgrade notes
 
-- Do not deploy this change until the old-worker drain, pg-boss migration and rollback have been audited and production evidence reviewed. Synthetic mixed-version tests showed that a pg-boss 12.15 worker can complete a newer retry with 12.37.1 on schema 45 and with 12.38.1 on schema 46; keeping old workers running or immediately rolling back to them is unsafe. The normal blue-green traffic flip alone does not establish a safe rollout or rollback.
 - Apply the `20261022120000_external_review_activity` migration before starting 1.4.0 web instances. CLI and authenticated GitHub Action review activity missed before the migration is not recovered.
 
 ## [1.3.3] - 2026-10-21

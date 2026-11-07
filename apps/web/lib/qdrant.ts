@@ -1,6 +1,7 @@
 import "server-only";
 import type { RepositoryIndexOwner } from "@/lib/repository-index-storage";
 import { createHash } from "crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import { QdrantClient, QdrantClientTimeoutError } from "@qdrant/js-client-rest";
 import { generateSparseVector } from "@/lib/sparse-vector";
 import { getEmbedConfig } from "@/lib/embed-config";
@@ -79,17 +80,26 @@ function isTransientError(error: unknown): boolean {
     || message.includes("other side closed");
 }
 
-async function withQdrantRetry<T>(fn: () => Promise<T>, label: string, maxAttempts = 4): Promise<T> {
+async function withQdrantRetry<T>(fn: () => Promise<T>, label: string, signal?: AbortSignal, maxAttempts = 4): Promise<T> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    signal?.throwIfAborted();
     try {
-      return await fn();
+      const result = await fn();
+      signal?.throwIfAborted();
+      return result;
     } catch (error) {
+      signal?.throwIfAborted();
       lastError = error;
       if (!isTransientError(error) || attempt === maxAttempts) throw error;
       const delay = Math.min(500 * 2 ** (attempt - 1), 4000);
       console.warn(`[qdrant] ${label} transient failure (attempt ${attempt}/${maxAttempts}), retrying in ${delay}ms:`, error instanceof Error ? error.message : error);
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      try {
+        await sleep(delay, undefined, { signal });
+      } catch (error) {
+        signal?.throwIfAborted();
+        throw error;
+      }
     }
   }
   throw lastError;
@@ -222,8 +232,9 @@ export async function upsertChunks(
       payload: p.payload,
     }));
     try {
-      await withQdrantRetry(() => qdrant.upsert(COLLECTION_NAME, { points: batch, wait: true }), `upsert ${COLLECTION_NAME}`);
+      await withQdrantRetry(() => qdrant.upsert(COLLECTION_NAME, { points: batch, wait: true }), `upsert ${COLLECTION_NAME}`, owner.signal);
     } catch (error) {
+      owner.signal?.throwIfAborted();
       if (!isSparseVectorError(error)) throw error;
       console.warn("[qdrant] Falling back to dense-only upsert", { collection: COLLECTION_NAME, error: error instanceof Error ? error.message : error });
       const denseBatch = slice.map((p) => ({
@@ -231,7 +242,7 @@ export async function upsertChunks(
         vector: p.vector,
         payload: p.payload,
       }));
-      await withQdrantRetry(() => qdrant.upsert(COLLECTION_NAME, { points: denseBatch, wait: true }), `upsert ${COLLECTION_NAME} dense`);
+      await withQdrantRetry(() => qdrant.upsert(COLLECTION_NAME, { points: denseBatch, wait: true }), `upsert ${COLLECTION_NAME} dense`, owner.signal);
     }
   }
 }

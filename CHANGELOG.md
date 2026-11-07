@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Chat requests reject malformed JSON and invalid input types before database access.
-- GitHub repository indexing now times out stalled file downloads, including after response headers arrive.
+- GitHub repository indexing now times out stalled blob downloads, including after response headers arrive.
 
 ## [1.3.3] - 2026-10-21
 

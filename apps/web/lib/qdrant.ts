@@ -136,7 +136,7 @@ export function getQdrantClient(): QdrantClient {
 export async function ensureCollection(signal?: AbortSignal) {
   signal?.throwIfAborted();
   const qdrant = getQdrantClient();
-  // shortcut: lookup waits for the client timeout after abort; upgrade when per-request signals are supported.
+  // shortcut: an in-flight lookup cannot be interrupted; upgrade when per-request signals are supported.
   const collections = await qdrant.getCollections().catch((error: unknown) => {
     signal?.throwIfAborted();
     throw error;

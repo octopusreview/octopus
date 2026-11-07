@@ -1,6 +1,8 @@
 import "server-only";
 import { prisma, type Prisma } from "@octopus/db";
 import type { IndexStats } from "@/lib/indexer";
+import type { SyncLogEntry } from "@/lib/elasticsearch";
+import { safeIndexLogMessage } from "@/lib/index-log-safety";
 
 /** A replacement attempt or cancellation owns the row now. */
 export class SupersededIndexError extends Error {
@@ -83,4 +85,25 @@ export async function recordRepositoryIndexCompletion(
         "updatedAt" = ${completedAt}::timestamp
     WHERE "id" = ${repositoryId}
   `;
+}
+
+export function getSyncLogAttempt(repo: { indexAttemptId: string | null; syncLogAttemptId: string | null; localIndexUpload: unknown }): string | undefined {
+  const marker = repo.syncLogAttemptId;
+  if (!marker) return undefined;
+  if (repo.indexAttemptId === marker) return marker;
+  const upload = repo.localIndexUpload;
+  if (!upload || typeof upload !== "object" || Array.isArray(upload)) return undefined;
+  const state = upload as { id?: unknown; batchAttemptId?: unknown };
+  if (state.id === marker && (repo.indexAttemptId === null || state.batchAttemptId === repo.indexAttemptId)) return marker;
+  return undefined;
+}
+
+export function safeSyncLogs(logs: SyncLogEntry[], orgId: string, repoId: string, attempt?: string): SyncLogEntry[] {
+  return logs.map(log => ({
+    orgId, repoId,
+    ...(attempt && log.indexAttemptId === attempt ? { indexAttemptId: attempt } : {}),
+    message: safeIndexLogMessage(log.message),
+    level: ["info", "success", "warning", "error"].includes(log.level) ? log.level : "info",
+    timestamp: typeof log.timestamp === "number" && Number.isFinite(log.timestamp) ? log.timestamp : 0,
+  }));
 }

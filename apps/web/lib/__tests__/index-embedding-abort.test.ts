@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { fileURLToPath } from "node:url";
 
 describe("indexing embedding request cancellation", () => {
-  for (const scenario of ["openai-headers", "openai-body", "openai-success", "ollama-headers", "ollama-body", "ollama-success"]) {
+  for (const scenario of ["openai-headers", "openai-body", "openai-success", "ollama-headers", "ollama-body", "ollama-success", "openai-collection"]) {
     it(scenario, async () => {
       const child = Bun.spawn([process.execPath, fileURLToPath(new URL("./fixtures/index-embedding-abort.ts", import.meta.url)), scenario], {
         cwd: process.cwd(), stdout: "pipe", stderr: "pipe",

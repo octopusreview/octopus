@@ -228,7 +228,7 @@ export async function indexRepository(
       onLog("Processing file contents...");
 
       for (let i = 0; i < filePaths.length; i++) {
-        if (signal?.aborted) throw new Error("Indexing cancelled");
+        signal?.throwIfAborted();
 
         const filePath = filePaths[i];
         try {
@@ -488,7 +488,7 @@ export async function indexRepository(
     }
 
     for (let i = 0; i < files.length; i += CONCURRENCY) {
-      if (signal?.aborted) throw new Error("Indexing cancelled");
+      signal?.throwIfAborted();
       const batch = files.slice(i, i + CONCURRENCY);
       await Promise.all(batch.map(fetchBlob));
       if (processed > 0) {
@@ -506,7 +506,7 @@ export async function indexRepository(
 
   if (allChunks.length === 0) {
     if (emptyRepository) {
-      if (signal?.aborted) throw new Error("Indexing cancelled");
+      signal?.throwIfAborted();
       await ensureCollection();
     }
     signal?.throwIfAborted();
@@ -535,7 +535,7 @@ export async function indexRepository(
 
   const vectors: number[][] = [];
   for (let i = 0; i < texts.length; i += 512) {
-    if (signal?.aborted) throw new Error("Indexing cancelled");
+    signal?.throwIfAborted();
 
     const batch = texts.slice(i, i + 512);
     const batchNum = Math.floor(i / 512) + 1;
@@ -553,7 +553,7 @@ export async function indexRepository(
 
   onLog(`Generated ${vectors.length} embeddings`, "success");
 
-  if (signal?.aborted) throw new Error("Indexing cancelled");
+  signal?.throwIfAborted();
 
   // 6. Upsert to Qdrant
   const sparseVectors = generateSparseVectors(texts);

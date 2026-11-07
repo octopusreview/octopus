@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 
 const scenario = process.argv[2];
-assert.ok(["openai-headers", "openai-body", "openai-success", "ollama-headers", "ollama-body", "ollama-success"].includes(scenario));
+assert.ok(["openai-headers", "openai-body", "openai-success", "ollama-headers", "ollama-body", "ollama-success", "openai-collection"].includes(scenario));
 const provider = scenario.split("-")[0];
 let started!: () => void;
 const entered = new Promise<void>(resolve => { started = resolve; });
@@ -42,7 +42,9 @@ mock.module("@/lib/ai-client", () => ({ getEmbedModel: async () => null }));
 mock.module("@/lib/ai-usage", () => ({ logAiUsage: async () => {} }));
 mock.module("@/lib/cost", () => ({ isOrgOverSpendLimit: async () => false }));
 let upserts = 0;
-mock.module("@/lib/qdrant", () => ({ ensureCollection: async () => {}, upsertChunks: async () => { upserts++; }, deleteRepoFileChunks: async () => {} }));
+let releaseCollection!: () => void;
+const collectionReleased = new Promise<void>(resolve => { releaseCollection = resolve; });
+mock.module("@/lib/qdrant", () => ({ ensureCollection: async () => { if (scenario.endsWith("collection")) { started(); await collectionReleased; } }, upsertChunks: async () => { upserts++; }, deleteRepoFileChunks: async () => {} }));
 const originalFetch = globalThis.fetch;
 globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
   const url = new URL(input instanceof Request ? input.url : String(input));
@@ -66,6 +68,7 @@ try {
     await entered;
     await delay(50);
     controller.abort(reason);
+    releaseCollection();
     let watchdog: ReturnType<typeof setTimeout> | undefined;
     const outcome = await Promise.race([result, new Promise<"stalled">(resolve => { watchdog = setTimeout(() => resolve("stalled"), 700); })]);
     clearTimeout(watchdog);
@@ -75,7 +78,7 @@ try {
     assert.equal(upserts, 0);
     await delay(1_100);
   }
-  assert.equal(embedRequests, 1);
+  assert.equal(embedRequests, scenario.endsWith("collection") ? 0 : 1);
 } finally {
   globalThis.fetch = originalFetch;
   server.closeAllConnections();

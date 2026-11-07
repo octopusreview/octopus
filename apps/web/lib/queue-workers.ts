@@ -1,6 +1,6 @@
 import { reportBackgroundFailure } from "./background-failure";
 import { cleanupForgejoConnectorRequests } from "./forgejo-connector";
-import type { PgBoss } from "pg-boss";
+import type { JobWithMetadata, PgBoss } from "pg-boss";
 import { sendWelcomeEmail } from "./emails/welcome";
 import { processReview } from "./reviewer";
 import { createReviewExecutionWindow, isReviewCancelled } from "./review-capacity";
@@ -57,7 +57,7 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
     }
   });
 
-  await boss.work<RepositoryIndexJob>("index-repository", { localConcurrency: 1, includeMetadata: true }, async (jobs) => {
+  await boss.work("index-repository", { localConcurrency: 1, includeMetadata: true }, async (jobs: JobWithMetadata<RepositoryIndexJob>[]) => {
     for (const job of jobs) {
       const retry = { retryCount: job.retryCount, retryLimit: job.retryLimit };
       try { await processRepositoryIndex(job.data, retry); }
@@ -75,10 +75,10 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
     }
   });
 
-  await boss.work<ProcessReviewJob>(
+  await boss.work(
     "process-review",
     { localConcurrency: config.reviewConcurrency, includeMetadata: true },
-    async (jobs) => {
+    async (jobs: JobWithMetadata<ProcessReviewJob>[]) => {
       for (const job of jobs) {
         console.log(`[queue] Processing review for PR ${job.data.pullRequestId}`);
         const executionWindow = createReviewExecutionWindow(job);

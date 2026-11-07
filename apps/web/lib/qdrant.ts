@@ -1,7 +1,7 @@
 import "server-only";
 import type { RepositoryIndexOwner } from "@/lib/repository-index-storage";
 import { createHash } from "crypto";
-import { QdrantClient } from "@qdrant/js-client-rest";
+import { QdrantClient, QdrantClientTimeoutError } from "@qdrant/js-client-rest";
 import { generateSparseVector } from "@/lib/sparse-vector";
 import { getEmbedConfig } from "@/lib/embed-config";
 
@@ -123,6 +123,7 @@ export const QDRANT_DENSE_VECTOR_SIZE = VECTOR_SIZE;
 const SPARSE_VECTOR_NAME = "sparse";
 
 let client: QdrantClient | null = null;
+let cancellableClient: QdrantClient | null = null;
 
 export function getQdrantClient(): QdrantClient {
   if (!client) {
@@ -136,11 +137,26 @@ export function getQdrantClient(): QdrantClient {
 export async function ensureCollection(signal?: AbortSignal) {
   signal?.throwIfAborted();
   const qdrant = getQdrantClient();
-  // shortcut: an in-flight lookup cannot be interrupted; upgrade when per-request signals are supported.
-  const collections = await qdrant.getCollections().catch((error: unknown) => {
-    signal?.throwIfAborted();
-    throw error;
-  });
+  let collections: Awaited<ReturnType<QdrantClient["getCollections"]>>;
+  if (signal) {
+    // The SDK timeout middleware replaces request signals, so enforce its default timeout on this client ourselves.
+    cancellableClient ??= new QdrantClient({ url: process.env.QDRANT_URL!, timeout: Infinity, checkCompatibility: false });
+    const timeout = new AbortController();
+    const timer = setTimeout(() => timeout.abort(), 300_000);
+    try {
+      const response = await cancellableClient.api().getCollections({}, { signal: AbortSignal.any([signal, timeout.signal]) });
+      if (!response.data.result) throw new Error("Result came uninitialized");
+      collections = response.data.result;
+    } catch (error) {
+      signal.throwIfAborted();
+      if (timeout.signal.aborted && error instanceof Error && error.name === "AbortError") throw new QdrantClientTimeoutError(error.message);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  } else {
+    collections = await qdrant.getCollections();
+  }
   signal?.throwIfAborted();
   const exists = collections.collections.some(
     (c) => c.name === COLLECTION_NAME,

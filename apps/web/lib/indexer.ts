@@ -278,7 +278,7 @@ export async function indexRepository(
   } else {
     // ── GitHub indexing flow ──
     onLog("Authenticating with GitHub...");
-    const token = providedToken ?? await getInstallationToken(installationId);
+    const token = providedToken ?? await getInstallationToken(installationId, signal);
     const headers = {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github+json",

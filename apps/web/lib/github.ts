@@ -138,26 +138,36 @@ function throwIfRateLimited(res: Response): void {
 
 export async function getInstallationToken(
   installationId: number,
+  signal?: AbortSignal,
 ): Promise<string> {
-  const jwt = await createAppJwt();
-  const res = await fetchWithRetry(
-    `${GITHUB_API}/app/installations/${installationId}/access_tokens`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${jwt}`,
-        Accept: "application/vnd.github+json",
+  try {
+    signal?.throwIfAborted();
+    const jwt = await createAppJwt();
+    signal?.throwIfAborted();
+    const res = await fetchWithRetry(
+      `${GITHUB_API}/app/installations/${installationId}/access_tokens`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          Accept: "application/vnd.github+json",
+        },
+        signal,
       },
-    },
-  );
+    );
 
-  throwIfRateLimited(res);
-  if (!res.ok) {
-    throw new Error(`Failed to get installation token: ${res.status}`);
+    throwIfRateLimited(res);
+    if (!res.ok) {
+      throw new Error(`Failed to get installation token: ${res.status}`);
+    }
+
+    const data = await res.json();
+    signal?.throwIfAborted();
+    return data.token as string;
+  } catch (error) {
+    signal?.throwIfAborted();
+    throw error;
   }
-
-  const data = await res.json();
-  return data.token as string;
 }
 
 export interface GitHubRepo {
@@ -1121,7 +1131,7 @@ export async function getRepositoryDetails(
   providedToken?: string,
   signal?: AbortSignal,
 ): Promise<GitHubRepo | null> {
-  const token = providedToken ?? await getInstallationToken(installationId);
+  const token = providedToken ?? await getInstallationToken(installationId, signal);
   const res = await fetchWithRetry(
     `${GITHUB_API}/repos/${owner}/${repo}`,
     {
@@ -1223,7 +1233,7 @@ export async function getFileContent(
   providedToken?: string,
   signal?: AbortSignal,
 ): Promise<string | null> {
-  const token = providedToken ?? await getInstallationToken(installationId);
+  const token = providedToken ?? await getInstallationToken(installationId, signal);
   const res = await fetchWithRetry(
     `${GITHUB_API}/repos/${owner}/${repo}/contents/${filePath}?ref=${encodeURIComponent(branch)}`,
     {

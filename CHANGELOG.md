@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Chat requests reject malformed JSON and invalid input types before database access.
+- Prevent abandoned queue workers from settling a later review or indexing retry.
+
+### Upgrade notes
+
+- Do not deploy this change until the old-worker drain, pg-boss migration and rollback have been audited and production evidence reviewed. A synthetic mixed-version test showed that a pg-boss 12.15 worker can complete a newer retry on schema 46; keeping old workers running or immediately rolling back to them is unsafe. The normal blue-green traffic flip alone does not establish a safe rollout or rollback.
 
 ## [1.3.3] - 2026-10-21
 

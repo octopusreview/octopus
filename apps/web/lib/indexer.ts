@@ -413,16 +413,8 @@ export async function indexRepository(
     const BLOB_FETCH_TIMEOUT_MS = 30_000;
 
     async function fetchWithTimeout(url: string): Promise<Response> {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), BLOB_FETCH_TIMEOUT_MS);
-      const onParentAbort = () => ctrl.abort();
-      signal?.addEventListener("abort", onParentAbort);
-      try {
-        return await fetch(url, { headers, signal: ctrl.signal });
-      } finally {
-        clearTimeout(timer);
-        signal?.removeEventListener("abort", onParentAbort);
-      }
+      const timeout = AbortSignal.timeout(BLOB_FETCH_TIMEOUT_MS);
+      return fetch(url, { headers, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
     }
 
     function skip(filePath: string, reason: string, failed = true) {

@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub repository indexing now times out stalled blob downloads, including after response headers arrive.
 - Cancelling indexing now interrupts GitHub blob rate-limit retry waits.
 - GitHub indexing now interrupts installation-token requests and retry waits when an indexing cancellation signal is available.
+- Cancelling full repository indexing interrupts in-flight OpenAI and Ollama embedding requests and stops later batches. Provider-side work or charges may still continue.
 
 ## [1.3.3] - 2026-10-21
 

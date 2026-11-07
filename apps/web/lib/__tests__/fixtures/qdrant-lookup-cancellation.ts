@@ -8,6 +8,7 @@ assert.ok(["pre-aborted", "existing-cancel", "missing-cancel", "error-cancel", "
 const existing = scenario.startsWith("existing");
 const cancelled = scenario.endsWith("cancel");
 const timesOut = scenario.startsWith("timeout");
+const stalledBody = scenario === "body-cancel" || scenario === "timeout-body";
 let started!: () => void;
 const entered = new Promise<void>((resolve) => { started = resolve; });
 let release!: () => void;
@@ -20,10 +21,10 @@ const server = createServer(async (req, res) => {
   if (path === "/") return res.end(JSON.stringify({ version: "1.18.0" }));
   if (path === "/collections" && req.method === "GET") {
     lookups++;
-    if (scenario === "body-cancel" || scenario === "timeout-body") res.write('{"result":');
-    started();
+    if (stalledBody) res.write('{"result":');
+    else started();
     if (cancelled || timesOut) await released;
-    if (scenario === "body-cancel" || scenario === "timeout-body") return res.end('{"collections":[]},"status":"ok","time":0}');
+    if (stalledBody) return res.end('{"collections":[]},"status":"ok","time":0}');
     if (scenario.startsWith("error")) {
       res.statusCode = 500;
       return res.end(JSON.stringify({ status: { error: "synthetic failure" }, time: 0 }));
@@ -38,13 +39,29 @@ const address = server.address();
 assert.ok(address && typeof address !== "string");
 process.env.QDRANT_URL = `http://127.0.0.1:${address.port}`;
 mock.module("server-only", () => ({}));
+const originalFetch = globalThis.fetch;
+if (stalledBody) {
+  globalThis.fetch = (async (input, init) => {
+    const response = await originalFetch(input, init);
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname === "/collections") {
+      const text = response.text.bind(response);
+      response.text = () => {
+        const body = text();
+        started();
+        return body;
+      };
+    }
+    return response;
+  }) as typeof fetch;
+}
 try {
   const { ensureCollection } = await import("@/lib/qdrant");
   const { QdrantClientTimeoutError } = await import("@qdrant/js-client-rest");
   if (timesOut) {
     globalThis.setTimeout = new Proxy(globalThis.setTimeout, {
       apply(target, thisArg, args) {
-        if (args[1] === 300_000) args[1] = 100;
+        if (args[1] === 300_000) args[1] = stalledBody ? 1_000 : 100;
         return Reflect.apply(target, thisArg, args);
       },
     });
@@ -70,7 +87,7 @@ try {
     assert.deepEqual(writes, []);
   } else if (timesOut) {
     await entered;
-    const outcome = await Promise.race([result, delay(750, undefined, { ref: false }).then(() => "pending" as const)]);
+    const outcome = await Promise.race([result, delay(stalledBody ? 2_000 : 750, undefined, { ref: false }).then(() => "pending" as const)]);
     assert.notEqual(outcome, "pending");
     assert.ok(typeof outcome === "object" && "error" in outcome);
     assert.ok(outcome.error instanceof QdrantClientTimeoutError);
@@ -86,6 +103,7 @@ try {
   }
 } finally {
   release();
+  globalThis.fetch = originalFetch;
   server.closeAllConnections();
   await new Promise<void>((resolve) => server.close(() => resolve()));
 }

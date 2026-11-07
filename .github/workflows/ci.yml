@@ -129,6 +129,12 @@ jobs:
         run: bun test lib/__tests__/agent-task-security.db.test.ts
         working-directory: apps/web
 
+      - name: Test queue attempt fencing against PostgreSQL
+        run: bun test lib/__tests__/queue-attempt-fence.db.test.ts
+        working-directory: apps/web
+        env:
+          RUN_QUEUE_DB_TESTS: "1"
+
       - name: Test billing auto-reload invariants against PostgreSQL
         run: bun test lib/__tests__/billing.db.test.ts
         working-directory: apps/web

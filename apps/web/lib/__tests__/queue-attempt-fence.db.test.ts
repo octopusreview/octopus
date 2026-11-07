@@ -2,12 +2,10 @@ import { expect, it } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { PgBoss } from "pg-boss";
+import { localQueueTestDatabaseUrl } from "./queue-test-database";
 
 const enabled = process.env.RUN_QUEUE_DB_TESTS === "1";
-const databaseUrl = process.env.DATABASE_URL;
-if (enabled && (!databaseUrl || !/(^|[-_])test($|[-_])/.test(new URL(databaseUrl).pathname.slice(1).toLowerCase()))) {
-  throw new Error("Queue DB tests require a dedicated test database");
-}
+const databaseUrl = enabled ? localQueueTestDatabaseUrl(process.env.DATABASE_URL) : undefined;
 
 function gate() {
   let resolve!: () => void;

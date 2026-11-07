@@ -507,7 +507,7 @@ export async function indexRepository(
   if (allChunks.length === 0) {
     if (emptyRepository) {
       signal?.throwIfAborted();
-      await ensureCollection();
+      await ensureCollection(signal);
     }
     signal?.throwIfAborted();
     onLog("No indexable content found", "warning");
@@ -525,7 +525,7 @@ export async function indexRepository(
 
   // 3. Ensure Qdrant collection exists
   onLog("Preparing vector database...");
-  await ensureCollection();
+  await ensureCollection(signal);
   onLog("Vector database ready", "success");
 
   // 5. Create embeddings in batches

@@ -133,9 +133,15 @@ export function getQdrantClient(): QdrantClient {
   return client;
 }
 
-export async function ensureCollection() {
+export async function ensureCollection(signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const qdrant = getQdrantClient();
-  const collections = await qdrant.getCollections();
+  // shortcut: lookup waits for the client timeout after abort; upgrade when per-request signals are supported.
+  const collections = await qdrant.getCollections().catch((error: unknown) => {
+    signal?.throwIfAborted();
+    throw error;
+  });
+  signal?.throwIfAborted();
   const exists = collections.collections.some(
     (c) => c.name === COLLECTION_NAME,
   );

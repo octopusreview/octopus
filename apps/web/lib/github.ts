@@ -27,7 +27,12 @@ async function fetchWithRetry(
     console.warn(
       `[github] ${init?.method ?? "GET"} ${retryFirst500 ? "PR details" : url} returned ${res.status}, retrying in ${backoffMs}ms (attempt ${attempt + 1}/${retryFirst500 && res.status === 500 ? 1 : MAX_RETRIES})`,
     );
-    await delay(backoffMs, undefined, { signal: init?.signal ?? undefined });
+    try {
+      await delay(backoffMs, undefined, { signal: init?.signal ?? undefined });
+    } catch (error) {
+      init?.signal?.throwIfAborted();
+      throw error;
+    }
   }
   // unreachable, but satisfies TS
   throw new Error("Exceeded max retries");

@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { fileURLToPath } from "node:url";
 
 describe("GitHub indexing metadata cancellation", () => {
-  for (const scenario of ["ignore-headers", "ignore-body", "details-headers", "details-body", "details-backoff", "ignore-success", "details-success", "details-retry-success", "details-retry-no-signal"]) {
+  for (const scenario of ["ignore-headers", "ignore-body", "ignore-backoff", "details-headers", "details-body", "details-backoff", "ignore-success", "details-success", "details-retry-success", "details-retry-no-signal"]) {
     it(scenario, async () => {
       const child = Bun.spawn([process.execPath, fileURLToPath(new URL("./fixtures/index-github-metadata-abort.ts", import.meta.url)), scenario], {
         cwd: process.cwd(), stdout: "pipe", stderr: "pipe",

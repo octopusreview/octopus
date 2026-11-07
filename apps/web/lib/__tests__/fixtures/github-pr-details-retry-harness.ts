@@ -8,6 +8,7 @@ mock.module("@/lib/github-app-config", () => ({ getGithubAppConfig: async () => 
 mock.module("@octopus/db", () => ({ prisma: {} }));
 const { getPullRequestDetails, updatePullRequestComment } = await import("../../github");
 let abortDuringDelay: AbortController | undefined;
+const abortReason = new DOMException("Review deadline exceeded", "TimeoutError");
 let statuses: number[] = [];
 let calls: string[] = [];
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -15,7 +16,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   if (url.endsWith("/access_tokens")) return Response.json({ token: "synthetic-token" });
   calls.push(`${init?.method ?? "GET"} ${url}`);
   const status = statuses.shift() ?? 500;
-  if (status === 500 && abortDuringDelay) setTimeout(() => abortDuringDelay?.abort(), 50);
+  if (status === 500 && abortDuringDelay) setTimeout(() => abortDuringDelay?.abort(abortReason), 50);
   return Response.json(status === 200 ? { number: 1, title: "title", html_url: "https://example.test", user: { login: "user" }, head: { sha: "head" }, base: { sha: "base" } } : {}, { status });
 }) as typeof fetch;
 try {
@@ -31,7 +32,7 @@ try {
   calls = []; statuses = [500, 200];
   const controller = new AbortController();
   abortDuringDelay = controller;
-  await assert.rejects(() => getPullRequestDetails(1, "owner", "repo", 1, controller.signal), { name: "AbortError" });
+  await assert.rejects(() => getPullRequestDetails(1, "owner", "repo", 1, controller.signal), error => error === abortReason);
   assert.equal(calls.length, 1, "cancellation must prevent redispatch");
   abortDuringDelay = undefined;
   calls = []; statuses = [500];

@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 
 const scenario = process.argv[2];
-assert.ok(["ignore-headers", "ignore-body", "details-headers", "details-body", "details-backoff", "ignore-success", "details-success", "details-retry-success", "details-retry-no-signal"].includes(scenario));
+assert.ok(["ignore-headers", "ignore-body", "ignore-backoff", "details-headers", "details-body", "details-backoff", "ignore-success", "details-success", "details-retry-success", "details-retry-no-signal"].includes(scenario));
 mock.module("server-only", () => ({}));
 mock.module("@/lib/github-app-config", () => ({ getGithubAppConfig: async () => null }));
 let upserts = 0;
@@ -26,7 +26,7 @@ const server = createServer((req, res) => {
     metadataRequests++;
     if (scenario.endsWith("headers")) { entered(); return; }
     if (scenario.endsWith("body")) { res.write(detailsScenario ? '{"default_branch":' : "# partial"); entered(); return; }
-    if (scenario === "details-backoff") { res.statusCode = 503; res.end("{}"); entered(); return; }
+    if (scenario.endsWith("backoff")) { res.statusCode = 503; res.end("{}"); entered(); return; }
     if (scenario.startsWith("details-retry") && metadataRequests === 1) { res.statusCode = 503; return res.end("{}"); }
     return res.end(detailsScenario ? JSON.stringify({ id: 1, name: "repo", full_name: "fixture/repo", private: false, default_branch: "other", html_url: "" }) : "*.secret\n");
   }
@@ -61,12 +61,14 @@ try {
     } else {
       await started;
       await delay(50);
-      controller.abort();
+      const reason = new DOMException("Indexing deadline exceeded", "TimeoutError");
+      controller.abort(reason);
       let watchdog: ReturnType<typeof setTimeout> | undefined;
       const outcome = await Promise.race([result, new Promise<"stalled">(resolve => { watchdog = setTimeout(() => resolve("stalled"), 700); })]);
       clearTimeout(watchdog);
       assert.notEqual(outcome, "stalled");
       assert.ok(typeof outcome === "object" && "error" in outcome);
+      if (scenario.endsWith("backoff")) assert.equal(outcome.error, reason);
       assert.equal(metadataRequests, 1);
     }
     assert.equal(upserts, 0);

@@ -19,6 +19,39 @@ async function bounded<T>(promise: Promise<T>, label: string): Promise<T> {
   return Promise.race([promise, delay(10_000).then(() => { throw new Error(`Timed out: ${label}`); })]);
 }
 
+it.skipIf(!enabled)("continues fetching after a handler times out", async () => {
+  const schema = `pgboss_test_${randomUUID().replaceAll("-", "")}`;
+  const boss = new PgBoss({ connectionString: databaseUrl!, schema });
+  boss.on("error", () => {});
+  const firstEntered = gate(), firstRelease = gate(), secondEntered = gate();
+  let firstSignal: AbortSignal | undefined;
+  try {
+    await boss.start();
+    const name = "timeout_worker";
+    await boss.createQueue(name, { retryLimit: 0, expireInSeconds: 1 });
+    await boss.work<{ attempt: string }>(name, { pollingIntervalSeconds: 0.5 }, async ([job]) => {
+      if (job.data.attempt === "first") {
+        firstSignal = job.signal;
+        firstEntered.resolve();
+        await firstRelease.promise;
+      } else {
+        secondEntered.resolve();
+      }
+    });
+    const firstId = await boss.send(name, { attempt: "first" });
+    await bounded(firstEntered.promise, "first handler");
+    await boss.send(name, { attempt: "second" });
+    await bounded(secondEntered.promise, "next job after timeout");
+    expect(firstSignal?.aborted).toBe(true);
+    expect((await boss.getJobById(name, firstId!))?.state).toBe("failed");
+  } finally {
+    firstRelease.resolve();
+    await boss.stop({ graceful: false, close: false }).catch(() => {});
+    await boss.getDb().executeSql(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`).catch(() => {});
+    await boss.getDb().close().catch(() => {});
+  }
+}, 30_000);
+
 it.skipIf(!enabled)("does not let an abandoned worker complete a later retry", async () => {
   const schema = `pgboss_test_${randomUUID().replaceAll("-", "")}`;
   const first = new PgBoss({ connectionString: databaseUrl!, schema });
@@ -26,10 +59,11 @@ it.skipIf(!enabled)("does not let an abandoned worker complete a later retry", a
   first.on("error", () => {});
   second.on("error", () => {});
   const firstEntered = gate(), firstAborted = gate(), firstRelease = gate();
-  const completionEntered = gate(), completionRelease = gate();
+  const completionEntered = gate(), completionRelease = gate(), completionSettled = gate();
   const secondEntered = gate(), secondRelease = gate();
   const name = "review_attempt_fence";
   let intercept = false;
+  let completionExecuted = false;
   let firstReturned = false;
   let firstMetadata: { retryCount: number; retryLimit: number; startedOn: Date } | undefined;
   let secondRetryCount: number | undefined;
@@ -44,6 +78,11 @@ it.skipIf(!enabled)("does not let an abandoned worker complete a later retry", a
       if (intercept && sql.includes("SET completed_on =") && values?.[0] === name) {
         completionEntered.resolve();
         await completionRelease.promise;
+        try {
+          const result = await execute(sql, values);
+          completionExecuted = true;
+          return result;
+        } finally { completionSettled.resolve(); }
       }
       return execute(sql, values);
     };
@@ -74,6 +113,8 @@ it.skipIf(!enabled)("does not let an abandoned worker complete a later retry", a
     expect(secondRetryCount).toBe(1);
     expect((await second.getJobById(name, id!))?.state).toBe("active");
     completionRelease.resolve();
+    await bounded(completionSettled.promise, "stale completion settlement");
+    expect(completionExecuted).toBe(true);
     await bounded(stopFirst, "first worker shutdown");
     expect(firstReturned).toBe(false);
     expect((await second.getJobById(name, id!))?.state).toBe("active");
@@ -104,6 +145,7 @@ it.skipIf(!enabled)("does not let an abandoned worker fail a later retry", async
   const failureEntered = gate(), failureRelease = gate(), failureSettled = gate();
   const secondEntered = gate(), secondRelease = gate();
   const name = "review_attempt_fence";
+  let failureExecuted = false;
   try {
     await first.start();
     await second.start();
@@ -114,7 +156,11 @@ it.skipIf(!enabled)("does not let an abandoned worker fail a later retry", async
       if (sql.includes("deleted_jobs AS (") && values?.[0] === name) {
         failureEntered.resolve();
         await failureRelease.promise;
-        try { return await execute(sql, values); }
+        try {
+          const result = await execute(sql, values);
+          failureExecuted = true;
+          return result;
+        }
         finally { failureSettled.resolve(); }
       }
       return execute(sql, values);
@@ -137,6 +183,7 @@ it.skipIf(!enabled)("does not let an abandoned worker fail a later retry", async
     expect((await second.getJobById(name, id!))?.state).toBe("active");
     failureRelease.resolve();
     await bounded(failureSettled.promise, "stale failure settlement");
+    expect(failureExecuted).toBe(true);
     const activeRetry = await second.getJobById(name, id!);
     expect(activeRetry?.state).toBe("active");
     expect(activeRetry?.retryCount).toBe(1);

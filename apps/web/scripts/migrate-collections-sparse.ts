@@ -91,7 +91,7 @@ function getTextForSparse(
 }
 
 async function main() {
-  const qdrant = new QdrantClient({ url: process.env.QDRANT_URL! });
+  const qdrant = new QdrantClient({ url: process.env.QDRANT_URL!, apiKey: process.env.QDRANT_API_KEY || undefined });
 
   for (const col of COLLECTIONS) {
     console.log(`\n[migrate] === ${col.name} ===`);

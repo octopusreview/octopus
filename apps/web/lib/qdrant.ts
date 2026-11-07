@@ -139,6 +139,7 @@ export function getQdrantClient(): QdrantClient {
   if (!client) {
     client = new QdrantClient({
       url: process.env.QDRANT_URL!,
+      apiKey: process.env.QDRANT_API_KEY || undefined,
     });
   }
   return client;
@@ -150,7 +151,7 @@ export async function ensureCollection(signal?: AbortSignal) {
   let collections: Awaited<ReturnType<QdrantClient["getCollections"]>>;
   if (signal) {
     // The SDK timeout middleware replaces request signals, so enforce its default timeout on this client ourselves.
-    cancellableClient ??= new QdrantClient({ url: process.env.QDRANT_URL!, timeout: Infinity, checkCompatibility: false });
+    cancellableClient ??= new QdrantClient({ url: process.env.QDRANT_URL!, apiKey: process.env.QDRANT_API_KEY || undefined, timeout: Infinity, checkCompatibility: false });
     const timeout = new AbortController();
     const timer = setTimeout(() => timeout.abort(), 300_000);
     try {

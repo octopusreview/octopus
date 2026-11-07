@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-04
+
+### Added
+
+- Record CLI and GitHub Action review activity to improve product analytics.
+
 ### Fixed
 
 - Repository analysis stops before entering the model provider if cancelled during model selection or routing; calls already in progress may still finish.
@@ -17,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cancelling indexing now interrupts GitHub blob rate-limit retry waits.
 - GitHub indexing now interrupts installation-token requests and retry waits when an indexing cancellation signal is available.
 - When a cancellation signal is available, full repository indexing interrupts in-flight OpenAI and Ollama embedding requests and stops later batches. Provider-side work or charges may still continue.
+
+### Upgrade notes
+
+- Apply the `20261022120000_external_review_activity` migration before starting 1.4.0 web instances. CLI and authenticated GitHub Action review activity missed before the migration is not recovered.
 
 ## [1.3.3] - 2026-10-21
 

@@ -29,6 +29,15 @@ it("preserves bounded rate-limit progress without extra text", () => {
   }
 });
 
+it("keeps the denied-response retry message bounded and private", () => {
+  for (const status of [403, 429]) {
+    const message = `GitHub returned HTTP ${status}, waiting 5s before retry...`;
+    expect(safeIndexLogMessage(message)).toBe(message);
+    expect(safeIndexLogMessage(`${message} synthetic-secret`)).toBe("Indexing message withheld for privacy.");
+  }
+  expect(safeIndexLogMessage("GitHub returned HTTP 500, waiting 5s before retry...")).toBe("Indexing message withheld for privacy.");
+});
+
 it("keeps indexing errors private through hosted review outputs", async () => {
   const child = Bun.spawn([process.execPath, "lib/__tests__/fixtures/review-follow-up-harness.ts", "--indexing-review-privacy"], {
     cwd: import.meta.dir + "/../..", stdout: "pipe", stderr: "pipe",

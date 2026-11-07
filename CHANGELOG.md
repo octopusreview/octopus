@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Repository analysis stops before entering the model provider if cancelled during model selection or routing; calls already in progress may still finish.
+
 ## [1.4.0] - 2026-11-04
 
 ### Added

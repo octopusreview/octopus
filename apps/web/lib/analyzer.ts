@@ -63,6 +63,7 @@ export async function analyzeRepository(
 
   if (signal?.aborted) throw new Error("Analysis cancelled");
   const analyzeModel = orgId ? await getReviewModel(orgId, repoId) : "claude-sonnet-4-20250514";
+  if (signal?.aborted) throw new Error("Analysis cancelled");
   log(`Running AI analysis with ${analyzeModel}...`);
 
   const response = await createAiMessage(
@@ -100,6 +101,7 @@ ${codeContext}`,
       ],
     },
     orgId || "",
+    signal,
   );
 
   if (signal?.aborted) throw new Error("Analysis cancelled");

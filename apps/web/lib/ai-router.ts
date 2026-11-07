@@ -157,7 +157,10 @@ function getOrgKeyForProvider(keys: OrgKeys, provider: AiProvider): string | nul
 export async function createAiMessage(
   params: AiCreateParams,
   orgId: string,
+  /** Prevents provider entry after cancellation; does not interrupt a provider already entered. */
+  signal?: AbortSignal,
 ): Promise<AiResponse> {
+  signal?.throwIfAborted();
   const admission = params.completeReviewAdmission;
   const window = admission?.window ?? params.executionWindow;
   const setup = async () => {
@@ -200,6 +203,7 @@ export async function createAiMessage(
     } } };
   }
 
+  signal?.throwIfAborted();
   try {
     const response = await getProvider(provider).create(params, orgKey, orgId);
     return window ? { ...response, usedOwnKey: !!orgKey } : response;

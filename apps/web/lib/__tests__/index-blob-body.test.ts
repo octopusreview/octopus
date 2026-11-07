@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { fileURLToPath } from "node:url";
 
 describe("GitHub blob response lifetime", () => {
-  for (const scenario of ["cancel", "timeout", "retry-timeout", "success"]) {
+  for (const scenario of ["cancel", "timeout", "retry-timeout", "cancel-retry-wait", "retry-success", "success"]) {
     it(scenario, async () => {
       const child = Bun.spawn([process.execPath, fileURLToPath(new URL("./fixtures/index-blob-body-synthetic.ts", import.meta.url)), scenario], {
         cwd: process.cwd(), stdout: "pipe", stderr: "pipe",

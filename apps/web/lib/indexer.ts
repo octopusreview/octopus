@@ -380,7 +380,7 @@ export async function indexRepository(
     try {
       const contribRes = await fetch(
         `${GITHUB_API}/repos/${fullName}/contributors?per_page=30`,
-        { headers },
+        { headers, signal },
       );
       if (contribRes.ok) {
         const contribData = await contribRes.json();

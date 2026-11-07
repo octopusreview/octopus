@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Stop fetching later repository file batches when GitHub continues to deny blob requests after a retry.
 - Repository analysis stops before entering the model provider if cancelled during model selection or routing; calls already in progress may still finish.
 
 ## [1.4.0] - 2026-11-04

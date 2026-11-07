@@ -50,7 +50,7 @@ try {
   const { indexRepository } = await import("@/lib/indexer");
   const controller = new AbortController();
   const timeoutReason = new DOMException("synthetic deadline", "TimeoutError");
-  const onLog = (message: string) => { if (scenario.startsWith("cancel-retry") && message.startsWith("Rate limited")) entered(); };
+  const onLog = (message: string) => { if (scenario.startsWith("cancel-retry") && message.startsWith("GitHub returned HTTP")) entered(); };
   const result = indexRepository({ repoId: "synthetic", indexAttemptId: "synthetic" }, "fixture/repo", "main", 1, onLog, controller.signal, "github", "synthetic", "fixture")
     .then(stats => ({ stats }), error => ({ error }));
   if (scenario === "success" || scenario === "retry-success") {

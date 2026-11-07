@@ -425,6 +425,8 @@ export async function indexRepository(
       onLog(`Skipped ${filePath}: ${reason}`, "warning");
     }
 
+    let deniedBlobStatus: number | undefined;
+
     async function fetchBlob(file: TreeItem): Promise<void> {
       try {
         const url = `${GITHUB_API}/repos/${fullName}/git/blobs/${file.sha}`;
@@ -433,12 +435,13 @@ export async function indexRepository(
         if (!blobRes.ok) {
           if (blobRes.status === 403 || blobRes.status === 429) {
             const retryAfter = parseInt(blobRes.headers.get("retry-after") ?? "5", 10);
-            onLog(`Rate limited, waiting ${retryAfter}s...`, "warning");
+            onLog(`GitHub returned HTTP ${blobRes.status}, waiting ${retryAfter}s before retry...`, "warning");
             await delay(retryAfter * 1000, undefined, { signal });
 
             const retry = await fetchWithTimeout(url);
             if (!retry.ok) {
-              skip(file.path, `HTTP ${retry.status} after rate-limit retry`);
+              if (retry.status === 403 || retry.status === 429) deniedBlobStatus ??= retry.status;
+              skip(file.path, `HTTP ${retry.status} after retry`);
               return;
             }
             const retryData = await retry.json();
@@ -491,6 +494,10 @@ export async function indexRepository(
       signal?.throwIfAborted();
       const batch = files.slice(i, i + CONCURRENCY);
       await Promise.all(batch.map(fetchBlob));
+      signal?.throwIfAborted();
+      if (deniedBlobStatus !== undefined) {
+        throw Object.assign(new Error("GitHub denied blob requests after retry"), { status: deniedBlobStatus });
+      }
       if (processed > 0) {
         onLog(`Processing files... ${processed}/${files.length}`);
       }

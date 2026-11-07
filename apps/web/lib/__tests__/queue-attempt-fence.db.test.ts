@@ -94,3 +94,65 @@ it.skipIf(!enabled)("does not let an abandoned worker complete a later retry", a
     await second.getDb().close().catch(() => {});
   }
 }, 30_000);
+
+it.skipIf(!enabled)("does not let an abandoned worker fail a later retry", async () => {
+  const schema = `pgboss_test_${randomUUID().replaceAll("-", "")}`;
+  const first = new PgBoss({ connectionString: databaseUrl!, schema });
+  const second = new PgBoss({ connectionString: databaseUrl!, schema });
+  first.on("error", () => {});
+  second.on("error", () => {});
+  const failureEntered = gate(), failureRelease = gate(), failureSettled = gate();
+  const secondEntered = gate(), secondRelease = gate();
+  const name = "review_attempt_fence";
+  try {
+    await first.start();
+    await second.start();
+    await first.createQueue(name, { retryLimit: 2, retryDelay: 0, expireInSeconds: 60 });
+    const db = first.getDb();
+    const execute = db.executeSql.bind(db);
+    db.executeSql = async (sql, values) => {
+      if (sql.includes("deleted_jobs AS (") && values?.[0] === name) {
+        failureEntered.resolve();
+        await failureRelease.promise;
+        try { return await execute(sql, values); }
+        finally { failureSettled.resolve(); }
+      }
+      return execute(sql, values);
+    };
+    await first.work(name, { pollingIntervalSeconds: 0.5 }, async () => {
+      throw new Error("synthetic first attempt failure");
+    });
+    const id = await first.send(name, { synthetic: true });
+    expect(id).toBeTruthy();
+    await bounded(failureEntered.promise, "stale failure");
+    expect((await second.fail(name, id!, "abandoned attempt")).affected).toBe(1);
+    let secondRetryCount: number | undefined;
+    await second.work(name, { pollingIntervalSeconds: 0.5, includeMetadata: true }, async ([job]) => {
+      secondRetryCount = job.retryCount;
+      secondEntered.resolve();
+      await secondRelease.promise;
+    });
+    await bounded(secondEntered.promise, "retry attempt");
+    expect(secondRetryCount).toBe(1);
+    expect((await second.getJobById(name, id!))?.state).toBe("active");
+    failureRelease.resolve();
+    await bounded(failureSettled.promise, "stale failure settlement");
+    const activeRetry = await second.getJobById(name, id!);
+    expect(activeRetry?.state).toBe("active");
+    expect(activeRetry?.retryCount).toBe(1);
+    secondRelease.resolve();
+    for (let i = 0; i < 50; i++) {
+      if ((await second.getJobById(name, id!))?.state === "completed") break;
+      await delay(100);
+    }
+    expect((await second.getJobById(name, id!))?.state).toBe("completed");
+  } finally {
+    failureRelease.resolve();
+    secondRelease.resolve();
+    await first.stop({ graceful: false, close: false }).catch(() => {});
+    await second.stop({ graceful: false, close: false }).catch(() => {});
+    await first.getDb().executeSql(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`).catch(() => {});
+    await first.getDb().close().catch(() => {});
+    await second.getDb().close().catch(() => {});
+  }
+}, 30_000);

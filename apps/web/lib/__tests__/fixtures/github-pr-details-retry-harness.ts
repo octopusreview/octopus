@@ -7,9 +7,8 @@ const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048, private
 mock.module("@/lib/github-app-config", () => ({ getGithubAppConfig: async () => ({ appId: "123", privateKey }) }));
 mock.module("@octopus/db", () => ({ prisma: {} }));
 const { getPullRequestDetails, updatePullRequestComment } = await import("../../github");
-const timer = globalThis.setTimeout;
-let duringDelay: (() => void) | undefined;
-globalThis.setTimeout = ((fn: () => void) => { duringDelay?.(); queueMicrotask(fn); return 0 as never; }) as typeof setTimeout;
+let abortDuringDelay: AbortController | undefined;
+const abortReason = new DOMException("Review deadline exceeded", "TimeoutError");
 let statuses: number[] = [];
 let calls: string[] = [];
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -17,6 +16,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   if (url.endsWith("/access_tokens")) return Response.json({ token: "synthetic-token" });
   calls.push(`${init?.method ?? "GET"} ${url}`);
   const status = statuses.shift() ?? 500;
+  if (status === 500 && abortDuringDelay) setTimeout(() => abortDuringDelay?.abort(abortReason), 50);
   return Response.json(status === 200 ? { number: 1, title: "title", html_url: "https://example.test", user: { login: "user" }, head: { sha: "head" }, base: { sha: "base" } } : {}, { status });
 }) as typeof fetch;
 try {
@@ -31,11 +31,11 @@ try {
   assert.equal(calls.length, 1, "permission failures must not retry");
   calls = []; statuses = [500, 200];
   const controller = new AbortController();
-  duringDelay = () => controller.abort();
-  await assert.rejects(() => getPullRequestDetails(1, "owner", "repo", 1, controller.signal), { name: "AbortError" });
+  abortDuringDelay = controller;
+  await assert.rejects(() => getPullRequestDetails(1, "owner", "repo", 1, controller.signal), error => error === abortReason);
   assert.equal(calls.length, 1, "cancellation must prevent redispatch");
-  duringDelay = undefined;
+  abortDuringDelay = undefined;
   calls = []; statuses = [500];
   await assert.rejects(() => updatePullRequestComment(1, "owner", "repo", 1, "text", "synthetic-token"), /500/);
   assert.equal(calls.length, 1, "a write must not gain 500 retries");
-} finally { globalThis.setTimeout = timer; }
+} finally { abortDuringDelay = undefined; }

@@ -242,8 +242,7 @@ for (const boundary of ["before-embedding", "after-embedding"]) {
         { repoId: "repo-1", indexAttemptId: "attempt-1" }, "acme/new", "main", 123, undefined, controller.signal,
       ).catch(error => { rawError = error; throw error; }), controller.signal);
     } catch (error) { failure = error; }
-    assert.ok(rawError instanceof Error);
-    assert.equal(rawError.message, "Indexing cancelled");
+    assert.equal(rawError, controller.signal.reason);
     assert.equal(failure, controller.signal.reason);
     assert.equal(indexRow.indexStatus, timeout ? "failed" : "pending");
     assert.equal(writes, 0);

@@ -57,7 +57,11 @@ function estimateTokens(text: string): number {
 export async function createEmbeddings(
   texts: string[],
   tracking?: { organizationId: string; operation: string; repositoryId?: string },
+  signal?: AbortSignal,
 ): Promise<number[][]> {
+  // shortcut: tracked cancellation needs per-batch usage accounting before signals can be combined with tracking.
+  if (tracking && signal) throw new Error("Cancellation is not supported for tracked embeddings");
+  signal?.throwIfAborted();
   if (tracking?.organizationId && (await isOrgOverSpendLimit(tracking.organizationId))) {
     console.warn(`[embeddings] Org ${tracking.organizationId} over spend limit — skipping embeddings`);
     return texts.map(() => []);
@@ -89,10 +93,17 @@ export async function createEmbeddings(
     return texts.map(() => []);
   }
 
-  const { vectors: validVectors, promptTokens } =
-    config.provider === "ollama"
-      ? await embedWithOllama(validTexts, config)
-      : await embedWithOpenAI(validTexts, config);
+  let result: { vectors: number[][]; promptTokens: number };
+  try {
+    signal?.throwIfAborted();
+    result = config.provider === "ollama"
+      ? await embedWithOllama(validTexts, config, signal)
+      : await embedWithOpenAI(validTexts, config, signal);
+  } catch (error) {
+    signal?.throwIfAborted();
+    throw error;
+  }
+  const { vectors: validVectors, promptTokens } = result;
 
   // Map valid vectors back to original positions; empty array for filtered-out.
   const out: number[][] = texts.map(() => []);
@@ -138,12 +149,14 @@ const OPENAI_MAX_BATCH_ITEMS = 512;
 async function embedWithOpenAI(
   texts: string[],
   config: EmbedConfig,
+  signal?: AbortSignal,
 ): Promise<{ vectors: number[][]; promptTokens: number }> {
   const client = getOpenAIClient();
   const vectors: number[][] = [];
   let promptTokens = 0;
 
   async function embedBatch(batch: string[]): Promise<void> {
+    signal?.throwIfAborted();
     // For text-embedding-3-* models OpenAI accepts an explicit
     // `dimensions` arg and returns vectors at that length. Pass
     // config.dim through so an org override (eg. 1536 for compact
@@ -158,8 +171,9 @@ async function embedWithOpenAI(
         model: config.model,
         input: batch,
         ...(supportsDimensionsArg ? { dimensions: config.dim } : {}),
-      });
+      }, { signal });
     } catch (err) {
+      signal?.throwIfAborted();
       // The split-on-token-limit recovery applies ONLY to OpenAI's
       // "request too large" 400, never to any other error. Anything
       // else (auth, network, our own dim-mismatch below) propagates
@@ -224,6 +238,7 @@ const OLLAMA_BATCH_ITEMS = 64;
 async function embedWithOllama(
   texts: string[],
   config: EmbedConfig,
+  signal?: AbortSignal,
 ): Promise<{ vectors: number[][]; promptTokens: number }> {
   if (!config.ollamaBaseUrl) {
     throw new Error("Ollama embeddings selected but OCTOPUS_OLLAMA_BASE_URL not configured");
@@ -239,11 +254,13 @@ async function embedWithOllama(
   let promptTokens = 0;
 
   for (let i = 0; i < texts.length; i += OLLAMA_BATCH_ITEMS) {
+    signal?.throwIfAborted();
     const batch = texts.slice(i, i + OLLAMA_BATCH_ITEMS);
     const res = await fetch(`${safeBaseUrl}/api/embed`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ model: config.model, input: batch }),
+      signal,
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");

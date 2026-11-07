@@ -2,6 +2,7 @@ import { reviewPublicationSignal, type ReviewExecutionWindow } from "./review-ca
 import { readReviewJson } from "@/lib/review-fetch";
 import { fetchGitHubReviewInput } from "@/lib/github-review-input";
 import crypto from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { getGithubAppConfig } from "@/lib/github-app-config";
 import { MAX_FETCH_DIFF_CHARS, truncateDiff, truncationNotice } from "@/lib/diff-truncate";
 import { formatReviewInlinePipes } from "@/lib/review-comment-markdown";
@@ -22,11 +23,16 @@ async function fetchWithRetry(
     if ((!RETRYABLE_STATUSES.has(res.status) && !(retryFirst500 && res.status === 500 && attempt === 0)) || attempt === MAX_RETRIES) {
       return res;
     }
-    const delay = RETRY_BASE_DELAY_MS * 2 ** attempt;
+    const backoffMs = RETRY_BASE_DELAY_MS * 2 ** attempt;
     console.warn(
-      `[github] ${init?.method ?? "GET"} ${retryFirst500 ? "PR details" : url} returned ${res.status}, retrying in ${delay}ms (attempt ${attempt + 1}/${retryFirst500 && res.status === 500 ? 1 : MAX_RETRIES})`,
+      `[github] ${init?.method ?? "GET"} ${retryFirst500 ? "PR details" : url} returned ${res.status}, retrying in ${backoffMs}ms (attempt ${attempt + 1}/${retryFirst500 && res.status === 500 ? 1 : MAX_RETRIES})`,
     );
-    await new Promise((r) => setTimeout(r, delay));
+    try {
+      await delay(backoffMs, undefined, { signal: init?.signal ?? undefined });
+    } catch (error) {
+      init?.signal?.throwIfAborted();
+      throw error;
+    }
   }
   // unreachable, but satisfies TS
   throw new Error("Exceeded max retries");
@@ -132,26 +138,36 @@ function throwIfRateLimited(res: Response): void {
 
 export async function getInstallationToken(
   installationId: number,
+  signal?: AbortSignal,
 ): Promise<string> {
-  const jwt = await createAppJwt();
-  const res = await fetchWithRetry(
-    `${GITHUB_API}/app/installations/${installationId}/access_tokens`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${jwt}`,
-        Accept: "application/vnd.github+json",
+  try {
+    signal?.throwIfAborted();
+    const jwt = await createAppJwt();
+    signal?.throwIfAborted();
+    const res = await fetchWithRetry(
+      `${GITHUB_API}/app/installations/${installationId}/access_tokens`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          Accept: "application/vnd.github+json",
+        },
+        signal,
       },
-    },
-  );
+    );
 
-  throwIfRateLimited(res);
-  if (!res.ok) {
-    throw new Error(`Failed to get installation token: ${res.status}`);
+    throwIfRateLimited(res);
+    if (!res.ok) {
+      throw new Error(`Failed to get installation token: ${res.status}`);
+    }
+
+    const data = await res.json();
+    signal?.throwIfAborted();
+    return data.token as string;
+  } catch (error) {
+    signal?.throwIfAborted();
+    throw error;
   }
-
-  const data = await res.json();
-  return data.token as string;
 }
 
 export interface GitHubRepo {
@@ -1113,8 +1129,9 @@ export async function getRepositoryDetails(
   owner: string,
   repo: string,
   providedToken?: string,
+  signal?: AbortSignal,
 ): Promise<GitHubRepo | null> {
-  const token = providedToken ?? await getInstallationToken(installationId);
+  const token = providedToken ?? await getInstallationToken(installationId, signal);
   const res = await fetchWithRetry(
     `${GITHUB_API}/repos/${owner}/${repo}`,
     {
@@ -1122,6 +1139,7 @@ export async function getRepositoryDetails(
         Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github+json",
       },
+      signal,
     },
   );
 
@@ -1213,8 +1231,9 @@ export async function getFileContent(
   filePath: string,
   /** Pre-resolved token. Skips getInstallationToken when provided. */
   providedToken?: string,
+  signal?: AbortSignal,
 ): Promise<string | null> {
-  const token = providedToken ?? await getInstallationToken(installationId);
+  const token = providedToken ?? await getInstallationToken(installationId, signal);
   const res = await fetchWithRetry(
     `${GITHUB_API}/repos/${owner}/${repo}/contents/${filePath}?ref=${encodeURIComponent(branch)}`,
     {
@@ -1222,6 +1241,7 @@ export async function getFileContent(
         Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github.raw+json",
       },
+      signal,
     },
   );
 

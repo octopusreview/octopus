@@ -1,7 +1,8 @@
 import "server-only";
 import type { RepositoryIndexOwner } from "@/lib/repository-index-storage";
 import { createHash } from "crypto";
-import { QdrantClient } from "@qdrant/js-client-rest";
+import { setTimeout as sleep } from "node:timers/promises";
+import { QdrantClient, QdrantClientTimeoutError } from "@qdrant/js-client-rest";
 import { generateSparseVector } from "@/lib/sparse-vector";
 import { getEmbedConfig } from "@/lib/embed-config";
 
@@ -79,17 +80,26 @@ function isTransientError(error: unknown): boolean {
     || message.includes("other side closed");
 }
 
-async function withQdrantRetry<T>(fn: () => Promise<T>, label: string, maxAttempts = 4): Promise<T> {
+async function withQdrantRetry<T>(fn: () => Promise<T>, label: string, signal?: AbortSignal, maxAttempts = 4): Promise<T> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    signal?.throwIfAborted();
     try {
-      return await fn();
+      const result = await fn();
+      signal?.throwIfAborted();
+      return result;
     } catch (error) {
+      signal?.throwIfAborted();
       lastError = error;
       if (!isTransientError(error) || attempt === maxAttempts) throw error;
       const delay = Math.min(500 * 2 ** (attempt - 1), 4000);
       console.warn(`[qdrant] ${label} transient failure (attempt ${attempt}/${maxAttempts}), retrying in ${delay}ms:`, error instanceof Error ? error.message : error);
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      try {
+        await sleep(delay, undefined, { signal });
+      } catch (error) {
+        signal?.throwIfAborted();
+        throw error;
+      }
     }
   }
   throw lastError;
@@ -123,6 +133,7 @@ export const QDRANT_DENSE_VECTOR_SIZE = VECTOR_SIZE;
 const SPARSE_VECTOR_NAME = "sparse";
 
 let client: QdrantClient | null = null;
+let cancellableClient: QdrantClient | null = null;
 
 export function getQdrantClient(): QdrantClient {
   if (!client) {
@@ -133,9 +144,30 @@ export function getQdrantClient(): QdrantClient {
   return client;
 }
 
-export async function ensureCollection() {
+export async function ensureCollection(signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const qdrant = getQdrantClient();
-  const collections = await qdrant.getCollections();
+  let collections: Awaited<ReturnType<QdrantClient["getCollections"]>>;
+  if (signal) {
+    // The SDK timeout middleware replaces request signals, so enforce its default timeout on this client ourselves.
+    cancellableClient ??= new QdrantClient({ url: process.env.QDRANT_URL!, timeout: Infinity, checkCompatibility: false });
+    const timeout = new AbortController();
+    const timer = setTimeout(() => timeout.abort(), 300_000);
+    try {
+      const response = await cancellableClient.api().getCollections({}, { signal: AbortSignal.any([signal, timeout.signal]) });
+      if (!response.data.result) throw new Error("Result came uninitialized");
+      collections = response.data.result;
+    } catch (error) {
+      signal.throwIfAborted();
+      if (timeout.signal.aborted && error instanceof Error && error.name === "AbortError") throw new QdrantClientTimeoutError(error.message);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  } else {
+    collections = await qdrant.getCollections();
+  }
+  signal?.throwIfAborted();
   const exists = collections.collections.some(
     (c) => c.name === COLLECTION_NAME,
   );
@@ -200,8 +232,9 @@ export async function upsertChunks(
       payload: p.payload,
     }));
     try {
-      await withQdrantRetry(() => qdrant.upsert(COLLECTION_NAME, { points: batch, wait: true }), `upsert ${COLLECTION_NAME}`);
+      await withQdrantRetry(() => qdrant.upsert(COLLECTION_NAME, { points: batch, wait: true }), `upsert ${COLLECTION_NAME}`, owner.signal);
     } catch (error) {
+      owner.signal?.throwIfAborted();
       if (!isSparseVectorError(error)) throw error;
       console.warn("[qdrant] Falling back to dense-only upsert", { collection: COLLECTION_NAME, error: error instanceof Error ? error.message : error });
       const denseBatch = slice.map((p) => ({
@@ -209,7 +242,7 @@ export async function upsertChunks(
         vector: p.vector,
         payload: p.payload,
       }));
-      await withQdrantRetry(() => qdrant.upsert(COLLECTION_NAME, { points: denseBatch, wait: true }), `upsert ${COLLECTION_NAME} dense`);
+      await withQdrantRetry(() => qdrant.upsert(COLLECTION_NAME, { points: denseBatch, wait: true }), `upsert ${COLLECTION_NAME} dense`, owner.signal);
     }
   }
 }

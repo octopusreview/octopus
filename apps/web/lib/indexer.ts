@@ -299,7 +299,7 @@ export async function indexRepository(
     let branchExists = false;
     if (!treeRes.ok && treeRes.status === 404) {
       const [owner, repoName] = fullName.split("/");
-      const details = await getRepositoryDetails(installationId, owner, repoName, token);
+      const details = await getRepositoryDetails(installationId, owner, repoName, token, signal);
       if (!details) {
         onLog(`Repository not found or GitHub App lacks access to ${fullName}`, "error");
         onLog("Go to GitHub Settings → Applications → Configure to grant access", "warning");
@@ -360,13 +360,14 @@ export async function indexRepository(
     if (ignoreBlob) {
       try {
         const [owner, repoName] = fullName.split("/");
-        const ignoreContent = await ghGetFileContent(installationId, owner, repoName, activeBranch, ".octopusignore", token);
+        const ignoreContent = await ghGetFileContent(installationId, owner, repoName, activeBranch, ".octopusignore", token, signal);
         if (ignoreContent === null) throw new Error("Missing .octopusignore content");
         if (ignoreContent) {
           ig = parseOctopusIgnore(ignoreContent);
           onLog("Found .octopusignore — applying custom ignore rules", "info");
         }
-      } catch {
+      } catch (error) {
+        if (signal?.aborted) throw error;
         throw new Error("Indexing incomplete: could not read .octopusignore");
       }
     }

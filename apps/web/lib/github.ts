@@ -2,6 +2,7 @@ import { reviewPublicationSignal, type ReviewExecutionWindow } from "./review-ca
 import { readReviewJson } from "@/lib/review-fetch";
 import { fetchGitHubReviewInput } from "@/lib/github-review-input";
 import crypto from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { getGithubAppConfig } from "@/lib/github-app-config";
 import { MAX_FETCH_DIFF_CHARS, truncateDiff, truncationNotice } from "@/lib/diff-truncate";
 import { formatReviewInlinePipes } from "@/lib/review-comment-markdown";
@@ -22,11 +23,11 @@ async function fetchWithRetry(
     if ((!RETRYABLE_STATUSES.has(res.status) && !(retryFirst500 && res.status === 500 && attempt === 0)) || attempt === MAX_RETRIES) {
       return res;
     }
-    const delay = RETRY_BASE_DELAY_MS * 2 ** attempt;
+    const backoffMs = RETRY_BASE_DELAY_MS * 2 ** attempt;
     console.warn(
-      `[github] ${init?.method ?? "GET"} ${retryFirst500 ? "PR details" : url} returned ${res.status}, retrying in ${delay}ms (attempt ${attempt + 1}/${retryFirst500 && res.status === 500 ? 1 : MAX_RETRIES})`,
+      `[github] ${init?.method ?? "GET"} ${retryFirst500 ? "PR details" : url} returned ${res.status}, retrying in ${backoffMs}ms (attempt ${attempt + 1}/${retryFirst500 && res.status === 500 ? 1 : MAX_RETRIES})`,
     );
-    await new Promise((r) => setTimeout(r, delay));
+    await delay(backoffMs, undefined, { signal: init?.signal ?? undefined });
   }
   // unreachable, but satisfies TS
   throw new Error("Exceeded max retries");
@@ -1113,6 +1114,7 @@ export async function getRepositoryDetails(
   owner: string,
   repo: string,
   providedToken?: string,
+  signal?: AbortSignal,
 ): Promise<GitHubRepo | null> {
   const token = providedToken ?? await getInstallationToken(installationId);
   const res = await fetchWithRetry(
@@ -1122,6 +1124,7 @@ export async function getRepositoryDetails(
         Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github+json",
       },
+      signal,
     },
   );
 
@@ -1213,6 +1216,7 @@ export async function getFileContent(
   filePath: string,
   /** Pre-resolved token. Skips getInstallationToken when provided. */
   providedToken?: string,
+  signal?: AbortSignal,
 ): Promise<string | null> {
   const token = providedToken ?? await getInstallationToken(installationId);
   const res = await fetchWithRetry(
@@ -1222,6 +1226,7 @@ export async function getFileContent(
         Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github.raw+json",
       },
+      signal,
     },
   );
 

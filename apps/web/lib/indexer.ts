@@ -544,7 +544,7 @@ export async function indexRepository(
     }
 
     const { createEmbeddings: embed } = await import("@/lib/embeddings");
-    const batchVectors = await embed(batch);
+    const batchVectors = await embed(batch, undefined, signal);
     if (batchVectors.length !== batch.length || batchVectors.some(vector => vector.length === 0)) {
       throw new Error("Indexing incomplete: embedding results do not cover every chunk");
     }

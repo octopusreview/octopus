@@ -4,6 +4,7 @@ import { readFile, readdir, stat, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
+import { setTimeout as delay } from "node:timers/promises";
 import { getInstallationToken, getFileContent as ghGetFileContent, getRepositoryDetails } from "@/lib/github";
 import * as bitbucketLib from "@/lib/bitbucket";
 import * as gitlabLib from "@/lib/gitlab";
@@ -432,7 +433,7 @@ export async function indexRepository(
           if (blobRes.status === 403 || blobRes.status === 429) {
             const retryAfter = parseInt(blobRes.headers.get("retry-after") ?? "5", 10);
             onLog(`Rate limited, waiting ${retryAfter}s...`, "warning");
-            await new Promise((r) => setTimeout(r, retryAfter * 1000));
+            await delay(retryAfter * 1000, undefined, { signal });
 
             const retry = await fetchWithTimeout(url);
             if (!retry.ok) {

@@ -451,7 +451,7 @@ export async function indexRepository(
         const blobData = await blobRes.json();
         processBlob(blobData, file.path);
       } catch (err) {
-        if (signal?.aborted) throw err;
+        signal?.throwIfAborted();
         const msg = err instanceof Error ? err.message : String(err);
         skip(file.path, msg);
       }

@@ -1,4 +1,5 @@
 import type { AiProvider } from "./providers";
+import { EmbeddingDimensionError, MissingEmbeddingKeyError, OllamaEmbeddingResponseError, OllamaEmbeddingUrlError } from "./embedding-error";
 
 export type KeyOwner = "platform" | "organization" | "unknown";
 const OFFLINE_LOCAL_AGENT_MESSAGE = "No local agent is online for this organisation. Run `octp agent serve` on a machine with the API token.";
@@ -11,11 +12,15 @@ const ERROR_NAMES = new Set(["Error", "TypeError", "APIError", "APIConnectionErr
 
 /** Only retain diagnostic primitives; never attach an SDK request/response or raw cause. */
 export function safeErrorDetails(error: unknown) {
-  const details: { name: string; code?: string; status?: number } = { name: "Error" };
+  const details: { name: string; code?: string; status?: number; category?: string } = { name: "Error" };
   const seen = new Set<unknown>();
   for (let value = error, depth = 0; value && typeof value === "object" && depth < 4 && !seen.has(value); depth++) {
     seen.add(value);
     try {
+      if (value instanceof EmbeddingDimensionError) details.category ??= "embedding_dimension_mismatch";
+      else if (value instanceof MissingEmbeddingKeyError) details.category ??= "embedding_key_missing";
+      else if (value instanceof OllamaEmbeddingResponseError) details.category ??= "ollama_embedding_response_invalid";
+      else if (value instanceof OllamaEmbeddingUrlError) details.category ??= "ollama_embedding_url_invalid";
       const item = value as Record<string, unknown>;
       if (typeof item.name === "string" && ERROR_NAMES.has(item.name)) details.name = item.name;
       if (typeof item.code === "string" && SAFE_ERROR_CODES.has(item.code)) details.code ??= item.code;

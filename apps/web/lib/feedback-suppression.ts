@@ -1,4 +1,5 @@
 import "server-only";
+import { safeErrorDetails } from "@/lib/provider-failure";
 import { createEmbeddings } from "@/lib/embeddings";
 import { ensureFeedbackCollection, searchFeedbackPatterns } from "@/lib/qdrant";
 import { safeErrorDetails } from "@/lib/provider-failure";

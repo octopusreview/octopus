@@ -59,6 +59,7 @@ import { parseOctopusIgnore, detectBadCommits } from "@/lib/octopus-ignore";
 import { buildGeneratedMatcher } from "@/lib/generated-files";
 import { MAX_DIFF_CHARS } from "@/lib/diff-truncate";
 import { completeReviewCandidate, reviewCandidateSha256, assertReviewProcessingActive, isReviewCancelled, ReviewProcessingExpiredError, type CompleteReviewAdmission, type ReviewExecutionWindow } from "@/lib/review-capacity";
+import { safeErrorDetails } from "@/lib/provider-failure";
 import { confirmCompleteReviewCurrent } from "@/lib/review-capacity-current";
 import { prepareReviewInput, applyReviewCoverage, coverageSummary, reviewCheckResult, reviewAssessmentComplete, type ReviewInput, type ReviewCoverage } from "@/lib/review-coverage";
 import { prepareReviewComment } from "@/lib/review-comment-context";
@@ -409,7 +410,7 @@ async function syncReactionsForPR(
         synced++;
       }
     } catch (err) {
-      console.error(`[reviewer] Failed to sync reaction for issue ${issue.id}:`, err);
+      console.error(`[reviewer] Failed to sync reaction for issue ${issue.id}:`, safeErrorDetails(err));
     }
   }
 
@@ -523,7 +524,7 @@ async function syncTextDismissalsForPR(
           dismissedIds.add(issue.id);
           synced++;
         } catch (err) {
-          console.error(`[reviewer] Failed to record text feedback for issue ${issue.id}:`, err);
+          console.error(`[reviewer] Failed to record text feedback for issue ${issue.id}:`, safeErrorDetails(err));
         }
       }
     }
@@ -579,7 +580,7 @@ async function syncTextDismissalsForPR(
               dismissedIds.add(issue.id);
               synced++;
             } catch (err) {
-              console.error(`[reviewer] Failed to record per-finding feedback for issue ${issue.id}:`, err);
+              console.error(`[reviewer] Failed to record per-finding feedback for issue ${issue.id}:`, safeErrorDetails(err));
             }
           }
         }
@@ -619,7 +620,7 @@ async function syncTextDismissalsForPR(
           try {
             await embedFeedbackPattern(issue, "down");
           } catch (err) {
-            console.error(`[reviewer] Failed to embed feedback pattern for issue ${issue.id}:`, err);
+            console.error(`[reviewer] Failed to embed feedback pattern for issue ${issue.id}:`, safeErrorDetails(err));
           }
         }
         console.log(`[reviewer] Dismissed ${count} findings via bulk issue comment dismissal`);
@@ -720,6 +721,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
   let adaptiveProcessingWindow: ReviewExecutionWindow | undefined;
   let attemptCoverage: ReviewCoverage | undefined;
   let failureStage: FailureStage = "review";
+  let embeddingPreparationFailed = false;
   let preparationOperation: "review_input" | "repository_tree" | undefined;
   let failureIndexAttemptId: string | undefined;
   let attemptSaved = false;
@@ -1393,11 +1395,17 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
     // vs the old 8000-char slice.
     const searchText = buildRetrievalQuery(inventoryDiff + diff, pr.title);
     console.log(`[reviewer] Retrieval query: ${searchText.length} chars from ${diffFiles.size} changed files`);
-    const [queryVector] = await createEmbeddings([searchText], {
-      organizationId: org.id,
-      operation: "embedding",
-      repositoryId: repo.id,
-    });
+    let queryVector: number[];
+    try {
+      [queryVector] = await createEmbeddings([searchText], {
+        organizationId: org.id,
+        operation: "embedding",
+        repositoryId: repo.id,
+      });
+    } catch (error) {
+      embeddingPreparationFailed = true;
+      throw error;
+    }
 
     // Over-fetch from Qdrant, then rerank with Cohere (same composed query).
     const rerankQuery = searchText;
@@ -2528,7 +2536,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       ]);
       console.log(`[reviewer] Review stored in vector DB — prId: ${pr.id}`);
     } catch (err) {
-      console.error("[reviewer] Failed to store review in vector DB:", err);
+      console.error("[reviewer] Failed to store review in vector DB:", safeErrorDetails(err));
     }
 
     // Step 8: Store diagrams in vector DB (all mermaid blocks)
@@ -2574,7 +2582,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         console.log(`[reviewer] ${mermaidBlocks.length} diagram(s) stored in vector DB — prId: ${pr.id}`);
       }
     } catch (err) {
-      console.error("[reviewer] Failed to store diagrams in vector DB:", err);
+      console.error("[reviewer] Failed to store diagrams in vector DB:", safeErrorDetails(err));
     }
 
     await recordFirstReviewCompletion(pr.id, pr.headSha, pr.reviewRequestVersion, effectiveReviewBody);
@@ -2607,8 +2615,10 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       ? err instanceof SupersededIndexError ? "Indexing attempt is no longer current"
         : err instanceof ReviewProcessingExpiredError ? "Review processing cancelled or expired before completion"
         : "Review failed while preparing the repository"
-      : err instanceof Error ? err.message : "Unknown error";
-    console.error(`[reviewer] Review failed for PR #${pr.number}:`, failureStage === "indexing" ? errorMessage : err);
+      : err instanceof ReviewProcessingExpiredError ? err.message
+        : embeddingPreparationFailed ? "Review failed while preparing search context"
+        : err instanceof Error ? err.message : "Unknown error";
+    console.error(`[reviewer] Review failed for PR #${pr.number}:`, failureStage === "indexing" ? errorMessage : embeddingPreparationFailed ? safeErrorDetails(err) : err);
 
     // A deadline can expire while a completed assessment is being committed. Keep that immutable
     // record and append the interrupted processing outcome before publishing any scored completion.

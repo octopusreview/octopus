@@ -7,7 +7,7 @@ const OFFLINE_LOCAL_AGENT_MESSAGE = "No local agent is online for this organisat
 export class OfflineLocalAgentError extends Error {
   constructor() { super(OFFLINE_LOCAL_AGENT_MESSAGE); }
 }
-const SAFE_ERROR_CODES = new Set(["ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "ENETUNREACH", "EAI_AGAIN", "ENOENT", "UND_ERR_SOCKET", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT", "PROVIDER_REFUSAL"]);
+const SAFE_ERROR_CODES = new Set(["ECONNRESET", "ECONNREFUSED", "ConnectionRefused", "ETIMEDOUT", "ENETUNREACH", "EAI_AGAIN", "ENOTFOUND", "ENOENT", "UND_ERR_SOCKET", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT", "PROVIDER_REFUSAL"]);
 const ERROR_NAMES = new Set(["Error", "TypeError", "APIError", "APIConnectionError", "APIConnectionTimeoutError", "AuthenticationError", "PermissionDeniedError", "RateLimitError", "InternalServerError", "TimeoutError", "AbortError"]);
 
 /** Only retain diagnostic primitives; never attach an SDK request/response or raw cause. */
@@ -39,8 +39,12 @@ export class AiProviderFailure extends Error {
     const details = safeErrorDetails(error);
     let message = "";
     try { message = (error instanceof Error ? error.message : String(error)).toLowerCase(); } catch {}
-    const reviewCategory = /invalid_api_key|api key|unauthorized|401|403|authentication|placeholder/.test(message) || details.status === 401 || details.status === 403
-      ? "auth" : provider === "ollama" || /econnrefused|fetch failed|ollama/.test(message)
+    const cancelled = details.name === "AbortError" || (error instanceof Error && error.name === "AbortError");
+    const authFailure = details.status !== undefined
+      ? details.status === 401 || details.status === 403
+      : /invalid_api_key|api key|unauthorized|401|403|authentication|placeholder/.test(message);
+    const reviewCategory = !cancelled && authFailure
+      ? "auth" : !cancelled && provider === "ollama" && !details.status && (details.code ? ["ECONNREFUSED", "ConnectionRefused", "ENETUNREACH", "EAI_AGAIN", "ENOTFOUND", "UND_ERR_CONNECT_TIMEOUT"].includes(details.code) : /(econnrefused|fetch failed)/.test(message))
         ? "local" : undefined;
     const hint = provider === "claude-code" && details.code === "ENOENT" ? ": executable or file not found; check the provider installation" : "";
     super(provider === "local" && error instanceof OfflineLocalAgentError

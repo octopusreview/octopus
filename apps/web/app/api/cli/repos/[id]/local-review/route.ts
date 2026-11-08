@@ -4,7 +4,7 @@ import { authenticateApiToken } from "@/lib/api-auth";
 import { prisma } from "@octopus/db";
 import { generateLocalReview, ReviewConfigError } from "@/lib/review-core";
 import { safeErrorDetails } from "@/lib/provider-failure";
-import { EmbeddingDimensionError } from "@/lib/embedding-error";
+import { embeddingConfigAdvice } from "@/lib/embedding-error";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { writeAuditLog } from "@/lib/audit";
 import { MAX_LOCAL_REVIEW_DIFF_BYTES } from "@/lib/cli-limits";
@@ -110,8 +110,8 @@ export async function POST(
         // case distinctly from generic 500s.
         return Response.json({ error: err.message }, { status: 422 });
       }
-      return Response.json({ error: process.env.NODE_ENV === "development" && err instanceof EmbeddingDimensionError
-        ? new EmbeddingDimensionError().message : "Review generation failed" }, { status: 500 });
+      return Response.json({ error: (process.env.NODE_ENV === "development" && embeddingConfigAdvice(err))
+        || "Review generation failed" }, { status: 500 });
     }
   });
 }

@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { authenticateApiToken } from "@/lib/api-auth";
 import { generateBareLocalReview, ReviewConfigError } from "@/lib/review-core";
 import { safeErrorDetails } from "@/lib/provider-failure";
-import { EmbeddingDimensionError } from "@/lib/embedding-error";
+import { embeddingConfigAdvice } from "@/lib/embedding-error";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { writeAuditLog } from "@/lib/audit";
 import { MAX_LOCAL_REVIEW_DIFF_BYTES } from "@/lib/cli-limits";
@@ -117,8 +117,8 @@ export async function POST(request: Request) {
       if (err instanceof ReviewConfigError) {
         return NextResponse.json({ error: err.message }, { status: 422 });
       }
-      return NextResponse.json({ error: process.env.NODE_ENV === "development" && err instanceof EmbeddingDimensionError
-        ? new EmbeddingDimensionError().message : "Review generation failed" }, { status: 500 });
+      return NextResponse.json({ error: (process.env.NODE_ENV === "development" && embeddingConfigAdvice(err))
+        || "Review generation failed" }, { status: 500 });
     }
   });
 }

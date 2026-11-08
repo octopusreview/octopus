@@ -5,12 +5,13 @@ import { getEmbedModel } from "@/lib/ai-client";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { getEmbedConfig, type EmbedConfig } from "@/lib/embed-config";
 import { validateProviderUrl } from "@/lib/providers/url-validation";
-import { EmbeddingDimensionError } from "@/lib/embedding-error";
+import { EmbeddingDimensionError, MissingEmbeddingKeyError } from "@/lib/embedding-error";
 
 let openai: OpenAI | null = null;
 
 function getOpenAIClient(): OpenAI {
   if (!openai) {
+    if (!process.env.OPENAI_API_KEY) throw new MissingEmbeddingKeyError();
     openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
   }
   return openai;
@@ -196,7 +197,7 @@ async function embedWithOpenAI(
     if (res.data.length > 0) {
       const gotDim = res.data[0].embedding.length;
       if (gotDim !== config.dim) {
-        throw new EmbeddingDimensionError();
+        throw new EmbeddingDimensionError(gotDim, config.dim);
       }
     }
     for (const item of res.data) vectors.push(item.embedding);
@@ -277,7 +278,7 @@ async function embedWithOllama(
       );
     }
     if (got[0].length !== config.dim) {
-      throw new EmbeddingDimensionError();
+      throw new EmbeddingDimensionError(got[0].length, config.dim);
     }
     vectors.push(...got);
     for (const t of batch) promptTokens += estimateTokens(t);

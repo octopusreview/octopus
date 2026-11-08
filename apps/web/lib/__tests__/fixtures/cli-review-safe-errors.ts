@@ -21,7 +21,7 @@ mock.module("next/headers", () => ({ headers: async () => new Headers() }));
 const { NextRequest } = await import("next/server");
 const bare = await import("../../../app/api/cli/review-local/route");
 const contextual = await import("../../../app/api/cli/repos/[id]/local-review/route");
-const { EmbeddingDimensionError } = await import("../../embedding-error");
+const { EmbeddingDimensionError, MissingEmbeddingKeyError } = await import("../../embedding-error");
 const calls = [
   () => bare.POST(new NextRequest("http://localhost/api/cli/review-local", { method: "POST", body: JSON.stringify({ diff: "+test" }) })),
   () => contextual.POST(new NextRequest("http://localhost/api/cli/repos/repo/local-review", { method: "POST", body: JSON.stringify({ diff: "+test" }) }), { params: Promise.resolve({ id: "repo" }) }),
@@ -30,7 +30,7 @@ const logs: unknown[][] = [];
 console.error = (...args: unknown[]) => { logs.push(args); };
 
 for (const call of calls) {
-  for (const value of [Object.assign(new Error("synthetic-provider-secret"), { status: 503, request_id: "req_abcdefgh" }), { message: "synthetic-provider-secret", cause: { token: "synthetic-provider-secret" } }, new Error("Embedding dimensions do not match OCTOPUS_EMBED_DIM. synthetic-provider-secret")]) {
+  for (const value of [Object.assign(new Error("synthetic-provider-secret"), { status: 503, request_id: "req_abcdefgh" }), { message: "synthetic-provider-secret", cause: { token: "synthetic-provider-secret" } }, new Error("Set OPENAI_API_KEY synthetic-provider-secret")]) {
     failure = value;
     const response = await call();
     assert.equal(response.status, 500);
@@ -39,13 +39,24 @@ for (const call of calls) {
   }
   assert.ok(inspect(logs).includes("503"));
   assert.ok(inspect(logs).includes("req_abcdefgh"));
-  failure = new EmbeddingDimensionError();
+  failure = new EmbeddingDimensionError(2, 3);
   failure.message = "synthetic-provider-secret";
   const dimensionResponse = await call();
   assert.equal(dimensionResponse.status, 500);
   assert.deepEqual(await dimensionResponse.json(), { error: process.env.NODE_ENV === "development"
+    ? "Embedding returned 2 dimensions; OCTOPUS_EMBED_DIM is 3. Check the embedding model and configured dimension."
+    : "Review generation failed" });
+  failure = new MissingEmbeddingKeyError("synthetic-provider-secret");
+  const keyResponse = await call();
+  assert.equal(keyResponse.status, 500);
+  assert.deepEqual(await keyResponse.json(), { error: process.env.NODE_ENV === "development"
+    ? "Set OPENAI_API_KEY to configure OpenAI embeddings." : "Review generation failed" });
+  failure = new EmbeddingDimensionError(Number.MAX_SAFE_INTEGER, 3);
+  const invalidResponse = await call();
+  assert.deepEqual(await invalidResponse.json(), { error: process.env.NODE_ENV === "development"
     ? "Embedding dimensions do not match OCTOPUS_EMBED_DIM. Check the embedding model and configured dimension."
     : "Review generation failed" });
+  assert.ok(!inspect(logs, { depth: 10 }).includes("synthetic-provider-secret"));
   failure = new ReviewConfigError("Safe configuration advice");
   const response = await call();
   assert.equal(response.status, 422);

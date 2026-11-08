@@ -48,6 +48,9 @@ try {
     assert.ok(comment.includes("review generation failed"));
     reportBackgroundFailure(caught, { stage: "generation", attemptId: "fixture-attempt" });
     assert.equal(events.at(-1)?.tags?.failure_code, coverage.assessment?.failure?.code);
+    assert.equal(events.at(-1)?.tags?.failure_owner, "unknown");
+    assert.equal(events.at(-1)?.contexts?.background_failure?.ownership, "unknown");
+    assert.equal(events.at(-1)?.contexts?.background_failure?.keyOwner, byok ? "organization" : "platform");
     assert.equal(events.at(-1)?.contexts?.background_failure?.attemptId, "fixture-attempt");
     assert.doesNotMatch(inspect({ coverage, check, comment, logs, events }, { depth: 20 }), /synthetic-route-secret|req_syntheticroutesecret|fake-key/);
   }

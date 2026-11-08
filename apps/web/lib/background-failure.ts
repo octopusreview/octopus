@@ -46,8 +46,7 @@ export function reportBackgroundFailure(error: unknown, context: FailureContext)
     const permissionFailure = !providerFailure && context.stage === "indexing" && error instanceof Error &&
       error.message.startsWith("GitHub App does not have access to ");
     if (permissionFailure) return;
-    const ownership = keyOwner === "platform" && status && ([401, 402, 403, 429].includes(status) || status >= 500)
-      ? "platform" : "unknown";
+    const ownership = "unknown";
     const code = capacityFailure ? `capacity_${capacityFailure.receipt.reason ?? "final-check-failed"}` : details.code ?? (status ? `http_${status}` : "unclassified");
     const provider = providerFailure?.provider ?? capacityFailure?.provider ?? "unknown";
     const stage = capacityFailure ? "preparation" : providerFailure && context.stage === "review" ? "generation" : context.stage;

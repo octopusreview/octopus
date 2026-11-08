@@ -56,6 +56,10 @@ reportBackgroundFailure(new Error("private"), { stage: "generation", preparation
 assert.equal(events.at(-1)?.tags?.preparation_operation, undefined);
 assert.equal(scrubEvent({ tags: { error_boundary: "background", preparation_operation: "private-url" } }).tags?.preparation_operation, undefined);
 assert.equal(scrubEvent({ tags: { error_boundary: "background", indexing_deadline: "private-url" } }).tags?.indexing_deadline, undefined);
+assert.equal(scrubEvent({ tags: { error_boundary: "background", failure_stage: "indexing", indexing_deadline: "worker_25m", indexing_last_milestone: "private-url" } }).tags?.indexing_last_milestone, undefined);
+assert.equal(scrubEvent({ tags: { error_boundary: "background", failure_stage: "indexing", indexing_deadline: "worker_25m", indexing_last_milestone: "fetching_files" } }).tags?.indexing_last_milestone, "fetching_files");
+assert.equal(scrubEvent({ tags: { error_boundary: "background", failure_stage: "indexing", indexing_last_milestone: "fetching_files" } }).tags?.indexing_last_milestone, undefined);
+assert.equal(scrubEvent({ tags: { error_boundary: "background", failure_stage: "generation", indexing_deadline: "worker_25m", indexing_last_milestone: "fetching_files" } }).tags?.indexing_last_milestone, undefined);
 reportBackgroundFailure(new DOMException("private", "TimeoutError"), { stage: "indexing", indexingDeadline: true });
 assert.equal(events.at(-1)?.tags?.indexing_deadline, "worker_25m");
 reportBackgroundFailure(new DOMException("private", "TimeoutError"), { stage: "preparation", indexingDeadline: true });

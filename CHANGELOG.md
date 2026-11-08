@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Prevent abandoned queue workers from settling a later review or indexing retry.
+- Start the review summary publication timeout after acquiring the pull-request lock, while respecting the transaction deadline.
+- Honor the configured Qdrant API key in application and maintenance clients.
 - Stop fetching later repository file batches when GitHub continues to deny blob requests after a retry.
 - Repository analysis stops before entering the model provider if cancelled during model selection or routing; calls already in progress may still finish.
 

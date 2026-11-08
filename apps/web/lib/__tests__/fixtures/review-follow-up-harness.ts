@@ -1,6 +1,7 @@
 import "./review-outcome-stub";
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
+import { inspect } from "node:util";
 import type { AiCreateParams } from "@/lib/providers";
 import { assertReviewProcessingActive, type ReviewExecutionWindow, type CapacityRefusalReason } from "@/lib/review-capacity";
 import type { ReviewCoverage } from "@/lib/review-coverage";
@@ -12,6 +13,9 @@ const directCommentFailure = process.argv.includes("--direct-forgejo-comment-fai
 const preserveAutoReview = process.argv.includes("--preserve-auto-review");
 const firstCompletion = process.argv.includes("--first-review-completion");
 const refusalFlow = process.argv.includes("--provider-refusal");
+const providerErrorPrivacy = process.argv.includes("--provider-error-privacy");
+const localClassification = process.argv.includes("--local-classification");
+let localFailure: { message: string; provider: "local" | "ollama" | "openai"; status?: number } | null = null;
 if (refusalFlow) process.env.ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 let refusalCalls = 0;
 let preparationFetchFailure: "review_input" | "repository_tree" | "large_pr" | null = null;
@@ -124,6 +128,8 @@ const db = {
     update: async ({ data }: { data: Record<string, unknown> }) => { Object.assign(repo, data); return repo; },
   },
   systemConfig: { findUnique: async () => null },
+  organization: { findUnique: async () => org },
+  localAgent: { count: async () => 0 },
   reviewIssue: { findMany: async () => [] },
   pullRequest: { findUnique: async () => pr, updateMany: async (query: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
     reviewUpdates.push(query);
@@ -155,6 +161,20 @@ mock.module("@/lib/ai-usage", () => ({ logAiUsage: async () => { usageCount++; i
 mock.module("@/lib/ai-router", () => ({ getProviderForModel: async () => {
   assert.ok(adaptiveStage, "Legacy fixture must not resolve adaptive capacity"); return "anthropic";
 }, createAiMessage: async (params: AiCreateParams) => {
+  if (localClassification && localFailure) {
+    const { AiProviderFailure } = await import("@/lib/provider-failure");
+    if (localFailure.provider === "local") {
+      const { localProvider } = await import("@/lib/providers/local");
+      try { return await localProvider.create(params, null, "org"); }
+      catch (error) { throw new AiProviderFailure(error, "local", params.model, "unknown"); }
+    }
+    throw new AiProviderFailure(Object.assign(new Error(localFailure.message), { status: localFailure.status }), localFailure.provider, params.model, "organization");
+  }
+  if (localClassification) return { model: params.model, provider: "openai", text: report, usage: { inputTokens: 1, outputTokens: 1 } };
+  if (providerErrorPrivacy) {
+    const { AiProviderFailure } = await import("@/lib/provider-failure");
+    throw new AiProviderFailure(Object.assign(new Error("synthetic-credential-and-prompt"), { status: 401 }), "openai", params.model, "organization");
+  }
   if (refusalFlow) {
     const { anthropicProvider } = await import("@/lib/providers/anthropic");
     const { AiProviderFailure } = await import("@/lib/provider-failure");
@@ -235,7 +255,7 @@ mock.module("@/lib/review-attempt", () => ({
   recordFirstReviewCompletion: realReviewAttempt.recordFirstReviewCompletion,
   withForgejoReviewPublication: directCommentFailure ? realReviewAttempt.withForgejoReviewPublication : async (_id: string, _head: string, _version: number, publish: () => Promise<void>) => publish(),
   createReviewAttemptComment: directCommentFailure ? realReviewAttempt.createReviewAttemptComment : async (_id: string, _head: string, _version: number, create: () => Promise<number>) => create(),
-  updateCurrentReview: indexingPrivacy || directCommentFailure || firstCompletion || refusalFlow ? realReviewAttempt.updateCurrentReview : async () => ({ count: 1 }),
+  updateCurrentReview: indexingPrivacy || directCommentFailure || firstCompletion || refusalFlow || providerErrorPrivacy ? realReviewAttempt.updateCurrentReview : async () => ({ count: 1 }),
   saveReviewAttempt: async (_id: string, _pr: string, _coverage: unknown, _body: string, findings: { title: string }[]) => {
     archived.push({ id: _id, findings, coverage: structuredClone(_coverage), body: _body });
     if (firstCompletion) Object.assign(pr, { status: "completed", reviewBody: _body });
@@ -371,7 +391,45 @@ ${JSON.stringify([finding])}
 <!-- OCTOPUS_FINDINGS_END -->`;
 const { prepareReviewInput } = await import("@/lib/review-coverage");
 const { canRestrictReviewToFollowUp } = await import("@/lib/review-follow-up");
+if (localClassification) {
+  const { generateLocalReview, generateBareLocalReview, ReviewConfigError } = await import("@/lib/review-core");
+  const { AiProviderFailure } = await import("@/lib/provider-failure");
+  assert.equal(new AiProviderFailure(new Error("synthetic-secret"), "local", "local:model", "unknown").message, "AI provider local request failed");
+  const paths = [() => generateLocalReview({ diff, repoId: "repo", orgId: "org" }), () => generateBareLocalReview({ diff, orgId: "org" })];
+  for (const run of paths) {
+    for (const failure of [
+      { provider: "openai" as const, message: "invalid_api_key synthetic-secret" },
+      { provider: "openai" as const, message: "fetch failed synthetic-secret" },
+      { provider: "ollama" as const, message: "synthetic-secret" },
+      { provider: "openai" as const, message: "synthetic-secret", status: 401 },
+    ]) {
+      localFailure = failure;
+      await assert.rejects(run, (error: Error) => error instanceof ReviewConfigError && !error.message.includes("synthetic-secret"));
+    }
+    localFailure = { provider: "local", message: "" };
+    await assert.rejects(run, (error: Error) => !(error instanceof ReviewConfigError) && error.message === "No local agent is online for this organisation. Run `octp agent serve` on a machine with the API token.");
+    localFailure = { provider: "openai", message: "synthetic-secret" };
+    await assert.rejects(run, (error: Error) => !(error instanceof ReviewConfigError) && !error.message.includes("synthetic-secret"));
+    localFailure = null;
+    assert.equal((await run()).usage.inputTokens, 1);
+  }
+  process.exit(0);
+}
 const { processReview } = await import("@/lib/reviewer");
+if (providerErrorPrivacy) {
+  const logs: string[] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => { logs.push(inspect(args)); };
+  try {
+    await processReview("pr");
+    assert.ok(reviewUpdates.some((update) => (update as { data: { status?: string } }).data.status === "failed"));
+    assert.equal((archived.at(-1)?.coverage as ReviewCoverage).assessment?.state, "incomplete");
+    assert.ok(checkOutputs.length, "failure must still update the GitHub check");
+    assert.doesNotMatch(JSON.stringify({ logs, summaries, checkOutputs, reviewUpdates, events, archived, sentryEvents }), /synthetic-credential-and-prompt/);
+  } finally { console.error = originalError; }
+  console.log("PASS provider failure remains private in review outputs");
+  process.exit(0);
+}
 if (indexingPrivacy) {
   const errors: unknown[][] = [];
   const originalError = console.error;

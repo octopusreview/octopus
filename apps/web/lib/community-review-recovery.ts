@@ -1,4 +1,6 @@
+import "server-only";
 import { prisma } from "@octopus/db";
+import { clearTerminalCommunityJobToken } from "./community-review-completion";
 import { enqueue } from "./queue";
 
 const LOG = (msg: string, ...rest: unknown[]) =>
@@ -32,14 +34,15 @@ export async function recoverCommunityReviewJobs() {
         status: { in: ["indexing", "reviewing"] },
         expiresAt: { lt: now },
       },
-      select: { id: true, repoFullName: true, organizationId: true },
+      select: { id: true, repoFullName: true, organizationId: true, repositoryId: true, githubToken: true },
     });
 
     if (expired.length > 0) {
       LOG(`expiring ${expired.length} in-flight jobs past TTL`);
       for (const job of expired) {
-        await prisma.communityReviewJob.update({
-          where: { id: job.id },
+        const updated = await prisma.communityReviewJob.updateMany({
+          where: { id: job.id, organizationId: job.organizationId, repositoryId: job.repositoryId,
+            status: { in: ["indexing", "reviewing"] }, expiresAt: { lt: now } },
           data: {
             status: "failed",
             errorMessage: "Job exceeded TTL while in flight",
@@ -47,6 +50,10 @@ export async function recoverCommunityReviewJobs() {
             githubToken: null,
           },
         });
+        if (updated.count === 0) {
+          await clearTerminalCommunityJobToken(job);
+          continue;
+        }
         await prisma.auditLog.create({
           data: {
             action: "community_review.expired",

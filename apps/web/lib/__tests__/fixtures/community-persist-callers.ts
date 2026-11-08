@@ -9,14 +9,18 @@ const job = { id: "synthetic-job", status: scenario === "worker-cancelled" ? "ca
 let generated = 0;
 let events = 0;
 class CommunityRepositoryChangedError extends Error {}
-const jobUpdateMany = async ({ where, data }: { where: { organizationId: string; repositoryId: string }; data: object }) => {
-  if (where.organizationId !== job.organizationId || where.repositoryId !== job.repositoryId || ["completed", "failed", "cancelled"].includes(job.status)) return { count: 0 };
+const jobUpdateMany = async ({ where, data }: { where: { organizationId: string; repositoryId: string; status?: { in?: string[]; notIn?: string[] }; githubToken?: string }; data: object }) => {
+  if (where.organizationId !== job.organizationId || where.repositoryId !== job.repositoryId ||
+      (where.status?.in && !where.status.in.includes(job.status)) || where.status?.notIn?.includes(job.status) ||
+      (where.githubToken !== undefined && where.githubToken !== job.githubToken)) return { count: 0 };
   Object.assign(job, data);
   return { count: 1 };
 };
 mock.module("server-only", () => ({}));
 mock.module("@octopus/db", () => ({ prisma: {
-  communityReviewJob: { findUnique: async () => ({ ...job }), update: async ({ data }: { data: object }) => Object.assign(job, data), updateMany: jobUpdateMany },
+  communityReviewJob: { findUnique: async () => ({ ...job }), findFirst: async ({ where }: { where: { id: string; organizationId: string; repositoryId: string; status: { notIn: string[] } } }) =>
+    where.id === job.id && where.organizationId === job.organizationId && where.repositoryId === job.repositoryId && !where.status.notIn.includes(job.status) ? { id: job.id } : null,
+    update: async ({ data }: { data: object }) => Object.assign(job, data), updateMany: jobUpdateMany },
   organization: { upsert: async () => ({ id: repo.organizationId, communityDailyReviewLimit: 5 }) },
   repository: { findUnique: async () => repo, upsert: async () => repo },
   pullRequest: { count: async () => 0 }, aiUsage: { count: async () => 0 },
@@ -46,7 +50,7 @@ if (scenario !== "action") {
   if (scenario === "worker-cancelled") await processCommunityReview(job.id);
   else await assert.rejects(() => processCommunityReview(job.id), CommunityRepositoryChangedError);
   assert.equal(job.status, scenario === "worker-job-transferred" ? "reviewing" : scenario.startsWith("worker-cancelled") ? "cancelled" : "failed");
-  assert.equal(job.githubToken, scenario === "worker-job-transferred" || scenario.startsWith("worker-cancelled") ? "synthetic" : null);
+  assert.equal(job.githubToken, scenario === "worker-job-transferred" ? "synthetic" : null);
 } else {
   const { POST } = await import("@/app/api/github-action/review/route");
   const response = await POST(new Request("https://example.invalid/api/github-action/review", { method: "POST", body: JSON.stringify({

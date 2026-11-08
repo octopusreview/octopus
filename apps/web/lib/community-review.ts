@@ -11,7 +11,7 @@ import { buildGeneratedMatcher, splitDiffByIgnore } from "@/lib/generated-files"
 import { truncateDiff } from "@/lib/diff-truncate";
 import { eventBus } from "@/lib/events/bus";
 import { persistCommunityReviewToPR, CommunityRepositoryChangedError } from "@/lib/community-pr-persist";
-import { completeCommunityReviewJob } from "@/lib/community-review-completion";
+import { clearTerminalCommunityJobToken, completeCommunityReviewJob } from "@/lib/community-review-completion";
 import { decryptString } from "@/lib/crypto";
 import { getBotToken } from "@/lib/oss-bot";
 import { postOssReview } from "@/lib/oss-review-post";
@@ -35,26 +35,41 @@ export async function processCommunityReview(jobId: string): Promise<void> {
   }
 
   if (job.status === "completed" || job.status === "failed" || job.status === "cancelled") {
+    await clearTerminalCommunityJobToken(job);
     LOG(jobId, `already in terminal state (${job.status}), skipping`);
     return;
   }
 
-  if (job.expiresAt < new Date()) {
+  const now = new Date();
+  if (job.expiresAt < now) {
     LOG(jobId, "expired before processing, marking failed");
-    await prisma.communityReviewJob.update({
-      where: { id: jobId },
-      data: { status: "failed", errorMessage: "Job expired before processing", completedAt: new Date() },
+    const updated = await prisma.communityReviewJob.updateMany({
+      where: { id: jobId, organizationId: job.organizationId, repositoryId: job.repositoryId,
+        status: { notIn: ["completed", "failed", "cancelled"] }, expiresAt: { lt: now } },
+      data: { status: "failed", errorMessage: "Job expired before processing", completedAt: now, githubToken: null },
     });
+    if (updated.count === 0) await clearTerminalCommunityJobToken(job);
     return;
   }
 
-  await prisma.communityReviewJob.update({
-    where: { id: jobId },
+  const activeJob = { id: jobId, organizationId: job.organizationId, repositoryId: job.repositoryId,
+    status: { notIn: ["completed", "failed", "cancelled"] } };
+  const stillActive = async () => {
+    if (await prisma.communityReviewJob.findFirst({ where: activeJob, select: { id: true } })) return true;
+    await clearTerminalCommunityJobToken(job);
+    return false;
+  };
+  const started = await prisma.communityReviewJob.updateMany({
+    where: activeJob,
     data: {
       startedAt: job.startedAt ?? new Date(),
       attempts: { increment: 1 },
     },
   });
+  if (!started.count) {
+    await clearTerminalCommunityJobToken(job);
+    return;
+  }
 
   try {
     const repo = await prisma.repository.findUnique({ where: { id: job.repositoryId } });
@@ -90,19 +105,28 @@ export async function processCommunityReview(jobId: string): Promise<void> {
 
     if (needsIndex) {
       const indexAttemptId = randomUUID();
-      // Atomic claim
-      const claim = await prisma.repository.updateMany({
-        where: { id: repo.id, indexStatus: { notIn: ["indexed", "indexing"] } },
-        data: { indexStatus: "indexing", indexAttemptId },
-      });
-
-      if (claim.count === 0) {
-        // Either already indexed or another worker is indexing
-        const fresh = await prisma.repository.findUnique({
-          where: { id: repo.id },
-          select: { indexStatus: true },
+      let previous = { indexStatus: repo.indexStatus, indexAttemptId: repo.indexAttemptId };
+      const claimIndex = async (snapshot: typeof previous) => {
+        if (["indexed", "indexing"].includes(snapshot.indexStatus)) return false;
+        const claim = await prisma.repository.updateMany({
+          where: { id: repo.id, organizationId: job.organizationId, provider: "github", externalId: repo.externalId,
+            fullName: { equals: fullName, mode: "insensitive" }, indexStatus: snapshot.indexStatus, indexAttemptId: snapshot.indexAttemptId },
+          data: { indexStatus: "indexing", indexAttemptId },
         });
-        const cur = fresh?.indexStatus ?? "failed";
+        return claim.count === 1;
+      };
+
+      if (!await claimIndex(previous)) {
+        // Either already indexed or another worker is indexing
+        const fresh = await prisma.repository.findFirst({
+          where: { id: repo.id, organizationId: job.organizationId, provider: "github", externalId: repo.externalId,
+            fullName: { equals: fullName, mode: "insensitive" } },
+          select: { indexStatus: true, indexAttemptId: true },
+        });
+        if (!fresh) {
+          throw new CommunityRepositoryChangedError("Repository ownership changed during community review");
+        }
+        const cur = fresh.indexStatus;
         LOG(jobId, `claim lost, current indexStatus=${cur}`);
 
         if (cur === "indexing") {
@@ -111,11 +135,8 @@ export async function processCommunityReview(jobId: string): Promise<void> {
         }
         if (cur !== "indexed") {
           // failed/stale: try to reclaim
-          const reclaim = await prisma.repository.updateMany({
-            where: { id: repo.id, indexStatus: { notIn: ["indexed", "indexing"] } },
-            data: { indexStatus: "indexing", indexAttemptId },
-          });
-          if (reclaim.count === 0) {
+          previous = fresh;
+          if (!await claimIndex(previous)) {
             throw new Error(`Could not reclaim indexing for ${fullName}`);
           }
         } else {
@@ -124,9 +145,25 @@ export async function processCommunityReview(jobId: string): Promise<void> {
       }
 
       if (needsIndex) {
+        const releaseClaim = () => prisma.repository.updateMany({
+          where: { id: repo.id, organizationId: job.organizationId, provider: "github", externalId: repo.externalId,
+            fullName: { equals: fullName, mode: "insensitive" }, indexStatus: "indexing", indexAttemptId },
+          data: previous,
+        });
+        let updated;
+        try {
+          updated = await prisma.communityReviewJob.updateMany({ where: activeJob, data: { status: "indexing" } });
+        } catch (error) {
+          await releaseClaim();
+          throw error;
+        }
+        if (!updated.count) {
+          await releaseClaim();
+          await clearTerminalCommunityJobToken(job);
+          return;
+        }
         try {
           const indexStats = await runRepositoryIndex(repo.id, indexAttemptId, async () => {
-            await prisma.communityReviewJob.update({ where: { id: jobId }, data: { status: "indexing" } });
             LOG(jobId, "indexing repository...");
             return indexRepository(
               { repoId: repo.id, indexAttemptId }, fullName, repo.defaultBranch, 0,
@@ -136,6 +173,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
           });
 
           LOG(jobId, `index done: ${indexStats.indexedFiles} files, ${indexStats.totalVectors} vectors`);
+          if (!await stillActive()) return;
 
           // Best-effort summarize + analyze
           try {
@@ -149,6 +187,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
             ERR(jobId, "summarize failed (non-fatal)");
           }
 
+          if (!await stillActive()) return;
           try {
             const analysis = await analyzeRepository(repo.id, fullName, job.organizationId);
             await prisma.repository.update({
@@ -173,10 +212,14 @@ export async function processCommunityReview(jobId: string): Promise<void> {
 
     // ── Phase 2: Review ───────────────────────────────────────────────────
 
-    await prisma.communityReviewJob.update({
-      where: { id: jobId },
+    const reviewing = await prisma.communityReviewJob.updateMany({
+      where: activeJob,
       data: { status: "reviewing" },
     });
+    if (!reviewing.count) {
+      await clearTerminalCommunityJobToken(job);
+      return;
+    }
 
     let fileTree: string[] | undefined;
     try {
@@ -205,6 +248,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
       }
     }
 
+    if (!await stillActive()) return;
     LOG(jobId, "generating review...");
     const reviewResult = await generateLocalReview({
       diff,
@@ -291,7 +335,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     ERR(jobId, "fatal:", err);
-    await prisma.communityReviewJob.updateMany({
+    const updated = await prisma.communityReviewJob.updateMany({
       where: { id: jobId, organizationId: job.organizationId, repositoryId: job.repositoryId,
         status: { notIn: ["completed", "failed", "cancelled"] } },
       data: {
@@ -301,6 +345,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
         githubToken: null,
       },
     });
+    if (updated.count === 0) await clearTerminalCommunityJobToken(job);
     throw err;
   }
 }

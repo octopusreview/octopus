@@ -2,6 +2,17 @@ import "server-only";
 import { prisma, type Prisma } from "@octopus/db";
 import { CommunityRepositoryChangedError } from "@/lib/community-pr-persist";
 
+export async function clearTerminalCommunityJobToken(job: {
+  id: string; organizationId: string; repositoryId: string; githubToken: string | null;
+}): Promise<void> {
+  if (job.githubToken == null) return;
+  await prisma.communityReviewJob.updateMany({
+    where: { id: job.id, organizationId: job.organizationId, repositoryId: job.repositoryId,
+      status: { in: ["completed", "failed", "cancelled"] }, githubToken: job.githubToken },
+    data: { githubToken: null },
+  });
+}
+
 export async function completeCommunityReviewJob(
   jobId: string,
   identity: { repositoryId: string; organizationId: string; externalId: string; fullName: string },

@@ -1,6 +1,7 @@
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { Client } from "pg";
 import { localQueueTestDatabaseUrl } from "../queue-test-database";
 
 // Drives the real community review worker against disposable PostgreSQL. Only the
@@ -18,36 +19,261 @@ const finding = { severity: "🟠", title: "Synthetic finding", filePath: "file.
 let run = 0;
 let treeRequests = 0;
 let indexRequests = 0;
+let summaryRequests = 0;
+let analysisRequests = 0;
+let duringIndex: () => Promise<void> = async () => {};
+let duringSummary: () => Promise<void> = async () => {};
+let duringTree: () => Promise<void> = async () => {};
 let duringReview: () => Promise<void> = async () => {};
 mock.module("@/lib/review-core", () => ({ generateLocalReview: async () => {
   run++;
   await duringReview();
   return { summary: `synthetic result ${run}`, findings: [finding], model: "synthetic", usage: { inputTokens: 1, outputTokens: 1 } };
 } }));
-mock.module("@/lib/github", () => ({ getRepositoryTree: async () => { treeRequests++; return []; }, getPullRequestDiff: () => { throw new Error("unexpected diff fetch"); } }));
-mock.module("@/lib/repository-index-completion", () => ({ runRepositoryIndex: () => { indexRequests++; throw new Error("unexpected index"); } }));
-mock.module("@/lib/indexer", () => ({ indexRepository: () => { throw new Error("unexpected index"); } }));
-mock.module("@/lib/summarizer", () => ({ summarizeRepository: () => { throw new Error("unexpected summary"); } }));
-mock.module("@/lib/analyzer", () => ({ analyzeRepository: () => { throw new Error("unexpected analysis"); } }));
+mock.module("@/lib/github", () => ({ getRepositoryTree: async () => { treeRequests++; await duringTree(); return []; }, getPullRequestDiff: () => { throw new Error("unexpected diff fetch"); } }));
+mock.module("@/lib/indexer", () => ({ indexRepository: async () => { indexRequests++; await duringIndex(); return { totalFiles: 0, indexedFiles: 0, totalChunks: 0, totalVectors: 0, contributorCount: 0, contributors: [], durationMs: 0 }; } }));
+mock.module("@/lib/summarizer", () => ({ summarizeRepository: async () => { summaryRequests++; await duringSummary(); return { summary: "synthetic", purpose: "synthetic" }; } }));
+mock.module("@/lib/analyzer", () => ({ analyzeRepository: async () => { analysisRequests++; return "synthetic"; } }));
 mock.module("@/lib/events/bus", () => ({ eventBus: { emit: () => {} } }));
 mock.module("@/lib/crypto", () => ({ decryptString: (value: string) => value, encryptString: (value: string) => value }));
 mock.module("@/lib/oss-bot", () => ({ getBotToken: () => { throw new Error("unexpected bot token"); } }));
 mock.module("@/lib/oss-review-post", () => ({ postOssReview: () => { throw new Error("unexpected post"); } }));
+mock.module("@/lib/queue", () => ({ enqueue: () => { throw new Error("unexpected enqueue"); } }));
 const { processCommunityReview } = await import("@/lib/community-review");
+const { recoverCommunityReviewJobs } = await import("@/lib/community-review-recovery");
 const { CommunityRepositoryChangedError } = await import("@/lib/community-pr-persist");
 const newJob = () => prisma.communityReviewJob.create({ data: { repositoryId: repo.id, organizationId: source.id, repoFullName: repo.fullName,
   status: "reviewing", prNumber: 1, diff: "synthetic", githubToken: "synthetic", expiresAt: new Date(Date.now() + 60_000) } });
 const jobState = (id: string) => prisma.communityReviewJob.findUniqueOrThrow({ where: { id } });
 const prState = () => prisma.pullRequest.findUniqueOrThrow({ where: { repositoryId_number: { repositoryId: repo.id, number: 1 } }, include: { reviewIssues: true } });
+const locker = new Client({ connectionString: process.env.DATABASE_URL });
+await locker.connect();
+const waitForJobLock = async () => {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const [row] = await prisma.$queryRaw<Array<{ count: number }>>`SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%community_review_jobs%'`;
+    if (row.count > 0) return;
+    await Bun.sleep(20);
+  }
+  throw new Error("Expected a community job update to wait on a row lock");
+};
 try {
-  const cancelled = await newJob();
-  await prisma.communityReviewJob.update({ where: { id: cancelled.id }, data: { status: "cancelled", githubToken: null } });
-  await processCommunityReview(cancelled.id);
-  assert.equal((await jobState(cancelled.id)).status, "cancelled");
-  assert.equal((await jobState(cancelled.id)).githubToken, null);
+  for (const status of ["cancelled", "completed", "failed"]) {
+    const terminal = await newJob();
+    await prisma.communityReviewJob.update({ where: { id: terminal.id }, data: { status, summary: "prior result" } });
+    await processCommunityReview(terminal.id);
+    const saved = await jobState(terminal.id);
+    assert.equal(saved.status, status);
+    assert.equal(saved.summary, "prior result");
+    assert.equal(saved.githubToken, null);
+  }
+  const expired = await newJob();
+  await prisma.communityReviewJob.update({ where: { id: expired.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+  await processCommunityReview(expired.id);
+  assert.equal((await jobState(expired.id)).status, "failed");
+  assert.equal((await jobState(expired.id)).githubToken, null);
+
+  for (const processExpired of [processCommunityReview, async (_id: string) => recoverCommunityReviewJobs()]) {
+    for (const moved of [false, true]) {
+      const racing = await newJob();
+      await prisma.communityReviewJob.update({ where: { id: racing.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+      await locker.query("BEGIN");
+      await locker.query('SELECT id FROM community_review_jobs WHERE id = $1 FOR UPDATE', [racing.id]);
+      const processing = processExpired(racing.id);
+      try {
+        await waitForJobLock();
+        await locker.query('UPDATE community_review_jobs SET status = $1, summary = $2, "organizationId" = $3 WHERE id = $4',
+          [moved ? "cancelled" : "completed", moved ? null : "prior result", moved ? target.id : source.id, racing.id]);
+        await locker.query("COMMIT");
+        await processing;
+        const saved = await jobState(racing.id);
+        assert.equal(saved.organizationId, moved ? target.id : source.id);
+        assert.equal(saved.status, moved ? "cancelled" : "completed");
+        assert.equal(saved.summary, moved ? null : "prior result");
+        assert.equal(saved.githubToken, moved ? "synthetic" : null);
+        assert.equal(await prisma.auditLog.count({ where: { action: "community_review.expired", targetId: racing.id } }), 0);
+      } finally {
+        await locker.query("ROLLBACK").catch(() => {});
+        await processing.catch(() => {});
+      }
+    }
+  }
   assert.equal(run, 0);
   assert.equal(treeRequests, 0);
   assert.equal(indexRequests, 0);
+
+  // Recovery expires only the in-flight job past TTL, audits it once, and leaves a live job alone.
+  const inFlight = await newJob();
+  await prisma.communityReviewJob.update({ where: { id: inFlight.id }, data: { status: "indexing", expiresAt: new Date(Date.now() - 1000) } });
+  const live = await newJob();
+  await recoverCommunityReviewJobs();
+  const expiredByRecovery = await jobState(inFlight.id);
+  assert.equal(expiredByRecovery.status, "failed");
+  assert.equal(expiredByRecovery.errorMessage, "Job exceeded TTL while in flight");
+  assert.equal(expiredByRecovery.githubToken, null);
+  assert.equal(await prisma.auditLog.count({ where: { action: "community_review.expired", targetId: inFlight.id, organizationId: source.id } }), 1);
+  const untouchedLive = await jobState(live.id);
+  assert.equal(untouchedLive.status, "reviewing");
+  assert.equal(untouchedLive.githubToken, "synthetic");
+  assert.equal(await prisma.auditLog.count({ where: { action: "community_review.expired", targetId: live.id } }), 0);
+
+  for (const previousStatus of ["pending", "failed"]) {
+    const racing = await newJob();
+    const previousAttempt = previousStatus === "failed" ? randomUUID() : null;
+    await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: previousStatus, indexAttemptId: previousAttempt } });
+    await locker.query("BEGIN");
+    await locker.query('SELECT id FROM repositories WHERE id = $1 FOR UPDATE', [repo.id]);
+    const processing = processCommunityReview(racing.id);
+    try {
+      for (let attempt = 0; ; attempt++) {
+        const [row] = await prisma.$queryRaw<Array<{ count: number }>>`SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%repositories%'`;
+        if (row.count) break;
+        if (attempt === 100) throw new Error("Expected repository claim to wait on a row lock");
+        await Bun.sleep(20);
+      }
+      await locker.query('UPDATE community_review_jobs SET status = $1, summary = $2 WHERE id = $3', ["cancelled", "prior result", racing.id]);
+      await locker.query("COMMIT");
+      await processing;
+      const saved = await jobState(racing.id);
+      const repository = await prisma.repository.findUniqueOrThrow({ where: { id: repo.id } });
+      assert.equal(saved.status, "cancelled");
+      assert.equal(saved.summary, "prior result");
+      assert.equal(saved.githubToken, null);
+      assert.equal(repository.indexStatus, previousStatus);
+      assert.equal(repository.indexAttemptId, previousAttempt);
+      assert.equal(indexRequests, 0);
+    } finally {
+      await locker.query("ROLLBACK").catch(() => {});
+      await processing.catch(() => {});
+    }
+  }
+
+  await locker.query(`CREATE FUNCTION community_transition_test_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status = 'indexing' THEN RAISE EXCEPTION 'synthetic transition failure'; END IF; RETURN NEW; END $$`);
+  await locker.query('CREATE TRIGGER community_transition_test_failure BEFORE UPDATE OF status ON community_review_jobs FOR EACH ROW EXECUTE FUNCTION community_transition_test_failure()');
+  try {
+    const racing = await newJob();
+    const previousAttempt = randomUUID();
+    await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "failed", indexAttemptId: previousAttempt } });
+    await assert.rejects(() => processCommunityReview(racing.id));
+    const repository = await prisma.repository.findUniqueOrThrow({ where: { id: repo.id } });
+    assert.equal(repository.indexStatus, "failed");
+    assert.equal(repository.indexAttemptId, previousAttempt);
+    assert.equal((await jobState(racing.id)).status, "failed");
+    assert.equal((await jobState(racing.id)).githubToken, null);
+    assert.equal(indexRequests, 0);
+  } finally {
+    await locker.query('DROP TRIGGER IF EXISTS community_transition_test_failure ON community_review_jobs');
+    await locker.query('DROP FUNCTION IF EXISTS community_transition_test_failure()');
+  }
+
+  for (const transferredStatus of ["pending", "indexed"]) {
+    const racing = await newJob();
+    await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "pending", indexAttemptId: null } });
+    await locker.query("BEGIN");
+    await locker.query('SELECT id FROM repositories WHERE id = $1 FOR UPDATE', [repo.id]);
+    const processing = processCommunityReview(racing.id);
+    try {
+      for (let attempt = 0; ; attempt++) {
+        const [row] = await prisma.$queryRaw<Array<{ count: number }>>`SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%repositories%'`;
+        if (row.count) break;
+        if (attempt === 100) throw new Error("Expected repository claim to wait on a row lock");
+        await Bun.sleep(20);
+      }
+      await locker.query('UPDATE repositories SET "organizationId" = $1, "indexStatus" = $2 WHERE id = $3', [target.id, transferredStatus, repo.id]);
+      await locker.query('UPDATE community_review_jobs SET "organizationId" = $1 WHERE id = $2', [target.id, racing.id]);
+      await locker.query("COMMIT");
+      await assert.rejects(() => processing, CommunityRepositoryChangedError);
+      const repository = await prisma.repository.findUniqueOrThrow({ where: { id: repo.id } });
+      const saved = await jobState(racing.id);
+      assert.equal(repository.organizationId, target.id);
+      assert.equal(repository.indexStatus, transferredStatus);
+      assert.equal(repository.indexAttemptId, null);
+      assert.equal(saved.organizationId, target.id);
+      assert.equal(saved.status, "reviewing");
+      assert.equal(saved.githubToken, "synthetic");
+      assert.equal(indexRequests, 0);
+      assert.equal(treeRequests, 0);
+    } finally {
+      await locker.query("ROLLBACK").catch(() => {});
+      await processing.catch(() => {});
+      await prisma.repository.update({ where: { id: repo.id }, data: { organizationId: source.id } });
+    }
+  }
+
+  for (const [sql, value] of [
+    ['UPDATE repositories SET provider = $1 WHERE id = $2', "gitlab"],
+    ['UPDATE repositories SET "externalId" = $1 WHERE id = $2', randomUUID()],
+    ['UPDATE repositories SET "fullName" = $1 WHERE id = $2', `other/${suffix}`],
+  ]) {
+    const racing = await newJob();
+    await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "pending", indexAttemptId: null } });
+    await locker.query("BEGIN");
+    await locker.query('SELECT id FROM repositories WHERE id = $1 FOR UPDATE', [repo.id]);
+    const processing = processCommunityReview(racing.id);
+    try {
+      for (let attempt = 0; ; attempt++) {
+        const [row] = await prisma.$queryRaw<Array<{ count: number }>>`SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%repositories%'`;
+        if (row.count) break;
+        if (attempt === 100) throw new Error("Expected repository claim to wait on a row lock");
+        await Bun.sleep(20);
+      }
+      await locker.query(sql, [value, repo.id]);
+      await locker.query("COMMIT");
+      await assert.rejects(() => processing, CommunityRepositoryChangedError);
+      const repository = await prisma.repository.findUniqueOrThrow({ where: { id: repo.id } });
+      assert.equal(repository.indexStatus, "pending");
+      assert.equal(repository.indexAttemptId, null);
+      assert.equal(indexRequests, 0);
+      assert.equal(treeRequests, 0);
+    } finally {
+      await locker.query("ROLLBACK").catch(() => {});
+      await processing.catch(() => {});
+      await prisma.repository.update({ where: { id: repo.id }, data: { provider: repo.provider, externalId: repo.externalId, fullName: repo.fullName } });
+    }
+  }
+
+  for (const transition of ["indexing", "summary"]) {
+    const racing = await newJob();
+    if (transition === "indexing") {
+      await prisma.communityReviewJob.update({ where: { id: racing.id }, data: { repoFullName: repo.fullName.toUpperCase() } });
+    }
+    await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "pending" } });
+    const finish = async () => {
+      await prisma.communityReviewJob.update({ where: { id: racing.id }, data: { status: "failed", summary: "expiry result" } });
+    };
+    duringIndex = transition === "indexing" ? finish : async () => {};
+    duringSummary = transition === "summary" ? finish : async () => {};
+    summaryRequests = 0;
+    analysisRequests = 0;
+    await processCommunityReview(racing.id);
+    const saved = await jobState(racing.id);
+    assert.equal(saved.status, "failed");
+    assert.equal(saved.summary, "expiry result");
+    assert.equal(saved.githubToken, null);
+    assert.equal(run, 0);
+    assert.equal(treeRequests, 0);
+    assert.equal(summaryRequests, transition === "summary" ? 1 : 0);
+    assert.equal(analysisRequests, 0);
+  }
+  duringIndex = async () => {};
+  duringSummary = async () => {};
+  indexRequests = 0;
+  await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "indexed" } });
+
+  for (const treeFails of [false, true]) {
+    const racing = await newJob();
+    duringTree = async () => {
+      await prisma.communityReviewJob.update({ where: { id: racing.id }, data: { status: "cancelled", summary: "prior result" } });
+      if (treeFails) throw new Error("synthetic tree failure");
+    };
+    await processCommunityReview(racing.id);
+    const saved = await jobState(racing.id);
+    assert.equal(saved.status, "cancelled");
+    assert.equal(saved.summary, "prior result");
+    assert.equal(saved.githubToken, null);
+    assert.equal(run, 0);
+  }
+  duringTree = async () => {};
+  treeRequests = 0;
 
   for (const change of [
     { organizationId: target.id, indexStatus: "pending" },
@@ -122,7 +348,20 @@ try {
   assert.equal(moved.errorMessage, null);
   assert.equal((await prState()).reviewBody, "synthetic result 2");
   assert.equal(run, 4);
+
+  await prisma.repository.update({ where: { id: repo.id }, data: { organizationId: source.id } });
+  const cancelledDuringReview = await newJob();
+  await prisma.communityReviewJob.update({ where: { id: cancelledDuringReview.id }, data: { prNumber: null } });
+  duringReview = async () => {
+    await prisma.communityReviewJob.update({ where: { id: cancelledDuringReview.id }, data: { status: "cancelled" } });
+  };
+  await assert.rejects(() => processCommunityReview(cancelledDuringReview.id), CommunityRepositoryChangedError);
+  const cancelledAfterWork = await jobState(cancelledDuringReview.id);
+  assert.equal(cancelledAfterWork.status, "cancelled");
+  assert.equal(cancelledAfterWork.githubToken, null);
+  assert.equal((await prState()).reviewBody, "synthetic result 2");
 } finally {
+  await locker.end();
   await prisma.communityReviewJob.deleteMany({ where: { repositoryId: repo.id } });
   await prisma.organization.deleteMany({ where: { id: { in: [source.id, target.id] } } });
   await prisma.$disconnect();

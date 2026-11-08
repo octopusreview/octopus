@@ -16,7 +16,7 @@ On worker-deadline events, `indexing_last_milestone` may identify the last allow
 
 For review preparation failures, the optional `preparation_operation` tag distinguishes `review_input` fetches from `repository_tree` fetches. GitHub tree failures can also be grouped by their HTTP status code, for example `failure_code:http_451`. These identify the failed boundary or upstream response, not its cause or a confirmed fix; response bodies are not included in the event.
 
-Provider failures use a generic message instead of the provider's error text. The offline local-agent case retains its instruction to run `octp agent serve`. Available safe diagnostics include the provider, key owner, HTTP status, allowlisted error code and validated request ID; raw provider responses and causes are not included.
+Provider failures use a generic message instead of the provider's error text. The offline local-agent case retains its instruction to run `octp agent serve`. Available safe diagnostics include the provider, key owner, HTTP status and allowlisted error code; raw provider responses and causes are not included.
 
 An embedding failure while preparing search context fails the review with a generic message. Best-effort feedback matching and review or diagram storage failures retain the review outcome; their logs contain only safe diagnostic fields, not the underlying error text.
 

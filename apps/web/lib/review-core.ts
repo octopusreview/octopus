@@ -648,17 +648,26 @@ export class ReviewConfigError extends Error {
 }
 
 /**
- * Map known-recoverable provider errors to `ReviewConfigError`. The
- * heuristic looks for auth-shaped errors (401/403, "invalid_api_key",
- * "Unauthorized", "API key", "placeholder") rather than parsing every
- * provider's error format — those strings are stable enough to use and
- * the worst case is a less-pretty error message, not a behaviour bug.
+ * Surface configuration advice only when the provider and key owner support it.
  */
 function classifyReviewError(err: unknown): Error {
-  if (!(err instanceof Error)) return new Error(String(err));
+  if (!(err instanceof Error)) return new Error("Review generation failed");
+  if (err instanceof AiProviderFailure) {
+    if (err.reviewCategory === "auth" && err.keyOwner === "organization") {
+      return new ReviewConfigError(
+        "Review provider rejected the configured credentials or access. Check the provider key and permissions, " +
+          "or pick a different default model under /settings/models.",
+      );
+    }
+    if (err.reviewCategory === "local" && err.provider === "ollama") {
+      return new ReviewConfigError(
+        "Could not reach the configured local model. Ensure Ollama (or your local agent) is running and reachable.",
+      );
+    }
+    return err;
+  }
   const msg = err.message.toLowerCase();
   const authy =
-    (err instanceof AiProviderFailure && err.reviewCategory === "auth") ||
     msg.includes("invalid_api_key") ||
     msg.includes("api key") ||
     msg.includes("unauthorized") ||
@@ -666,18 +675,9 @@ function classifyReviewError(err: unknown): Error {
     msg.includes("403") ||
     msg.includes("authentication") ||
     msg.includes("placeholder");
-  if (authy) {
-    return new ReviewConfigError(
-      "Review model is not configured. Set a real API key for the chosen provider, " +
-        "or pick a different default model under /settings/models.",
-    );
-  }
-  // Ollama / local-agent unreachable
-  if ((err instanceof AiProviderFailure && err.reviewCategory === "local") || msg.includes("econnrefused") || msg.includes("fetch failed") || msg.includes("ollama")) {
-    return new ReviewConfigError(
-      "Could not reach the configured local model. Ensure Ollama (or your local agent) is running and reachable.",
-    );
-  }
+  // Untyped errors do not identify whose key or network failed; keep their
+  // potentially sensitive text out of the returned diagnostic.
+  if (authy || msg.includes("econnrefused") || msg.includes("fetch failed") || msg.includes("ollama")) return new Error("Review generation failed");
   return err;
 }
 

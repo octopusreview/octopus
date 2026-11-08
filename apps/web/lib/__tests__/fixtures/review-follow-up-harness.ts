@@ -15,7 +15,7 @@ const firstCompletion = process.argv.includes("--first-review-completion");
 const refusalFlow = process.argv.includes("--provider-refusal");
 const providerErrorPrivacy = process.argv.includes("--provider-error-privacy");
 const localClassification = process.argv.includes("--local-classification");
-let localFailure: { message: string; provider: "local" | "ollama" | "openai"; status?: number } | null = null;
+let localFailure: { message: string; provider: "local" | "ollama" | "openai"; status?: number; keyOwner?: "platform" | "organization" | "unknown"; unwrapped?: boolean; throwValue?: boolean } | null = null;
 if (refusalFlow) process.env.ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 let refusalCalls = 0;
 let preparationFetchFailure: "review_input" | "repository_tree" | "large_pr" | null = null;
@@ -116,6 +116,7 @@ const db = {
     return prior ? { coverage: prior } : null;
   } },
   repository: {
+    findFirst: async () => ({ ...repo }),
     findUnique: async () => ({ ...repo }),
     findUniqueOrThrow: async () => ({ ...repo }),
     updateMany: async ({ where, data }: { where: { id: string; indexStatus?: string | { notIn: string[] }; indexAttemptId?: string }; data: Record<string, unknown> }) => {
@@ -163,12 +164,14 @@ mock.module("@/lib/ai-router", () => ({ getProviderForModel: async () => {
 }, createAiMessage: async (params: AiCreateParams) => {
   if (localClassification && localFailure) {
     const { AiProviderFailure } = await import("@/lib/provider-failure");
+    if (localFailure.throwValue) throw localFailure.message;
+    if (localFailure.unwrapped) throw new Error(localFailure.message);
     if (localFailure.provider === "local") {
       const { localProvider } = await import("@/lib/providers/local");
       try { return await localProvider.create(params, null, "org"); }
       catch (error) { throw new AiProviderFailure(error, "local", params.model, "unknown"); }
     }
-    throw new AiProviderFailure(Object.assign(new Error(localFailure.message), { status: localFailure.status }), localFailure.provider, params.model, "organization");
+    throw new AiProviderFailure(Object.assign(new Error(localFailure.message), { status: localFailure.status }), localFailure.provider, params.model, localFailure.keyOwner ?? "organization");
   }
   if (localClassification) return { model: params.model, provider: "openai", text: report, usage: { inputTokens: 1, outputTokens: 1 } };
   if (providerErrorPrivacy) {
@@ -399,19 +402,72 @@ if (localClassification) {
   for (const run of paths) {
     for (const failure of [
       { provider: "openai" as const, message: "invalid_api_key synthetic-secret" },
-      { provider: "openai" as const, message: "fetch failed synthetic-secret" },
-      { provider: "ollama" as const, message: "synthetic-secret" },
+      { provider: "ollama" as const, message: "fetch failed synthetic-secret" },
       { provider: "openai" as const, message: "synthetic-secret", status: 401 },
     ]) {
       localFailure = failure;
       await assert.rejects(run, (error: Error) => error instanceof ReviewConfigError && !error.message.includes("synthetic-secret"));
     }
+    for (const failure of [
+      { provider: "openai" as const, message: "fetch failed synthetic-secret", keyOwner: "organization" as const },
+      { provider: "openai" as const, message: "synthetic-secret", status: 401, keyOwner: "platform" as const },
+      { provider: "openai" as const, message: "synthetic-secret", status: 403, keyOwner: "unknown" as const },
+      { provider: "openai" as const, message: "synthetic-secret", status: 429, keyOwner: "organization" as const },
+      { provider: "openai" as const, message: "synthetic-secret", status: 429, keyOwner: "platform" as const },
+      { provider: "ollama" as const, message: "synthetic-secret", status: 500, keyOwner: "unknown" as const },
+    ]) {
+      localFailure = failure;
+      await assert.rejects(run, (error: Error) => error instanceof AiProviderFailure && !(error instanceof ReviewConfigError) && !error.message.includes("synthetic-secret"));
+    }
+    for (const message of ["invalid_api_key synthetic-secret", "fetch failed synthetic-secret"]) {
+      localFailure = { provider: "openai", message, unwrapped: true };
+      await assert.rejects(run, (error: Error) => !(error instanceof ReviewConfigError) && !error.message.includes("synthetic-secret"));
+    }
+    localFailure = { provider: "openai", message: "synthetic-secret", throwValue: true };
+    await assert.rejects(run, (error: Error) => error.message === "Review generation failed");
     localFailure = { provider: "local", message: "" };
     await assert.rejects(run, (error: Error) => !(error instanceof ReviewConfigError) && error.message === "No local agent is online for this organisation. Run `octp agent serve` on a machine with the API token.");
     localFailure = { provider: "openai", message: "synthetic-secret" };
     await assert.rejects(run, (error: Error) => !(error instanceof ReviewConfigError) && !error.message.includes("synthetic-secret"));
     localFailure = null;
     assert.equal((await run()).usage.inputTokens, 1);
+  }
+  mock.module("@/lib/api-auth", () => ({ authenticateApiToken: async () => ({ org, user: null }) }));
+  mock.module("@/lib/cost", () => ({ isOrgOverSpendLimit: async () => false }));
+  mock.module("@/lib/external-review-activity", () => ({ withExternalReviewActivity: async (_info: unknown, run: () => Promise<Response>) => run() }));
+  mock.module("@/lib/audit", () => ({ writeAuditLog: async () => {} }));
+  mock.module("next/headers", () => ({ headers: async () => new Headers() }));
+  const bare = await import("../../../app/api/cli/review-local/route");
+  const contextual = await import("../../../app/api/cli/repos/[id]/local-review/route");
+  const { NextRequest } = await import("next/server");
+  const originalError = console.error;
+  const originalEnv = process.env.NODE_ENV;
+  const routeLogs: string[] = [];
+  console.error = (...args: unknown[]) => { routeLogs.push(inspect(args)); };
+  process.env.NODE_ENV = "production";
+  try {
+    for (const route of [
+      () => bare.POST(new Request("http://localhost", { method: "POST", body: JSON.stringify({ diff }) })),
+      () => contextual.POST(new NextRequest("http://localhost", { method: "POST", body: JSON.stringify({ diff }) }), { params: Promise.resolve({ id: repo.id }) }),
+    ]) {
+      localFailure = { provider: "openai", message: "synthetic-secret", status: 401, keyOwner: "organization" };
+      const organizationFailure = await route();
+      assert.equal(organizationFailure.status, 422);
+      assert.match((await organizationFailure.json()).error, /credentials or access/);
+      for (const failure of [
+        { provider: "openai" as const, message: "synthetic-secret", status: 401, keyOwner: "platform" as const },
+        { provider: "openai" as const, message: "fetch failed synthetic-secret", keyOwner: "unknown" as const },
+      ]) {
+        localFailure = failure;
+        const response = await route();
+        assert.equal(response.status, 500);
+        assert.equal((await response.json()).error, "Review generation failed");
+      }
+    }
+    assert.doesNotMatch(routeLogs.join("\n"), /synthetic-secret/);
+  } finally {
+    console.error = originalError;
+    process.env.NODE_ENV = originalEnv;
   }
   process.exit(0);
 }

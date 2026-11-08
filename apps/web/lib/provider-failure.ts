@@ -37,7 +37,7 @@ export class AiProviderFailure extends Error {
     let message = "";
     try { message = (error instanceof Error ? error.message : String(error)).toLowerCase(); } catch {}
     const reviewCategory = /invalid_api_key|api key|unauthorized|401|403|authentication|placeholder/.test(message) || details.status === 401 || details.status === 403
-      ? "auth" : provider === "ollama" || /econnrefused|fetch failed|ollama/.test(message)
+      ? "auth" : provider === "ollama" && (/(econnrefused|fetch failed)/.test(message) || details.code === "ECONNREFUSED")
         ? "local" : undefined;
     const hint = provider === "claude-code" && details.code === "ENOENT" ? ": executable or file not found; check the provider installation" : "";
     super(provider === "local" && error instanceof OfflineLocalAgentError

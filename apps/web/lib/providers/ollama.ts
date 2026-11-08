@@ -22,6 +22,19 @@ import { stripLoneSurrogates } from "./sanitize";
 
 const DEFAULT_BASE_URL = "http://localhost:11434";
 
+// The SDK otherwise discards connection-timeout causes when wrapping fetch errors.
+const ollamaFetch: typeof fetch = async (input, init) => {
+  try {
+    return await globalThis.fetch(input, init);
+  } catch (error) {
+    const code = (error as { cause?: { code?: unknown } })?.cause?.code;
+    if (!init?.signal?.aborted && (code === "ETIMEDOUT" || code === "UND_ERR_CONNECT_TIMEOUT")) {
+      throw Object.assign(new Error("Connection failed"), { code });
+    }
+    throw error;
+  }
+};
+
 /**
  * Parse + sanitize the operator-supplied base URL: require http(s) and reduce
  * to a clean origin (drops any path/query so the SDK doesn't build `/v1/v1`).
@@ -63,6 +76,7 @@ function getClient(): OpenAI {
     apiKey: "ollama", // ignored by Ollama; the SDK just requires a non-empty value
     baseURL: `${base}/v1`,
     defaultHeaders,
+    fetch: ollamaFetch,
   });
   return platformClient;
 }
@@ -86,7 +100,7 @@ async function resolveOrgClient(orgId: string | null): Promise<OpenAI | null> {
   // Not cached: per-org base URLs vary, so the platformClient singleton can't
   // serve them. The env-level basic-auth credentials are host-specific and
   // intentionally not applied to a per-org host.
-  return new OpenAI({ apiKey: "ollama", baseURL: `${base}/v1` });
+  return new OpenAI({ apiKey: "ollama", baseURL: `${base}/v1`, fetch: ollamaFetch });
 }
 
 export const ollamaProvider: Provider = {

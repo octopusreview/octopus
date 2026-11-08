@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-08
+
 ### Fixed
 
 - Start the review summary publication timeout after acquiring the pull-request lock, while respecting the transaction deadline.

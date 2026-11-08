@@ -393,6 +393,8 @@ const { prepareReviewInput } = await import("@/lib/review-coverage");
 const { canRestrictReviewToFollowUp } = await import("@/lib/review-follow-up");
 if (localClassification) {
   const { generateLocalReview, generateBareLocalReview, ReviewConfigError } = await import("@/lib/review-core");
+  const { AiProviderFailure } = await import("@/lib/provider-failure");
+  assert.equal(new AiProviderFailure(new Error("synthetic-secret"), "local", "local:model", "unknown").message, "AI provider local request failed");
   const paths = [() => generateLocalReview({ diff, repoId: "repo", orgId: "org" }), () => generateBareLocalReview({ diff, orgId: "org" })];
   for (const run of paths) {
     for (const failure of [
@@ -405,7 +407,7 @@ if (localClassification) {
       await assert.rejects(run, (error: Error) => error instanceof ReviewConfigError && !error.message.includes("synthetic-secret"));
     }
     localFailure = { provider: "local", message: "" };
-    await assert.rejects(run, (error: Error) => !(error instanceof ReviewConfigError) && error.message === "AI provider local request failed");
+    await assert.rejects(run, (error: Error) => !(error instanceof ReviewConfigError) && error.message === "No local agent is online for this organisation. Run `octp agent serve` on a machine with the API token.");
     localFailure = { provider: "openai", message: "synthetic-secret" };
     await assert.rejects(run, (error: Error) => !(error instanceof ReviewConfigError) && !error.message.includes("synthetic-secret"));
     localFailure = null;

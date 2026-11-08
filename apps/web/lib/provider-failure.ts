@@ -1,6 +1,11 @@
 import type { AiProvider } from "./providers";
 
 export type KeyOwner = "platform" | "organization" | "unknown";
+const OFFLINE_LOCAL_AGENT_MESSAGE = "No local agent is online for this organisation. Run `octp agent serve` on a machine with the API token.";
+
+export class OfflineLocalAgentError extends Error {
+  constructor() { super(OFFLINE_LOCAL_AGENT_MESSAGE); }
+}
 const SAFE_ERROR_CODES = new Set(["ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "ENETUNREACH", "EAI_AGAIN", "ENOENT", "UND_ERR_SOCKET", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT", "PROVIDER_REFUSAL"]);
 const ERROR_NAMES = new Set(["Error", "TypeError", "APIError", "APIConnectionError", "APIConnectionTimeoutError", "AuthenticationError", "PermissionDeniedError", "RateLimitError", "InternalServerError", "TimeoutError", "AbortError"]);
 
@@ -35,7 +40,9 @@ export class AiProviderFailure extends Error {
       ? "auth" : provider === "ollama" || /econnrefused|fetch failed|ollama/.test(message)
         ? "local" : undefined;
     const hint = provider === "claude-code" && details.code === "ENOENT" ? ": executable or file not found; check the provider installation" : "";
-    super(`AI provider ${provider} request failed${details.status ? ` (HTTP ${details.status})` : ""}${hint}`);
+    super(provider === "local" && error instanceof OfflineLocalAgentError
+      ? OFFLINE_LOCAL_AGENT_MESSAGE
+      : `AI provider ${provider} request failed${details.status ? ` (HTTP ${details.status})` : ""}${hint}`);
     this.name = "AiProviderFailure";
     this.details = details;
     this.reviewCategory = reviewCategory;

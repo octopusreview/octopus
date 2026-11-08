@@ -3,6 +3,7 @@ import { observeAiRequest } from "./request-evidence";
 import { prisma } from "@octopus/db";
 import type { Provider, AiCreateParams, AiResponse } from "./index";
 import { AGENT_STALE_THRESHOLD_MS } from "@/lib/agent-constants";
+import { OfflineLocalAgentError } from "../provider-failure";
 
 /**
  * Local-agent bridge provider. Dispatches the LLM call to a developer's
@@ -60,9 +61,7 @@ export const localProvider: Provider = {
       },
     });
     if (onlineAgents === 0) {
-      throw new Error(
-        "No local agent is online for this organisation. Run `octp agent serve` on a machine with the API token.",
-      );
+      throw new OfflineLocalAgentError();
     }
 
     const task = await prisma.agentLlmTask.create({

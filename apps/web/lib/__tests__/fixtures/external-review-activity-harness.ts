@@ -269,8 +269,116 @@ try {
       assert.equal((await poll.GET(new NextRequest(`http://localhost/api/fixture?repo=${id}/fixture`), {
         params: Promise.resolve({ jobId: job.id }),
       })).status, 200);
-      await prisma.communityReviewJob.deleteMany({ where: { repositoryId: repo.id } });
       const priorOrg = await prisma.organization.create({ data: { name: "Prior synthetic tenant", slug: `prior-${id}` } });
+      await prisma.communityReviewJob.update({ where: { id: job.id }, data: { status: "completed", summary: "synthetic result" } });
+      const completed = await poll.GET(new NextRequest(`http://localhost/api/fixture?repo=${id}/fixture`), {
+        params: Promise.resolve({ jobId: job.id }),
+      });
+      assert.equal(completed.status, 200);
+      const completedBody = await completed.json();
+      assert.equal(completedBody.summary, "synthetic result");
+      assert.equal(completedBody.githubToken, undefined);
+      try {
+        await prisma.repository.update({ where: { id: repo.id }, data: { organizationId: priorOrg.id } });
+        const transferred = await poll.GET(new NextRequest(`http://localhost/api/fixture?repo=${id}/fixture`), {
+          params: Promise.resolve({ jobId: job.id }),
+        });
+        assert.equal(transferred.status, 404);
+        assert.equal((await transferred.json()).summary, undefined);
+      } finally {
+        await prisma.repository.update({ where: { id: repo.id }, data: { organizationId: communityOrg.id } });
+      }
+      for (const changed of [
+        { externalId: `changed-${id}` }, { provider: "gitlab" }, { fullName: `${id}/renamed` },
+      ]) {
+        try {
+          await prisma.repository.update({ where: { id: repo.id }, data: changed });
+          assert.equal((await poll.GET(new NextRequest(`http://localhost/api/fixture?repo=${id}/fixture`), {
+            params: Promise.resolve({ jobId: job.id }),
+          })).status, 404);
+        } finally {
+          await prisma.repository.update({ where: { id: repo.id }, data: {
+            externalId: repo.externalId, provider: repo.provider, fullName: repo.fullName,
+          } });
+        }
+      }
+      await prisma.communityReviewJob.update({ where: { id: job.id }, data: { repositoryExternalId: null } });
+      assert.equal((await poll.GET(new NextRequest(`http://localhost/api/fixture?repo=${id}/fixture`), {
+        params: Promise.resolve({ jobId: job.id }),
+      })).status, 200);
+      await prisma.communityReviewJob.update({ where: { id: job.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+      assert.equal((await poll.GET(new NextRequest(`http://localhost/api/fixture?repo=${id}/fixture`), {
+        params: Promise.resolve({ jobId: job.id }),
+      })).status, 410);
+      await prisma.communityReviewJob.update({ where: { id: job.id }, data: { expiresAt: new Date(Date.now() + 60_000) } });
+      {
+        let locked!: () => void;
+        let release!: () => void;
+        const ready = new Promise<void>(resolve => { locked = resolve; });
+        const proceed = new Promise<void>(resolve => { release = resolve; });
+        const transfer = prisma.$transaction(async tx => {
+          await tx.$queryRaw`SELECT id FROM repositories WHERE id = ${repo.id} FOR UPDATE`;
+          locked();
+          await proceed;
+          await tx.repository.update({ where: { id: repo.id }, data: { organizationId: priorOrg.id } });
+        });
+        await ready;
+        const duringTransfer = poll.GET(new NextRequest(`http://localhost/api/fixture?repo=${id}/fixture`), {
+          params: Promise.resolve({ jobId: job.id }),
+        });
+        try {
+          let waiting = false;
+          for (let attempt = 0; attempt < 100; attempt++) {
+            const [row] = await prisma.$queryRaw<Array<{ count: number }>>`SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%repositories%'`;
+            if (row.count) { waiting = true; break; }
+            await Bun.sleep(20);
+          }
+          assert.ok(waiting, "poll must wait for the repository transfer lock");
+          release();
+          await transfer;
+          const rejected = await duringTransfer;
+          assert.equal(rejected.status, 404);
+          assert.equal((await rejected.json()).summary, undefined);
+        } finally {
+          release();
+          await Promise.allSettled([transfer, duringTransfer]);
+          await prisma.repository.update({ where: { id: repo.id }, data: { organizationId: communityOrg.id } });
+        }
+      }
+      {
+        await prisma.communityReviewJob.update({ where: { id: job.id }, data: { status: "reviewing", summary: null } });
+        let locked!: () => void;
+        let release!: () => void;
+        const ready = new Promise<void>(resolve => { locked = resolve; });
+        const proceed = new Promise<void>(resolve => { release = resolve; });
+        const completion = prisma.$transaction(async tx => {
+          await tx.communityReviewJob.update({ where: { id: job.id }, data: { status: "completed", summary: "synthetic completion" } });
+          locked();
+          await proceed;
+        });
+        await ready;
+        const duringCompletion = poll.GET(new NextRequest(`http://localhost/api/fixture?repo=${id}/fixture`), {
+          params: Promise.resolve({ jobId: job.id }),
+        });
+        try {
+          let waiting = false;
+          for (let attempt = 0; attempt < 100; attempt++) {
+            const [row] = await prisma.$queryRaw<Array<{ count: number }>>`SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%community_review_jobs%'`;
+            if (row.count) { waiting = true; break; }
+            await Bun.sleep(20);
+          }
+          assert.ok(waiting, "poll must wait for the job completion lock");
+          release();
+          await completion;
+          const result = await duringCompletion;
+          assert.equal(result.status, 200);
+          assert.equal((await result.json()).summary, "synthetic completion");
+        } finally {
+          release();
+          await Promise.allSettled([completion, duringCompletion]);
+        }
+      }
+      await prisma.communityReviewJob.deleteMany({ where: { repositoryId: repo.id } });
       await prisma.ossReviewAllowlist.create({ data: { repoFullName: `${id}/fixture` } });
       const oldBotJob = await prisma.communityReviewJob.create({ data: { repositoryId: repo.id, organizationId: priorOrg.id,
         repoFullName: repo.fullName, repositoryExternalId: repo.externalId, status: "indexing", prNumber: 1,

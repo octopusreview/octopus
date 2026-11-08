@@ -5,6 +5,7 @@ import { getEmbedModel } from "@/lib/ai-client";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { getEmbedConfig, type EmbedConfig } from "@/lib/embed-config";
 import { validateProviderUrl } from "@/lib/providers/url-validation";
+import { EmbeddingDimensionError } from "@/lib/embedding-error";
 
 let openai: OpenAI | null = null;
 
@@ -195,11 +196,7 @@ async function embedWithOpenAI(
     if (res.data.length > 0) {
       const gotDim = res.data[0].embedding.length;
       if (gotDim !== config.dim) {
-        throw new Error(
-          `OpenAI embeddings dim mismatch: model "${config.model}" returned ` +
-            `${gotDim}-dim vectors, but OCTOPUS_EMBED_DIM is ${config.dim}. ` +
-            `Set OCTOPUS_EMBED_DIM=${gotDim} (and wipe Qdrant collections so they get re-created).`,
-        );
+        throw new EmbeddingDimensionError();
       }
     }
     for (const item of res.data) vectors.push(item.embedding);
@@ -280,11 +277,7 @@ async function embedWithOllama(
       );
     }
     if (got[0].length !== config.dim) {
-      throw new Error(
-        `Ollama embeddings dim mismatch: model "${config.model}" returned ` +
-          `${got[0].length}-dim vectors, but OCTOPUS_EMBED_DIM is ${config.dim}. ` +
-          `Set OCTOPUS_EMBED_DIM=${got[0].length} (and wipe Qdrant collections so they get re-created).`,
-      );
+      throw new EmbeddingDimensionError();
     }
     vectors.push(...got);
     for (const t of batch) promptTokens += estimateTokens(t);

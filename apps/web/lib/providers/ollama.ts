@@ -27,9 +27,9 @@ const ollamaFetch: typeof fetch = async (input, init) => {
   try {
     return await globalThis.fetch(input, init);
   } catch (error) {
-    const code = (error as { cause?: { code?: unknown } })?.cause?.code;
-    if (!init?.signal?.aborted && (code === "ETIMEDOUT" || code === "UND_ERR_CONNECT_TIMEOUT")) {
-      throw Object.assign(new Error("Connection failed"), { code });
+    const cause = (error as { cause?: { code?: unknown; syscall?: unknown } })?.cause;
+    if (!init?.signal?.aborted && (cause?.code === "UND_ERR_CONNECT_TIMEOUT" || (cause?.code === "ETIMEDOUT" && cause.syscall === "connect"))) {
+      throw Object.assign(new Error("Connection failed"), { code: "UND_ERR_CONNECT_TIMEOUT" });
     }
     throw error;
   }

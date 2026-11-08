@@ -398,9 +398,9 @@ if (localClassification) {
   const { generateLocalReview, generateBareLocalReview, ReviewConfigError } = await import("@/lib/review-core");
   const { AiProviderFailure } = await import("@/lib/provider-failure");
   assert.equal(new AiProviderFailure(new Error("synthetic-secret"), "local", "local:model", "unknown").message, "AI provider local request failed");
-  // Real SDK shape: openai 6.39.0 leaves APIConnectionError.name as "Error", so classification must not depend on the name.
+  // The adapter preserves connection-specific evidence through the SDK.
   const { APIConnectionError, APIConnectionTimeoutError } = await import("openai/error");
-  const connectTimeout = new APIConnectionError({ cause: Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("connect ETIMEDOUT synthetic-secret"), { code: "ETIMEDOUT" }) }) });
+  const connectTimeout = new APIConnectionError({ cause: Object.assign(new Error("Connection failed"), { code: "UND_ERR_CONNECT_TIMEOUT" }) });
   assert.equal(new AiProviderFailure(connectTimeout, "ollama", "ollama:model", "unknown").reviewCategory, "local");
   assert.equal(new AiProviderFailure(new APIConnectionTimeoutError(), "ollama", "ollama:model", "unknown").reviewCategory, undefined);
   const paths = [() => generateLocalReview({ diff, repoId: "repo", orgId: "org" }), () => generateBareLocalReview({ diff, orgId: "org" })];
@@ -465,11 +465,8 @@ if (localClassification) {
         assert.equal(response.status, 422);
         assert.match((await response.json()).error, /Could not reach the configured local model/);
       }
-      localFailure = { provider: "ollama", message: "Connection error. synthetic-secret", code: "ETIMEDOUT" };
-      const connectionTimeout = await route();
-      assert.equal(connectionTimeout.status, 422);
-      assert.match((await connectionTimeout.json()).error, /Could not reach the configured local model/);
       for (const failure of [
+        { provider: "ollama" as const, message: "response timed out synthetic-secret", code: "ETIMEDOUT" },
         { provider: "openai" as const, message: "synthetic-secret", status: 401, keyOwner: "platform" as const },
         { provider: "openai" as const, message: "rate limit exceeded for API key synthetic-secret", status: 429, keyOwner: "organization" as const },
         { provider: "openai" as const, message: "rate limit exceeded for API key synthetic-secret", status: 429, keyOwner: "platform" as const },

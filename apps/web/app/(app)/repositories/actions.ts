@@ -631,11 +631,26 @@ export async function transferRepository(
     return { error: "You are not a member of the target organization." };
   }
 
-  // Transfer the repository
-  await prisma.repository.update({
-    where: { id: repoId },
-    data: { organizationId: targetOrgId },
+  const transferred = await prisma.$transaction(async tx => {
+    const [current] = await tx.$queryRaw<Array<{ organizationId: string; provider: string; indexStatus: string }>>`
+      SELECT "organizationId", provider, "indexStatus" FROM repositories WHERE id = ${repoId} FOR UPDATE
+    `;
+    if (!current || current.organizationId !== repo.organizationId || current.provider !== repo.provider || current.indexStatus === "indexing") return false;
+    const members = await tx.$queryRaw<Array<{ organizationId: string; role: string; scopes: string[] }>>`
+      SELECT "organizationId", role, scopes FROM organization_members
+      WHERE "userId" = ${session.user.id} AND "organizationId" IN (${repo.organizationId}, ${targetOrgId}) AND "deletedAt" IS NULL
+      ORDER BY id FOR SHARE
+    `;
+    if (!hasOrgPermission(members.find(member => member.organizationId === repo.organizationId), "repos:manage") ||
+        !members.some(member => member.organizationId === targetOrgId)) return false;
+    const [target] = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM organizations WHERE id = ${targetOrgId} AND "deletedAt" IS NULL AND "bannedAt" IS NULL FOR SHARE
+    `;
+    if (!target) return false;
+    await tx.repository.update({ where: { id: repoId }, data: { organizationId: targetOrgId } });
+    return true;
   });
+  if (!transferred) return { error: "Repository or permissions changed. Refresh and try again." };
 
   // Notify both orgs via Pubby
   const sourceChannel = `presence-org-${repo.organizationId}`;

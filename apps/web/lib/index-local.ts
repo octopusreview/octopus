@@ -168,14 +168,16 @@ export async function prepareRepoForLocalIndex(
   | { ok: false; reason: "in-flight"; repoId: string }
   | { ok: false; reason: "repository-changed" }
 > {
-  const uploadState = {
-    id: crypto.randomUUID(), nextBatch: 0, totalBatches: upload.totalBatches,
-    totalFiles: upload.totalFiles, paths: [] as string[], verified: true,
-  };
   const existing = await prisma.repository.findFirst({
     where: { organizationId, provider, fullName, isActive: true },
     select: { id: true, installationId: true, externalId: true, indexStatus: true, updatedAt: true },
   });
+  const externalId = existing?.externalId ?? `cli:${provider}:${fullName}`;
+  const uploadState = {
+    id: crypto.randomUUID(), nextBatch: 0, totalBatches: upload.totalBatches,
+    totalFiles: upload.totalFiles, paths: [] as string[], verified: true,
+    organizationId, provider, fullName, externalId,
+  };
 
   if (existing) {
     // Only ever claim CLI-created rows (externalId "cli:<provider>:<fullName>").
@@ -225,7 +227,6 @@ export async function prepareRepoForLocalIndex(
   // New row. `externalId` would normally be the platform's repo ID — we don't
   // have one, so fingerprint the local identity as `cli:<provider>:<fullName>`
   // to satisfy the unique constraint without colliding with platform-managed rows.
-  const externalId = `cli:${provider}:${fullName}`;
   const name = fullName.split("/").pop() ?? fullName;
 
   const repo = await prisma.repository.create({
@@ -254,6 +255,10 @@ type UploadState = {
   totalFiles: number;
   paths: string[];
   verified: boolean;
+  organizationId: string;
+  provider: string;
+  fullName: string;
+  externalId: string;
 };
 
 export class LocalIndexConflict extends Error {}
@@ -270,7 +275,9 @@ export async function claimLocalIndexBatch(
   const repo = await prisma.repository.findFirst({ where: { id: repoId, organizationId, isActive: true } });
   const upload = repo?.localIndexUpload as UploadState | null | undefined;
   if (!repo || repo.installationId != null || !repo.externalId.startsWith("cli:") ||
-      !upload || repo.indexStatus !== "indexing" || repo.indexAttemptId ||
+      !upload || upload.organizationId !== repo.organizationId || upload.provider !== repo.provider ||
+      upload.fullName !== repo.fullName || upload.externalId !== repo.externalId ||
+      repo.indexStatus !== "indexing" || repo.indexAttemptId ||
       upload.nextBatch !== batchIndex || upload.totalBatches !== totalBatches ||
       (uploadId !== undefined && uploadId !== upload.id)) {
     throw new LocalIndexConflict("Upload is no longer current or batch is out of order");

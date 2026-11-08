@@ -78,6 +78,20 @@ try {
   assert.equal((await delegate.findUniqueOrThrow({ where: { id: repo.id } })).indexStatus, "indexing");
   assert.ok(result.ok);
   const files = [{ path: "file.ts", content: "synthetic" }];
+  for (const change of ["owner", "provider", "name", "external-id", "installation", "inactive"]) {
+    for (const uploadId of [result.uploadId, undefined]) {
+      await delegate.update({ where: { id: repo.id }, data: { organizationId: source.id, provider: "github", fullName, externalId, installationId: null, isActive: true, indexAttemptId: null } });
+      await delegate.update({ where: { id: repo.id }, data:
+        change === "owner" ? { organizationId: target.id } :
+        change === "provider" ? { provider: "gitlab" } :
+        change === "name" ? { fullName: `${fullName}-renamed` } :
+        change === "external-id" ? { externalId: "cli:changed" } :
+        change === "installation" ? { installationId: 123 } : { isActive: false },
+      });
+      await assert.rejects(() => claimLocalIndexBatch(repo.id, change === "owner" ? target.id : source.id, 0, 1, files, uploadId), LocalIndexConflict, `${change} before lookup`);
+      assert.equal((await delegate.findUniqueOrThrow({ where: { id: repo.id } })).indexAttemptId, null);
+    }
+  }
   for (const change of ["wrong-tenant", "owner", "provider", "name", "external-id", "installation", "inactive"]) {
     await delegate.update({ where: { id: repo.id }, data: { organizationId: source.id, provider: "github", fullName, externalId, installationId: null, isActive: true, indexAttemptId: null } });
     if (change !== "wrong-tenant") afterLookup = async () => {

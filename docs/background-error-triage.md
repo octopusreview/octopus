@@ -16,7 +16,7 @@ On worker-deadline events, `indexing_last_milestone` may identify the last allow
 
 For review preparation failures, the optional `preparation_operation` tag distinguishes `review_input` fetches from `repository_tree` fetches. GitHub tree failures can also be grouped by their HTTP status code, for example `failure_code:http_451`. These identify the failed boundary or upstream response, not its cause or a confirmed fix; response bodies are not included in the event.
 
-Provider failures use a generic message instead of the provider's error text. The offline local-agent case retains its instruction to run `octp agent serve`. Available safe diagnostics include the provider, key owner, HTTP status, allowlisted error code and validated request ID; raw provider responses and causes are not included.
+Provider failures use a generic message instead of the provider's error text. The offline local-agent case retains its instruction to run `octp agent serve`. Available safe diagnostics include the provider, key owner, HTTP status and allowlisted error code; raw provider responses and causes are not included.
 
 `PROVIDER_REFUSAL` identifies an Anthropic response explicitly marked as a refusal when the expected text or tool use is absent. It does not by itself establish a provider outage or customer recovery.
 

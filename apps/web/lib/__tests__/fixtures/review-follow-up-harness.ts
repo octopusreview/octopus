@@ -15,7 +15,7 @@ const firstCompletion = process.argv.includes("--first-review-completion");
 const refusalFlow = process.argv.includes("--provider-refusal");
 const providerErrorPrivacy = process.argv.includes("--provider-error-privacy");
 const localClassification = process.argv.includes("--local-classification");
-let localFailure: { message: string; provider: "local" | "ollama" | "openai"; status?: number; keyOwner?: "platform" | "organization" | "unknown"; unwrapped?: boolean; throwValue?: boolean } | null = null;
+let localFailure: { message: string; provider: "local" | "ollama" | "openai"; status?: number; code?: string; name?: string; keyOwner?: "platform" | "organization" | "unknown"; unwrapped?: boolean; throwValue?: boolean } | null = null;
 if (refusalFlow) process.env.ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 let refusalCalls = 0;
 let preparationFetchFailure: "review_input" | "repository_tree" | "large_pr" | null = null;
@@ -171,7 +171,7 @@ mock.module("@/lib/ai-router", () => ({ getProviderForModel: async () => {
       try { return await localProvider.create(params, null, "org"); }
       catch (error) { throw new AiProviderFailure(error, "local", params.model, "unknown"); }
     }
-    throw new AiProviderFailure(Object.assign(new Error(localFailure.message), { status: localFailure.status }), localFailure.provider, params.model, localFailure.keyOwner ?? "organization");
+    throw new AiProviderFailure(Object.assign(new Error(localFailure.message), { status: localFailure.status, name: localFailure.name ?? "Error", cause: localFailure.code ? { code: localFailure.code } : undefined }), localFailure.provider, params.model, localFailure.keyOwner ?? "organization");
   }
   if (localClassification) return { model: params.model, provider: "openai", text: report, usage: { inputTokens: 1, outputTokens: 1 } };
   if (providerErrorPrivacy) {
@@ -454,9 +454,20 @@ if (localClassification) {
       const organizationFailure = await route();
       assert.equal(organizationFailure.status, 422);
       assert.match((await organizationFailure.json()).error, /credentials or access/);
+      for (const code of ["ECONNREFUSED", "ENETUNREACH", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT"]) {
+        localFailure = { provider: "ollama", message: "Connection error. synthetic-secret", code, keyOwner: "unknown" };
+        const response = await route();
+        assert.equal(response.status, 422);
+        assert.match((await response.json()).error, /Could not reach the configured local model/);
+      }
       for (const failure of [
         { provider: "openai" as const, message: "synthetic-secret", status: 401, keyOwner: "platform" as const },
         { provider: "openai" as const, message: "fetch failed synthetic-secret", keyOwner: "unknown" as const },
+        { provider: "openai" as const, message: "Connection error. synthetic-secret", code: "ENETUNREACH" },
+        { provider: "ollama" as const, message: "fetch failed synthetic-secret", status: 500 },
+        { provider: "ollama" as const, message: "fetch failed synthetic-secret", code: "UND_ERR_BODY_TIMEOUT" },
+        { provider: "ollama" as const, message: "fetch failed synthetic-secret", code: "ECONNRESET" },
+        { provider: "ollama" as const, message: "fetch failed synthetic-secret", name: "AbortError" },
       ]) {
         localFailure = failure;
         const response = await route();

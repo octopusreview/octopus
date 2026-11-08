@@ -5,8 +5,8 @@ const dimensionAdvice = (actual: unknown, configured: unknown) => {
     : "Embedding dimensions do not match OCTOPUS_EMBED_DIM. Check the embedding model and configured dimension.";
 };
 const keyAdvice = "Set OPENAI_API_KEY to configure OpenAI embeddings.";
-const ollamaAdvice = "Check the configured embedding model and the Ollama server response.";
-const urlAdvice = "Configured Ollama embedding URL was rejected; check URL and deployment network settings.";
+const ollamaAdvice = "Check that the configured embedding model is pulled on the Ollama server.";
+const urlAdvice = "Configured Ollama embedding URL was rejected; check the URL and deployment network policy. For a self-hosted deployment, check the SELF_HOSTED setting.";
 
 export class EmbeddingDimensionError extends Error {
   constructor(readonly actual: number, readonly configured: number) {

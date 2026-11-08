@@ -7,6 +7,7 @@ let vector = [1, 2];
 let malformed = false;
 let ollamaUrl = "https://example.com";
 let fetchCount = 0;
+let httpStatus = 0;
 mock.module("server-only", () => ({}));
 mock.module("@/lib/ai-usage", () => ({ logAiUsage: async () => {} }));
 mock.module("@/lib/ai-client", () => ({ getEmbedModel: async () => "model" }));
@@ -14,7 +15,7 @@ mock.module("@/lib/cost", () => ({ isOrgOverSpendLimit: async () => false }));
 mock.module("@/lib/embed-config", () => ({ getEmbedConfig: () => ({ provider, model: "model", dim: 3, ollamaBaseUrl: ollamaUrl }) }));
 mock.module("openai", () => ({ default: class { embeddings = { create: async () => ({ data: [{ embedding: vector }], usage: { prompt_tokens: 1 } }) }; } }));
 mock.module("cohere-ai", () => ({ CohereClient: class { v2 = { rerank: async () => { throw { message: secret, cause: { response: secret, status: 503 } }; } }; } }));
-globalThis.fetch = async () => { fetchCount++; return Response.json(malformed ? { embeddings: [] } : { embeddings: [vector] }); };
+globalThis.fetch = async () => { fetchCount++; return httpStatus ? new Response(secret, { status: httpStatus, headers: { "x-request-id": secret } }) : Response.json(malformed ? { embeddings: [] } : { embeddings: [vector] }); };
 delete process.env.SELF_HOSTED;
 process.env.COHERE_API_KEY = "synthetic";
 const { createEmbeddings } = await import("../../embeddings");
@@ -38,15 +39,25 @@ provider = "ollama";
 malformed = true;
 await assert.rejects(createEmbeddings(["text"]), (error: unknown) => {
   assert.ok(error instanceof OllamaEmbeddingResponseError);
-  assert.equal(error.message, "Check the configured embedding model and the Ollama server response.");
+  assert.equal(error.message, "Check that the configured embedding model is pulled on the Ollama server.");
   return true;
 });
 malformed = false;
+for (httpStatus of [401, 503]) {
+  await assert.rejects(createEmbeddings(["text"]), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.equal((error as Error & { status: number }).status, httpStatus);
+    assert.equal(JSON.stringify(error).includes(secret), false);
+    assert.equal(error.message.includes(secret), false);
+    return true;
+  });
+}
+httpStatus = 0;
 const beforeRejected = fetchCount;
 for (ollamaUrl of ["http://127.0.0.1:11434", "not-a-url-synthetic-provider-secret"]) {
   await assert.rejects(createEmbeddings(["text"]), (error: unknown) => {
     assert.ok(error instanceof OllamaEmbeddingUrlError);
-    assert.equal(error.message, "Configured Ollama embedding URL was rejected; check URL and deployment network settings.");
+    assert.equal(error.message, "Configured Ollama embedding URL was rejected; check the URL and deployment network policy. For a self-hosted deployment, check the SELF_HOSTED setting.");
     return true;
   });
 }

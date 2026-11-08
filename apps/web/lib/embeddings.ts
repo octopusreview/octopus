@@ -266,10 +266,8 @@ async function embedWithOllama(
       signal,
     });
     if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      throw new Error(
-        `Ollama embeddings HTTP ${res.status} from ${safeBaseUrl}/api/embed: ${detail.slice(0, 200)}`,
-      );
+      throw Object.assign(new Error("Ollama embeddings request failed"),
+        Number.isInteger(res.status) && res.status >= 400 && res.status <= 599 ? { status: res.status } : {});
     }
     const j = (await res.json()) as { embeddings?: number[][]; embedding?: number[] };
     // /api/embed returns `embeddings`; the older /api/embeddings returned `embedding`

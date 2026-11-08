@@ -40,6 +40,12 @@ for (const call of calls) {
   }
   assert.ok(inspect(logs).includes("503"));
   assert.ok(!inspect(logs).includes("req_syntheticsecret123"));
+  for (const status of [401, 503]) {
+    failure = Object.assign(new Error("Ollama embeddings request failed"), { status, request_id: "synthetic-provider-secret" });
+    const response = await call();
+    assert.deepEqual(await response.json(), { error: "Review generation failed" });
+    assert.deepEqual(logs.at(-1)?.[1], { name: "Error", status });
+  }
   failure = new EmbeddingDimensionError(2, 3);
   failure.message = "synthetic-provider-secret";
   const dimensionResponse = await call();
@@ -58,13 +64,13 @@ for (const call of calls) {
   const ollamaResponse = await call();
   assert.equal(ollamaResponse.status, 500);
   assert.deepEqual(await ollamaResponse.json(), { error: process.env.NODE_ENV === "development"
-    ? "Check the configured embedding model and the Ollama server response." : "Review generation failed" });
+    ? "Check that the configured embedding model is pulled on the Ollama server." : "Review generation failed" });
   failure = new OllamaEmbeddingUrlError();
   failure.message = "synthetic-provider-secret";
   const urlResponse = await call();
   assert.equal(urlResponse.status, 500);
   assert.deepEqual(await urlResponse.json(), { error: process.env.NODE_ENV === "development"
-    ? "Configured Ollama embedding URL was rejected; check URL and deployment network settings." : "Review generation failed" });
+    ? "Configured Ollama embedding URL was rejected; check the URL and deployment network policy. For a self-hosted deployment, check the SELF_HOSTED setting." : "Review generation failed" });
   failure = new Error("Configured Ollama embedding URL was rejected; synthetic-provider-secret");
   const spoofedResponse = await call();
   assert.equal(spoofedResponse.status, 500);

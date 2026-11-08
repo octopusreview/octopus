@@ -40,6 +40,15 @@ const newJob = () => prisma.communityReviewJob.create({ data: { repositoryId: re
 const jobState = (id: string) => prisma.communityReviewJob.findUniqueOrThrow({ where: { id } });
 const prState = () => prisma.pullRequest.findUniqueOrThrow({ where: { repositoryId_number: { repositoryId: repo.id, number: 1 } }, include: { reviewIssues: true } });
 try {
+  const cancelled = await newJob();
+  await prisma.communityReviewJob.update({ where: { id: cancelled.id }, data: { status: "cancelled", githubToken: null } });
+  await processCommunityReview(cancelled.id);
+  assert.equal((await jobState(cancelled.id)).status, "cancelled");
+  assert.equal((await jobState(cancelled.id)).githubToken, null);
+  assert.equal(run, 0);
+  assert.equal(treeRequests, 0);
+  assert.equal(indexRequests, 0);
+
   for (const change of [
     { organizationId: target.id, indexStatus: "pending" },
     { provider: "gitlab" },

@@ -18,6 +18,8 @@ For review preparation failures, the optional `preparation_operation` tag distin
 
 Provider failures use a generic message instead of the provider's error text. The offline local-agent case retains its instruction to run `octp agent serve`. Available safe diagnostics include the provider, key owner, HTTP status and allowlisted error code; raw provider responses and causes are not included.
 
+An embedding failure while preparing search context fails the review with a generic message. Best-effort feedback matching and review or diagram storage failures retain the review outcome; their logs contain only safe diagnostic fields, not the underlying error text.
+
 `PROVIDER_REFUSAL` identifies an Anthropic response explicitly marked as a refusal when the expected text or tool use is absent. It does not by itself establish a provider outage or customer recovery.
 
 Expected credit/spend blocks, known BYOK authentication/quota failures, confirmed cancellations and superseded work do not create platform incidents. Review cancellation is distinguished from queue expiry using the execution deadline; deadline failures remain reportable. Existing queue retries report only at exhaustion. Handled review failures are already terminal and report immediately; adding automatic provider retries is tracked separately in #945. This does not claim every swallowed exception elsewhere in the application is covered. Local CLI uploads and community/legacy large-review pipelines are outside this change.

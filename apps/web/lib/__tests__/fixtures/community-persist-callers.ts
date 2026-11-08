@@ -18,7 +18,9 @@ const jobUpdateMany = async ({ where, data }: { where: { organizationId: string;
 };
 mock.module("server-only", () => ({}));
 mock.module("@octopus/db", () => ({ prisma: {
-  communityReviewJob: { findUnique: async () => ({ ...job }), update: async ({ data }: { data: object }) => Object.assign(job, data), updateMany: jobUpdateMany },
+  communityReviewJob: { findUnique: async () => ({ ...job }), findFirst: async ({ where }: { where: { id: string; organizationId: string; repositoryId: string; status: { notIn: string[] } } }) =>
+    where.id === job.id && where.organizationId === job.organizationId && where.repositoryId === job.repositoryId && !where.status.notIn.includes(job.status) ? { id: job.id } : null,
+    update: async ({ data }: { data: object }) => Object.assign(job, data), updateMany: jobUpdateMany },
   organization: { upsert: async () => ({ id: repo.organizationId, communityDailyReviewLimit: 5 }) },
   repository: { findUnique: async () => repo, upsert: async () => repo },
   pullRequest: { count: async () => 0 }, aiUsage: { count: async () => 0 },

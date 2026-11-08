@@ -25,6 +25,7 @@ const bestEffortPrivacy = process.argv.includes("--best-effort-privacy");
 const publicationErrorPrivacy = process.argv.includes("--publication-error-privacy");
 const generationSetupErrorPrivacy = process.argv.includes("--generation-setup-error-privacy");
 let failureSite = "";
+const reviewAttempts: number[] = [];
 let privacyGenerationCalls = 0;
 let feedbackMode = "";
 const feedbackUpdates: unknown[] = [];
@@ -315,7 +316,9 @@ mock.module("@/lib/github", () => ({
   createPullRequestComment: async () => { directComments++; return 123; },
   updatePullRequestComment: async (_installation: number, _owner: string, _repo: string, _id: number, body: string) => { summaries.push(body); },
   createPullRequestReview: async (_installation: number, _owner: string, _repo: string, _number: number, body: string, _event: string, comments: unknown[]) => {
-    if (bestEffortPrivacy && ((failureSite === "inline-review" && comments.length) || failureSite === "review-fallback")) throw privateFailure();
+    reviewAttempts.push(comments.length);
+    if (bestEffortPrivacy && failureSite === "inline-review" && comments.length) throw Object.assign(new Error("synthetic-best-effort-private"), { status: 403, request_id: "req_syntheticprivate123" });
+    if (bestEffortPrivacy && failureSite === "review-fallback") throw privateFailure();
     if (nativeFailure) throw new Error("fixture native review rejected");
     published.push({ body, comments });
     return 456;
@@ -662,8 +665,13 @@ if (bestEffortPrivacy) {
       privacyGenerationCalls = 0;
       responseOverride = report.replace("| 🟠 High | 1 |", site === "followup" ? "| 🟠 High | 2 |" : "| 🟠 High | 1 |") + "\n```mermaid\nflowchart TD\nA-->B\n```";
       repo.provider = ["branch-head", "tree-cache", "running-status", "project-inline", "final-status"].includes(site) ? "gitlab" : "github";
-      errors.length = 0; events.length = 0; summaries.length = 0; checkOutputs.length = 0; feedbackUpdates.length = 0;
+      errors.length = 0; events.length = 0; summaries.length = 0; checkOutputs.length = 0; feedbackUpdates.length = 0; reviewAttempts.length = 0;
       await processReview("pr");
+      if (site === "inline-review") {
+        assert.deepEqual(reviewAttempts, [1, 0], "hosted 403 falls back once to a summary-only review");
+        assert.equal(published.at(-1)?.comments.length, 0);
+        assert.ok(inspect(errors).includes("403"));
+      }
       if (expected) assert.ok(inspect(errors).includes(expected), `reaches ${site} via ${mode}`);
       else assert.equal(errors.length, 0);
       if (mode) assert.ok(feedbackUpdates.length, "feedback is recorded before best-effort embedding");
@@ -675,7 +683,7 @@ if (bestEffortPrivacy) {
       if (site !== "pubby") assert.ok(events.some(event => event.status === "completed"));
       assert.ok(checkOutputs.length || (site === "check-run" && published.length), "completed review is published");
       assert.doesNotMatch(inspect({ errors, events, summaries, checkOutputs, reviewUpdates, archived, sentryEvents }, { depth: 20 }), /synthetic-best-effort-private|req_syntheticprivate123/);
-      if (expected) assert.ok(inspect(errors).includes("503"));
+      if (expected && site !== "inline-review") assert.ok(inspect(errors).includes("503"));
     }
     for (const mode of ["classifier-reply", "classifier-bulk"]) {
       feedbackMode = mode; failureSite = "classifier"; repo.provider = "github";

@@ -1,3 +1,4 @@
+import "server-only";
 import { prisma, type Prisma } from "@octopus/db";
 import type { InlineFinding } from "@/lib/review-dedup";
 import { findingSignature, mergeFindingsBySignature, inheritReviewIssueTriage } from "@/lib/finding-merge";
@@ -12,6 +13,8 @@ const SEVERITY_MAP: Record<string, string> = {
 
 export type CommunityPRPersistInput = {
   repositoryId: string;
+  organizationId: string;
+  externalId: string;
   fullName: string;
   prNumber: number;
   prTitle?: string | null;
@@ -20,6 +23,8 @@ export type CommunityPRPersistInput = {
   summary: string;
   findings: InlineFinding[];
 };
+
+export class CommunityRepositoryChangedError extends Error {}
 
 /**
  * Persist a completed community review as a PullRequest + ReviewIssue rows
@@ -31,6 +36,8 @@ export type CommunityPRPersistInput = {
 export async function persistCommunityReviewToPR(input: CommunityPRPersistInput): Promise<void> {
   const {
     repositoryId,
+    organizationId,
+    externalId,
     fullName,
     prNumber,
     prTitle,
@@ -42,51 +49,66 @@ export async function persistCommunityReviewToPR(input: CommunityPRPersistInput)
 
   const url = `https://github.com/${fullName}/pull/${prNumber}`;
 
-  const pr = await prisma.pullRequest.upsert({
-    where: { repositoryId_number: { repositoryId, number: prNumber } },
-    create: {
-      repositoryId,
-      number: prNumber,
-      title: prTitle ?? `PR #${prNumber}`,
-      url,
-      author: prAuthor ?? "unknown",
-      status: "completed",
-      headSha: headSha ?? null,
-      reviewBody: summary,
-    },
-    update: {
-      title: prTitle ?? undefined,
-      author: prAuthor ?? undefined,
-      headSha: headSha ?? undefined,
-      status: "completed",
-      reviewBody: summary,
-      errorMessage: null,
-    },
-  });
+  let ownershipEstablished = false;
+  try {
+    await prisma.$transaction(async tx => {
+      const [repo] = await tx.$queryRaw<Array<{ organizationId: string; provider: string; fullName: string; externalId: string }>>`
+        SELECT "organizationId", provider, "fullName", "externalId" FROM repositories WHERE id = ${repositoryId} FOR UPDATE
+      `;
+      if (!repo || repo.organizationId !== organizationId || repo.provider !== "github" || repo.externalId !== externalId || repo.fullName.toLowerCase() !== fullName.toLowerCase()) {
+        throw new CommunityRepositoryChangedError("Repository ownership changed during community review");
+      }
+      ownershipEstablished = true;
+      const pr = await tx.pullRequest.upsert({
+        where: { repositoryId_number: { repositoryId, number: prNumber } },
+        create: {
+          repositoryId,
+          number: prNumber,
+          title: prTitle ?? `PR #${prNumber}`,
+          url,
+          author: prAuthor ?? "unknown",
+          status: "completed",
+          headSha: headSha ?? null,
+          reviewBody: summary,
+        },
+        update: {
+          title: prTitle ?? undefined,
+          author: prAuthor ?? undefined,
+          headSha: headSha ?? undefined,
+          status: "completed",
+          reviewBody: summary,
+          errorMessage: null,
+        },
+      });
 
-  // Signature-matched findings inherit prior triage state; delete+create run
-  // atomically so a mid-way failure can never wipe triage without replacement.
-  const priorIssues = await prisma.reviewIssue.findMany({ where: { pullRequestId: pr.id } });
-  const current: Prisma.ReviewIssueCreateManyInput[] = findings.map((f) => {
-    const title = f.title.replace(/^(CRITICAL|HIGH|MEDIUM|LOW|INFO)\s*—\s*/i, "").trim();
-    return {
-      pullRequestId: pr.id,
-      title,
-      description: f.description || f.category,
-      severity: SEVERITY_MAP[f.severity] ?? "medium",
-      filePath: f.filePath || null,
-      lineNumber: f.startLine || null,
-      confidence: f.confidence ? String(f.confidence) : null,
-      signature: findingSignature({ filePath: f.filePath || "", category: f.category, title }),
-    };
-  });
-  const { merged } = mergeFindingsBySignature<Prisma.ReviewIssueCreateManyInput>({
-    prior: priorIssues,
-    current,
-    inherit: inheritReviewIssueTriage,
-  });
-  await prisma.$transaction([
-    prisma.reviewIssue.deleteMany({ where: { pullRequestId: pr.id } }),
-    ...(merged.length > 0 ? [prisma.reviewIssue.createMany({ data: merged })] : []),
-  ]);
+      // Signature-matched findings inherit prior triage state; delete+create run
+      // atomically so a mid-way failure can never wipe triage without replacement.
+      const priorIssues = await tx.reviewIssue.findMany({ where: { pullRequestId: pr.id } });
+      const current: Prisma.ReviewIssueCreateManyInput[] = findings.map((f) => {
+        const title = f.title.replace(/^(CRITICAL|HIGH|MEDIUM|LOW|INFO)\s*—\s*/i, "").trim();
+        return {
+          pullRequestId: pr.id,
+          title,
+          description: f.description || f.category,
+          severity: SEVERITY_MAP[f.severity] ?? "medium",
+          filePath: f.filePath || null,
+          lineNumber: f.startLine || null,
+          confidence: f.confidence ? String(f.confidence) : null,
+          signature: findingSignature({ filePath: f.filePath || "", category: f.category, title }),
+        };
+      });
+      const { merged } = mergeFindingsBySignature<Prisma.ReviewIssueCreateManyInput>({
+        prior: priorIssues,
+        current,
+        inherit: inheritReviewIssueTriage,
+      });
+      await tx.reviewIssue.deleteMany({ where: { pullRequestId: pr.id } });
+      if (merged.length > 0) await tx.reviewIssue.createMany({ data: merged });
+    });
+  } catch (error) {
+    if (!ownershipEstablished && !(error instanceof CommunityRepositoryChangedError)) {
+      throw new CommunityRepositoryChangedError("Could not establish repository ownership");
+    }
+    throw error;
+  }
 }

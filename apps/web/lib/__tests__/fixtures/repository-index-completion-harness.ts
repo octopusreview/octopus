@@ -216,7 +216,7 @@ try {
     mock.module("@/lib/github", () => ({ getRepositoryTree: async () => [], getPullRequestDiff: async () => "" }));
     mock.module("@/lib/events/bus", () => ({ eventBus: { emit: () => {} } }));
     mock.module("@/lib/queue", () => ({ enqueue: async () => "fixture" }));
-    mock.module("@/lib/community-pr-persist", () => ({ persistCommunityReviewToPR: async () => {} }));
+    mock.module("@/lib/community-pr-persist", () => ({ CommunityRepositoryChangedError: class extends Error {}, persistCommunityReviewToPR: async () => {} }));
     mock.module("@/lib/crypto", () => ({ encryptString: (text: string) => text, decryptString: (text: string) => text }));
     mock.module("@/lib/oss-bot", () => ({ getBotToken: () => "fixture-token" }));
     mock.module("@/lib/oss-review-post", () => ({ postOssReview: async () => ({ posted: 0, skipped: 0 }) }));

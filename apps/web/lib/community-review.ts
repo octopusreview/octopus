@@ -10,7 +10,8 @@ import { getRepositoryTree, getPullRequestDiff } from "@/lib/github";
 import { buildGeneratedMatcher, splitDiffByIgnore } from "@/lib/generated-files";
 import { truncateDiff } from "@/lib/diff-truncate";
 import { eventBus } from "@/lib/events/bus";
-import { persistCommunityReviewToPR } from "@/lib/community-pr-persist";
+import { persistCommunityReviewToPR, CommunityRepositoryChangedError } from "@/lib/community-pr-persist";
+import { completeCommunityReviewJob } from "@/lib/community-review-completion";
 import { decryptString } from "@/lib/crypto";
 import { getBotToken } from "@/lib/oss-bot";
 import { postOssReview } from "@/lib/oss-review-post";
@@ -33,7 +34,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
     return;
   }
 
-  if (job.status === "completed" || job.status === "failed") {
+  if (job.status === "completed" || job.status === "failed" || job.status === "cancelled") {
     LOG(jobId, `already in terminal state (${job.status}), skipping`);
     return;
   }
@@ -223,6 +224,8 @@ export async function processCommunityReview(jobId: string): Promise<void> {
       try {
         await persistCommunityReviewToPR({
           repositoryId: repo.id,
+          organizationId: job.organizationId,
+          externalId: repo.externalId,
           fullName,
           prNumber: job.prNumber,
           prTitle: job.prTitle,
@@ -232,6 +235,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
           findings: reviewResult.findings,
         });
       } catch (persistErr) {
+        if (persistErr instanceof CommunityRepositoryChangedError) throw persistErr;
         ERR(jobId, "persist community PR failed (non-fatal):", persistErr);
       }
     }
@@ -265,28 +269,28 @@ export async function processCommunityReview(jobId: string): Promise<void> {
       }
     }
 
-    await prisma.communityReviewJob.update({
-      where: { id: jobId },
-      data: {
-        status: "completed",
-        findings: JSON.parse(JSON.stringify(reviewResult.findings)),
-        summary: reviewResult.summary,
-        model: reviewResult.model,
-        indexed: needsIndex,
-        firstCommunityReview,
-        usage: reviewResult.usage ? JSON.parse(JSON.stringify(reviewResult.usage)) : undefined,
-        completedAt: new Date(),
-        // Clear short-lived secret once we no longer need it
-        githubToken: null,
-      },
+    await completeCommunityReviewJob(jobId, {
+      repositoryId: repo.id, organizationId: job.organizationId, externalId: repo.externalId, fullName,
+    }, {
+      status: "completed",
+      findings: JSON.parse(JSON.stringify(reviewResult.findings)),
+      summary: reviewResult.summary,
+      model: reviewResult.model,
+      indexed: needsIndex,
+      firstCommunityReview,
+      usage: reviewResult.usage ? JSON.parse(JSON.stringify(reviewResult.usage)) : undefined,
+      completedAt: new Date(),
+      // Clear short-lived secret once we no longer need it
+      githubToken: null,
     });
 
     LOG(jobId, `completed: ${reviewResult.findings.length} findings`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     ERR(jobId, "fatal:", err);
-    await prisma.communityReviewJob.update({
-      where: { id: jobId },
+    await prisma.communityReviewJob.updateMany({
+      where: { id: jobId, organizationId: job.organizationId, repositoryId: job.repositoryId,
+        status: { notIn: ["completed", "failed", "cancelled"] } },
       data: {
         status: "failed",
         errorMessage: message.slice(0, 1000),

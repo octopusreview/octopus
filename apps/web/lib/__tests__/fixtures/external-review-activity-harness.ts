@@ -168,7 +168,7 @@ try {
     let queued = 0;
     mock.module("@/lib/queue", () => ({ enqueue: async () => { queued++; } }));
     mock.module("@/lib/crypto", () => ({ encryptString: () => "fixture" }));
-    mock.module("@/lib/community-pr-persist", () => ({ persistCommunityReviewToPR: async () => {} }));
+    mock.module("@/lib/community-pr-persist", () => ({ CommunityRepositoryChangedError: class extends Error {}, persistCommunityReviewToPR: async () => {} }));
     mock.module("@/lib/repository-index-completion", () => ({ runRepositoryIndex: async () => {} }));
     mock.module("@/lib/oss-bot", () => ({ isBotAccountConfigured: () => true, getBotToken: () => "fixture", hasConsentFile: async () => true }));
     // All network calls in route fixtures are intercepted; nothing leaves the process.

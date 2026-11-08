@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { inspect } from "node:util";
 
 const marker = "synthetic-provider-secret";
+const requestId = "req_secretvalue123";
 let mode = "embedding";
 let providerCalls = 0;
 const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => {
@@ -14,7 +15,7 @@ mock.module("server-only", () => ({}));
 mock.module("@octopus/db", () => ({ prisma: {
   askOctopusSession: { create: async () => ({ id: "synthetic-session" }) },
   askOctopusMessage: { create: async ({ data }: { data: { role: string } }) => {
-    if (data.role === "assistant" && mode === "save") throw new Error(marker);
+    if (data.role === "assistant" && mode === "save") throw Object.assign(new Error(marker), { request_id: requestId });
     return {};
   } },
 } }));
@@ -25,7 +26,7 @@ mock.module("@/lib/cost", () => ({ isOrgOverSpendLimit: async () => false }));
 mock.module("@/lib/qdrant", () => ({ ensureDocsCollection: async () => {}, searchDocsChunks: async () => [] }));
 mock.module("@anthropic-ai/sdk", () => ({ default: class {
   messages = { stream: async () => ({ async *[Symbol.asyncIterator]() {
-    if (mode === "stream") throw new Error(marker);
+    if (mode === "stream") throw new Error(marker, { cause: Object.assign(new Error("stream failed"), { requestID: requestId }) });
     yield { type: "content_block_delta", delta: { type: "text_delta", text: "synthetic answer" } };
   } }) };
 } }));
@@ -49,6 +50,7 @@ try {
     assert.equal(response.status, scenario === "embedding" ? 500 : 200);
     assert.ok(!text.includes(marker));
     assert.ok(!inspect(logs, { depth: 10 }).includes(marker));
+    assert.ok(!inspect(logs, { depth: 10 }).includes(requestId));
     if (scenario !== "success") assert.ok(logs.length > previousLogCount);
     if (scenario === "embedding") assert.ok(text.includes("Something went wrong"));
     if (scenario === "stream") assert.ok(text.includes("Stream interrupted"));

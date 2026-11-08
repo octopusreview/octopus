@@ -11,7 +11,7 @@ const ERROR_NAMES = new Set(["Error", "TypeError", "APIError", "APIConnectionErr
 
 /** Only retain diagnostic primitives; never attach an SDK request/response or raw cause. */
 export function safeErrorDetails(error: unknown) {
-  const details: { name: string; code?: string; status?: number; requestId?: string } = { name: "Error" };
+  const details: { name: string; code?: string; status?: number } = { name: "Error" };
   const seen = new Set<unknown>();
   for (let value = error, depth = 0; value && typeof value === "object" && depth < 4 && !seen.has(value); depth++) {
     seen.add(value);
@@ -20,8 +20,6 @@ export function safeErrorDetails(error: unknown) {
       if (typeof item.name === "string" && ERROR_NAMES.has(item.name)) details.name = item.name;
       if (typeof item.code === "string" && SAFE_ERROR_CODES.has(item.code)) details.code ??= item.code;
       if (typeof item.status === "number" && Number.isInteger(item.status) && item.status >= 400 && item.status <= 599) details.status ??= item.status;
-      const requestId = item.request_id ?? item.requestID;
-      if (typeof requestId === "string" && /^(req_[a-zA-Z0-9]{8,80}|[a-f0-9]{8}-[a-f0-9-]{27,36})$/.test(requestId)) details.requestId ??= requestId;
       if (item.message === "terminated") details.code ??= "STREAM_TERMINATED";
       value = item.cause;
     } catch { break; }

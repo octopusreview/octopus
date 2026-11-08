@@ -6,9 +6,11 @@ import { scrubEvent } from "../../sentry-scrub";
 
 mock.module("server-only", () => ({}));
 const events: ErrorEvent[] = [];
+const rawEvents: ErrorEvent[] = [];
 let telemetryThrows = false;
 mock.module("@sentry/nextjs", () => ({ captureEvent: (event: ErrorEvent) => {
   if (telemetryThrows) throw new Error("telemetry unavailable");
+  rawEvents.push(event);
   events.push(scrubEvent({ ...event, request: { headers: { authorization: "secret" } }, user: { email: "private@example.test" },
     extra: { source: "customer source" }, breadcrumbs: [{ message: "secret prompt" }], transaction: "private route" }));
   return "e".repeat(32);
@@ -84,14 +86,23 @@ assert.equal(events[0].tags?.failure_owner, "unknown", "interruption is not a pr
 reportBackgroundFailure(error, context);
 assert.equal(events.length, 1, "outer handler cannot duplicate the same failure");
 const privateMarker = "synthetic-credential-and-prompt";
-failure = Object.assign(new Error(`Provider response: ${privateMarker}`, { cause: new Error(privateMarker) }), { status: 401, request_id: "req_123456789" });
+const requestIdMarker = "req_secretvalue123";
+failure = Object.assign(new Error(`Provider response: ${privateMarker}`, { cause: Object.assign(new Error(privateMarker), { code: "ECONNRESET", requestID: requestIdMarker }) }), { status: 401, request_id: requestIdMarker });
 const logStart = errorLogs.length;
 const sanitized = await caught();
 assert.equal(sanitized.details.status, 401);
-assert.equal(sanitized.details.requestId, "req_123456789");
+assert.deepEqual(sanitized.details, { name: "Error", status: 401, code: "ECONNRESET" });
 assert.match(sanitized.message, /HTTP 401/);
+reportBackgroundFailure(sanitized, context);
+reportBackgroundFailure(failure, context);
 for (const output of [sanitized.message, sanitized.stack ?? "", inspect(sanitized), JSON.stringify(sanitized), errorLogs.slice(logStart).join("\n")]) {
   assert.ok(!output.includes(privateMarker), "provider response must not reach errors or logs");
+  assert.ok(!output.includes(requestIdMarker), "provider request ID must not reach errors or logs");
+}
+for (const event of rawEvents.slice(-2)) {
+  assert.ok(!JSON.stringify(event).includes(requestIdMarker));
+  assert.equal(event.contexts?.background_failure?.status, 401);
+  assert.equal(event.contexts?.background_failure?.code, "ECONNRESET");
 }
 for (const status of [401, 402, 403, 429, 503]) {
   for (byok of [false, true]) {

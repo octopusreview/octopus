@@ -26,12 +26,19 @@ export function safeErrorDetails(error: unknown) {
 
 export class AiProviderFailure extends Error {
   readonly details: ReturnType<typeof safeErrorDetails>;
+  readonly reviewCategory?: "auth" | "local";
   constructor(error: unknown, readonly provider: AiProvider, readonly model: string, readonly keyOwner: KeyOwner) {
     const details = safeErrorDetails(error);
+    let message = "";
+    try { message = (error instanceof Error ? error.message : String(error)).toLowerCase(); } catch {}
+    const reviewCategory = /invalid_api_key|api key|unauthorized|401|403|authentication|placeholder/.test(message) || details.status === 401 || details.status === 403
+      ? "auth" : provider === "ollama" || /econnrefused|fetch failed|ollama/.test(message) || (provider === "local" && message.startsWith("no local agent is online for this organisation."))
+        ? "local" : undefined;
     const hint = provider === "claude-code" && details.code === "ENOENT" ? ": executable or file not found; check the provider installation" : "";
     super(`AI provider ${provider} request failed${details.status ? ` (HTTP ${details.status})` : ""}${hint}`);
     this.name = "AiProviderFailure";
     this.details = details;
+    this.reviewCategory = reviewCategory;
   }
 }
 

@@ -14,6 +14,8 @@ const preserveAutoReview = process.argv.includes("--preserve-auto-review");
 const firstCompletion = process.argv.includes("--first-review-completion");
 const refusalFlow = process.argv.includes("--provider-refusal");
 const providerErrorPrivacy = process.argv.includes("--provider-error-privacy");
+const localClassification = process.argv.includes("--local-classification");
+let localFailure: { message: string; provider: "local" | "ollama" | "openai"; status?: number } | null = null;
 if (refusalFlow) process.env.ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 let refusalCalls = 0;
 let preparationFetchFailure: "review_input" | "repository_tree" | "large_pr" | null = null;
@@ -126,6 +128,8 @@ const db = {
     update: async ({ data }: { data: Record<string, unknown> }) => { Object.assign(repo, data); return repo; },
   },
   systemConfig: { findUnique: async () => null },
+  organization: { findUnique: async () => org },
+  localAgent: { count: async () => 0 },
   reviewIssue: { findMany: async () => [] },
   pullRequest: { findUnique: async () => pr, updateMany: async (query: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
     reviewUpdates.push(query);
@@ -157,6 +161,16 @@ mock.module("@/lib/ai-usage", () => ({ logAiUsage: async () => { usageCount++; i
 mock.module("@/lib/ai-router", () => ({ getProviderForModel: async () => {
   assert.ok(adaptiveStage, "Legacy fixture must not resolve adaptive capacity"); return "anthropic";
 }, createAiMessage: async (params: AiCreateParams) => {
+  if (localClassification && localFailure) {
+    const { AiProviderFailure } = await import("@/lib/provider-failure");
+    if (localFailure.provider === "local") {
+      const { localProvider } = await import("@/lib/providers/local");
+      try { return await localProvider.create(params, null, "org"); }
+      catch (error) { throw new AiProviderFailure(error, "local", params.model, "unknown"); }
+    }
+    throw new AiProviderFailure(Object.assign(new Error(localFailure.message), { status: localFailure.status }), localFailure.provider, params.model, "organization");
+  }
+  if (localClassification) return { model: params.model, provider: "openai", text: report, usage: { inputTokens: 1, outputTokens: 1 } };
   if (providerErrorPrivacy) {
     const { AiProviderFailure } = await import("@/lib/provider-failure");
     throw new AiProviderFailure(Object.assign(new Error("synthetic-credential-and-prompt"), { status: 401 }), "openai", params.model, "organization");
@@ -377,6 +391,27 @@ ${JSON.stringify([finding])}
 <!-- OCTOPUS_FINDINGS_END -->`;
 const { prepareReviewInput } = await import("@/lib/review-coverage");
 const { canRestrictReviewToFollowUp } = await import("@/lib/review-follow-up");
+if (localClassification) {
+  const { generateLocalReview, generateBareLocalReview, ReviewConfigError } = await import("@/lib/review-core");
+  const paths = [() => generateLocalReview({ diff, repoId: "repo", orgId: "org" }), () => generateBareLocalReview({ diff, orgId: "org" })];
+  for (const run of paths) {
+    for (const failure of [
+      { provider: "local" as const, message: "" },
+      { provider: "openai" as const, message: "invalid_api_key synthetic-secret" },
+      { provider: "openai" as const, message: "fetch failed synthetic-secret" },
+      { provider: "ollama" as const, message: "synthetic-secret" },
+      { provider: "openai" as const, message: "synthetic-secret", status: 401 },
+    ]) {
+      localFailure = failure;
+      await assert.rejects(run, (error: Error) => error instanceof ReviewConfigError && !error.message.includes("synthetic-secret"));
+    }
+    localFailure = { provider: "openai", message: "synthetic-secret" };
+    await assert.rejects(run, (error: Error) => !(error instanceof ReviewConfigError) && !error.message.includes("synthetic-secret"));
+    localFailure = null;
+    assert.equal((await run()).usage.inputTokens, 1);
+  }
+  process.exit(0);
+}
 const { processReview } = await import("@/lib/reviewer");
 if (providerErrorPrivacy) {
   const logs: string[] = [];

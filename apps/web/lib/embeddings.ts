@@ -266,6 +266,7 @@ async function embedWithOllama(
       signal,
     });
     if (!res.ok) {
+      void res.body?.cancel().catch(() => {});
       throw Object.assign(new Error("Ollama embeddings request failed"),
         Number.isInteger(res.status) && res.status >= 400 && res.status <= 599 ? { status: res.status } : {});
     }

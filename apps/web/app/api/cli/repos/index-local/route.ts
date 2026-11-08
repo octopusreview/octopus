@@ -40,6 +40,7 @@ import {
  *   - 400 malformed input or invalid field values
  *   - 409 platform-managed repo, in-flight upload, stale/out-of-order batch,
  *     duplicate path or declared file-count mismatch
+ *   - 412 repository identity changed before the upload could start
  *   - 500 on indexing failure — marks only the still-owned attempt failed.
  *
  * Audit log: one row per first-batch (cli.index_local_start) and one per
@@ -136,7 +137,7 @@ export async function POST(request: Request) {
           : `Another local index for this repo is in-flight. Wait for it to complete or fail (status flips after ${Math.round(IN_FLIGHT_WINDOW_MS / 60_000)}min of no activity), then retry.`;
       return NextResponse.json(
         { error: message, ...("repoId" in prep ? { repoId: prep.repoId } : {}), reason: prep.reason },
-        { status: 409 },
+        { status: prep.reason === "repository-changed" ? 412 : 409 },
       );
     }
     repoId = prep.repoId;

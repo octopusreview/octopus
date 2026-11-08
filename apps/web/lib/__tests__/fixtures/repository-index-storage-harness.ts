@@ -180,7 +180,7 @@ export async function exerciseStorageRace(scenario: string, repo: Repository) {
     assert.equal(baselineGeneration, repo.indexAttemptId);
     const prepare = (count = 101, batches = 1) => prepareRepoForLocalIndex(repo.organizationId, "github", repo.fullName, "main", { totalBatches: batches, totalFiles: count });
     const localBatch = async (uploadId: string | undefined, batchIndex = 0, totalBatches = 1, batch = files()) => {
-      const owned = await claimLocalIndexBatch(repo.id, batchIndex, totalBatches, batch, uploadId);
+      const owned = await claimLocalIndexBatch(repo.id, repo.organizationId, batchIndex, totalBatches, batch, uploadId);
       try {
         const delta = await indexLocalBatch(repo.id, repo.fullName, repo.organizationId, batch, owned);
         await recordLocalIndexProgress(repo.id, null, {

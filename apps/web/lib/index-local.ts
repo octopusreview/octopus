@@ -166,6 +166,7 @@ export async function prepareRepoForLocalIndex(
   | { ok: true; repoId: string; reIndex: boolean; uploadId: string }
   | { ok: false; reason: "managed-by-platform"; repoId: string }
   | { ok: false; reason: "in-flight"; repoId: string }
+  | { ok: false; reason: "repository-changed" }
 > {
   const uploadState = {
     id: crypto.randomUUID(), nextBatch: 0, totalBatches: upload.totalBatches,
@@ -188,6 +189,12 @@ export async function prepareRepoForLocalIndex(
     const claim = await prisma.repository.updateMany({
       where: {
         id: existing.id,
+        organizationId,
+        provider,
+        fullName,
+        isActive: true,
+        installationId: null,
+        externalId: existing.externalId,
         OR: [
           { indexStatus: { not: "indexing" } },
           { updatedAt: { lt: inFlightCutoff } },
@@ -205,6 +212,11 @@ export async function prepareRepoForLocalIndex(
       },
     });
     if (claim.count === 0) {
+      const current = await prisma.repository.findFirst({
+        where: { id: existing.id, organizationId, provider, fullName, isActive: true, installationId: null, externalId: existing.externalId },
+        select: { id: true },
+      });
+      if (!current) return { ok: false, reason: "repository-changed" };
       return { ok: false, reason: "in-flight", repoId: existing.id };
     }
     return { ok: true, repoId: existing.id, reIndex: true, uploadId: uploadState.id };
@@ -249,14 +261,16 @@ export class LocalIndexConflict extends Error {}
 /** Claim one ordered batch before performing embeddings or vector writes. */
 export async function claimLocalIndexBatch(
   repoId: string,
+  organizationId: string,
   batchIndex: number,
   totalBatches: number,
   files: LocalFile[],
   uploadId?: string,
 ): Promise<{ attemptId: string; upload: UploadState }> {
-  const repo = await prisma.repository.findUniqueOrThrow({ where: { id: repoId } });
-  const upload = repo.localIndexUpload as UploadState | null;
-  if (!upload || repo.indexStatus !== "indexing" || repo.indexAttemptId ||
+  const repo = await prisma.repository.findFirst({ where: { id: repoId, organizationId, isActive: true } });
+  const upload = repo?.localIndexUpload as UploadState | null | undefined;
+  if (!repo || repo.installationId != null || !repo.externalId.startsWith("cli:") ||
+      !upload || repo.indexStatus !== "indexing" || repo.indexAttemptId ||
       upload.nextBatch !== batchIndex || upload.totalBatches !== totalBatches ||
       (uploadId !== undefined && uploadId !== upload.id)) {
     throw new LocalIndexConflict("Upload is no longer current or batch is out of order");
@@ -268,7 +282,8 @@ export async function claimLocalIndexBatch(
   }
   const attemptId = crypto.randomUUID();
   const claimed = await prisma.repository.updateMany({
-    where: { id: repoId, updatedAt: repo.updatedAt, indexStatus: "indexing", indexAttemptId: null,
+    where: { id: repoId, organizationId, isActive: true, provider: repo.provider, fullName: repo.fullName,
+      externalId: repo.externalId, installationId: null, updatedAt: repo.updatedAt, indexStatus: "indexing", indexAttemptId: null,
       localIndexUpload: { path: ["id"], equals: upload.id } },
     data: { indexAttemptId: attemptId },
   });

@@ -131,9 +131,11 @@ export async function POST(request: Request) {
       const message =
         prep.reason === "managed-by-platform"
           ? "This repo is connected via the platform installation. Use the dashboard to re-index it."
+          : prep.reason === "repository-changed"
+            ? "This repository changed while starting the upload. Refresh its connection and try again."
           : `Another local index for this repo is in-flight. Wait for it to complete or fail (status flips after ${Math.round(IN_FLIGHT_WINDOW_MS / 60_000)}min of no activity), then retry.`;
       return NextResponse.json(
-        { error: message, repoId: prep.repoId, reason: prep.reason },
+        { error: message, ...("repoId" in prep ? { repoId: prep.repoId } : {}), reason: prep.reason },
         { status: 409 },
       );
     }
@@ -181,7 +183,7 @@ export async function POST(request: Request) {
 
   let claim: Awaited<ReturnType<typeof claimLocalIndexBatch>>;
   try {
-    claim = await claimLocalIndexBatch(repoId, body.batchIndex, body.totalBatches, body.files,
+    claim = await claimLocalIndexBatch(repoId, auth.org.id, body.batchIndex, body.totalBatches, body.files,
       isFirstBatch ? firstUploadId : (body as SubsequentBatchBody).uploadId);
   } catch (error) {
     if (error instanceof LocalIndexConflict) {

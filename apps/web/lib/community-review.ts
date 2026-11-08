@@ -11,7 +11,7 @@ import { buildGeneratedMatcher, splitDiffByIgnore } from "@/lib/generated-files"
 import { truncateDiff } from "@/lib/diff-truncate";
 import { eventBus } from "@/lib/events/bus";
 import { persistCommunityReviewToPR, CommunityRepositoryChangedError } from "@/lib/community-pr-persist";
-import { completeCommunityReviewJob } from "@/lib/community-review-completion";
+import { clearTerminalCommunityJobToken, completeCommunityReviewJob } from "@/lib/community-review-completion";
 import { decryptString } from "@/lib/crypto";
 import { getBotToken } from "@/lib/oss-bot";
 import { postOssReview } from "@/lib/oss-review-post";
@@ -35,16 +35,20 @@ export async function processCommunityReview(jobId: string): Promise<void> {
   }
 
   if (job.status === "completed" || job.status === "failed" || job.status === "cancelled") {
+    await clearTerminalCommunityJobToken(job);
     LOG(jobId, `already in terminal state (${job.status}), skipping`);
     return;
   }
 
-  if (job.expiresAt < new Date()) {
+  const now = new Date();
+  if (job.expiresAt < now) {
     LOG(jobId, "expired before processing, marking failed");
-    await prisma.communityReviewJob.update({
-      where: { id: jobId },
-      data: { status: "failed", errorMessage: "Job expired before processing", completedAt: new Date() },
+    const updated = await prisma.communityReviewJob.updateMany({
+      where: { id: jobId, organizationId: job.organizationId, repositoryId: job.repositoryId,
+        status: { notIn: ["completed", "failed", "cancelled"] }, expiresAt: { lt: now } },
+      data: { status: "failed", errorMessage: "Job expired before processing", completedAt: now, githubToken: null },
     });
+    if (updated.count === 0) await clearTerminalCommunityJobToken(job);
     return;
   }
 
@@ -291,7 +295,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     ERR(jobId, "fatal:", err);
-    await prisma.communityReviewJob.updateMany({
+    const updated = await prisma.communityReviewJob.updateMany({
       where: { id: jobId, organizationId: job.organizationId, repositoryId: job.repositoryId,
         status: { notIn: ["completed", "failed", "cancelled"] } },
       data: {
@@ -301,6 +305,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
         githubToken: null,
       },
     });
+    if (updated.count === 0) await clearTerminalCommunityJobToken(job);
     throw err;
   }
 }

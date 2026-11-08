@@ -96,8 +96,11 @@ state so a delayed event cannot overwrite a replacement's status.
 
 For local uploads, the server validates ordered batches, unique paths and the
 declared file count. The first response returns `uploadId`; send it unchanged
-with every later batch to bind the upload to the same attempt. A single batch
-also qualifies if it produces a complete, usable index. Older clients remain
+with every later batch to bind the upload to the same attempt. Each batch must
+also match the repository identity recorded when the upload started. If that
+identity changes, restart the upload after refreshing the connection. Uploads
+started before identity binding was introduced must also be restarted. A single
+batch also qualifies if it produces a complete, usable index. Older clients remain
 supported without `uploadId`, but their unverified multi-batch completion never
 establishes a first-index date; any previously recorded date is preserved.
 The CLI implementation is maintained separately.

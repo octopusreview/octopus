@@ -3,7 +3,7 @@ import { withExternalReviewActivity } from "@/lib/external-review-activity";
 import { authenticateApiToken } from "@/lib/api-auth";
 import { prisma } from "@octopus/db";
 import { generateLocalReview, ReviewConfigError } from "@/lib/review-core";
-import { safeErrorDetails } from "@/lib/provider-failure";
+import { AiProviderFailure, safeErrorDetails } from "@/lib/provider-failure";
 import { embeddingConfigAdvice } from "@/lib/embedding-error";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { writeAuditLog } from "@/lib/audit";
@@ -104,7 +104,8 @@ export async function POST(
         usage: reviewResult.usage,
       });
     } catch (err) {
-      console.error("[local-review] Review generation failed:", safeErrorDetails(err));
+      console.error("[local-review] Review generation failed:", safeErrorDetails(err instanceof AiProviderFailure
+        ? { ...err.details, request_id: err.details.requestId } : err));
       if (err instanceof ReviewConfigError) {
         // Safe-to-surface actionable message; 422 lets the CLI handle this
         // case distinctly from generic 500s.

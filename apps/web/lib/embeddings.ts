@@ -5,7 +5,7 @@ import { getEmbedModel } from "@/lib/ai-client";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { getEmbedConfig, type EmbedConfig } from "@/lib/embed-config";
 import { validateProviderUrl } from "@/lib/providers/url-validation";
-import { EmbeddingDimensionError, MissingEmbeddingKeyError } from "@/lib/embedding-error";
+import { EmbeddingDimensionError, MissingEmbeddingKeyError, OllamaEmbeddingResponseError } from "@/lib/embedding-error";
 
 let openai: OpenAI | null = null;
 
@@ -272,10 +272,7 @@ async function embedWithOllama(
     // is on an older Ollama build.
     const got = j.embeddings ?? (j.embedding ? [j.embedding] : null);
     if (!got || got.length !== batch.length) {
-      throw new Error(
-        `Ollama embeddings: expected ${batch.length} vectors, got ${got?.length ?? 0}. ` +
-          `Check that model "${config.model}" is pulled (ollama pull ${config.model}).`,
-      );
+      throw new OllamaEmbeddingResponseError();
     }
     if (got[0].length !== config.dim) {
       throw new EmbeddingDimensionError(got[0].length, config.dim);

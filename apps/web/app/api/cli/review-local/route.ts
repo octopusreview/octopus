@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { authenticateApiToken } from "@/lib/api-auth";
 import { generateBareLocalReview, ReviewConfigError } from "@/lib/review-core";
-import { safeErrorDetails } from "@/lib/provider-failure";
+import { AiProviderFailure, safeErrorDetails } from "@/lib/provider-failure";
 import { embeddingConfigAdvice } from "@/lib/embedding-error";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { writeAuditLog } from "@/lib/audit";
@@ -108,7 +108,8 @@ export async function POST(request: Request) {
         bareMode: true,
       });
     } catch (err) {
-      console.error("[review-local] Review generation failed:", safeErrorDetails(err));
+      console.error("[review-local] Review generation failed:", safeErrorDetails(err instanceof AiProviderFailure
+        ? { ...err.details, request_id: err.details.requestId } : err));
       // Recoverable config error — the message is safe to surface in
       // production because it tells the user how to fix the problem
       // (set an API key / pick a different model) without leaking

@@ -21,7 +21,8 @@ mock.module("next/headers", () => ({ headers: async () => new Headers() }));
 const { NextRequest } = await import("next/server");
 const bare = await import("../../../app/api/cli/review-local/route");
 const contextual = await import("../../../app/api/cli/repos/[id]/local-review/route");
-const { EmbeddingDimensionError, MissingEmbeddingKeyError } = await import("../../embedding-error");
+const { EmbeddingDimensionError, MissingEmbeddingKeyError, OllamaEmbeddingResponseError } = await import("../../embedding-error");
+const { AiProviderFailure } = await import("../../provider-failure");
 const calls = [
   () => bare.POST(new NextRequest("http://localhost/api/cli/review-local", { method: "POST", body: JSON.stringify({ diff: "+test" }) })),
   () => contextual.POST(new NextRequest("http://localhost/api/cli/repos/repo/local-review", { method: "POST", body: JSON.stringify({ diff: "+test" }) }), { params: Promise.resolve({ id: "repo" }) }),
@@ -46,11 +47,24 @@ for (const call of calls) {
   assert.deepEqual(await dimensionResponse.json(), { error: process.env.NODE_ENV === "development"
     ? "Embedding returned 2 dimensions; OCTOPUS_EMBED_DIM is 3. Check the embedding model and configured dimension."
     : "Review generation failed" });
-  failure = new MissingEmbeddingKeyError("synthetic-provider-secret");
+  failure = new MissingEmbeddingKeyError();
+  failure.message = "synthetic-provider-secret";
   const keyResponse = await call();
   assert.equal(keyResponse.status, 500);
   assert.deepEqual(await keyResponse.json(), { error: process.env.NODE_ENV === "development"
     ? "Set OPENAI_API_KEY to configure OpenAI embeddings." : "Review generation failed" });
+  failure = new OllamaEmbeddingResponseError();
+  failure.message = "synthetic-provider-secret";
+  const ollamaResponse = await call();
+  assert.equal(ollamaResponse.status, 500);
+  assert.deepEqual(await ollamaResponse.json(), { error: process.env.NODE_ENV === "development"
+    ? "Check the configured embedding model and the Ollama server response." : "Review generation failed" });
+  failure = new AiProviderFailure({ status: 503, request_id: "req_abcdefgh", message: "synthetic-provider-secret" }, "openai", "model", "unknown");
+  await call();
+  assert.deepEqual(logs.at(-1)?.[1], { name: "Error", status: 503, requestId: "req_abcdefgh" });
+  Object.assign(failure.details, { status: 999, requestId: "synthetic-provider-secret", code: "synthetic-provider-secret" });
+  await call();
+  assert.deepEqual(logs.at(-1)?.[1], { name: "Error" });
   failure = new EmbeddingDimensionError(Number.MAX_SAFE_INTEGER, 3);
   const invalidResponse = await call();
   assert.deepEqual(await invalidResponse.json(), { error: process.env.NODE_ENV === "development"

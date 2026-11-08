@@ -1,4 +1,5 @@
 import { expect, it, mock } from "bun:test";
+import { join } from "node:path";
 
 mock.module("server-only", () => ({}));
 mock.module("@octopus/db", () => ({ prisma: {} }));
@@ -31,4 +32,12 @@ it("preserves Ollama connect timeouts through the SDK without classifying later 
   } finally {
     globalThis.fetch = originalFetch;
   }
+}, 15000);
+
+it("recognizes a refused Ollama connection under Bun", async () => {
+  const child = Bun.spawn([process.execPath, join(import.meta.dir, "fixtures/ollama-bun-refused.ts")], {
+    stdout: "pipe", stderr: "pipe",
+  });
+  const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+  expect({ code, stderr }).toEqual({ code: 0, stderr: "" });
 }, 15000);

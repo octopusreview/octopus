@@ -105,7 +105,7 @@ export async function POST(
       });
     } catch (err) {
       console.error("[local-review] Review generation failed:", safeErrorDetails(err instanceof AiProviderFailure
-        ? { ...err.details, request_id: err.details.requestId } : err));
+        ? err.details : err));
       if (err instanceof ReviewConfigError) {
         // Safe-to-surface actionable message; 422 lets the CLI handle this
         // case distinctly from generic 500s.

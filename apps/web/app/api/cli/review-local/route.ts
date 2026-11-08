@@ -109,7 +109,7 @@ export async function POST(request: Request) {
       });
     } catch (err) {
       console.error("[review-local] Review generation failed:", safeErrorDetails(err instanceof AiProviderFailure
-        ? { ...err.details, request_id: err.details.requestId } : err));
+        ? err.details : err));
       // Recoverable config error — the message is safe to surface in
       // production because it tells the user how to fix the problem
       // (set an API key / pick a different model) without leaking

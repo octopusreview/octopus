@@ -31,7 +31,7 @@ const logs: unknown[][] = [];
 console.error = (...args: unknown[]) => { logs.push(args); };
 
 for (const call of calls) {
-  for (const value of [Object.assign(new Error("synthetic-provider-secret"), { status: 503, request_id: "req_abcdefgh" }), { message: "synthetic-provider-secret", cause: { token: "synthetic-provider-secret" } }, new Error("Set OPENAI_API_KEY synthetic-provider-secret")]) {
+  for (const value of [Object.assign(new Error("synthetic-provider-secret"), { status: 503, request_id: "req_syntheticsecret123" }), { message: "synthetic-provider-secret", cause: { token: "synthetic-provider-secret" } }, new Error("Set OPENAI_API_KEY synthetic-provider-secret")]) {
     failure = value;
     const response = await call();
     assert.equal(response.status, 500);
@@ -39,7 +39,7 @@ for (const call of calls) {
     assert.ok(!inspect(logs, { depth: 10 }).includes("synthetic-provider-secret"));
   }
   assert.ok(inspect(logs).includes("503"));
-  assert.ok(inspect(logs).includes("req_abcdefgh"));
+  assert.ok(!inspect(logs).includes("req_syntheticsecret123"));
   failure = new EmbeddingDimensionError(2, 3);
   failure.message = "synthetic-provider-secret";
   const dimensionResponse = await call();
@@ -69,9 +69,9 @@ for (const call of calls) {
   const spoofedResponse = await call();
   assert.equal(spoofedResponse.status, 500);
   assert.deepEqual(await spoofedResponse.json(), { error: "Review generation failed" });
-  failure = new AiProviderFailure({ status: 503, request_id: "req_abcdefgh", message: "synthetic-provider-secret" }, "openai", "model", "unknown");
+  failure = new AiProviderFailure({ status: 503, request_id: "req_syntheticsecret123", message: "synthetic-provider-secret" }, "openai", "model", "unknown");
   await call();
-  assert.deepEqual(logs.at(-1)?.[1], { name: "Error", status: 503, requestId: "req_abcdefgh" });
+  assert.deepEqual(logs.at(-1)?.[1], { name: "Error", status: 503 });
   Object.assign(failure.details, { status: 999, requestId: "synthetic-provider-secret", code: "synthetic-provider-secret" });
   await call();
   assert.deepEqual(logs.at(-1)?.[1], { name: "Error" });

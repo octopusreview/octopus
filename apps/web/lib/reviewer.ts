@@ -410,7 +410,7 @@ async function syncReactionsForPR(
         synced++;
       }
     } catch (err) {
-      console.error(`[reviewer] Failed to sync reaction for issue ${issue.id}:`, err);
+      console.error(`[reviewer] Failed to sync reaction for issue ${issue.id}:`, safeErrorDetails(err));
     }
   }
 
@@ -524,7 +524,7 @@ async function syncTextDismissalsForPR(
           dismissedIds.add(issue.id);
           synced++;
         } catch (err) {
-          console.error(`[reviewer] Failed to record text feedback for issue ${issue.id}:`, err);
+          console.error(`[reviewer] Failed to record text feedback for issue ${issue.id}:`, safeErrorDetails(err));
         }
       }
     }
@@ -580,7 +580,7 @@ async function syncTextDismissalsForPR(
               dismissedIds.add(issue.id);
               synced++;
             } catch (err) {
-              console.error(`[reviewer] Failed to record per-finding feedback for issue ${issue.id}:`, err);
+              console.error(`[reviewer] Failed to record per-finding feedback for issue ${issue.id}:`, safeErrorDetails(err));
             }
           }
         }
@@ -620,7 +620,7 @@ async function syncTextDismissalsForPR(
           try {
             await embedFeedbackPattern(issue, "down");
           } catch (err) {
-            console.error(`[reviewer] Failed to embed feedback pattern for issue ${issue.id}:`, err);
+            console.error(`[reviewer] Failed to embed feedback pattern for issue ${issue.id}:`, safeErrorDetails(err));
           }
         }
         console.log(`[reviewer] Dismissed ${count} findings via bulk issue comment dismissal`);
@@ -2536,7 +2536,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       ]);
       console.log(`[reviewer] Review stored in vector DB — prId: ${pr.id}`);
     } catch (err) {
-      console.error("[reviewer] Failed to store review in vector DB:", err);
+      console.error("[reviewer] Failed to store review in vector DB:", safeErrorDetails(err));
     }
 
     // Step 8: Store diagrams in vector DB (all mermaid blocks)
@@ -2582,7 +2582,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         console.log(`[reviewer] ${mermaidBlocks.length} diagram(s) stored in vector DB — prId: ${pr.id}`);
       }
     } catch (err) {
-      console.error("[reviewer] Failed to store diagrams in vector DB:", err);
+      console.error("[reviewer] Failed to store diagrams in vector DB:", safeErrorDetails(err));
     }
 
     await recordFirstReviewCompletion(pr.id, pr.headSha, pr.reviewRequestVersion, effectiveReviewBody);

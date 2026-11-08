@@ -17,6 +17,12 @@ const providerErrorPrivacy = process.argv.includes("--provider-error-privacy");
 const embeddingCancelPrivacy = process.argv.includes("--embedding-cancel-privacy");
 const embeddingErrorPrivacy = process.argv.includes("--embedding-error-privacy") || embeddingCancelPrivacy;
 let embeddingCalls = 0;
+const bestEffortPrivacy = process.argv.includes("--best-effort-privacy");
+let failureSite = "";
+let feedbackMode = "";
+const feedbackUpdates: unknown[] = [];
+const feedbackIssue = { id: "issue", title: "Missing null check", description: "A missing value causes this access to throw.", severity: "high", githubCommentId: 5, createdAt: new Date(0), pullRequest: { repositoryId: "repo", repository: { organizationId: "org" } } };
+const privateFailure = () => Object.assign(new Error("synthetic-best-effort-private"), { status: 503 });
 const localClassification = process.argv.includes("--local-classification");
 let localFailure: { message: string; provider: "local" | "ollama" | "openai"; status?: number } | null = null;
 if (refusalFlow) process.env.ANTHROPIC_BASE_URL = "https://api.anthropic.com";
@@ -133,7 +139,7 @@ const db = {
   systemConfig: { findUnique: async () => null },
   organization: { findUnique: async () => org },
   localAgent: { count: async () => 0 },
-  reviewIssue: { findMany: async () => [] },
+  reviewIssue: { findMany: async () => bestEffortPrivacy && feedbackMode ? [feedbackIssue] : [], updateMany: async (query: unknown) => { feedbackUpdates.push(query); return { count: 1 }; } },
   pullRequest: { findUnique: async () => pr, updateMany: async (query: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
     reviewUpdates.push(query);
     if (firstCompletion) {
@@ -155,13 +161,14 @@ mock.module("@/lib/embeddings", () => ({ createEmbeddings: async (texts: string[
     if (embeddingCancelPrivacy) { adaptiveAbort.abort(new Error("synthetic-embedding-private")); throw adaptiveAbort.signal.reason; }
     throw Object.assign(new Error("synthetic-embedding-private"), { status: 503 });
   }
+  if (bestEffortPrivacy && (((failureSite === "feedback-embedding" || failureSite === "suppression-embedding") && texts[0].startsWith(feedbackIssue.title)) || (failureSite === "review-embedding" && texts[0].includes("### Summary")) || (failureSite === "diagram-embedding" && texts[0].includes("for PR #")))) throw privateFailure();
   return texts.map(() => [1, 0, 0]);
 } }));
 mock.module("@/lib/qdrant", () => ({
   searchSimilarChunks: async () => [], searchKnowledgeChunks: async () => [], searchReviewChunks: async () => [],
-  searchFeedbackPatterns: async () => [], ensureFeedbackCollection: async () => {},
-  ensureReviewCollection: async () => {}, upsertReviewChunks: async () => {}, deleteReviewChunksByPR: async () => {},
-  ensureDiagramCollection: async () => {}, upsertDiagramChunk: async () => {}, deleteDiagramChunksByPR: async () => {},
+  searchFeedbackPatterns: async () => [], ensureFeedbackCollection: async () => { if (failureSite === "feedback-storage") throw privateFailure(); },
+  ensureReviewCollection: async () => { if (failureSite === "review-storage") throw privateFailure(); }, upsertReviewChunks: async () => {}, deleteReviewChunksByPR: async () => {},
+  ensureDiagramCollection: async () => { if (failureSite === "diagram-storage") throw privateFailure(); }, upsertDiagramChunk: async () => {}, deleteDiagramChunksByPR: async () => {},
   upsertFeedbackPattern: async () => {},
 }));
 mock.module("@/lib/reranker", () => ({ rerankDocuments: async () => [] }));
@@ -271,7 +278,7 @@ mock.module("@/lib/review-attempt", () => ({
     if (firstCompletion) Object.assign(pr, { status: "completed", reviewBody: _body });
     if (adaptiveStage === "after-save" && (_coverage as ReviewCoverage).assessment?.state === "completed") adaptiveAbort.abort();
     if ((_coverage as ReviewCoverage).assessment?.state === "completed") completedSnapshot = JSON.stringify(archived.at(-1));
-    return firstCompletion || !!adaptiveStage;
+    return firstCompletion || !!adaptiveStage || bestEffortPrivacy;
   },
 }));
 mock.module("@/lib/github", () => ({
@@ -299,10 +306,10 @@ mock.module("@/lib/github", () => ({
   getRepositoryTree: async () => { if (preparationFetchFailure === "repository_tree") throw new Error("synthetic private tree"); return ["src/check.ts"]; },
   getFileContent: async () => "return value.name;",
   listReviewComments: async () => [],
-  listPullRequestReviewComments: async () => [{ id: 5, user: "fixture[bot]", path: "src/check.ts", line: 1, body: "🟠 Previous unrelated partial-review issue", inReplyToId: null }],
-  listPullRequestIssueComments: async () => [],
+  listPullRequestReviewComments: async () => feedbackMode === "reply" ? [{ id: 6, user: "fixture", body: "👎", inReplyToId: 5 }] : [{ id: 5, user: "fixture[bot]", path: "src/check.ts", line: 1, body: "🟠 Previous unrelated partial-review issue", inReplyToId: null }],
+  listPullRequestIssueComments: async () => feedbackMode === "per-finding" ? [{ user: "fixture", createdAt: new Date().toISOString(), body: "**Missing null check** — 👎" }] : feedbackMode === "bulk" ? [{ user: "fixture", createdAt: new Date().toISOString(), body: "👎" }] : [],
   listPullRequestReviews: async () => [],
-  getCommentReactions: async () => ({ thumbsUp: 0, thumbsDown: 0 }),
+  getCommentReactions: async () => ({ thumbsUp: feedbackMode === "reaction" ? 1 : 0, thumbsDown: 0 }),
 }));
 mock.module("@/lib/forgejo", () => ({
   runWithForgejoRepository: async (_repo: string, run: () => Promise<void>) => run(),
@@ -434,6 +441,40 @@ if (localClassification) {
   process.exit(0);
 }
 const { processReview } = await import("@/lib/reviewer");
+if (bestEffortPrivacy) {
+  const errors: unknown[][] = [];
+  const originalError = console.error;
+  const originalWarn = console.warn;
+  console.error = console.warn = (...args: unknown[]) => { errors.push(args); };
+  try {
+    responseOverride = report + "\n```mermaid\nflowchart TD\nA-->B\n```";
+    for (const [mode, site, expected] of [
+      ["reaction", "feedback-embedding", "Failed to sync reaction"],
+      ["reply", "feedback-storage", "Failed to record text feedback"],
+      ["per-finding", "feedback-embedding", "Failed to record per-finding feedback"],
+      ["bulk", "feedback-storage", "Failed to embed feedback pattern"],
+      ["", "suppression-embedding", "Semantic feedback matching failed"],
+      ["", "review-embedding", "Failed to store review"],
+      ["", "review-storage", "Failed to store review"],
+      ["", "diagram-embedding", "Failed to store diagrams"],
+      ["", "diagram-storage", "Failed to store diagrams"],
+      ["", "", ""],
+    ]) {
+      feedbackMode = mode; failureSite = site;
+      errors.length = 0; events.length = 0; summaries.length = 0; checkOutputs.length = 0; feedbackUpdates.length = 0;
+      await processReview("pr");
+      if (expected) assert.ok(inspect(errors).includes(expected), `reaches ${site} via ${mode}`);
+      else assert.equal(errors.length, 0);
+      if (mode) assert.ok(feedbackUpdates.length, "feedback is recorded before best-effort embedding");
+      assert.equal((archived.at(-1)?.coverage as ReviewCoverage).assessment?.state, "completed");
+      assert.ok(events.some(event => event.status === "completed"));
+      assert.ok(checkOutputs.length, "completed review is published");
+      assert.doesNotMatch(inspect({ errors, events, summaries, checkOutputs, reviewUpdates, archived, sentryEvents }, { depth: 20 }), /synthetic-best-effort-private/);
+      if (expected) assert.ok(inspect(errors).includes("503"));
+    }
+  } finally { console.error = originalError; console.warn = originalWarn; }
+  process.exit(0);
+}
 if (embeddingErrorPrivacy) {
   const errors: unknown[][] = [];
   const originalError = console.error;

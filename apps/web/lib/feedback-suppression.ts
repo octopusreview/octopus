@@ -2,7 +2,6 @@ import "server-only";
 import { safeErrorDetails } from "@/lib/provider-failure";
 import { createEmbeddings } from "@/lib/embeddings";
 import { ensureFeedbackCollection, searchFeedbackPatterns } from "@/lib/qdrant";
-import { safeErrorDetails } from "@/lib/provider-failure";
 
 /** Shared hosted/local policy; the existing strict cosine threshold is unchanged. */
 export async function suppressFindingsFromFeedback<T extends { title: string; description: string }>(

@@ -130,6 +130,40 @@ try {
     }
   }
 
+  for (const transferredStatus of ["pending", "indexed"]) {
+    const racing = await newJob();
+    await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "pending", indexAttemptId: null } });
+    await locker.query("BEGIN");
+    await locker.query('SELECT id FROM repositories WHERE id = $1 FOR UPDATE', [repo.id]);
+    const processing = processCommunityReview(racing.id);
+    try {
+      for (let attempt = 0; ; attempt++) {
+        const [row] = await prisma.$queryRaw<Array<{ count: number }>>`SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%repositories%'`;
+        if (row.count) break;
+        if (attempt === 100) throw new Error("Expected repository claim to wait on a row lock");
+        await Bun.sleep(20);
+      }
+      await locker.query('UPDATE repositories SET "organizationId" = $1, "indexStatus" = $2 WHERE id = $3', [target.id, transferredStatus, repo.id]);
+      await locker.query('UPDATE community_review_jobs SET "organizationId" = $1 WHERE id = $2', [target.id, racing.id]);
+      await locker.query("COMMIT");
+      await assert.rejects(() => processing, CommunityRepositoryChangedError);
+      const repository = await prisma.repository.findUniqueOrThrow({ where: { id: repo.id } });
+      const saved = await jobState(racing.id);
+      assert.equal(repository.organizationId, target.id);
+      assert.equal(repository.indexStatus, transferredStatus);
+      assert.equal(repository.indexAttemptId, null);
+      assert.equal(saved.organizationId, target.id);
+      assert.equal(saved.status, "reviewing");
+      assert.equal(saved.githubToken, "synthetic");
+      assert.equal(indexRequests, 0);
+      assert.equal(treeRequests, 0);
+    } finally {
+      await locker.query("ROLLBACK").catch(() => {});
+      await processing.catch(() => {});
+      await prisma.repository.update({ where: { id: repo.id }, data: { organizationId: source.id } });
+    }
+  }
+
   for (const transition of ["indexing", "summary"]) {
     const racing = await newJob();
     await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "pending" } });

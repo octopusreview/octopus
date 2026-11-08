@@ -107,7 +107,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
       const indexAttemptId = randomUUID();
       // Atomic claim
       const claim = await prisma.repository.updateMany({
-        where: { id: repo.id, indexStatus: { notIn: ["indexed", "indexing"] } },
+        where: { id: repo.id, organizationId: job.organizationId, indexStatus: { notIn: ["indexed", "indexing"] } },
         data: { indexStatus: "indexing", indexAttemptId },
       });
 
@@ -115,8 +115,11 @@ export async function processCommunityReview(jobId: string): Promise<void> {
         // Either already indexed or another worker is indexing
         const fresh = await prisma.repository.findUnique({
           where: { id: repo.id },
-          select: { indexStatus: true },
+          select: { indexStatus: true, organizationId: true },
         });
+        if (!fresh || fresh.organizationId !== job.organizationId) {
+          throw new CommunityRepositoryChangedError("Repository ownership changed during community review");
+        }
         const cur = fresh?.indexStatus ?? "failed";
         LOG(jobId, `claim lost, current indexStatus=${cur}`);
 
@@ -127,7 +130,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
         if (cur !== "indexed") {
           // failed/stale: try to reclaim
           const reclaim = await prisma.repository.updateMany({
-            where: { id: repo.id, indexStatus: { notIn: ["indexed", "indexing"] } },
+            where: { id: repo.id, organizationId: job.organizationId, indexStatus: { notIn: ["indexed", "indexing"] } },
             data: { indexStatus: "indexing", indexAttemptId },
           });
           if (reclaim.count === 0) {

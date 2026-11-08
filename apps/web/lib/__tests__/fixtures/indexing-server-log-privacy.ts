@@ -10,9 +10,10 @@ const org = { id: "org" };
 const repo = { id: "repo", organizationId: org.id, provider: "github", externalId: "fixture-id", fullName: "fixture/repo", defaultBranch: "main", indexStatus: "pending", indexedAt: null };
 const job = { id: "job", repositoryId: repo.id, organizationId: org.id, status: "pending", expiresAt: new Date(Date.now() + 60_000), postMode: "bot_account", repoFullName: repo.fullName, diff: "diff --git a/a b/a\n", prNumber: null };
 const jobUpdate = async ({ data }: { data: Record<string, unknown> }) => { updates.push(data); };
+const jobUpdateMany = async (args: { data: Record<string, unknown> }) => { await jobUpdate(args); return { count: 1 }; };
 mock.module("server-only", () => ({}));
 mock.module("@octopus/db", () => ({ prisma: {
-  communityReviewJob: { findUnique: async () => job, update: jobUpdate },
+  communityReviewJob: { findUnique: async () => job, findFirst: async () => ({ id: job.id }), update: jobUpdate, updateMany: jobUpdateMany },
   $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn({ $queryRaw: async () => [repo], communityReviewJob: { updateMany: async (args: { data: Record<string, unknown> }) => { await jobUpdate(args); return { count: 1 }; } } }),
   repository: { findUnique: async () => repo, updateMany: async () => ({ count: 1 }), upsert: async () => repo, update: async () => {} },
   pullRequest: { count: async () => 0 },

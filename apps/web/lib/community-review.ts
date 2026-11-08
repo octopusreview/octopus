@@ -105,22 +105,28 @@ export async function processCommunityReview(jobId: string): Promise<void> {
 
     if (needsIndex) {
       const indexAttemptId = randomUUID();
-      // Atomic claim
-      const claim = await prisma.repository.updateMany({
-        where: { id: repo.id, organizationId: job.organizationId, indexStatus: { notIn: ["indexed", "indexing"] } },
-        data: { indexStatus: "indexing", indexAttemptId },
-      });
-
-      if (claim.count === 0) {
-        // Either already indexed or another worker is indexing
-        const fresh = await prisma.repository.findUnique({
-          where: { id: repo.id },
-          select: { indexStatus: true, organizationId: true },
+      let previous = { indexStatus: repo.indexStatus, indexAttemptId: repo.indexAttemptId };
+      const claimIndex = async (snapshot: typeof previous) => {
+        if (["indexed", "indexing"].includes(snapshot.indexStatus)) return false;
+        const claim = await prisma.repository.updateMany({
+          where: { id: repo.id, organizationId: job.organizationId, provider: "github", externalId: repo.externalId,
+            fullName: { equals: fullName, mode: "insensitive" }, indexStatus: snapshot.indexStatus, indexAttemptId: snapshot.indexAttemptId },
+          data: { indexStatus: "indexing", indexAttemptId },
         });
-        if (!fresh || fresh.organizationId !== job.organizationId) {
+        return claim.count === 1;
+      };
+
+      if (!await claimIndex(previous)) {
+        // Either already indexed or another worker is indexing
+        const fresh = await prisma.repository.findFirst({
+          where: { id: repo.id, organizationId: job.organizationId, provider: "github", externalId: repo.externalId,
+            fullName: { equals: fullName, mode: "insensitive" } },
+          select: { indexStatus: true, indexAttemptId: true },
+        });
+        if (!fresh) {
           throw new CommunityRepositoryChangedError("Repository ownership changed during community review");
         }
-        const cur = fresh?.indexStatus ?? "failed";
+        const cur = fresh.indexStatus;
         LOG(jobId, `claim lost, current indexStatus=${cur}`);
 
         if (cur === "indexing") {
@@ -129,11 +135,8 @@ export async function processCommunityReview(jobId: string): Promise<void> {
         }
         if (cur !== "indexed") {
           // failed/stale: try to reclaim
-          const reclaim = await prisma.repository.updateMany({
-            where: { id: repo.id, organizationId: job.organizationId, indexStatus: { notIn: ["indexed", "indexing"] } },
-            data: { indexStatus: "indexing", indexAttemptId },
-          });
-          if (reclaim.count === 0) {
+          previous = fresh;
+          if (!await claimIndex(previous)) {
             throw new Error(`Could not reclaim indexing for ${fullName}`);
           }
         } else {
@@ -142,12 +145,20 @@ export async function processCommunityReview(jobId: string): Promise<void> {
       }
 
       if (needsIndex) {
-        const updated = await prisma.communityReviewJob.updateMany({ where: activeJob, data: { status: "indexing" } });
+        const releaseClaim = () => prisma.repository.updateMany({
+          where: { id: repo.id, organizationId: job.organizationId, provider: "github", externalId: repo.externalId,
+            fullName: { equals: fullName, mode: "insensitive" }, indexStatus: "indexing", indexAttemptId },
+          data: previous,
+        });
+        let updated;
+        try {
+          updated = await prisma.communityReviewJob.updateMany({ where: activeJob, data: { status: "indexing" } });
+        } catch (error) {
+          await releaseClaim();
+          throw error;
+        }
         if (!updated.count) {
-          await prisma.repository.updateMany({
-            where: { id: repo.id, organizationId: job.organizationId, indexStatus: "indexing", indexAttemptId },
-            data: { indexStatus: "pending", indexAttemptId: null },
-          });
+          await releaseClaim();
           await clearTerminalCommunityJobToken(job);
           return;
         }

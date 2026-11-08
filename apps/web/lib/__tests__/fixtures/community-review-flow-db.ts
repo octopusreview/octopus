@@ -100,9 +100,10 @@ try {
   assert.equal(treeRequests, 0);
   assert.equal(indexRequests, 0);
 
-  {
+  for (const previousStatus of ["pending", "failed"]) {
     const racing = await newJob();
-    await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "pending" } });
+    const previousAttempt = previousStatus === "failed" ? randomUUID() : null;
+    await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: previousStatus, indexAttemptId: previousAttempt } });
     await locker.query("BEGIN");
     await locker.query('SELECT id FROM repositories WHERE id = $1 FOR UPDATE', [repo.id]);
     const processing = processCommunityReview(racing.id);
@@ -121,13 +122,31 @@ try {
       assert.equal(saved.status, "cancelled");
       assert.equal(saved.summary, "prior result");
       assert.equal(saved.githubToken, null);
-      assert.equal(repository.indexStatus, "pending");
-      assert.equal(repository.indexAttemptId, null);
+      assert.equal(repository.indexStatus, previousStatus);
+      assert.equal(repository.indexAttemptId, previousAttempt);
       assert.equal(indexRequests, 0);
     } finally {
       await locker.query("ROLLBACK").catch(() => {});
       await processing.catch(() => {});
     }
+  }
+
+  await locker.query(`CREATE FUNCTION community_transition_test_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status = 'indexing' THEN RAISE EXCEPTION 'synthetic transition failure'; END IF; RETURN NEW; END $$`);
+  await locker.query('CREATE TRIGGER community_transition_test_failure BEFORE UPDATE OF status ON community_review_jobs FOR EACH ROW EXECUTE FUNCTION community_transition_test_failure()');
+  try {
+    const racing = await newJob();
+    const previousAttempt = randomUUID();
+    await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "failed", indexAttemptId: previousAttempt } });
+    await assert.rejects(() => processCommunityReview(racing.id));
+    const repository = await prisma.repository.findUniqueOrThrow({ where: { id: repo.id } });
+    assert.equal(repository.indexStatus, "failed");
+    assert.equal(repository.indexAttemptId, previousAttempt);
+    assert.equal((await jobState(racing.id)).status, "failed");
+    assert.equal((await jobState(racing.id)).githubToken, null);
+    assert.equal(indexRequests, 0);
+  } finally {
+    await locker.query('DROP TRIGGER IF EXISTS community_transition_test_failure ON community_review_jobs');
+    await locker.query('DROP FUNCTION IF EXISTS community_transition_test_failure()');
   }
 
   for (const transferredStatus of ["pending", "indexed"]) {
@@ -164,8 +183,43 @@ try {
     }
   }
 
+  for (const [sql, value] of [
+    ['UPDATE repositories SET provider = $1 WHERE id = $2', "gitlab"],
+    ['UPDATE repositories SET "externalId" = $1 WHERE id = $2', randomUUID()],
+    ['UPDATE repositories SET "fullName" = $1 WHERE id = $2', `other/${suffix}`],
+  ]) {
+    const racing = await newJob();
+    await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "pending", indexAttemptId: null } });
+    await locker.query("BEGIN");
+    await locker.query('SELECT id FROM repositories WHERE id = $1 FOR UPDATE', [repo.id]);
+    const processing = processCommunityReview(racing.id);
+    try {
+      for (let attempt = 0; ; attempt++) {
+        const [row] = await prisma.$queryRaw<Array<{ count: number }>>`SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%repositories%'`;
+        if (row.count) break;
+        if (attempt === 100) throw new Error("Expected repository claim to wait on a row lock");
+        await Bun.sleep(20);
+      }
+      await locker.query(sql, [value, repo.id]);
+      await locker.query("COMMIT");
+      await assert.rejects(() => processing, CommunityRepositoryChangedError);
+      const repository = await prisma.repository.findUniqueOrThrow({ where: { id: repo.id } });
+      assert.equal(repository.indexStatus, "pending");
+      assert.equal(repository.indexAttemptId, null);
+      assert.equal(indexRequests, 0);
+      assert.equal(treeRequests, 0);
+    } finally {
+      await locker.query("ROLLBACK").catch(() => {});
+      await processing.catch(() => {});
+      await prisma.repository.update({ where: { id: repo.id }, data: { provider: repo.provider, externalId: repo.externalId, fullName: repo.fullName } });
+    }
+  }
+
   for (const transition of ["indexing", "summary"]) {
     const racing = await newJob();
+    if (transition === "indexing") {
+      await prisma.communityReviewJob.update({ where: { id: racing.id }, data: { repoFullName: repo.fullName.toUpperCase() } });
+    }
     await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "pending" } });
     const finish = async () => {
       await prisma.communityReviewJob.update({ where: { id: racing.id }, data: { status: "failed", summary: "expiry result" } });

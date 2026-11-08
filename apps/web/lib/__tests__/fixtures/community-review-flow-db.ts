@@ -19,8 +19,10 @@ const finding = { severity: "🟠", title: "Synthetic finding", filePath: "file.
 let run = 0;
 let treeRequests = 0;
 let indexRequests = 0;
-let beforeIndex: () => Promise<void> = async () => {};
+let summaryRequests = 0;
+let analysisRequests = 0;
 let duringIndex: () => Promise<void> = async () => {};
+let duringSummary: () => Promise<void> = async () => {};
 let duringReview: () => Promise<void> = async () => {};
 mock.module("@/lib/review-core", () => ({ generateLocalReview: async () => {
   run++;
@@ -28,10 +30,9 @@ mock.module("@/lib/review-core", () => ({ generateLocalReview: async () => {
   return { summary: `synthetic result ${run}`, findings: [finding], model: "synthetic", usage: { inputTokens: 1, outputTokens: 1 } };
 } }));
 mock.module("@/lib/github", () => ({ getRepositoryTree: async () => { treeRequests++; return []; }, getPullRequestDiff: () => { throw new Error("unexpected diff fetch"); } }));
-mock.module("@/lib/repository-index-completion", () => ({ runRepositoryIndex: async (_id: string, _attempt: string, work: () => Promise<unknown>) => { indexRequests++; await beforeIndex(); return work(); } }));
-mock.module("@/lib/indexer", () => ({ indexRepository: async () => { await duringIndex(); return { indexedFiles: 0, totalVectors: 0 }; } }));
-mock.module("@/lib/summarizer", () => ({ summarizeRepository: () => { throw new Error("unexpected summary"); } }));
-mock.module("@/lib/analyzer", () => ({ analyzeRepository: () => { throw new Error("unexpected analysis"); } }));
+mock.module("@/lib/indexer", () => ({ indexRepository: async () => { indexRequests++; await duringIndex(); return { totalFiles: 0, indexedFiles: 0, totalChunks: 0, totalVectors: 0, contributorCount: 0, contributors: [], durationMs: 0 }; } }));
+mock.module("@/lib/summarizer", () => ({ summarizeRepository: async () => { summaryRequests++; await duringSummary(); return { summary: "synthetic", purpose: "synthetic" }; } }));
+mock.module("@/lib/analyzer", () => ({ analyzeRepository: async () => { analysisRequests++; return "synthetic"; } }));
 mock.module("@/lib/events/bus", () => ({ eventBus: { emit: () => {} } }));
 mock.module("@/lib/crypto", () => ({ decryptString: (value: string) => value, encryptString: (value: string) => value }));
 mock.module("@/lib/oss-bot", () => ({ getBotToken: () => { throw new Error("unexpected bot token"); } }));
@@ -99,14 +100,46 @@ try {
   assert.equal(treeRequests, 0);
   assert.equal(indexRequests, 0);
 
-  for (const transition of ["indexing", "reviewing"]) {
+  {
+    const racing = await newJob();
+    await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "pending" } });
+    await locker.query("BEGIN");
+    await locker.query('SELECT id FROM repositories WHERE id = $1 FOR UPDATE', [repo.id]);
+    const processing = processCommunityReview(racing.id);
+    try {
+      for (let attempt = 0; ; attempt++) {
+        const [row] = await prisma.$queryRaw<Array<{ count: number }>>`SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%repositories%'`;
+        if (row.count) break;
+        if (attempt === 100) throw new Error("Expected repository claim to wait on a row lock");
+        await Bun.sleep(20);
+      }
+      await locker.query('UPDATE community_review_jobs SET status = $1, summary = $2 WHERE id = $3', ["cancelled", "prior result", racing.id]);
+      await locker.query("COMMIT");
+      await processing;
+      const saved = await jobState(racing.id);
+      const repository = await prisma.repository.findUniqueOrThrow({ where: { id: repo.id } });
+      assert.equal(saved.status, "cancelled");
+      assert.equal(saved.summary, "prior result");
+      assert.equal(saved.githubToken, null);
+      assert.equal(repository.indexStatus, "pending");
+      assert.equal(repository.indexAttemptId, null);
+      assert.equal(indexRequests, 0);
+    } finally {
+      await locker.query("ROLLBACK").catch(() => {});
+      await processing.catch(() => {});
+    }
+  }
+
+  for (const transition of ["indexing", "summary"]) {
     const racing = await newJob();
     await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "pending" } });
     const finish = async () => {
       await prisma.communityReviewJob.update({ where: { id: racing.id }, data: { status: "failed", summary: "expiry result" } });
     };
-    beforeIndex = transition === "indexing" ? finish : async () => {};
-    duringIndex = transition === "reviewing" ? finish : async () => {};
+    duringIndex = transition === "indexing" ? finish : async () => {};
+    duringSummary = transition === "summary" ? finish : async () => {};
+    summaryRequests = 0;
+    analysisRequests = 0;
     await processCommunityReview(racing.id);
     const saved = await jobState(racing.id);
     assert.equal(saved.status, "failed");
@@ -114,9 +147,11 @@ try {
     assert.equal(saved.githubToken, null);
     assert.equal(run, 0);
     assert.equal(treeRequests, 0);
+    assert.equal(summaryRequests, transition === "summary" ? 1 : 0);
+    assert.equal(analysisRequests, 0);
   }
-  beforeIndex = async () => {};
   duringIndex = async () => {};
+  duringSummary = async () => {};
   indexRequests = 0;
   await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "indexed" } });
 

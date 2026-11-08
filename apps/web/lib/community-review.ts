@@ -54,6 +54,11 @@ export async function processCommunityReview(jobId: string): Promise<void> {
 
   const activeJob = { id: jobId, organizationId: job.organizationId, repositoryId: job.repositoryId,
     status: { notIn: ["completed", "failed", "cancelled"] } };
+  const stillActive = async () => {
+    if (await prisma.communityReviewJob.findFirst({ where: activeJob, select: { id: true } })) return true;
+    await clearTerminalCommunityJobToken(job);
+    return false;
+  };
   const started = await prisma.communityReviewJob.updateMany({
     where: activeJob,
     data: {
@@ -134,11 +139,17 @@ export async function processCommunityReview(jobId: string): Promise<void> {
       }
 
       if (needsIndex) {
-        const transitionLost = new Error("Community review is no longer active");
+        const updated = await prisma.communityReviewJob.updateMany({ where: activeJob, data: { status: "indexing" } });
+        if (!updated.count) {
+          await prisma.repository.updateMany({
+            where: { id: repo.id, organizationId: job.organizationId, indexStatus: "indexing", indexAttemptId },
+            data: { indexStatus: "pending", indexAttemptId: null },
+          });
+          await clearTerminalCommunityJobToken(job);
+          return;
+        }
         try {
           const indexStats = await runRepositoryIndex(repo.id, indexAttemptId, async () => {
-            const updated = await prisma.communityReviewJob.updateMany({ where: activeJob, data: { status: "indexing" } });
-            if (!updated.count) throw transitionLost;
             LOG(jobId, "indexing repository...");
             return indexRepository(
               { repoId: repo.id, indexAttemptId }, fullName, repo.defaultBranch, 0,
@@ -148,6 +159,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
           });
 
           LOG(jobId, `index done: ${indexStats.indexedFiles} files, ${indexStats.totalVectors} vectors`);
+          if (!await stillActive()) return;
 
           // Best-effort summarize + analyze
           try {
@@ -161,6 +173,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
             ERR(jobId, "summarize failed (non-fatal)");
           }
 
+          if (!await stillActive()) return;
           try {
             const analysis = await analyzeRepository(repo.id, fullName, job.organizationId);
             await prisma.repository.update({
@@ -176,11 +189,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
           } catch {
             ERR(jobId, "analyze failed (non-fatal)");
           }
-        } catch (err) {
-          if (err === transitionLost) {
-            await clearTerminalCommunityJobToken(job);
-            return;
-          }
+        } catch {
           ERR(jobId, "indexing failed");
           // Continue — generateLocalReview works without index
         }

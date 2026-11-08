@@ -101,6 +101,21 @@ try {
   assert.equal(treeRequests, 0);
   assert.equal(indexRequests, 0);
 
+  // Recovery expires only the in-flight job past TTL, audits it once, and leaves a live job alone.
+  const inFlight = await newJob();
+  await prisma.communityReviewJob.update({ where: { id: inFlight.id }, data: { status: "indexing", expiresAt: new Date(Date.now() - 1000) } });
+  const live = await newJob();
+  await recoverCommunityReviewJobs();
+  const expiredByRecovery = await jobState(inFlight.id);
+  assert.equal(expiredByRecovery.status, "failed");
+  assert.equal(expiredByRecovery.errorMessage, "Job exceeded TTL while in flight");
+  assert.equal(expiredByRecovery.githubToken, null);
+  assert.equal(await prisma.auditLog.count({ where: { action: "community_review.expired", targetId: inFlight.id, organizationId: source.id } }), 1);
+  const untouchedLive = await jobState(live.id);
+  assert.equal(untouchedLive.status, "reviewing");
+  assert.equal(untouchedLive.githubToken, "synthetic");
+  assert.equal(await prisma.auditLog.count({ where: { action: "community_review.expired", targetId: live.id } }), 0);
+
   for (const previousStatus of ["pending", "failed"]) {
     const racing = await newJob();
     const previousAttempt = previousStatus === "failed" ? randomUUID() : null;

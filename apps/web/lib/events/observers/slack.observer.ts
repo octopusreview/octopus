@@ -1,6 +1,7 @@
 import { prisma } from "@octopus/db";
 import { eventBus } from "../bus";
 import { decryptStringMaybeLegacy } from "@/lib/crypto";
+import { safeErrorDetails } from "@/lib/provider-failure";
 import type {
   RepoIndexedEvent,
   RepoAnalyzedEvent,
@@ -48,12 +49,12 @@ async function sendSlackMessage(
 
     const data = await res.json();
     if (!data.ok) {
-      console.error(`[slack-observer] Failed to post message: ${data.error}`);
+      console.error("[slack-observer] Failed to post message");
     } else if (process.env.NODE_ENV !== "production") {
       console.log(`[slack-observer] Message sent to ${integration.channelName} for ${eventType}`);
     }
   } catch (err) {
-    console.error("[slack-observer] Error sending Slack notification:", err);
+    console.error("[slack-observer] Error sending Slack notification:", safeErrorDetails(err));
   }
 }
 

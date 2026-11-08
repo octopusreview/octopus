@@ -248,6 +248,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
       }
     }
 
+    if (!await stillActive()) return;
     LOG(jobId, "generating review...");
     const reviewResult = await generateLocalReview({
       diff,

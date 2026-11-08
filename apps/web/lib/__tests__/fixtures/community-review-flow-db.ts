@@ -23,13 +23,14 @@ let summaryRequests = 0;
 let analysisRequests = 0;
 let duringIndex: () => Promise<void> = async () => {};
 let duringSummary: () => Promise<void> = async () => {};
+let duringTree: () => Promise<void> = async () => {};
 let duringReview: () => Promise<void> = async () => {};
 mock.module("@/lib/review-core", () => ({ generateLocalReview: async () => {
   run++;
   await duringReview();
   return { summary: `synthetic result ${run}`, findings: [finding], model: "synthetic", usage: { inputTokens: 1, outputTokens: 1 } };
 } }));
-mock.module("@/lib/github", () => ({ getRepositoryTree: async () => { treeRequests++; return []; }, getPullRequestDiff: () => { throw new Error("unexpected diff fetch"); } }));
+mock.module("@/lib/github", () => ({ getRepositoryTree: async () => { treeRequests++; await duringTree(); return []; }, getPullRequestDiff: () => { throw new Error("unexpected diff fetch"); } }));
 mock.module("@/lib/indexer", () => ({ indexRepository: async () => { indexRequests++; await duringIndex(); return { totalFiles: 0, indexedFiles: 0, totalChunks: 0, totalVectors: 0, contributorCount: 0, contributors: [], durationMs: 0 }; } }));
 mock.module("@/lib/summarizer", () => ({ summarizeRepository: async () => { summaryRequests++; await duringSummary(); return { summary: "synthetic", purpose: "synthetic" }; } }));
 mock.module("@/lib/analyzer", () => ({ analyzeRepository: async () => { analysisRequests++; return "synthetic"; } }));
@@ -242,6 +243,22 @@ try {
   duringSummary = async () => {};
   indexRequests = 0;
   await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "indexed" } });
+
+  for (const treeFails of [false, true]) {
+    const racing = await newJob();
+    duringTree = async () => {
+      await prisma.communityReviewJob.update({ where: { id: racing.id }, data: { status: "cancelled", summary: "prior result" } });
+      if (treeFails) throw new Error("synthetic tree failure");
+    };
+    await processCommunityReview(racing.id);
+    const saved = await jobState(racing.id);
+    assert.equal(saved.status, "cancelled");
+    assert.equal(saved.summary, "prior result");
+    assert.equal(saved.githubToken, null);
+    assert.equal(run, 0);
+  }
+  duringTree = async () => {};
+  treeRequests = 0;
 
   for (const change of [
     { organizationId: target.id, indexStatus: "pending" },

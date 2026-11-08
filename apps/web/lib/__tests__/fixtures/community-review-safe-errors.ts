@@ -5,7 +5,7 @@ const secret = "synthetic-secret-request-id";
 const failure = Object.assign(new Error(secret), { status: 503, request_id: secret });
 const id = "12345678-1234-1234-1234-123456789abc";
 let scenario = "fatal";
-let job: Record<string, any>;
+let job: Record<string, unknown>;
 const reset = (postMode = "action_client") => { job = { id, repositoryId: "repo", organizationId: "org", repoFullName: "owner/repo", status: "pending", expiresAt: new Date(Date.now() + 60000), githubToken: "ciphertext", postMode, prNumber: 1, diff: "diff", attempts: 0 }; };
 reset();
 mock.module("server-only", () => ({}));

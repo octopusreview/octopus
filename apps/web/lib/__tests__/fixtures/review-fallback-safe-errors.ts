@@ -5,7 +5,6 @@ mock.module("server-only", () => ({}));
 let scenario = "feedback";
 let calls = 0;
 const secret = "synthetic-secret-request-id";
-let wrappedFailure: Error;
 const failure = () => scenario === "wrapped" ? wrappedFailure : Object.assign(new Error(secret), { status: 503, request_id: secret });
 const finding = { severity: "🟠", title: "Missing check", filePath: "src/a.ts", startLine: 1, endLine: 1, category: "Bug", description: "Missing check", suggestion: "", confidence: 95 };
 const org = { id: "org", type: 1, defaultReviewConfig: {}, reviewLanguage: "en", creditBalance: 0, freeCreditBalance: 0, monthlySpendLimitUsd: null, anthropicApiKey: null, openaiApiKey: null, googleApiKey: null };
@@ -40,7 +39,7 @@ mock.module("@/lib/review-validation", () => ({
 const { generateLocalReview } = await import("@/lib/review-core");
 const { getOrgSpendLimitStatus } = await import("@/lib/cost");
 const { AiProviderFailure } = await import("@/lib/provider-failure");
-wrappedFailure = new AiProviderFailure(Object.assign(new Error(secret), { status: 503, request_id: secret }), "openai", "fixture", "platform");
+const wrappedFailure = new AiProviderFailure(Object.assign(new Error(secret), { status: 503, request_id: secret }), "openai", "fixture", "platform");
 const logs: unknown[][] = [];
 const warn = console.warn, error = console.error;
 console.warn = console.error = (...args: unknown[]) => { logs.push(args); };

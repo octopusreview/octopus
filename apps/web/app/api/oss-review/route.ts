@@ -1,3 +1,4 @@
+import "server-only";
 /**
  * OSS bot-account review trigger.
  *
@@ -14,6 +15,7 @@ import { ORG_TYPE } from "@/lib/org-types";
 import { getRepositoryDetails } from "@/lib/github";
 import { getBotToken, hasConsentFile, isBotAccountConfigured } from "@/lib/oss-bot";
 import { enqueue } from "@/lib/queue";
+import { prepareCommunityReviewJob } from "@/lib/community-review-enqueue";
 import { NextRequest } from "next/server";
 
 const GITHUB_API = "https://api.github.com";
@@ -146,41 +148,28 @@ export async function POST(request: NextRequest) {
     update: { defaultBranch: repoInfo.default_branch },
   });
 
-  // ── Dedup: same repo + PR + headSha already in flight or recently done ───────
-  const existing = await prisma.communityReviewJob.findFirst({
-    where: {
-      repositoryId: repo.id,
-      prNumber,
-      headSha,
-      status: { in: ["indexing", "reviewing", "completed"] },
-      expiresAt: { gt: new Date() },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-  if (existing) {
-    LOG(`dedup hit jobId=${existing.id} ${fullName}#${prNumber}@${headSha.slice(0, 8)}`);
-    return Response.json({ status: "deduped", jobId: existing.id });
-  }
-
-  // ── Enqueue ─────────────────────────────────────────────────────────────────
   const expiresAt = new Date(Date.now() + COMMUNITY_JOB_TTL_HOURS * 60 * 60 * 1000);
-  const job = await prisma.communityReviewJob.create({
-    data: {
+  const prepared = await prepareCommunityReviewJob({
+    repositoryId: repo.id, organizationId: org.id, externalId: repo.externalId, fullName,
+    prNumber, headSha, postMode: "bot_account", deduplicate: true, reuseCompleted: true,
+    data: () => ({
       status: "indexing",
-      postMode: "bot_account",
-      repoFullName: fullName,
-      repositoryId: repo.id,
-      organizationId: org.id,
-      prNumber,
       prTitle: pr.title,
       prAuthor: pr.author,
-      headSha,
       baseBranch: pr.baseBranch,
       diff: "", // fetched server-side by the worker via the bot token
       githubToken: null,
       expiresAt,
-    },
+    }),
   });
+  if (prepared.kind === "conflict") {
+    return Response.json({ error: "Review cannot be queued right now. Please try again later." }, { status: 409 });
+  }
+  if (prepared.kind === "existing") {
+    LOG(`dedup hit jobId=${prepared.job.id} ${fullName}#${prNumber}@${headSha.slice(0, 8)}`);
+    return Response.json({ status: "deduped", jobId: prepared.job.id });
+  }
+  const job = prepared.job;
 
   await prisma.auditLog.create({
     data: {

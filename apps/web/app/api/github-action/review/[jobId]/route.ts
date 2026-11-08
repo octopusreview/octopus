@@ -1,3 +1,4 @@
+import "server-only";
 import { prisma } from "@octopus/db";
 import { NextRequest } from "next/server";
 
@@ -34,7 +35,7 @@ export async function GET(
     return Response.json({ error: "Job not found" }, { status: 404 });
   }
 
-  if (job.repoFullName !== repoFullName) {
+  if (job.repoFullName.toLowerCase() !== repoFullName.toLowerCase()) {
     LOG(`jobId=${jobId} repo mismatch: stored=${job.repoFullName} provided=${repoFullName}`);
     return Response.json({ error: "Repo mismatch" }, { status: 403 });
   }

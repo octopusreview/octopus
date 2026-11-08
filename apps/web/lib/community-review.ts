@@ -73,7 +73,9 @@ export async function processCommunityReview(jobId: string): Promise<void> {
 
   try {
     const repo = await prisma.repository.findUnique({ where: { id: job.repositoryId } });
+    // shortcut: legacy jobs lack an external-ID snapshot; require one after old workers and jobs drain.
     if (!repo || repo.organizationId !== job.organizationId || repo.provider !== "github" ||
+        (job.repositoryExternalId != null && repo.externalId !== job.repositoryExternalId) ||
         repo.fullName.toLowerCase() !== job.repoFullName.toLowerCase()) {
       throw new CommunityRepositoryChangedError("Repository ownership changed before community review");
     }

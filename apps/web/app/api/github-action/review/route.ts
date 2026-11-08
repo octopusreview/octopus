@@ -10,6 +10,7 @@ import { ORG_TYPE } from "@/lib/org-types";
 import { getRepositoryTree } from "@/lib/github";
 import { eventBus } from "@/lib/events/bus";
 import { enqueue } from "@/lib/queue";
+import { prepareCommunityReviewJob } from "@/lib/community-review-enqueue";
 import { persistCommunityReviewToPR, CommunityRepositoryChangedError } from "@/lib/community-pr-persist";
 import { encryptString } from "@/lib/crypto";
 import { NextRequest } from "next/server";
@@ -363,7 +364,7 @@ export async function POST(request: NextRequest) {
 // ─── Queued path helpers ────────────────────────────────────────────────────
 
 async function enqueueCommunityReview(params: {
-  repo: { id: string; defaultBranch: string };
+  repo: { id: string; defaultBranch: string; externalId: string };
   orgId: string;
   fullName: string;
   prNumber?: number;
@@ -387,42 +388,14 @@ async function enqueueCommunityReview(params: {
     githubToken,
   } = params;
 
-  // De-dupe: same repo + PR + headSha already in flight → return existing job.
-  if (typeof prNumber === "number" && headSha) {
-    const existing = await prisma.communityReviewJob.findFirst({
-      where: {
-        repositoryId: repo.id,
-        prNumber,
-        headSha,
-        status: { in: ["indexing", "reviewing"] },
-        expiresAt: { gt: new Date() },
-      },
-      orderBy: { createdAt: "desc" },
-    });
-    if (existing) {
-      LOG(`[queue] dedup hit jobId=${existing.id} repo=${fullName} PR=${prNumber}`);
-      return Response.json({
-        status: "queued",
-        jobId: existing.id,
-        existing: true,
-        community: true,
-        message: "Review is already queued for this PR + commit. Poll the job to get the result.",
-      });
-    }
-  }
-
   const expiresAt = new Date(Date.now() + COMMUNITY_JOB_TTL_HOURS * 60 * 60 * 1000);
-
-  const job = await prisma.communityReviewJob.create({
-    data: {
+  const prepared = await prepareCommunityReviewJob({
+    repositoryId: repo.id, organizationId: orgId, externalId: repo.externalId, fullName,
+    prNumber, headSha, postMode: "action_client", deduplicate: typeof prNumber === "number" && Boolean(headSha), reuseCompleted: false,
+    data: () => ({
       status: "indexing",
-      repoFullName: fullName,
-      repositoryId: repo.id,
-      organizationId: orgId,
-      prNumber: prNumber ?? null,
       prTitle: prTitle ?? null,
       prAuthor: prAuthor ?? null,
-      headSha: headSha ?? null,
       baseBranch: baseBranch ?? null,
       diff,
       // Token is short-lived (1h GitHub Actions token) but still encrypted
@@ -430,8 +403,17 @@ async function enqueueCommunityReview(params: {
       // Decrypted in lib/community-review.ts when the worker runs.
       githubToken: encryptString(githubToken),
       expiresAt,
-    },
+    }),
   });
+  if (prepared.kind === "conflict") {
+    return Response.json({ error: "Review cannot be queued right now. Please try again later." }, { status: 409 });
+  }
+  if (prepared.kind === "existing") {
+    LOG(`[queue] dedup hit jobId=${prepared.job.id} repo=${fullName} PR=${prNumber}`);
+    return Response.json({ status: "queued", jobId: prepared.job.id, existing: true, community: true,
+      message: "Review is already queued for this PR + commit. Poll the job to get the result." });
+  }
+  const job = prepared.job;
 
   LOG(`[queue] created jobId=${job.id} repo=${fullName} PR=${prNumber ?? "?"} sha=${headSha ?? "?"}`);
 

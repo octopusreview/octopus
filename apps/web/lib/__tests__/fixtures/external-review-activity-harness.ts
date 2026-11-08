@@ -259,21 +259,135 @@ try {
       const before = await prisma.externalReviewActivity.count();
       community = true; observe = false;
       assert.equal((await call()).status, 200);
-      await prisma.repository.update({ where: { id: repo.id }, data: { indexStatus: "pending" } });
-      actionRepo = { ...repo, indexStatus: "pending" };
+      const communityOrg = await prisma.organization.findUniqueOrThrow({ where: { slug: `community-${id}` } });
+      await prisma.repository.update({ where: { id: repo.id }, data: { organizationId: communityOrg.id, indexStatus: "pending" } });
+      actionRepo = { ...repo, organizationId: communityOrg.id, indexStatus: "pending" };
       assert.equal((await (await call()).json()).status, "queued");
       const job = await prisma.communityReviewJob.findFirstOrThrow({ where: { repositoryId: repo.id } });
+      assert.equal(job.repositoryExternalId, repo.externalId);
       const poll = await import("../../../app/api/github-action/review/[jobId]/route");
       assert.equal((await poll.GET(new NextRequest(`http://localhost/api/fixture?repo=${id}/fixture`), {
         params: Promise.resolve({ jobId: job.id }),
       })).status, 200);
       await prisma.communityReviewJob.deleteMany({ where: { repositoryId: repo.id } });
+      const priorOrg = await prisma.organization.create({ data: { name: "Prior synthetic tenant", slug: `prior-${id}` } });
       await prisma.ossReviewAllowlist.create({ data: { repoFullName: `${id}/fixture` } });
+      const oldBotJob = await prisma.communityReviewJob.create({ data: { repositoryId: repo.id, organizationId: priorOrg.id,
+        repoFullName: repo.fullName, repositoryExternalId: repo.externalId, status: "indexing", prNumber: 1,
+        headSha: id, diff: "synthetic", expiresAt: new Date(Date.now() + 60_000) } });
       const oss = await import("../../../app/api/oss-review/route");
-      assert.equal((await (await oss.POST(new NextRequest("http://localhost/api/fixture", {
-        method: "POST", body: JSON.stringify({ owner: id, repo: "fixture", prNumber: 1 }),
-      }))).json()).status, "queued");
+      const botPost = async (prNumber: number) => {
+        const response = await oss.POST(new NextRequest("http://localhost/api/fixture", {
+          method: "POST", body: JSON.stringify({ owner: id, repo: "fixture", prNumber }),
+        }));
+        return { http: response.status, ...await response.json() };
+      };
+      const actionPost = async (prNumber: number) => {
+        const response = await action.POST(new NextRequest("http://localhost/api/fixture", {
+          method: "POST", body: JSON.stringify({ owner: id, repo: "fixture", prNumber, headSha: id, diff: "+", githubToken: "synthetic" }),
+        }));
+        return { http: response.status, ...await response.json() };
+      };
+      const blockedBot = await botPost(1);
+      assert.equal(blockedBot.http, 409);
+      assert.equal(blockedBot.jobId, undefined);
+      assert.equal(queued, 1);
+      await prisma.communityReviewJob.update({ where: { id: oldBotJob.id }, data: { status: "failed" } });
+      const botResult = await botPost(1);
+      assert.equal(botResult.status, "queued");
+      assert.notEqual(botResult.jobId, oldBotJob.id);
+      const botJob = await prisma.communityReviewJob.findUniqueOrThrow({ where: { id: botResult.jobId } });
+      assert.equal(botJob.organizationId, communityOrg.id);
+      assert.equal(botJob.repositoryExternalId, repo.externalId);
+      assert.equal((await botPost(1)).jobId, botJob.id);
+      const actionAgainstBot = await actionPost(1);
+      assert.equal(actionAgainstBot.http, 409);
+      assert.equal(actionAgainstBot.jobId, undefined);
       assert.equal(queued, 2);
+      const oldActionJob = await prisma.communityReviewJob.create({ data: { repositoryId: repo.id, organizationId: priorOrg.id,
+        repoFullName: repo.fullName, repositoryExternalId: repo.externalId, status: "indexing", prNumber: 2,
+        headSha: id, diff: "synthetic", expiresAt: new Date(Date.now() + 60_000) } });
+      const blockedAction = await actionPost(2);
+      assert.equal(blockedAction.http, 409);
+      assert.equal(blockedAction.jobId, undefined);
+      assert.equal(queued, 2);
+      await prisma.communityReviewJob.update({ where: { id: oldActionJob.id }, data: { status: "failed" } });
+      const actionResult = await actionPost(2);
+      assert.equal(actionResult.status, "queued");
+      assert.notEqual(actionResult.jobId, oldActionJob.id);
+      const actionJob = await prisma.communityReviewJob.findUniqueOrThrow({ where: { id: actionResult.jobId } });
+      assert.equal(actionJob.organizationId, communityOrg.id);
+      assert.equal(actionJob.repositoryExternalId, repo.externalId);
+      assert.equal((await actionPost(2)).jobId, actionJob.id);
+      const botAgainstAction = await botPost(2);
+      assert.equal(botAgainstAction.http, 409);
+      assert.equal(botAgainstAction.jobId, undefined);
+      assert.equal(queued, 3);
+
+      for (const [prNumber, postMode] of [[3, "action_client"], [4, "bot_account"]] as const) {
+        const legacy = await prisma.communityReviewJob.create({ data: { repositoryId: repo.id, organizationId: communityOrg.id,
+          repoFullName: repo.fullName.toUpperCase(), status: "indexing", postMode, prNumber, headSha: id,
+          diff: "synthetic", expiresAt: new Date(Date.now() + 60_000) } });
+        assert.equal((await (postMode === "action_client" ? actionPost(prNumber) : botPost(prNumber))).jobId, legacy.id);
+        assert.equal((await poll.GET(new NextRequest(`http://localhost/api/fixture?repo=${id}/fixture`), {
+          params: Promise.resolve({ jobId: legacy.id }),
+        })).status, 200);
+        assert.equal((await poll.GET(new NextRequest("http://localhost/api/fixture?repo=other/fixture"), {
+          params: Promise.resolve({ jobId: legacy.id }),
+        })).status, 403);
+      }
+      for (const [prNumber, postMode] of [[5, "action_client"], [6, "bot_account"]] as const) {
+        const different = await prisma.communityReviewJob.create({ data: { repositoryId: repo.id, organizationId: communityOrg.id,
+          repoFullName: repo.fullName, repositoryExternalId: `previous-${id}`, status: "indexing", postMode,
+          prNumber, headSha: id, diff: "synthetic", expiresAt: new Date(Date.now() + (prNumber === 5 ? -1000 : 60_000)) } });
+        const post = () => postMode === "action_client" ? actionPost(prNumber) : botPost(prNumber);
+        const blocked = await post();
+        assert.equal(blocked.http, 409);
+        assert.equal(blocked.jobId, undefined);
+        await prisma.communityReviewJob.update({ where: { id: different.id }, data: { status: "failed" } });
+        const result = await post();
+        assert.equal(result.status, "queued");
+        assert.notEqual(result.jobId, different.id);
+        assert.equal((await prisma.communityReviewJob.findUniqueOrThrow({ where: { id: result.jobId } })).repositoryExternalId, repo.externalId);
+      }
+      const concurrent = await Promise.all([actionPost(7), actionPost(7)]);
+      assert.equal(concurrent[0].jobId, concurrent[1].jobId);
+      assert.deepEqual(concurrent.map(result => result.existing).sort(), [false, true]);
+      assert.equal(queued, 6);
+
+      let locked!: () => void;
+      let release!: () => void;
+      const ready = new Promise<void>(resolve => { locked = resolve; });
+      const proceed = new Promise<void>(resolve => { release = resolve; });
+      const transfer = prisma.$transaction(async tx => {
+        await tx.$queryRaw`SELECT id FROM repositories WHERE id = ${repo.id} FOR UPDATE`;
+        locked();
+        await proceed;
+        await tx.repository.update({ where: { id: repo.id }, data: { organizationId: priorOrg.id } });
+      });
+      await ready;
+      const duringTransfer = actionPost(8);
+      try {
+        let waiting = false;
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const [row] = await prisma.$queryRaw<Array<{ count: number }>>`SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%repositories%'`;
+          if (row.count) { waiting = true; break; }
+          await Bun.sleep(20);
+        }
+        assert.ok(waiting, "enqueue must wait for the repository transfer lock");
+        release();
+        await transfer;
+        const rejected = await duringTransfer;
+        assert.equal(rejected.http, 409);
+        assert.equal(rejected.jobId, undefined);
+        assert.equal(queued, 6);
+      } finally {
+        release();
+        await Promise.allSettled([transfer, duringTransfer]);
+        await prisma.repository.update({ where: { id: repo.id }, data: { organizationId: communityOrg.id } });
+      }
+      await prisma.communityReviewJob.deleteMany({ where: { organizationId: priorOrg.id } });
+      await prisma.organization.delete({ where: { id: priorOrg.id } });
       // Exercise the actual CLI --pr dispatch with a stub transport.
       mock.module("../../../../cli/src/lib/credentials", () => ({ loadCredentials: async () => ({ baseUrl: "http://localhost", token: "fixture" }) }));
       mock.module("../../../../cli/src/lib/repo-resolver", () => ({ resolveRepo: async () => ({ ok: true, repo: { ...repo, provider: "github" } }) }));

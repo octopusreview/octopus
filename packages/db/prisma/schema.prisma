@@ -1653,6 +1653,7 @@ model CommunityReviewJob {
   repoFullName         String
   repositoryId         String
   organizationId       String
+  repositoryExternalId String? // Null for jobs queued before identity snapshots were introduced.
 
   // Request payload (so the worker can replay the review without the action retransmitting)
   prNumber             Int?

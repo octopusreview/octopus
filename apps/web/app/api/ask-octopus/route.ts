@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@octopus/db";
 import { createEmbeddings } from "@/lib/embeddings";
 import { searchDocsChunks, ensureDocsCollection } from "@/lib/qdrant";
+import { safeErrorDetails } from "@/lib/provider-failure";
 
 let anthropicClient: Anthropic | null = null;
 
@@ -299,13 +300,13 @@ export async function POST(request: Request) {
               content: fullResponse,
             },
           }).catch((err) => {
-            console.error("[ask-octopus] Failed to save assistant message:", err);
+            console.error("[ask-octopus] Failed to save assistant message:", safeErrorDetails(err));
           });
 
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
         } catch (err) {
-          console.error("[ask-octopus] Stream error:", err);
+          console.error("[ask-octopus] Stream error:", safeErrorDetails(err));
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify({ error: "Stream interrupted" })}\n\n`),
           );
@@ -322,7 +323,7 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
-    console.error("[ask-octopus] Error:", error);
+    console.error("[ask-octopus] Error:", safeErrorDetails(error));
     return Response.json(
       { error: "Something went wrong. Please try again." },
       { status: 500 },

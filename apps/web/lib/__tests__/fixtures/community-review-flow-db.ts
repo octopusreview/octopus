@@ -16,14 +16,16 @@ const repo = await prisma.repository.create({ data: { organizationId: source.id,
 const finding = { severity: "🟠", title: "Synthetic finding", filePath: "file.ts", startLine: 1, endLine: 1,
   category: "synthetic", description: "Synthetic description", suggestion: "Synthetic suggestion", confidence: 1 };
 let run = 0;
+let treeRequests = 0;
+let indexRequests = 0;
 let duringReview: () => Promise<void> = async () => {};
 mock.module("@/lib/review-core", () => ({ generateLocalReview: async () => {
   run++;
   await duringReview();
   return { summary: `synthetic result ${run}`, findings: [finding], model: "synthetic", usage: { inputTokens: 1, outputTokens: 1 } };
 } }));
-mock.module("@/lib/github", () => ({ getRepositoryTree: async () => [], getPullRequestDiff: () => { throw new Error("unexpected diff fetch"); } }));
-mock.module("@/lib/repository-index-completion", () => ({ runRepositoryIndex: () => { throw new Error("unexpected index"); } }));
+mock.module("@/lib/github", () => ({ getRepositoryTree: async () => { treeRequests++; return []; }, getPullRequestDiff: () => { throw new Error("unexpected diff fetch"); } }));
+mock.module("@/lib/repository-index-completion", () => ({ runRepositoryIndex: () => { indexRequests++; throw new Error("unexpected index"); } }));
 mock.module("@/lib/indexer", () => ({ indexRepository: () => { throw new Error("unexpected index"); } }));
 mock.module("@/lib/summarizer", () => ({ summarizeRepository: () => { throw new Error("unexpected summary"); } }));
 mock.module("@/lib/analyzer", () => ({ analyzeRepository: () => { throw new Error("unexpected analysis"); } }));
@@ -38,7 +40,37 @@ const newJob = () => prisma.communityReviewJob.create({ data: { repositoryId: re
 const jobState = (id: string) => prisma.communityReviewJob.findUniqueOrThrow({ where: { id } });
 const prState = () => prisma.pullRequest.findUniqueOrThrow({ where: { repositoryId_number: { repositoryId: repo.id, number: 1 } }, include: { reviewIssues: true } });
 try {
+  const cancelled = await newJob();
+  await prisma.communityReviewJob.update({ where: { id: cancelled.id }, data: { status: "cancelled", githubToken: null } });
+  await processCommunityReview(cancelled.id);
+  assert.equal((await jobState(cancelled.id)).status, "cancelled");
+  assert.equal((await jobState(cancelled.id)).githubToken, null);
+  assert.equal(run, 0);
+  assert.equal(treeRequests, 0);
+  assert.equal(indexRequests, 0);
+
+  for (const change of [
+    { organizationId: target.id, indexStatus: "pending" },
+    { provider: "gitlab" },
+    { fullName: `other/${suffix}` },
+  ]) {
+    const stale = await newJob();
+    await prisma.repository.update({ where: { id: repo.id }, data: change });
+    await assert.rejects(() => processCommunityReview(stale.id), CommunityRepositoryChangedError);
+    const rejected = await jobState(stale.id);
+    assert.equal(rejected.status, "failed");
+    assert.equal(rejected.githubToken, null);
+    assert.equal(run, 0);
+    assert.equal(treeRequests, 0);
+    assert.equal(indexRequests, 0);
+    assert.equal(await prisma.pullRequest.count({ where: { repositoryId: repo.id } }), 0);
+    await prisma.repository.update({ where: { id: repo.id }, data: {
+      organizationId: source.id, provider: repo.provider, fullName: repo.fullName, indexStatus: "indexed",
+    } });
+  }
+
   const first = await newJob();
+  await prisma.communityReviewJob.update({ where: { id: first.id }, data: { repoFullName: repo.fullName.toUpperCase() } });
   await processCommunityReview(first.id);
   const completed = await jobState(first.id);
   assert.equal(completed.status, "completed");

@@ -58,7 +58,10 @@ export async function processCommunityReview(jobId: string): Promise<void> {
 
   try {
     const repo = await prisma.repository.findUnique({ where: { id: job.repositoryId } });
-    if (!repo) throw new Error(`Repository ${job.repositoryId} not found`);
+    if (!repo || repo.organizationId !== job.organizationId || repo.provider !== "github" ||
+        repo.fullName.toLowerCase() !== job.repoFullName.toLowerCase()) {
+      throw new CommunityRepositoryChangedError("Repository ownership changed before community review");
+    }
 
     // bot_account mode authenticates with the shared bot PAT (server posts the review
     // itself); action_client mode uses the short-lived token the Action captured.

@@ -28,11 +28,11 @@ export async function prepareCommunityReviewJob(input: {
           status: { in: input.reuseCompleted ? ["indexing", "reviewing", "completed"] : ["indexing", "reviewing"] } },
         orderBy: { createdAt: "desc" }, select: { id: true },
       });
-      if (existing) return { kind: "existing" as const, job: existing };
       const conflicting = await tx.communityReviewJob.findFirst({
-        where: { ...common, status: { in: ["indexing", "reviewing"] } }, select: { id: true },
+        where: { ...common, status: { in: ["indexing", "reviewing"] }, ...(existing ? { id: { not: existing.id } } : {}) }, select: { id: true },
       });
       if (conflicting) return { kind: "conflict" as const };
+      if (existing) return { kind: "existing" as const, job: existing };
     }
 
     const job = await tx.communityReviewJob.create({ data: { ...input.data(), repositoryId: input.repositoryId,

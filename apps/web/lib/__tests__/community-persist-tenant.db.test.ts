@@ -5,6 +5,7 @@ const run = process.env.RUN_COMMUNITY_PERSIST_DB_TESTS === "1";
 for (const [name, fixture] of [
   ["serializes community review persistence with repository transfer", "community-persist-tenant-db"],
   ["preserves legacy jobs when adding repository identity", "community-job-identity-migration-db"],
+  ["rejects conflicting active community review jobs", "community-review-enqueue-db"],
   ["runs the community review worker end to end across a repository transfer", "community-review-flow-db"],
 ]) {
   it.skipIf(!run)(name, async () => {

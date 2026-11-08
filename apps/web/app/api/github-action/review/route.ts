@@ -10,7 +10,7 @@ import { ORG_TYPE } from "@/lib/org-types";
 import { getRepositoryTree } from "@/lib/github";
 import { eventBus } from "@/lib/events/bus";
 import { enqueue } from "@/lib/queue";
-import { persistCommunityReviewToPR } from "@/lib/community-pr-persist";
+import { persistCommunityReviewToPR, CommunityRepositoryChangedError } from "@/lib/community-pr-persist";
 import { encryptString } from "@/lib/crypto";
 import { NextRequest } from "next/server";
 
@@ -318,6 +318,8 @@ export async function POST(request: NextRequest) {
           try {
             await persistCommunityReviewToPR({
               repositoryId: repo.id,
+              organizationId: orgId,
+              externalId: repo.externalId,
               fullName,
               prNumber,
               prTitle: typeof prTitle === "string" ? prTitle : null,
@@ -327,6 +329,7 @@ export async function POST(request: NextRequest) {
               findings: reviewResult.findings,
             });
           } catch (persistErr) {
+            if (persistErr instanceof CommunityRepositoryChangedError) throw persistErr;
             ERR("persist community PR failed (non-fatal):", persistErr);
           }
         }

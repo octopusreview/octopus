@@ -1,6 +1,6 @@
 import "server-only";
 import { observeAiRequest, completionEvidence } from "./request-evidence";
-import OpenAI from "openai";
+import OpenAI, { type ClientOptions } from "openai";
 import { prisma } from "@octopus/db";
 import type { Provider, AiCreateParams, AiResponse } from "./index";
 import { validateProviderUrl } from "./url-validation";
@@ -23,7 +23,7 @@ import { stripLoneSurrogates } from "./sanitize";
 const DEFAULT_BASE_URL = "http://localhost:11434";
 
 // The SDK otherwise discards connection-timeout causes when wrapping fetch errors.
-const ollamaFetch: typeof fetch = async (input, init) => {
+const ollamaFetch: NonNullable<ClientOptions["fetch"]> = async (input, init) => {
   try {
     return await globalThis.fetch(input, init);
   } catch (error) {

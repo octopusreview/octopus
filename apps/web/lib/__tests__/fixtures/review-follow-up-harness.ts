@@ -462,6 +462,10 @@ if (localClassification) {
       }
       for (const failure of [
         { provider: "openai" as const, message: "synthetic-secret", status: 401, keyOwner: "platform" as const },
+        { provider: "openai" as const, message: "rate limit exceeded for API key synthetic-secret", status: 429, keyOwner: "organization" as const },
+        { provider: "openai" as const, message: "rate limit exceeded for API key synthetic-secret", status: 429, keyOwner: "platform" as const },
+        { provider: "openai" as const, message: "service error for API key synthetic-secret", status: 500, keyOwner: "organization" as const },
+        { provider: "openai" as const, message: "API key request cancelled synthetic-secret", name: "AbortError", keyOwner: "organization" as const },
         { provider: "openai" as const, message: "fetch failed synthetic-secret", keyOwner: "unknown" as const },
         { provider: "openai" as const, message: "Connection error. synthetic-secret", code: "ENETUNREACH" },
         { provider: "openai" as const, message: "Connection error. synthetic-secret", code: "ENOTFOUND" },

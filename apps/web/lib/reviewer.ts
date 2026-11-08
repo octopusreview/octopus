@@ -173,7 +173,7 @@ async function emitReviewStatus(orgId: string, event: ReviewEvent) {
   await pubby
     .trigger(`presence-org-${orgId}`, "review-status", event)
     .catch((err) =>
-      console.error("[reviewer] Pubby trigger failed:", err),
+      console.error("[reviewer] Pubby trigger failed:", safeErrorDetails(err)),
     );
   return true;
 }
@@ -276,7 +276,7 @@ Reply ONLY with a JSON array of strings, one per entry, in order. Example: ["dis
       return validIntents.has(val) ? (val as ReplyIntent) : "unclear";
     });
   } catch (err) {
-    console.error("[reviewer] LLM reply classification failed, falling back to unclear:", err);
+    console.error("[reviewer] LLM reply classification failed, falling back to unclear:", safeErrorDetails(err));
     return entries.map(() => "unclear");
   }
 }

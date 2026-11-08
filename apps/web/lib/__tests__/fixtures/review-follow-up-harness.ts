@@ -56,6 +56,7 @@ let adaptiveAbort = new AbortController();
 let adaptiveRemaining = 900000;
 let validatorCalls = 0;
 let usageCount = 0;
+const usageOperations: string[] = [];
 const events: { type?: string; status?: string; eventName?: string; error?: string }[] = [];
 let completedSnapshot: string | undefined;
 globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
@@ -176,10 +177,11 @@ mock.module("@/lib/qdrant", () => ({
 mock.module("@/lib/reranker", () => ({ rerankDocuments: async () => [] }));
 mock.module("@/lib/knowledge-context", () => ({ getAlwaysIncludeKnowledge: async () => [], mergeKnowledgeChunks: () => [] }));
 mock.module("@/lib/review-routing", () => ({ resolveReviewModel: async () => refusalFlow ? "claude-sonnet-4-6" : adaptiveStage ? "claude-fable-5-1" : "gpt-fixture" }));
-mock.module("@/lib/ai-usage", () => ({ logAiUsage: async () => { usageCount++; if (adaptiveStage === "before-validator") adaptiveAbort.abort(); } }));
+mock.module("@/lib/ai-usage", () => ({ logAiUsage: async (usage: { operation: string }) => { usageCount++; usageOperations.push(usage.operation); if (adaptiveStage === "before-validator") adaptiveAbort.abort(); } }));
 mock.module("@/lib/ai-router", () => ({ getProviderForModel: async () => {
   assert.ok(adaptiveStage, "Legacy fixture must not resolve adaptive capacity"); return "anthropic";
 }, createAiMessage: async (params: AiCreateParams) => {
+  if (bestEffortPrivacy && failureSite === "classifier" && params.model === "claude-sonnet-5") return { provider: "openai", usedOwnKey: false, text: '["synthetic-secret req_syntheticprivate123",]', usage: { inputTokens: 1, outputTokens: 1 } };
   if (localClassification && localFailure) {
     const { AiProviderFailure } = await import("@/lib/provider-failure");
     if (localFailure.throwValue) throw localFailure.message;
@@ -310,8 +312,8 @@ mock.module("@/lib/github", () => ({
   getRepositoryTree: async () => { if (preparationFetchFailure === "repository_tree") throw Object.assign(new Error("synthetic private tree"), { status: 503, request_id: "req_syntheticprivate123" }); return ["src/check.ts"]; },
   getFileContent: async () => "return value.name;",
   listReviewComments: async () => [],
-  listPullRequestReviewComments: async () => feedbackMode === "reply" ? [{ id: 6, user: "fixture", body: "👎", inReplyToId: 5 }] : [{ id: 5, user: "fixture[bot]", path: "src/check.ts", line: 1, body: "🟠 Previous unrelated partial-review issue", inReplyToId: null }],
-  listPullRequestIssueComments: async () => feedbackMode === "per-finding" ? [{ user: "fixture", createdAt: new Date().toISOString(), body: "**Missing null check** — 👎" }] : feedbackMode === "bulk" ? [{ user: "fixture", createdAt: new Date().toISOString(), body: "👎" }] : [],
+  listPullRequestReviewComments: async () => (feedbackMode === "reply" || feedbackMode === "classifier-reply") ? [{ id: 6, user: "fixture", body: feedbackMode === "reply" ? "👎" : "Please reconsider this finding", inReplyToId: 5 }] : [{ id: 5, user: "fixture[bot]", path: "src/check.ts", line: 1, body: "🟠 Previous unrelated partial-review issue", inReplyToId: null }],
+  listPullRequestIssueComments: async () => feedbackMode === "per-finding" ? [{ user: "fixture", createdAt: new Date().toISOString(), body: "**Missing null check** — 👎" }] : (feedbackMode === "bulk" || feedbackMode === "classifier-bulk") ? [{ user: "fixture", createdAt: new Date().toISOString(), body: feedbackMode === "bulk" ? "👎" : "Please reconsider these findings" }] : [],
   listPullRequestReviews: async () => { if (bestEffortPrivacy && failureSite === "prior-reviews") throw privateFailure(); return []; },
   getCommentReactions: async () => ({ thumbsUp: feedbackMode === "reaction" ? 1 : 0, thumbsDown: 0 }),
 }));
@@ -375,7 +377,7 @@ mock.module("@/lib/queue", () => ({
   enqueue: async (name: string) => { queuedJobs.push(name); }, enqueueAfter: async () => {},
 }));
 mock.module("@/lib/cost", () => ({ getOrgSpendLimitStatus: async () => ({ blocked: false }), shouldGuardConcurrency: async () => false, getModelPricing: async () => null, estimateCompleteReviewCost: () => 0 }));
-mock.module("@/lib/pubby", () => ({ pubby: { trigger: async (_channel: string, _name: string, data: { status?: string }) => { events.push({ ...data, status: _name === "index-status" ? repo.indexStatus : data.status, eventName: _name }); } } }));
+mock.module("@/lib/pubby", () => ({ pubby: { trigger: async (_channel: string, _name: string, data: { status?: string }) => { if (bestEffortPrivacy && failureSite === "pubby") throw privateFailure(); events.push({ ...data, status: _name === "index-status" ? repo.indexStatus : data.status, eventName: _name }); } } }));
 mock.module("@/lib/events", () => ({ eventBus: { emit: (event: { type: string }) => { events.push(event); } } }));
 mock.module("@/lib/indexer", () => ({ indexRepository: async () => {
   if (indexingPrivacy) { indexingCalls++; throw new Error("synthetic-secret clone /private/path"); }
@@ -544,6 +546,7 @@ if (bestEffortPrivacy) {
       ["", "review-storage", "Failed to store review"],
       ["", "diagram-embedding", "Failed to store diagrams"],
       ["", "diagram-storage", "Failed to store diagrams"],
+      ["", "pubby", "Pubby trigger failed"],
       ["", "check-run", "Failed to create check run"],
       ["", "prior-reviews", "Failed to fetch prior review bodies"],
       ["", "running-status", "Failed to set provider running status"],
@@ -560,10 +563,20 @@ if (bestEffortPrivacy) {
       else assert.equal(errors.length, 0);
       if (mode) assert.ok(feedbackUpdates.length, "feedback is recorded before best-effort embedding");
       assert.equal((archived.at(-1)?.coverage as ReviewCoverage).assessment?.state, "completed");
-      assert.ok(events.some(event => event.status === "completed"));
+      if (site !== "pubby") assert.ok(events.some(event => event.status === "completed"));
       assert.ok(checkOutputs.length || (site === "check-run" && published.length), "completed review is published");
       assert.doesNotMatch(inspect({ errors, events, summaries, checkOutputs, reviewUpdates, archived, sentryEvents }, { depth: 20 }), /synthetic-best-effort-private|req_syntheticprivate123/);
       if (expected) assert.ok(inspect(errors).includes("503"));
+    }
+    for (const mode of ["classifier-reply", "classifier-bulk"]) {
+      feedbackMode = mode; failureSite = "classifier"; repo.provider = "github";
+      errors.length = 0; feedbackUpdates.length = 0; usageOperations.length = 0; events.length = 0;
+      await processReview("pr");
+      assert.ok(inspect(errors).includes("LLM reply classification failed"));
+      assert.doesNotMatch(inspect(errors, { depth: 20 }), /synthetic-secret|req_syntheticprivate123/);
+      assert.equal(feedbackUpdates.length, 0, "unclear classification leaves feedback unchanged");
+      assert.equal(usageOperations.filter(operation => operation === "feedback-classification").length, 1);
+      assert.ok(events.some(event => event.status === "completed"), "review continues after classification failure");
     }
   } finally { console.error = originalError; console.warn = originalWarn; }
   process.exit(0);

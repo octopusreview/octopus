@@ -5,6 +5,7 @@ import { analyzeRepository } from "@/lib/analyzer";
 import { enqueueAfter } from "@/lib/queue";
 import { pubby } from "@/lib/pubby";
 import { eventBus } from "@/lib/events";
+import { safeErrorDetails } from "@/lib/provider-failure";
 
 // Allow both AI calls to finish before recovering an abandoned analysis claim.
 const STALE_ANALYSIS_MS = 35 * 60_000;
@@ -41,7 +42,7 @@ export async function ensureRepositoryAnalysis(
 
   const channel = `presence-org-${organizationId}`;
   const notify = (status: string) => pubby.trigger(channel, "analysis-status", { repoId: repositoryId, status })
-    .catch((err: unknown) => console.error("[reviewer] Analysis notification failed:", err));
+    .catch((err: unknown) => console.error("[reviewer] Analysis notification failed:", safeErrorDetails(err)));
   try {
     await notify("analyzing");
     await onStart?.();
@@ -53,7 +54,7 @@ export async function ensureRepositoryAnalysis(
     });
     await notify("analyzed");
     await pubby.trigger(channel, "repo-analyzed", { repoId: repositoryId, fullName: repo.fullName })
-      .catch((err: unknown) => console.error("[reviewer] Repository analysis notification failed:", err));
+      .catch((err: unknown) => console.error("[reviewer] Repository analysis notification failed:", safeErrorDetails(err)));
     eventBus.emit({ type: "repo-analyzed", orgId: organizationId, repoFullName: repo.fullName });
     return "ready";
   } catch (error) {

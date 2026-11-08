@@ -9,6 +9,7 @@ mock.module("server-only", () => ({}));
 const sentryEvents: Array<{ tags?: Record<string, unknown>; contexts?: Record<string, Record<string, unknown>> }> = [];
 mock.module("@sentry/nextjs", () => ({ captureEvent: (event: typeof sentryEvents[number]) => { sentryEvents.push(event); return "e".repeat(32); } }));
 const indexingPrivacy = process.argv.includes("--indexing-review-privacy");
+const preparationDiagnostic = process.argv.includes("--preparation-diagnostic");
 const directCommentFailure = process.argv.includes("--direct-forgejo-comment-failure");
 const preserveAutoReview = process.argv.includes("--preserve-auto-review");
 const firstCompletion = process.argv.includes("--first-review-completion");
@@ -22,7 +23,7 @@ let failureSite = "";
 let feedbackMode = "";
 const feedbackUpdates: unknown[] = [];
 const feedbackIssue = { id: "issue", title: "Missing null check", description: "A missing value causes this access to throw.", severity: "high", githubCommentId: 5, createdAt: new Date(0), pullRequest: { repositoryId: "repo", repository: { organizationId: "org" } } };
-const privateFailure = () => Object.assign(new Error("synthetic-best-effort-private"), { status: 503 });
+const privateFailure = () => Object.assign(new Error("synthetic-best-effort-private"), { status: 503, request_id: "req_syntheticprivate123" });
 const localClassification = process.argv.includes("--local-classification");
 let localFailure: { message: string; provider: "local" | "ollama" | "openai"; status?: number; code?: string; name?: string; keyOwner?: "platform" | "organization" | "unknown"; unwrapped?: boolean; throwValue?: boolean } | null = null;
 if (refusalFlow) process.env.ANTHROPIC_BASE_URL = "https://api.anthropic.com";
@@ -55,6 +56,7 @@ let adaptiveAbort = new AbortController();
 let adaptiveRemaining = 900000;
 let validatorCalls = 0;
 let usageCount = 0;
+const usageOperations: string[] = [];
 const events: { type?: string; status?: string; eventName?: string; error?: string }[] = [];
 let completedSnapshot: string | undefined;
 globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
@@ -135,7 +137,7 @@ const db = {
         || (typeof where.indexStatus === "object" && where.indexStatus.notIn.includes(repo.indexStatus))) return { count: 0 };
       Object.assign(repo, data); return { count: 1 };
     },
-    update: async ({ data }: { data: Record<string, unknown> }) => { Object.assign(repo, data); return repo; },
+    update: async ({ data }: { data: Record<string, unknown> }) => { if (bestEffortPrivacy && failureSite === "tree-cache") throw privateFailure(); Object.assign(repo, data); return repo; },
   },
   systemConfig: { findUnique: async () => null },
   organization: { findUnique: async () => org },
@@ -175,10 +177,11 @@ mock.module("@/lib/qdrant", () => ({
 mock.module("@/lib/reranker", () => ({ rerankDocuments: async () => [] }));
 mock.module("@/lib/knowledge-context", () => ({ getAlwaysIncludeKnowledge: async () => [], mergeKnowledgeChunks: () => [] }));
 mock.module("@/lib/review-routing", () => ({ resolveReviewModel: async () => refusalFlow ? "claude-sonnet-4-6" : adaptiveStage ? "claude-fable-5-1" : "gpt-fixture" }));
-mock.module("@/lib/ai-usage", () => ({ logAiUsage: async () => { usageCount++; if (adaptiveStage === "before-validator") adaptiveAbort.abort(); } }));
+mock.module("@/lib/ai-usage", () => ({ logAiUsage: async (usage: { operation: string }) => { usageCount++; usageOperations.push(usage.operation); if (adaptiveStage === "before-validator") adaptiveAbort.abort(); } }));
 mock.module("@/lib/ai-router", () => ({ getProviderForModel: async () => {
   assert.ok(adaptiveStage, "Legacy fixture must not resolve adaptive capacity"); return "anthropic";
 }, createAiMessage: async (params: AiCreateParams) => {
+  if (bestEffortPrivacy && failureSite === "classifier" && params.model === "claude-sonnet-5") return { provider: "openai", usedOwnKey: false, text: '["synthetic-secret req_syntheticprivate123",]', usage: { inputTokens: 1, outputTokens: 1 } };
   if (localClassification && localFailure) {
     const { AiProviderFailure } = await import("@/lib/provider-failure");
     if (localFailure.throwValue) throw localFailure.message;
@@ -275,7 +278,7 @@ mock.module("@/lib/review-attempt", () => ({
   recordFirstReviewCompletion: realReviewAttempt.recordFirstReviewCompletion,
   withForgejoReviewPublication: directCommentFailure ? realReviewAttempt.withForgejoReviewPublication : async (_id: string, _head: string, _version: number, publish: () => Promise<void>) => publish(),
   createReviewAttemptComment: directCommentFailure ? realReviewAttempt.createReviewAttemptComment : async (_id: string, _head: string, _version: number, create: () => Promise<number>) => create(),
-  updateCurrentReview: indexingPrivacy || directCommentFailure || firstCompletion || refusalFlow || providerErrorPrivacy || embeddingErrorPrivacy ? realReviewAttempt.updateCurrentReview : async () => ({ count: 1 }),
+  updateCurrentReview: indexingPrivacy || preparationDiagnostic || directCommentFailure || firstCompletion || refusalFlow || providerErrorPrivacy || embeddingErrorPrivacy ? realReviewAttempt.updateCurrentReview : async () => ({ count: 1 }),
   saveReviewAttempt: async (_id: string, _pr: string, _coverage: unknown, _body: string, findings: { title: string }[]) => {
     archived.push({ id: _id, findings, coverage: structuredClone(_coverage), body: _body });
     if (firstCompletion) Object.assign(pr, { status: "completed", reviewBody: _body });
@@ -286,12 +289,12 @@ mock.module("@/lib/review-attempt", () => ({
 }));
 mock.module("@/lib/github", () => ({
   LargePrError: FixtureLargePrError,
-  getPullRequestReviewInput: async () => { if (preparationFetchFailure === "large_pr") throw new FixtureLargePrError(); if (preparationFetchFailure === "review_input") throw new Error("synthetic private input"); return { rawDiff: diff, input: {
+  getPullRequestReviewInput: async () => { if (preparationFetchFailure === "large_pr") throw new FixtureLargePrError(); if (preparationFetchFailure === "review_input") throw Object.assign(new Error("synthetic private input"), { status: 503, request_id: "req_syntheticprivate123" }); return { rawDiff: diff, input: {
     provider: "github", headSha: pr.headSha, baseSha: "b".repeat(40), inventoryComplete: true,
     expectedFiles: 1, limitations: [],
     files: [{ path: "src/check.ts", change: "modified", patch: `@@ -1 +1 @@\n-return value;\n+return value.name;${adaptiveStage ? " ".repeat(400000) : ""}\n`, additions: 1, deletions: 1 }],
   } }; },
-  getPullRequestDetails: async () => ({ body: "Handle missing values" }),
+  getPullRequestDetails: async () => { if (bestEffortPrivacy && failureSite === "pr-body-fetch") throw privateFailure(); return { body: "Handle missing values" }; },
   createPullRequestComment: async () => { directComments++; return 123; },
   updatePullRequestComment: async (_installation: number, _owner: string, _repo: string, _id: number, body: string) => { summaries.push(body); },
   createPullRequestReview: async (_installation: number, _owner: string, _repo: string, _number: number, body: string, _event: string, comments: unknown[]) => {
@@ -299,19 +302,19 @@ mock.module("@/lib/github", () => ({
     published.push({ body, comments });
     return 456;
   },
-  createCheckRun: async () => 789,
+  createCheckRun: async () => { if (bestEffortPrivacy && failureSite === "check-run") throw privateFailure(); return 789; },
   updateCheckRun: async (_installation: number, _owner: string, _repo: string, _id: number, conclusion: string, _output: unknown, window?: ReviewExecutionWindow) => {
     if (firstCompletion && completionFailure === "check") { completionFailure = null; throw new Error("Fixture final check publication failed"); }
     if (window && adaptiveStage === "check-send") await fetch("https://synthetic.invalid/check", { signal: window.signal });
     checkConclusions.push(conclusion);
     checkOutputs.push(_output);
   },
-  getRepositoryTree: async () => { if (preparationFetchFailure === "repository_tree") throw new Error("synthetic private tree"); return ["src/check.ts"]; },
+  getRepositoryTree: async () => { if (preparationFetchFailure === "repository_tree") throw Object.assign(new Error("synthetic private tree"), { status: 503, request_id: "req_syntheticprivate123" }); return ["src/check.ts"]; },
   getFileContent: async () => "return value.name;",
   listReviewComments: async () => [],
-  listPullRequestReviewComments: async () => feedbackMode === "reply" ? [{ id: 6, user: "fixture", body: "👎", inReplyToId: 5 }] : [{ id: 5, user: "fixture[bot]", path: "src/check.ts", line: 1, body: "🟠 Previous unrelated partial-review issue", inReplyToId: null }],
-  listPullRequestIssueComments: async () => feedbackMode === "per-finding" ? [{ user: "fixture", createdAt: new Date().toISOString(), body: "**Missing null check** — 👎" }] : feedbackMode === "bulk" ? [{ user: "fixture", createdAt: new Date().toISOString(), body: "👎" }] : [],
-  listPullRequestReviews: async () => [],
+  listPullRequestReviewComments: async () => (feedbackMode === "reply" || feedbackMode === "classifier-reply") ? [{ id: 6, user: "fixture", body: feedbackMode === "reply" ? "👎" : "Please reconsider this finding", inReplyToId: 5 }] : [{ id: 5, user: "fixture[bot]", path: "src/check.ts", line: 1, body: "🟠 Previous unrelated partial-review issue", inReplyToId: null }],
+  listPullRequestIssueComments: async () => feedbackMode === "per-finding" ? [{ user: "fixture", createdAt: new Date().toISOString(), body: "**Missing null check** — 👎" }] : (feedbackMode === "bulk" || feedbackMode === "classifier-bulk") ? [{ user: "fixture", createdAt: new Date().toISOString(), body: feedbackMode === "bulk" ? "👎" : "Please reconsider these findings" }] : [],
+  listPullRequestReviews: async () => { if (bestEffortPrivacy && failureSite === "prior-reviews") throw privateFailure(); return []; },
   getCommentReactions: async () => ({ thumbsUp: feedbackMode === "reaction" ? 1 : 0, thumbsDown: 0 }),
 }));
 mock.module("@/lib/forgejo", () => ({
@@ -342,20 +345,21 @@ mock.module("@/lib/bitbucket", () => ({
   updatePullRequestComment: async (_org: string, _owner: string, _repo: string, _number: number, _id: number, body: string) => { summaries.push(body); },
 }));
 mock.module("@/lib/gitlab", () => ({
-  getBranchHead: async () => null,
+  getBranchHead: async () => { if (bestEffortPrivacy && failureSite === "branch-head") throw privateFailure(); return bestEffortPrivacy && failureSite === "tree-cache" ? "b".repeat(40) : null; },
   getPullRequestReviewInput: async () => ({ rawDiff: diff, input: {
     provider: "gitlab", headSha: pr.headSha, baseSha: "b".repeat(40), inventoryComplete: true,
     expectedFiles: 1, limitations: [],
-    files: [{ path: "src/check.ts", change: "modified", patch: `@@ -1 +1 @@\n-return value;\n+return value.name;${embeddingErrorPrivacy ? "" : " ".repeat(400000)}\n`, additions: 1, deletions: 1 }],
+    files: [{ path: "src/check.ts", change: "modified", patch: `@@ -1 +1 @@\n-return value;\n+return value.name;${embeddingErrorPrivacy || bestEffortPrivacy ? "" : " ".repeat(400000)}\n`, additions: 1, deletions: 1 }],
   } }),
   getPullRequestDetails: async () => ({ body: "Handle missing values" }),
   getFileContent: async () => "return value.name;",
   getRepositoryTree: async () => ["src/check.ts"],
   listPullRequestComments: async () => [],
-  createPullRequestComment: async (_org: string, _project: string, _number: number, body: string) => { summaries.push(body); return 123; },
+  createPullRequestComment: async (_org: string, _project: string, _number: number, body: string) => { if (preparationDiagnostic && failureSite === "initial-comment") throw privateFailure(); summaries.push(body); return 123; },
   updatePullRequestComment: async (_org: string, _project: string, _number: number, _id: number, body: string) => { summaries.push(body); },
   createInlineComment: async () => 456,
   setCommitStatus: async (_org: string, _project: string, _sha: string, state: string, _name: string, _description: string, _url?: string, window?: ReviewExecutionWindow) => {
+    if (bestEffortPrivacy && failureSite === "running-status" && state === "running") throw privateFailure();
     if (window) {
       await Promise.resolve();
       if (adaptiveStage === "gitlab-auth") adaptiveAbort.abort();
@@ -373,7 +377,7 @@ mock.module("@/lib/queue", () => ({
   enqueue: async (name: string) => { queuedJobs.push(name); }, enqueueAfter: async () => {},
 }));
 mock.module("@/lib/cost", () => ({ getOrgSpendLimitStatus: async () => ({ blocked: false }), shouldGuardConcurrency: async () => false, getModelPricing: async () => null, estimateCompleteReviewCost: () => 0 }));
-mock.module("@/lib/pubby", () => ({ pubby: { trigger: async (_channel: string, _name: string, data: { status?: string }) => { events.push({ ...data, status: _name === "index-status" ? repo.indexStatus : data.status, eventName: _name }); } } }));
+mock.module("@/lib/pubby", () => ({ pubby: { trigger: async (_channel: string, _name: string, data: { status?: string }) => { if (bestEffortPrivacy && failureSite === "pubby") throw privateFailure(); events.push({ ...data, status: _name === "index-status" ? repo.indexStatus : data.status, eventName: _name }); } } }));
 mock.module("@/lib/events", () => ({ eventBus: { emit: (event: { type: string }) => { events.push(event); } } }));
 mock.module("@/lib/indexer", () => ({ indexRepository: async () => {
   if (indexingPrivacy) { indexingCalls++; throw new Error("synthetic-secret clone /private/path"); }
@@ -542,19 +546,37 @@ if (bestEffortPrivacy) {
       ["", "review-storage", "Failed to store review"],
       ["", "diagram-embedding", "Failed to store diagrams"],
       ["", "diagram-storage", "Failed to store diagrams"],
+      ["", "pubby", "Pubby trigger failed"],
+      ["", "check-run", "Failed to create check run"],
+      ["", "prior-reviews", "Failed to fetch prior review bodies"],
+      ["", "running-status", "Failed to set provider running status"],
+      ["", "pr-body-fetch", "Could not fetch PR body"],
+      ["", "branch-head", "Failed to fetch branch head"],
+      ["", "tree-cache", "Failed to persist tree cache"],
       ["", "", ""],
     ]) {
       feedbackMode = mode; failureSite = site;
+      repo.provider = site === "branch-head" || site === "tree-cache" || site === "running-status" ? "gitlab" : "github";
       errors.length = 0; events.length = 0; summaries.length = 0; checkOutputs.length = 0; feedbackUpdates.length = 0;
       await processReview("pr");
       if (expected) assert.ok(inspect(errors).includes(expected), `reaches ${site} via ${mode}`);
       else assert.equal(errors.length, 0);
       if (mode) assert.ok(feedbackUpdates.length, "feedback is recorded before best-effort embedding");
       assert.equal((archived.at(-1)?.coverage as ReviewCoverage).assessment?.state, "completed");
-      assert.ok(events.some(event => event.status === "completed"));
-      assert.ok(checkOutputs.length, "completed review is published");
-      assert.doesNotMatch(inspect({ errors, events, summaries, checkOutputs, reviewUpdates, archived, sentryEvents }, { depth: 20 }), /synthetic-best-effort-private/);
+      if (site !== "pubby") assert.ok(events.some(event => event.status === "completed"));
+      assert.ok(checkOutputs.length || (site === "check-run" && published.length), "completed review is published");
+      assert.doesNotMatch(inspect({ errors, events, summaries, checkOutputs, reviewUpdates, archived, sentryEvents }, { depth: 20 }), /synthetic-best-effort-private|req_syntheticprivate123/);
       if (expected) assert.ok(inspect(errors).includes("503"));
+    }
+    for (const mode of ["classifier-reply", "classifier-bulk"]) {
+      feedbackMode = mode; failureSite = "classifier"; repo.provider = "github";
+      errors.length = 0; feedbackUpdates.length = 0; usageOperations.length = 0; events.length = 0;
+      await processReview("pr");
+      assert.ok(inspect(errors).includes("LLM reply classification failed"));
+      assert.doesNotMatch(inspect(errors, { depth: 20 }), /synthetic-secret|req_syntheticprivate123/);
+      assert.equal(feedbackUpdates.length, 0, "unclear classification leaves feedback unchanged");
+      assert.equal(usageOperations.filter(operation => operation === "feedback-classification").length, 1);
+      assert.ok(events.some(event => event.status === "completed"), "review continues after classification failure");
     }
   } finally { console.error = originalError; console.warn = originalWarn; }
   process.exit(0);
@@ -637,7 +659,8 @@ if (indexingPrivacy) {
     preparationFetchFailure = "review_input";
     reviewUpdates.length = 0;
     await processReview("pr");
-    assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "synthetic private input"; }));
+    assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "Review failed during preparation"; }));
+    assert.doesNotMatch(inspect({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }, { depth: 20 }), /synthetic private input/);
   } finally { console.error = originalError; }
   console.log("PASS indexing failures are private across review outputs");
   process.exit(0);
@@ -660,21 +683,39 @@ if (refusalFlow) {
   console.log("PASS refusal remains an incomplete failed review");
   process.exit(0);
 }
-if (process.argv.includes("--preparation-diagnostic")) {
+if (preparationDiagnostic) {
   const originalError = console.error;
-  console.error = () => {};
+  const errors: unknown[][] = [];
+  console.error = (...args: unknown[]) => { errors.push(args); };
   try {
     for (const operation of ["review_input", "repository_tree"] as const) {
       preparationFetchFailure = operation;
       pr.status = "pending";
+      summaries.length = 0; checkOutputs.length = 0; reviewUpdates.length = 0; events.length = 0; errors.length = 0;
       const before = sentryEvents.length;
       await processReview("pr");
       assert.equal(sentryEvents.length, before + 1);
       assert.equal(sentryEvents.at(-1)?.tags?.failure_stage, "preparation");
       assert.equal(sentryEvents.at(-1)?.tags?.preparation_operation, operation);
-      assert.ok(!JSON.stringify(sentryEvents.at(-1)).includes("synthetic private"));
+      assert.equal(sentryEvents.at(-1)?.tags?.failure_code, "http_503");
+      assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "Review failed during preparation"; }));
+      assert.ok(checkOutputs.length || summaries.length, "failure remains visible to the provider");
+      assert.ok(events.some(event => event.status === "failed" && event.error === "Review failed during preparation"));
+      assert.doesNotMatch(inspect({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }, { depth: 20 }), /synthetic private|req_syntheticprivate123/);
     }
     preparationFetchFailure = null;
+    repo.provider = "gitlab";
+    failureSite = "initial-comment";
+    summaries.length = 0; checkOutputs.length = 0; reviewUpdates.length = 0; events.length = 0; errors.length = 0; sentryEvents.length = 0;
+    await processReview("pr");
+    assert.equal(sentryEvents.at(-1)?.tags?.failure_stage, "review");
+    assert.equal(sentryEvents.at(-1)?.tags?.failure_code, "http_503");
+    assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "Review failed while starting the review"; }));
+    assert.ok(events.some(event => event.status === "failed" && event.error === "Review failed while starting the review"));
+    assert.ok(checkOutputs.some(output => typeof output === "string" && output.includes("Review failed while starting the review")));
+    assert.doesNotMatch(inspect({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }, { depth: 20 }), /synthetic-best-effort-private|req_syntheticprivate123/);
+    failureSite = "";
+    repo.provider = "github";
     pr.status = "pending";
     const before = sentryEvents.length;
     await processReview("pr");
@@ -759,7 +800,7 @@ if (directCommentFailure) {
     const { where, data } = query as { where: unknown; data: { status?: string; errorMessage?: string } };
     if (data.status !== "failed") return false;
     assert.deepEqual(where, { id: pr.id, headSha: pr.headSha, reviewRequestVersion: pr.reviewRequestVersion });
-    assert.equal(data.errorMessage, "Forgejo API returned 403");
+    assert.equal(data.errorMessage, "Review failed while starting the review");
     return true;
   }), "Direct comment failure is persisted for the same review attempt");
   assert.ok(events.some(event => event.type === "review-failed"));
@@ -1013,7 +1054,8 @@ for (const connector of [false, true]) {
         assert.ok(forgejoPublications.at(-1)!.includes("retry automatically"));
         assert.ok(!events.slice(beforeEvents).some(event => event.type === "review-failed"));
       } else if (preparation === "failure") {
-        assert.ok(forgejoPublications.some(body => body.includes("Repository analysis failed")));
+        assert.ok(forgejoPublications.some(body => body.includes("Review failed during preparation")));
+        assert.ok(!forgejoPublications.some(body => body.includes("Repository analysis failed")));
         assert.equal(forgejoPublications.at(-1), "failed");
       } else {
         assert.ok(forgejoPublications.some(body => body.includes("Starting PR review")));

@@ -1,6 +1,7 @@
 import "server-only";
 import { createEmbeddings } from "@/lib/embeddings";
 import { ensureFeedbackCollection, searchFeedbackPatterns } from "@/lib/qdrant";
+import { safeErrorDetails } from "@/lib/provider-failure";
 
 /** Shared hosted/local policy; the existing strict cosine threshold is unchanged. */
 export async function suppressFindingsFromFeedback<T extends { title: string; description: string }>(
@@ -31,7 +32,7 @@ export async function suppressFindingsFromFeedback<T extends { title: string; de
     }
     return retained;
   } catch (error) {
-    console.warn("[feedback-suppression] Semantic feedback matching failed, continuing:", error);
+    console.warn("[feedback-suppression] Semantic feedback matching failed, continuing:", safeErrorDetails(error));
     return findings;
   }
 }

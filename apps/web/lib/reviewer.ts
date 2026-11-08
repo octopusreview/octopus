@@ -2233,6 +2233,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
 
     // Determine which findings go into the review summary (non-inline ones)
     let inlineReviewSucceeded = false;
+    let retryReviewAsSummary = true;
 
     if (isGitHub && installationId) {
       // GitHub: use the PR review API for inline comments
@@ -2306,7 +2307,8 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           }
         } catch (err) {
           if (err instanceof ReviewProcessingExpiredError) throw err;
-          console.error("[reviewer] Failed to submit inline review, falling back to summary-only:", safeErrorDetails(err));
+          retryReviewAsSummary = typeof err === "object" && err !== null && "status" in err && err.status === 422;
+          console.error("[reviewer] Failed to submit inline review:", safeErrorDetails(err));
         }
       }
 
@@ -2318,18 +2320,22 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         const findingsBlock = buildLowSeveritySummary(allSummaryFindings);
         effectiveFindingsCount = allSummaryFindings.length;
         const summaryBody = buildReviewSummary(findingsBlock, allSummaryFindings.length);
-        try {
-          assertProcessingActive();
-          await ghCreatePullRequestReview(
-            installationId, owner, repoName, pr.number,
-            summaryBody, reviewEvent as "COMMENT" | "REQUEST_CHANGES", [], undefined, coverage.headSha ?? undefined,
-          );
-          console.log(`[reviewer] PR review submitted without inline comments, ${allSummaryFindings.length} in summary (${reviewEvent})`);
-        } catch (err) {
-          if (err instanceof ReviewProcessingExpiredError) throw err;
-          console.error("[reviewer] Failed to submit PR review, falling back to comment:", safeErrorDetails(err));
-          // Publish fallback findings with the archived result and final summary guards below.
+        if (!retryReviewAsSummary) {
           mainCommentBody += `\n\n${findingsBlock}`;
+        } else {
+          try {
+            assertProcessingActive();
+            await ghCreatePullRequestReview(
+              installationId, owner, repoName, pr.number,
+              summaryBody, reviewEvent as "COMMENT" | "REQUEST_CHANGES", [], undefined, coverage.headSha ?? undefined,
+            );
+            console.log(`[reviewer] PR review submitted without inline comments, ${allSummaryFindings.length} in summary (${reviewEvent})`);
+          } catch (err) {
+            if (err instanceof ReviewProcessingExpiredError) throw err;
+            console.error("[reviewer] Failed to submit PR review, falling back to comment:", safeErrorDetails(err));
+            // Publish fallback findings with the archived result and final summary guards below.
+            mainCommentBody += `\n\n${findingsBlock}`;
+          }
         }
       }
     } else if (isBitbucket || usesProjectApi) {

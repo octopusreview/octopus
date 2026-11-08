@@ -317,8 +317,8 @@ mock.module("@/lib/github", () => ({
   updatePullRequestComment: async (_installation: number, _owner: string, _repo: string, _id: number, body: string) => { summaries.push(body); },
   createPullRequestReview: async (_installation: number, _owner: string, _repo: string, _number: number, body: string, _event: string, comments: unknown[]) => {
     reviewAttempts.push(comments.length);
-    if (bestEffortPrivacy && failureSite === "inline-review" && comments.length) throw Object.assign(new Error("synthetic-best-effort-private"), { status: 403, request_id: "req_syntheticprivate123" });
-    if (bestEffortPrivacy && failureSite === "review-fallback") throw privateFailure();
+    if (bestEffortPrivacy && (failureSite === "inline-review" || failureSite === "inline-review-422") && comments.length) throw Object.assign(new Error("synthetic-best-effort-private"), { status: failureSite === "inline-review" ? 403 : 422, request_id: "req_syntheticprivate123" });
+    if (bestEffortPrivacy && failureSite === "review-fallback") throw comments.length ? Object.assign(privateFailure(), { status: 422 }) : privateFailure();
     if (nativeFailure) throw new Error("fixture native review rejected");
     published.push({ body, comments });
     return 456;
@@ -653,6 +653,7 @@ if (bestEffortPrivacy) {
       ["", "branch-head", "Failed to fetch branch head"],
       ["", "tree-cache", "Failed to persist tree cache"],
       ["", "inline-review", "Failed to submit inline review"],
+      ["", "inline-review-422", "Failed to submit inline review"],
       ["", "review-fallback", "Failed to submit PR review"],
       ["", "match-ids", "Failed to match GitHub comment IDs"],
       ["", "project-inline", "Failed to post inline comment"],
@@ -668,9 +669,14 @@ if (bestEffortPrivacy) {
       errors.length = 0; events.length = 0; summaries.length = 0; checkOutputs.length = 0; feedbackUpdates.length = 0; reviewAttempts.length = 0;
       await processReview("pr");
       if (site === "inline-review") {
-        assert.deepEqual(reviewAttempts, [1, 0], "hosted 403 falls back once to a summary-only review");
-        assert.equal(published.at(-1)?.comments.length, 0);
+        assert.deepEqual(reviewAttempts, [1], "hosted 403 does not retry review creation");
+        assert.ok(summaries.at(-1)?.includes("Missing null check"), "findings remain in the fallback comment");
         assert.ok(inspect(errors).includes("403"));
+      }
+      if (site === "inline-review-422") {
+        assert.deepEqual(reviewAttempts, [1, 0], "hosted 422 falls back once to a summary-only review");
+        assert.equal(published.at(-1)?.comments.length, 0);
+        assert.ok(inspect(errors).includes("422"));
       }
       if (expected) assert.ok(inspect(errors).includes(expected), `reaches ${site} via ${mode}`);
       else assert.equal(errors.length, 0);
@@ -683,7 +689,7 @@ if (bestEffortPrivacy) {
       if (site !== "pubby") assert.ok(events.some(event => event.status === "completed"));
       assert.ok(checkOutputs.length || (site === "check-run" && published.length), "completed review is published");
       assert.doesNotMatch(inspect({ errors, events, summaries, checkOutputs, reviewUpdates, archived, sentryEvents }, { depth: 20 }), /synthetic-best-effort-private|req_syntheticprivate123/);
-      if (expected && site !== "inline-review") assert.ok(inspect(errors).includes("503"));
+      if (expected && site !== "inline-review" && site !== "inline-review-422") assert.ok(inspect(errors).includes("503"));
     }
     for (const mode of ["classifier-reply", "classifier-bulk"]) {
       feedbackMode = mode; failureSite = "classifier"; repo.provider = "github";

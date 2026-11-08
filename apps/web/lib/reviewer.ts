@@ -785,7 +785,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           : await bitbucket.getPullRequestDetails(org.id, owner, repoName, prNumber);
       return details.body ?? "";
     } catch (err) {
-      console.warn(`[reviewer] Could not fetch PR body for intent:`, err);
+      console.warn(`[reviewer] Could not fetch PR body for intent:`, safeErrorDetails(err));
       return "";
     }
   };
@@ -858,7 +858,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
     try {
       headSha = await providerGetBranchHead(branch);
     } catch (err) {
-      console.warn("[reviewer] Failed to fetch branch head, skipping tree cache:", err);
+      console.warn("[reviewer] Failed to fetch branch head, skipping tree cache:", safeErrorDetails(err));
     }
 
     if (
@@ -884,7 +884,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         });
         console.log(`[reviewer] Tree cache stored for ${repo.fullName}@${headSha.slice(0, 8)} (${paths.length} files)`);
       } catch (err) {
-        console.warn("[reviewer] Failed to persist tree cache:", err);
+        console.warn("[reviewer] Failed to persist tree cache:", safeErrorDetails(err));
       }
     }
     return paths;
@@ -2617,8 +2617,9 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         : "Review failed while preparing the repository"
       : err instanceof ReviewProcessingExpiredError ? err.message
         : embeddingPreparationFailed ? "Review failed while preparing search context"
+        : failureStage === "preparation" ? "Review failed during preparation"
         : err instanceof Error ? err.message : "Unknown error";
-    console.error(`[reviewer] Review failed for PR #${pr.number}:`, failureStage === "indexing" ? errorMessage : embeddingPreparationFailed ? safeErrorDetails(err) : err);
+    console.error(`[reviewer] Review failed for PR #${pr.number}:`, failureStage === "indexing" ? errorMessage : failureStage === "preparation" ? safeErrorDetails(err) : err);
 
     // A deadline can expire while a completed assessment is being committed. Keep that immutable
     // record and append the interrupted processing outcome before publishing any scored completion.

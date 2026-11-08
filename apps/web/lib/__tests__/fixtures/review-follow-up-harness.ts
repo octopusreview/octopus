@@ -9,6 +9,7 @@ mock.module("server-only", () => ({}));
 const sentryEvents: Array<{ tags?: Record<string, unknown>; contexts?: Record<string, Record<string, unknown>> }> = [];
 mock.module("@sentry/nextjs", () => ({ captureEvent: (event: typeof sentryEvents[number]) => { sentryEvents.push(event); return "e".repeat(32); } }));
 const indexingPrivacy = process.argv.includes("--indexing-review-privacy");
+const preparationDiagnostic = process.argv.includes("--preparation-diagnostic");
 const directCommentFailure = process.argv.includes("--direct-forgejo-comment-failure");
 const preserveAutoReview = process.argv.includes("--preserve-auto-review");
 const firstCompletion = process.argv.includes("--first-review-completion");
@@ -135,7 +136,7 @@ const db = {
         || (typeof where.indexStatus === "object" && where.indexStatus.notIn.includes(repo.indexStatus))) return { count: 0 };
       Object.assign(repo, data); return { count: 1 };
     },
-    update: async ({ data }: { data: Record<string, unknown> }) => { Object.assign(repo, data); return repo; },
+    update: async ({ data }: { data: Record<string, unknown> }) => { if (bestEffortPrivacy && failureSite === "tree-cache") throw privateFailure(); Object.assign(repo, data); return repo; },
   },
   systemConfig: { findUnique: async () => null },
   organization: { findUnique: async () => org },
@@ -275,7 +276,7 @@ mock.module("@/lib/review-attempt", () => ({
   recordFirstReviewCompletion: realReviewAttempt.recordFirstReviewCompletion,
   withForgejoReviewPublication: directCommentFailure ? realReviewAttempt.withForgejoReviewPublication : async (_id: string, _head: string, _version: number, publish: () => Promise<void>) => publish(),
   createReviewAttemptComment: directCommentFailure ? realReviewAttempt.createReviewAttemptComment : async (_id: string, _head: string, _version: number, create: () => Promise<number>) => create(),
-  updateCurrentReview: indexingPrivacy || directCommentFailure || firstCompletion || refusalFlow || providerErrorPrivacy || embeddingErrorPrivacy ? realReviewAttempt.updateCurrentReview : async () => ({ count: 1 }),
+  updateCurrentReview: indexingPrivacy || preparationDiagnostic || directCommentFailure || firstCompletion || refusalFlow || providerErrorPrivacy || embeddingErrorPrivacy ? realReviewAttempt.updateCurrentReview : async () => ({ count: 1 }),
   saveReviewAttempt: async (_id: string, _pr: string, _coverage: unknown, _body: string, findings: { title: string }[]) => {
     archived.push({ id: _id, findings, coverage: structuredClone(_coverage), body: _body });
     if (firstCompletion) Object.assign(pr, { status: "completed", reviewBody: _body });
@@ -286,12 +287,12 @@ mock.module("@/lib/review-attempt", () => ({
 }));
 mock.module("@/lib/github", () => ({
   LargePrError: FixtureLargePrError,
-  getPullRequestReviewInput: async () => { if (preparationFetchFailure === "large_pr") throw new FixtureLargePrError(); if (preparationFetchFailure === "review_input") throw new Error("synthetic private input"); return { rawDiff: diff, input: {
+  getPullRequestReviewInput: async () => { if (preparationFetchFailure === "large_pr") throw new FixtureLargePrError(); if (preparationFetchFailure === "review_input") throw Object.assign(new Error("synthetic private input"), { status: 503, request_id: "req_syntheticprivate123" }); return { rawDiff: diff, input: {
     provider: "github", headSha: pr.headSha, baseSha: "b".repeat(40), inventoryComplete: true,
     expectedFiles: 1, limitations: [],
     files: [{ path: "src/check.ts", change: "modified", patch: `@@ -1 +1 @@\n-return value;\n+return value.name;${adaptiveStage ? " ".repeat(400000) : ""}\n`, additions: 1, deletions: 1 }],
   } }; },
-  getPullRequestDetails: async () => ({ body: "Handle missing values" }),
+  getPullRequestDetails: async () => { if (bestEffortPrivacy && failureSite === "pr-body-fetch") throw privateFailure(); return { body: "Handle missing values" }; },
   createPullRequestComment: async () => { directComments++; return 123; },
   updatePullRequestComment: async (_installation: number, _owner: string, _repo: string, _id: number, body: string) => { summaries.push(body); },
   createPullRequestReview: async (_installation: number, _owner: string, _repo: string, _number: number, body: string, _event: string, comments: unknown[]) => {
@@ -306,7 +307,7 @@ mock.module("@/lib/github", () => ({
     checkConclusions.push(conclusion);
     checkOutputs.push(_output);
   },
-  getRepositoryTree: async () => { if (preparationFetchFailure === "repository_tree") throw new Error("synthetic private tree"); return ["src/check.ts"]; },
+  getRepositoryTree: async () => { if (preparationFetchFailure === "repository_tree") throw Object.assign(new Error("synthetic private tree"), { status: 503, request_id: "req_syntheticprivate123" }); return ["src/check.ts"]; },
   getFileContent: async () => "return value.name;",
   listReviewComments: async () => [],
   listPullRequestReviewComments: async () => feedbackMode === "reply" ? [{ id: 6, user: "fixture", body: "👎", inReplyToId: 5 }] : [{ id: 5, user: "fixture[bot]", path: "src/check.ts", line: 1, body: "🟠 Previous unrelated partial-review issue", inReplyToId: null }],
@@ -342,11 +343,11 @@ mock.module("@/lib/bitbucket", () => ({
   updatePullRequestComment: async (_org: string, _owner: string, _repo: string, _number: number, _id: number, body: string) => { summaries.push(body); },
 }));
 mock.module("@/lib/gitlab", () => ({
-  getBranchHead: async () => null,
+  getBranchHead: async () => { if (bestEffortPrivacy && failureSite === "branch-head") throw privateFailure(); return bestEffortPrivacy && failureSite === "tree-cache" ? "b".repeat(40) : null; },
   getPullRequestReviewInput: async () => ({ rawDiff: diff, input: {
     provider: "gitlab", headSha: pr.headSha, baseSha: "b".repeat(40), inventoryComplete: true,
     expectedFiles: 1, limitations: [],
-    files: [{ path: "src/check.ts", change: "modified", patch: `@@ -1 +1 @@\n-return value;\n+return value.name;${embeddingErrorPrivacy ? "" : " ".repeat(400000)}\n`, additions: 1, deletions: 1 }],
+    files: [{ path: "src/check.ts", change: "modified", patch: `@@ -1 +1 @@\n-return value;\n+return value.name;${embeddingErrorPrivacy || bestEffortPrivacy ? "" : " ".repeat(400000)}\n`, additions: 1, deletions: 1 }],
   } }),
   getPullRequestDetails: async () => ({ body: "Handle missing values" }),
   getFileContent: async () => "return value.name;",
@@ -542,9 +543,13 @@ if (bestEffortPrivacy) {
       ["", "review-storage", "Failed to store review"],
       ["", "diagram-embedding", "Failed to store diagrams"],
       ["", "diagram-storage", "Failed to store diagrams"],
+      ["", "pr-body-fetch", "Could not fetch PR body"],
+      ["", "branch-head", "Failed to fetch branch head"],
+      ["", "tree-cache", "Failed to persist tree cache"],
       ["", "", ""],
     ]) {
       feedbackMode = mode; failureSite = site;
+      repo.provider = site === "branch-head" || site === "tree-cache" ? "gitlab" : "github";
       errors.length = 0; events.length = 0; summaries.length = 0; checkOutputs.length = 0; feedbackUpdates.length = 0;
       await processReview("pr");
       if (expected) assert.ok(inspect(errors).includes(expected), `reaches ${site} via ${mode}`);
@@ -637,7 +642,8 @@ if (indexingPrivacy) {
     preparationFetchFailure = "review_input";
     reviewUpdates.length = 0;
     await processReview("pr");
-    assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "synthetic private input"; }));
+    assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "Review failed during preparation"; }));
+    assert.doesNotMatch(inspect({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }, { depth: 20 }), /synthetic private input/);
   } finally { console.error = originalError; }
   console.log("PASS indexing failures are private across review outputs");
   process.exit(0);
@@ -660,19 +666,25 @@ if (refusalFlow) {
   console.log("PASS refusal remains an incomplete failed review");
   process.exit(0);
 }
-if (process.argv.includes("--preparation-diagnostic")) {
+if (preparationDiagnostic) {
   const originalError = console.error;
-  console.error = () => {};
+  const errors: unknown[][] = [];
+  console.error = (...args: unknown[]) => { errors.push(args); };
   try {
     for (const operation of ["review_input", "repository_tree"] as const) {
       preparationFetchFailure = operation;
       pr.status = "pending";
+      summaries.length = 0; checkOutputs.length = 0; reviewUpdates.length = 0; events.length = 0; errors.length = 0;
       const before = sentryEvents.length;
       await processReview("pr");
       assert.equal(sentryEvents.length, before + 1);
       assert.equal(sentryEvents.at(-1)?.tags?.failure_stage, "preparation");
       assert.equal(sentryEvents.at(-1)?.tags?.preparation_operation, operation);
-      assert.ok(!JSON.stringify(sentryEvents.at(-1)).includes("synthetic private"));
+      assert.equal(sentryEvents.at(-1)?.tags?.failure_code, "http_503");
+      assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "Review failed during preparation"; }));
+      assert.ok(checkOutputs.length || summaries.length, "failure remains visible to the provider");
+      assert.ok(events.some(event => event.status === "failed" && event.error === "Review failed during preparation"));
+      assert.doesNotMatch(inspect({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }, { depth: 20 }), /synthetic private|req_syntheticprivate123/);
     }
     preparationFetchFailure = null;
     pr.status = "pending";
@@ -1013,7 +1025,8 @@ for (const connector of [false, true]) {
         assert.ok(forgejoPublications.at(-1)!.includes("retry automatically"));
         assert.ok(!events.slice(beforeEvents).some(event => event.type === "review-failed"));
       } else if (preparation === "failure") {
-        assert.ok(forgejoPublications.some(body => body.includes("Repository analysis failed")));
+        assert.ok(forgejoPublications.some(body => body.includes("Review failed during preparation")));
+        assert.ok(!forgejoPublications.some(body => body.includes("Repository analysis failed")));
         assert.equal(forgejoPublications.at(-1), "failed");
       } else {
         assert.ok(forgejoPublications.some(body => body.includes("Starting PR review")));

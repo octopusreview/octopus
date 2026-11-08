@@ -311,7 +311,9 @@ export async function recordLocalIndexProgress(
 ): Promise<void> {
   await prisma.$transaction(async tx => {
     const saved = await tx.repository.updateMany({
-      where: { id: repoId, indexStatus: "indexing", indexAttemptId: claim.attemptId },
+      where: { id: repoId, organizationId: claim.upload.organizationId, provider: claim.upload.provider,
+        fullName: claim.upload.fullName, externalId: claim.upload.externalId, installationId: null, isActive: true,
+        indexStatus: "indexing", indexAttemptId: claim.attemptId, localIndexUpload: { path: ["id"], equals: claim.upload.id } },
       data: {
         indexAttemptId: null,
         localIndexUpload: claim.upload,
@@ -341,9 +343,11 @@ export async function recordLocalIndexProgress(
   });
 }
 
-export async function markLocalIndexFailed(repoId: string, attemptId: string): Promise<void> {
+export async function markLocalIndexFailed(repoId: string, claim: { attemptId: string; upload: UploadState }): Promise<void> {
   await prisma.repository.updateMany({
-    where: { id: repoId, indexStatus: "indexing", indexAttemptId: attemptId },
+    where: { id: repoId, organizationId: claim.upload.organizationId, provider: claim.upload.provider,
+      fullName: claim.upload.fullName, externalId: claim.upload.externalId, installationId: null, isActive: true,
+      indexStatus: "indexing", indexAttemptId: claim.attemptId, localIndexUpload: { path: ["id"], equals: claim.upload.id } },
     data: { indexStatus: "failed", indexAttemptId: null },
   });
 }

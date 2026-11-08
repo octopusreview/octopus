@@ -186,7 +186,7 @@ export async function exerciseStorageRace(scenario: string, repo: Repository) {
         await recordLocalIndexProgress(repo.id, null, {
           indexedFiles: delta.indexedInBatch, totalChunks: delta.chunksInBatch, totalVectors: delta.chunksInBatch,
         }, batchIndex === totalBatches - 1, owned);
-      } catch (error) { await markLocalIndexFailed(repo.id, owned.attemptId); throw error; }
+      } catch (error) { await markLocalIndexFailed(repo.id, owned); throw error; }
     };
     if (scenario === "storage-local-verified" || scenario === "storage-local-legacy") {
       await prisma.repository.update({ where: { id: repo.id }, data: { externalId: `cli:github:${repo.fullName}`, indexedAt: null, firstIndexedAt: null } });

@@ -202,7 +202,7 @@ export async function POST(request: Request) {
   // re-index UI both rely on indexStatus="failed" to allow user-driven
   // recovery; "indexing" is treated as "in flight, do not touch."
   if (await isOrgOverSpendLimit(auth.org.id)) {
-    await markLocalIndexFailed(repoId, claim.attemptId).catch((e) =>
+    await markLocalIndexFailed(repoId, claim).catch((e) =>
       console.error("[cli.index-local] failed to mark repo failed on 402:", e),
     );
     return NextResponse.json({ error: "Monthly spend limit reached" }, { status: 402 });
@@ -246,7 +246,7 @@ export async function POST(request: Request) {
       done: isLastBatch,
     });
   } catch (e) {
-    await markLocalIndexFailed(repoId, claim.attemptId).catch(() => {});
+    await markLocalIndexFailed(repoId, claim).catch(() => {});
     const detail = e instanceof Error ? e.message : String(e);
     console.error(`[cli.index-local] batch ${body.batchIndex}/${body.totalBatches} for ${fullName} failed:`, detail);
     const isProd = process.env.NODE_ENV === "production";

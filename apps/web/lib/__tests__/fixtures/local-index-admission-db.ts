@@ -12,7 +12,7 @@ mock.module("@/lib/qdrant", () => ({ upsertChunks: () => { throw new Error("unex
 globalThis.fetch = (() => { throw new Error("unexpected external request"); }) as typeof fetch;
 
 const { prisma } = await import("@octopus/db");
-const { prepareRepoForLocalIndex, claimLocalIndexBatch, LocalIndexConflict } = await import("@/lib/index-local");
+const { prepareRepoForLocalIndex, claimLocalIndexBatch, recordLocalIndexProgress, markLocalIndexFailed, LocalIndexConflict } = await import("@/lib/index-local");
 const suffix = randomUUID();
 const source = await prisma.organization.create({ data: { name: "Source", slug: `local-source-${suffix}` } });
 const target = await prisma.organization.create({ data: { name: "Target", slug: `local-target-${suffix}` } });
@@ -78,6 +78,11 @@ try {
   assert.equal((await delegate.findUniqueOrThrow({ where: { id: repo.id } })).indexStatus, "indexing");
   assert.ok(result.ok);
   const files = [{ path: "file.ts", content: "synthetic" }];
+  const legacyUpload = { id: result.uploadId, nextBatch: 0, totalBatches: 1, totalFiles: 1, paths: [] as string[], verified: true };
+  await delegate.update({ where: { id: repo.id }, data: { localIndexUpload: legacyUpload } });
+  await assert.rejects(() => claimLocalIndexBatch(repo.id, source.id, 0, 1, files, result.uploadId), LocalIndexConflict,
+    "an upload created before identity binding must be restarted");
+  await delegate.update({ where: { id: repo.id }, data: { localIndexUpload: { ...legacyUpload, organizationId: source.id, provider: "github", fullName, externalId } } });
   for (const change of ["owner", "provider", "name", "external-id", "installation", "inactive"]) {
     for (const uploadId of [result.uploadId, undefined]) {
       await delegate.update({ where: { id: repo.id }, data: { organizationId: source.id, provider: "github", fullName, externalId, installationId: null, isActive: true, indexAttemptId: null } });
@@ -107,7 +112,23 @@ try {
     assert.equal((await delegate.findUniqueOrThrow({ where: { id: repo.id } })).indexAttemptId, null, `${change} must not claim a batch`);
   }
   await delegate.update({ where: { id: repo.id }, data: { organizationId: source.id, provider: "github", fullName, externalId, installationId: null, isActive: true } });
-  assert.equal((await claimLocalIndexBatch(repo.id, source.id, 0, 1, files, result.uploadId)).upload.id, result.uploadId);
+  for (const change of ["owner", "provider", "name", "external-id", "installation", "inactive"]) {
+    await delegate.update({ where: { id: repo.id }, data: { organizationId: source.id, provider: "github", fullName, externalId, installationId: null, isActive: true, indexStatus: "indexing", indexAttemptId: null } });
+    const claim = await claimLocalIndexBatch(repo.id, source.id, 0, 1, files, result.uploadId);
+    await delegate.update({ where: { id: repo.id }, data:
+      change === "owner" ? { organizationId: target.id } :
+      change === "provider" ? { provider: "gitlab" } :
+      change === "name" ? { fullName: `${fullName}-renamed` } :
+      change === "external-id" ? { externalId: "cli:changed" } :
+      change === "installation" ? { installationId: 123 } : { isActive: false },
+    });
+    await assert.rejects(() => recordLocalIndexProgress(repo.id, null, { indexedFiles: 1, totalChunks: 1, totalVectors: 1 }, true, claim), LocalIndexConflict, `${change} during batch`);
+    await markLocalIndexFailed(repo.id, claim);
+    const current = await delegate.findUniqueOrThrow({ where: { id: repo.id } });
+    assert.equal(current.indexStatus, "indexing", `${change} must not fail the changed repository`);
+    assert.equal(current.indexAttemptId, claim.attemptId);
+    assert.equal(current.indexedFiles, 0, `${change} must not complete the changed repository`);
+  }
 } finally {
   await prisma.organization.deleteMany({ where: { id: { in: [source.id, target.id] } } });
   await prisma.$disconnect();

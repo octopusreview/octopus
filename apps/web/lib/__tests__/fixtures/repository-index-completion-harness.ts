@@ -325,7 +325,7 @@ try {
       if (scenario === "local-cancel") {
         await prisma.repository.update({ where: { id }, data: { indexStatus: "pending", indexAttemptId: null } });
         await assert.rejects(() => recordLocalIndexProgress(id, null, progress, true, final), /cancelled or replaced/);
-        await markLocalIndexFailed(id, final.attemptId);
+        await markLocalIndexFailed(id, final);
       } else await recordLocalIndexProgress(id, null, progress, true, final);
     }
     const result = await prisma.repository.findUniqueOrThrow({ where: { id } });

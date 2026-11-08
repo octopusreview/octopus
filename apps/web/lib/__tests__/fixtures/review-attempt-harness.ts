@@ -2,7 +2,7 @@ import "./review-outcome-stub";
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
 
-type Row = { id: string; pullRequestId: string; reviewBody: string; coverage: unknown; headSha: string | null; baseSha: string | null; createdAt?: Date };
+type Row = { id: string; pullRequestId: string; reviewBody: string; coverage: unknown; headSha: string | null; baseSha: string | null; createdAt?: Date; failureFingerprint?: string | null };
 let issues: unknown[] = [];
 let duringConfig: (() => void) | undefined;
 const rows = new Map<string, Row>();
@@ -35,14 +35,20 @@ const db = {
       return { count };
     },
     findUnique: async ({ where }: { where: { id: string } }) => rows.get(where.id) ?? null,
-    findFirst: async ({ where }: { where: { id: string; pullRequest?: { repository?: { organization?: { id?: string; members?: { some?: { userId?: string; deletedAt?: unknown } }; bannedAt?: unknown; deletedAt?: unknown }; isActive?: boolean } } } }) => {
+    findFirst: async ({ where, select }: { where: { id: string; pullRequest?: { repository?: { organization?: { id?: string; members?: { some?: { userId?: string; deletedAt?: unknown } }; bannedAt?: unknown; deletedAt?: unknown }; isActive?: boolean } } }; select?: Record<string, unknown> }) => {
       queries++;
       const org = where.pullRequest?.repository?.organization;
       // Emulate row selection: an omitted tenant predicate would expose this
       // row to the foreign caller and make the endpoint regression fail.
       if (org?.id && org.id !== "owner-org") return null;
       if (org?.members && (org.members.some?.userId !== "alice" || !member)) return null;
-      return rows.get(where.id) ?? null;
+      const row = rows.get(where.id);
+      if (!row) return null;
+      if (select && !select.failureFingerprint) {
+        const { failureFingerprint: _privateFingerprint, ...selected } = row;
+        return selected;
+      }
+      return row;
     },
   },
   pullRequest: {
@@ -271,8 +277,9 @@ mock.module("@/lib/bitbucket", () => ({}));
 mock.module("@/lib/gitlab", () => ({}));
 mock.module("@/lib/queue", () => ({ enqueue: async () => "queued" }));
 const statusEvents: { event: string; data: Record<string, unknown> }[] = [];
+const emittedEvents: unknown[] = [];
 mock.module("@/lib/pubby", () => ({ pubby: { trigger: async (_channel: string, event: string, data: Record<string, unknown>) => { statusEvents.push({ event, data }); } } }));
-mock.module("@/lib/events", () => ({ eventBus: { emit: () => {} } }));
+mock.module("@/lib/events", () => ({ eventBus: { emit: (event: unknown) => { emittedEvents.push(event); } } }));
 const { startReviewFlow } = await import("../../webhook-shared");
 providerHead = currentHead;
 assert.deepEqual(await startReviewFlow({ provider: "github", installationId: 123, repoFullName: "owner/repo", repoId: "repo", orgId: "owner-org", prNumber: 1, prTitle: "Title", prUrl: "https://example.test/pr/1", prAuthor: "author", headSha: currentHead, triggerCommentId: 1, triggerCommentBody: "review" }), { started: true, pullRequestId: "pr" });
@@ -326,7 +333,7 @@ allowPublication = true;
 await handleLargeReviewResult(failedJob);
 assert.equal(current.status, "failed");
 assert.equal(current.firstReviewCompletedAt, null, "Publishing a large-review error is not a completed review");
-assert.equal(current.errorMessage, "model failure");
+assert.equal(current.errorMessage, "Large review failed");
 assert.deepEqual(rows.get(failedJob.attemptId), failureArchive);
 const publicationCount = published.length;
 await handleLargeReviewResult(failedJob);
@@ -427,7 +434,7 @@ console.error = (...args: unknown[]) => { summaryErrors.push(args); };
 try { await assert.rejects(handleLargeReviewResult(interruptedSuccess), /Transient summary failure/); }
 finally { console.error = originalConsoleError; }
 assert.equal(summaryErrors.length, 1);
-assert.match(String(summaryErrors[0][1]), /Transient summary failure/);
+assert.deepEqual(summaryErrors[0][1], { name: "Error" });
 assert.equal(published.length, beforeArchiveFailure.comments + 1);
 assert.equal(deliveries.get(interruptedSuccess.attemptId)?.mainCommentId, 456n);
 assert.equal(deliveries.get(interruptedSuccess.attemptId)?.summaryPublished, false);
@@ -591,3 +598,51 @@ assert.ok(String(fallbackCalls[1][4]).includes("Large PR —"));
 assert.ok(String(fallbackCalls[1][4]).includes("Review coverage"));
 assert.ok(String(fallbackCalls[1][4]).endsWith(`Last reviewed commit: ${currentHead}`));
 assert.ok(deliveries.get(fallbackJob.attemptId)?.summaryPublished);
+
+// Exercise actual result processing with both new and previously archived errors.
+const { applyReviewCoverage } = await import("../../review-coverage");
+const marker = "synthetic-large-review-private-token";
+providerHead = currentHead;
+nativeOnlyFailure = false;
+allowPublication = true;
+const failureJob = { ...archiveFailureJob, headSha: currentHead, reviewRequestVersion: currentVersion,
+  attemptId: "20202020-2020-4020-8020-202020202020", error: marker, reviewBody: "" };
+const failurePublications = published.length;
+const failureEvents = emittedEvents.length;
+await handleLargeReviewResult(failureJob);
+assert.equal(current.status, "failed");
+assert.doesNotMatch(JSON.stringify({ row: rows.get(failureJob.attemptId), current,
+  publications: published.slice(failurePublications), events: emittedEvents.slice(failureEvents) }), new RegExp(marker));
+assert.ok(JSON.stringify(published.slice(failurePublications)).includes("Large review failed"));
+const publicationsAfterFailure = published.length;
+await handleLargeReviewResult(failureJob);
+assert.equal(published.length, publicationsAfterFailure, "a duplicate failure must not republish");
+await assert.rejects(handleLargeReviewResult({ ...failureJob, error: marker + "-changed" }), /identity conflict/);
+const safeDownload = await GET(new NextRequest("https://example.test/api/review-attempts/" + failureJob.attemptId, { headers: { authorization: "Bearer owner" } }), { params: Promise.resolve({ id: failureJob.attemptId }) });
+assert.equal(safeDownload.status, 200);
+const safeRecord = await safeDownload.json();
+assert.equal("failureFingerprint" in safeRecord, false, "the private identity fingerprint is not returned by the API");
+assert.doesNotMatch(JSON.stringify(safeRecord), new RegExp(marker));
+
+const legacyJob = { ...failureJob, attemptId: "21212121-2121-4121-8121-212121212121" };
+const legacyCoverage = { ...unknownReviewCoverage("github", "Large-review worker did not supply verified changed-file coverage."),
+  headSha: currentHead, baseSha: legacyJob.baseSha, reviewRequestVersion: currentVersion, nativeCheckId: String(legacyJob.checkRunId) };
+const legacyBody = applyReviewCoverage(`Large review failed: ${marker}`, legacyCoverage, legacyJob.attemptId);
+await saveReviewAttempt(legacyJob.attemptId, "pr", legacyCoverage, legacyBody);
+const beforeLegacy = published.length;
+const beforeLegacyEvents = emittedEvents.length;
+await handleLargeReviewResult(legacyJob);
+assert.equal(rows.get(legacyJob.attemptId)?.reviewBody, legacyBody, "previously archived identity remains immutable");
+assert.equal(current.status, "failed");
+assert.doesNotMatch(JSON.stringify({ publications: published.slice(beforeLegacy), events: emittedEvents.slice(beforeLegacyEvents), errorMessage: current.errorMessage }), new RegExp(marker));
+await assert.rejects(handleLargeReviewResult({ ...legacyJob, error: marker + "-changed" }), /identity conflict/);
+
+const beforeLegacyUncorrelated = rows.size;
+await handleLargeReviewResult({ pullRequestId: "pr", reviewBody: "", error: marker });
+assert.equal(rows.size, beforeLegacyUncorrelated + 1);
+assert.doesNotMatch(JSON.stringify([...rows.values()].at(-1)), new RegExp(marker));
+
+const stageJob = { ...failureJob, attemptId: "23232323-2323-4323-8323-232323232323", error: "Large review failed during repository clone" };
+await handleLargeReviewResult(stageJob);
+assert.equal(current.errorMessage, stageJob.error, "known producer stages remain visible");
+console.log("PASS large-review errors stay private across fresh and archived retry paths");

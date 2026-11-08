@@ -40,8 +40,24 @@ it("keeps cancelled embedding failures private without reporting them", async ()
   expect(exit, `${stdout}\n${stderr}`).toBe(0);
 });
 
-it("keeps best-effort embedding and storage failures private", async () => {
+it("keeps best-effort review failures private while preserving fallbacks", async () => {
   const child = Bun.spawn([process.execPath, "lib/__tests__/fixtures/review-follow-up-harness.ts", "--best-effort-privacy"], {
+    cwd: import.meta.dir + "/../..", stdout: "pipe", stderr: "pipe",
+  });
+  const [exit, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+  expect(exit, `${stdout}\n${stderr}`).toBe(0);
+});
+
+it("keeps final publication failures private while reporting failure", async () => {
+  const child = Bun.spawn([process.execPath, "lib/__tests__/fixtures/review-follow-up-harness.ts", "--publication-error-privacy"], {
+    cwd: import.meta.dir + "/../..", stdout: "pipe", stderr: "pipe",
+  });
+  const [exit, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+  expect(exit, `${stdout}\n${stderr}`).toBe(0);
+});
+
+it("keeps unexpected generation setup errors private while reporting failure", async () => {
+  const child = Bun.spawn([process.execPath, "lib/__tests__/fixtures/review-follow-up-harness.ts", "--generation-setup-error-privacy"], {
     cwd: import.meta.dir + "/../..", stdout: "pipe", stderr: "pipe",
   });
   const [exit, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);

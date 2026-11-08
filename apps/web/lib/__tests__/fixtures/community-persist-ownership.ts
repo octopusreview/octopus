@@ -20,7 +20,7 @@ const { persistCommunityReviewToPR, CommunityRepositoryChangedError } = await im
 const input = { repositoryId: "repo", organizationId: "org", externalId: "1", fullName: "owner/repo", prNumber: 1, summary: "synthetic", findings: [] };
 for (stage of ["start", "lookup"]) {
   await assert.rejects(() => persistCommunityReviewToPR(input), (error: unknown) =>
-    error instanceof CommunityRepositoryChangedError && error.cause === failure);
+    error instanceof CommunityRepositoryChangedError && error.message === "Could not establish repository ownership" && error.cause === undefined);
 }
 stage = "write";
 await assert.rejects(() => persistCommunityReviewToPR(input), (error: unknown) => error === failure);

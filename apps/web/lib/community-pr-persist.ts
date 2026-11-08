@@ -107,7 +107,7 @@ export async function persistCommunityReviewToPR(input: CommunityPRPersistInput)
     });
   } catch (error) {
     if (!ownershipEstablished && !(error instanceof CommunityRepositoryChangedError)) {
-      throw new CommunityRepositoryChangedError("Could not establish repository ownership", { cause: error });
+      throw new CommunityRepositoryChangedError("Could not establish repository ownership");
     }
     throw error;
   }

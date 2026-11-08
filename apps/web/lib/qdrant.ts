@@ -5,6 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { QdrantClient, QdrantClientTimeoutError } from "@qdrant/js-client-rest";
 import { generateSparseVector } from "@/lib/sparse-vector";
 import { getEmbedConfig } from "@/lib/embed-config";
+import { safeErrorDetails } from "@/lib/provider-failure";
 
 // Qdrant point IDs must be uint or UUID. Existing UUID inputs pass through
 // unchanged (so callers using crypto.randomUUID() are unaffected); non-UUID
@@ -1153,7 +1154,7 @@ export async function ensureDocsCollection() {
         sparse_vectors: { [SPARSE_VECTOR_NAME]: {} },
       });
     } catch (err) {
-      console.debug(`[qdrant] sparse vector config already exists or update failed:`, err);
+      console.debug(`[qdrant] sparse vector config already exists or update failed:`, safeErrorDetails(err));
     }
   }
 }
@@ -1235,7 +1236,7 @@ export async function searchDocsChunks(
       points = result.points;
     } catch (error) {
       if (!isSparseVectorError(error)) throw error;
-      console.warn("[qdrant] Falling back to dense-only search", { collection: DOCS_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
+      console.warn("[qdrant] Falling back to dense-only search", { collection: DOCS_COLLECTION_NAME, error: safeErrorDetails(error) });
       points = await qdrant.search(DOCS_COLLECTION_NAME, {
         vector: queryVector,
         limit,

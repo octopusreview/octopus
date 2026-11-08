@@ -6,6 +6,7 @@ assert.ok(["openai-batch", "openai-split-cancel", "openai-split-success", "ollam
 const controller = new AbortController();
 const reason = new DOMException("synthetic deadline", "TimeoutError");
 process.env.OCTOPUS_EMBED_PROVIDER = scenario === "ollama-batch" ? "ollama" : "openai";
+process.env.OPENAI_API_KEY = "synthetic-test-key";
 process.env.OCTOPUS_EMBED_MODEL = "synthetic";
 process.env.OCTOPUS_EMBED_DIM = "1";
 process.env.OCTOPUS_OLLAMA_BASE_URL = "http://127.0.0.1:1";

@@ -9,7 +9,8 @@ const SENSITIVE_KEY_RX =
   /(authorization|cookie|password|secret|token|api[-_]?key|private[-_]?key|webhook[-_]?secret|access[-_]?token|client[-_]?secret|dsn|credential)/i;
 
 function redact(value: unknown, depth = 0): unknown {
-  if (value == null || depth > 6) return value;
+  if (value == null) return value;
+  if (depth > 6) return "[truncated]";
   if (Array.isArray(value)) return value.map((v) => redact(v, depth + 1));
   if (typeof value === "object") {
     const out: Record<string, unknown> = {};
@@ -31,7 +32,7 @@ export function parseRate(raw: string | undefined, fallback: number): number {
   return Number.isFinite(n) && n >= 0 && n <= 1 ? n : fallback;
 }
 
-/** Drop request headers/cookies and redact sensitive keys from an event. */
+/** Drop sensitive request metadata and redact sensitive keys from an event. */
 export function scrubEvent(event: ErrorEvent): ErrorEvent {
   if (event.tags?.error_boundary === "background") {
     // A caught SDK error must not inherit request/user/console payloads from its worker scope.
@@ -53,6 +54,24 @@ export function scrubEvent(event: ErrorEvent): ErrorEvent {
   if (event.request) {
     delete (event.request as { cookies?: unknown }).cookies;
     delete (event.request as { headers?: unknown }).headers;
+    delete (event.request as { data?: unknown }).data;
+    delete (event.request as { query_string?: unknown }).query_string;
+    if (event.request.url) {
+      try {
+        const url = new URL(event.request.url);
+        if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Invalid request URL");
+        if (/^\/api\/github-action\/review\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/?$/i.test(decodeURIComponent(url.pathname))) {
+          url.pathname = "/api/github-action/review/[jobId]";
+        }
+        url.username = "";
+        url.password = "";
+        url.search = "";
+        url.hash = "";
+        event.request.url = url.toString();
+      } catch {
+        delete event.request.url;
+      }
+    }
   }
   if (event.extra) event.extra = redact(event.extra) as Record<string, unknown>;
   if (event.contexts) {

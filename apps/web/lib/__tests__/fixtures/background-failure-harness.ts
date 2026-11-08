@@ -104,13 +104,22 @@ for (const event of rawEvents.slice(-2)) {
   assert.equal(event.contexts?.background_failure?.status, 401);
   assert.equal(event.contexts?.background_failure?.code, "ECONNRESET");
 }
-for (const status of [401, 402, 403, 429, 503]) {
+for (const status of [401, 402, 403, 429, 503, undefined]) {
   for (byok of [false, true]) {
-    failure = Object.assign(new Error("private payload"), { status, request_id: "req_123456789", secret: "secret" });
+    failure = Object.assign(new Error("private payload"), { status, code: status === undefined ? "ECONNRESET" : undefined, request_id: "req_123456789", secret: "secret" });
     const before = events.length;
     reportBackgroundFailure(await caught(), context);
-    assert.equal(events.length - before, byok && status !== 503 ? 0 : 1);
-    if (!byok) assert.equal(events.at(-1)?.tags?.failure_owner, "platform");
+    const admitted = !byok || status === 503 || status === undefined;
+    assert.equal(events.length - before, admitted ? 1 : 0);
+    if (admitted) {
+      const event = rawEvents.at(-1)!;
+      assert.equal(event.tags?.failure_owner, "unknown");
+      assert.equal(event.tags?.failure_code, status === undefined ? "ECONNRESET" : `http_${status}`);
+      assert.equal(event.contexts?.background_failure?.ownership, "unknown");
+      assert.equal(event.contexts?.background_failure?.keyOwner, byok ? "organization" : "platform");
+      assert.equal(event.contexts?.background_failure?.status, status);
+      assert.doesNotMatch(JSON.stringify(event), /private payload|req_123456789|secret/);
+    }
   }
 }
 for (const message of ["Out of credits", "Monthly spend limit reached", "Indexing attempt is no longer current"]) {

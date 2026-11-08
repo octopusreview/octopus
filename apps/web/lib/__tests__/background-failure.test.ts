@@ -48,6 +48,22 @@ it("keeps best-effort embedding and storage failures private", async () => {
   expect(exit, `${stdout}\n${stderr}`).toBe(0);
 });
 
+it("retains safe generation-stage diagnostics in a failed review attempt", async () => {
+  const child = Bun.spawn([process.execPath, "lib/__tests__/fixtures/review-follow-up-harness.ts", "--generation-failure-diagnostic"], {
+    cwd: import.meta.dir + "/../..", stdout: "pipe", stderr: "pipe",
+  });
+  const [exit, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+  expect(exit, `${stdout}\n${stderr}`).toBe(0);
+});
+
+it("retains generation diagnostics through the real adapter and router", async () => {
+  const child = Bun.spawn([process.execPath, "lib/__tests__/fixtures/generation-diagnostic-route.ts"], {
+    cwd: import.meta.dir + "/../..", stdout: "pipe", stderr: "pipe",
+  });
+  const [exit, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+  expect(exit, `${stdout}\n${stderr}`).toBe(0);
+});
+
 it("forwards queue retries and reports only terminal uncancelled failures", async () => {
   const child = Bun.spawn([process.execPath, "lib/__tests__/fixtures/queue-background-failure-harness.ts"], {
     cwd: import.meta.dir + "/../..", stdout: "pipe", stderr: "pipe",

@@ -2666,7 +2666,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         checkRunId,
         "failure",
         {
-          title: "Review failed",
+          title: attemptCoverage?.assessment?.failure?.stage === "generation" ? "Review generation failed" : "Review failed",
           summary: `Octopus Review encountered an error: ${errorMessage}`,
         },
       ).catch((e) => console.error("[reviewer] Failed to update check run:", safeErrorDetails(e)));

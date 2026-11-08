@@ -396,7 +396,6 @@ if (localClassification) {
   const paths = [() => generateLocalReview({ diff, repoId: "repo", orgId: "org" }), () => generateBareLocalReview({ diff, orgId: "org" })];
   for (const run of paths) {
     for (const failure of [
-      { provider: "local" as const, message: "" },
       { provider: "openai" as const, message: "invalid_api_key synthetic-secret" },
       { provider: "openai" as const, message: "fetch failed synthetic-secret" },
       { provider: "ollama" as const, message: "synthetic-secret" },
@@ -405,6 +404,8 @@ if (localClassification) {
       localFailure = failure;
       await assert.rejects(run, (error: Error) => error instanceof ReviewConfigError && !error.message.includes("synthetic-secret"));
     }
+    localFailure = { provider: "local", message: "" };
+    await assert.rejects(run, (error: Error) => !(error instanceof ReviewConfigError) && error.message === "AI provider local request failed");
     localFailure = { provider: "openai", message: "synthetic-secret" };
     await assert.rejects(run, (error: Error) => !(error instanceof ReviewConfigError) && !error.message.includes("synthetic-secret"));
     localFailure = null;

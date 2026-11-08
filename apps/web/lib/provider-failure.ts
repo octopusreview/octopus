@@ -32,7 +32,7 @@ export class AiProviderFailure extends Error {
     let message = "";
     try { message = (error instanceof Error ? error.message : String(error)).toLowerCase(); } catch {}
     const reviewCategory = /invalid_api_key|api key|unauthorized|401|403|authentication|placeholder/.test(message) || details.status === 401 || details.status === 403
-      ? "auth" : provider === "ollama" || /econnrefused|fetch failed|ollama/.test(message) || (provider === "local" && message.startsWith("no local agent is online for this organisation."))
+      ? "auth" : provider === "ollama" || /econnrefused|fetch failed|ollama/.test(message)
         ? "local" : undefined;
     const hint = provider === "claude-code" && details.code === "ENOENT" ? ": executable or file not found; check the provider installation" : "";
     super(`AI provider ${provider} request failed${details.status ? ` (HTTP ${details.status})` : ""}${hint}`);

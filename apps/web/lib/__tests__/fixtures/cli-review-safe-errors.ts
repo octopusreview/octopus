@@ -21,7 +21,7 @@ mock.module("next/headers", () => ({ headers: async () => new Headers() }));
 const { NextRequest } = await import("next/server");
 const bare = await import("../../../app/api/cli/review-local/route");
 const contextual = await import("../../../app/api/cli/repos/[id]/local-review/route");
-const { EmbeddingDimensionError, MissingEmbeddingKeyError, OllamaEmbeddingResponseError } = await import("../../embedding-error");
+const { EmbeddingDimensionError, MissingEmbeddingKeyError, OllamaEmbeddingResponseError, OllamaEmbeddingUrlError } = await import("../../embedding-error");
 const { AiProviderFailure } = await import("../../provider-failure");
 const calls = [
   () => bare.POST(new NextRequest("http://localhost/api/cli/review-local", { method: "POST", body: JSON.stringify({ diff: "+test" }) })),
@@ -59,6 +59,16 @@ for (const call of calls) {
   assert.equal(ollamaResponse.status, 500);
   assert.deepEqual(await ollamaResponse.json(), { error: process.env.NODE_ENV === "development"
     ? "Check the configured embedding model and the Ollama server response." : "Review generation failed" });
+  failure = new OllamaEmbeddingUrlError();
+  failure.message = "synthetic-provider-secret";
+  const urlResponse = await call();
+  assert.equal(urlResponse.status, 500);
+  assert.deepEqual(await urlResponse.json(), { error: process.env.NODE_ENV === "development"
+    ? "Configured Ollama embedding URL was rejected; check URL and deployment network settings." : "Review generation failed" });
+  failure = new Error("Configured Ollama embedding URL was rejected; synthetic-provider-secret");
+  const spoofedResponse = await call();
+  assert.equal(spoofedResponse.status, 500);
+  assert.deepEqual(await spoofedResponse.json(), { error: "Review generation failed" });
   failure = new AiProviderFailure({ status: 503, request_id: "req_abcdefgh", message: "synthetic-provider-secret" }, "openai", "model", "unknown");
   await call();
   assert.deepEqual(logs.at(-1)?.[1], { name: "Error", status: 503, requestId: "req_abcdefgh" });

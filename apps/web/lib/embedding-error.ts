@@ -6,6 +6,7 @@ const dimensionAdvice = (actual: unknown, configured: unknown) => {
 };
 const keyAdvice = "Set OPENAI_API_KEY to configure OpenAI embeddings.";
 const ollamaAdvice = "Check the configured embedding model and the Ollama server response.";
+const urlAdvice = "Configured Ollama embedding URL was rejected; check URL and deployment network settings.";
 
 export class EmbeddingDimensionError extends Error {
   constructor(readonly actual: number, readonly configured: number) {
@@ -21,9 +22,14 @@ export class OllamaEmbeddingResponseError extends Error {
   constructor() { super(ollamaAdvice); this.name = "OllamaEmbeddingResponseError"; }
 }
 
+export class OllamaEmbeddingUrlError extends Error {
+  constructor() { super(urlAdvice); this.name = "OllamaEmbeddingUrlError"; }
+}
+
 export function embeddingConfigAdvice(error: unknown): string | undefined {
   if (error instanceof MissingEmbeddingKeyError) return keyAdvice;
   if (error instanceof OllamaEmbeddingResponseError) return ollamaAdvice;
+  if (error instanceof OllamaEmbeddingUrlError) return urlAdvice;
   if (error instanceof EmbeddingDimensionError) {
     return dimensionAdvice(error.actual, error.configured);
   }

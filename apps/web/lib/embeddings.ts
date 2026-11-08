@@ -5,7 +5,7 @@ import { getEmbedModel } from "@/lib/ai-client";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { getEmbedConfig, type EmbedConfig } from "@/lib/embed-config";
 import { validateProviderUrl } from "@/lib/providers/url-validation";
-import { EmbeddingDimensionError, MissingEmbeddingKeyError, OllamaEmbeddingResponseError } from "@/lib/embedding-error";
+import { EmbeddingDimensionError, MissingEmbeddingKeyError, OllamaEmbeddingResponseError, OllamaEmbeddingUrlError } from "@/lib/embedding-error";
 
 let openai: OpenAI | null = null;
 
@@ -245,9 +245,14 @@ async function embedWithOllama(
   // (low SSRF risk), route it through the same validator the per-org BYOK
   // path uses. `hosted: false` mirrors the `SELF_HOSTED` env default and
   // allows localhost / RFC1918 destinations for self-hosters.
-  const safeBaseUrl = validateProviderUrl(config.ollamaBaseUrl, {
-    hosted: process.env.SELF_HOSTED !== "true",
-  });
+  let safeBaseUrl: string;
+  try {
+    safeBaseUrl = validateProviderUrl(config.ollamaBaseUrl, {
+      hosted: process.env.SELF_HOSTED !== "true",
+    });
+  } catch {
+    throw new OllamaEmbeddingUrlError();
+  }
   const vectors: number[][] = [];
   let promptTokens = 0;
 

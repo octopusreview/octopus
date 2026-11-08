@@ -7,7 +7,7 @@ const OFFLINE_LOCAL_AGENT_MESSAGE = "No local agent is online for this organisat
 export class OfflineLocalAgentError extends Error {
   constructor() { super(OFFLINE_LOCAL_AGENT_MESSAGE); }
 }
-const SAFE_ERROR_CODES = new Set(["ECONNRESET", "ECONNREFUSED", "ConnectionRefused", "ETIMEDOUT", "ENETUNREACH", "EAI_AGAIN", "ENOTFOUND", "ENOENT", "UND_ERR_SOCKET", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT", "PROVIDER_REFUSAL"]);
+const SAFE_ERROR_CODES = new Set(["ECONNRESET", "ECONNREFUSED", "ConnectionRefused", "ETIMEDOUT", "ENETUNREACH", "EAI_AGAIN", "ENOTFOUND", "ENOENT", "UND_ERR_SOCKET", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT", "PROVIDER_REFUSAL", "STREAM_TERMINATED"]);
 const ERROR_NAMES = new Set(["Error", "TypeError", "APIError", "APIConnectionError", "APIConnectionTimeoutError", "AuthenticationError", "PermissionDeniedError", "RateLimitError", "InternalServerError", "TimeoutError", "AbortError"]);
 
 /** Only retain diagnostic primitives; never attach an SDK request/response or raw cause. */

@@ -15,6 +15,9 @@ const preserveAutoReview = process.argv.includes("--preserve-auto-review");
 const firstCompletion = process.argv.includes("--first-review-completion");
 const refusalFlow = process.argv.includes("--provider-refusal");
 const providerErrorPrivacy = process.argv.includes("--provider-error-privacy");
+const generationDiagnostic = process.argv.includes("--generation-failure-diagnostic");
+let generationFailure: "terminated" | "organization-auth" = "terminated";
+let generationDispatches = 0;
 const embeddingCancelPrivacy = process.argv.includes("--embedding-cancel-privacy");
 const embeddingErrorPrivacy = process.argv.includes("--embedding-error-privacy") || embeddingCancelPrivacy;
 let embeddingCalls = 0;
@@ -194,6 +197,13 @@ mock.module("@/lib/ai-router", () => ({ getProviderForModel: async () => {
     throw new AiProviderFailure(Object.assign(new Error(localFailure.message), { status: localFailure.status, name: localFailure.name ?? "Error", cause: localFailure.code ? { code: localFailure.code } : undefined }), localFailure.provider, params.model, localFailure.keyOwner ?? "organization");
   }
   if (localClassification) return { model: params.model, provider: "openai", text: report, usage: { inputTokens: 1, outputTokens: 1 } };
+  if (generationDiagnostic) {
+    const { AiProviderFailure } = await import("@/lib/provider-failure");
+    generationDispatches++;
+    const raw = Object.assign(new Error("synthetic-generation-secret"), { status: generationFailure === "terminated" ? 503 : 401,
+      request_id: "req_syntheticgenerationsecret", cause: { message: generationFailure === "terminated" ? "terminated" : "synthetic private" } });
+    throw new AiProviderFailure(raw, "openai", params.model, generationFailure === "terminated" ? "platform" : "organization");
+  }
   if (providerErrorPrivacy) {
     const { AiProviderFailure } = await import("@/lib/provider-failure");
     throw new AiProviderFailure(Object.assign(new Error("synthetic-credential-and-prompt"), { status: 401 }), "openai", params.model, "organization");
@@ -278,7 +288,7 @@ mock.module("@/lib/review-attempt", () => ({
   recordFirstReviewCompletion: realReviewAttempt.recordFirstReviewCompletion,
   withForgejoReviewPublication: directCommentFailure ? realReviewAttempt.withForgejoReviewPublication : async (_id: string, _head: string, _version: number, publish: () => Promise<void>) => publish(),
   createReviewAttemptComment: directCommentFailure ? realReviewAttempt.createReviewAttemptComment : async (_id: string, _head: string, _version: number, create: () => Promise<number>) => create(),
-  updateCurrentReview: indexingPrivacy || preparationDiagnostic || directCommentFailure || firstCompletion || refusalFlow || providerErrorPrivacy || embeddingErrorPrivacy ? realReviewAttempt.updateCurrentReview : async () => ({ count: 1 }),
+  updateCurrentReview: indexingPrivacy || preparationDiagnostic || generationDiagnostic || directCommentFailure || firstCompletion || refusalFlow || providerErrorPrivacy || embeddingErrorPrivacy ? realReviewAttempt.updateCurrentReview : async () => ({ count: 1 }),
   saveReviewAttempt: async (_id: string, _pr: string, _coverage: unknown, _body: string, findings: { title: string }[]) => {
     archived.push({ id: _id, findings, coverage: structuredClone(_coverage), body: _body });
     if (firstCompletion) Object.assign(pr, { status: "completed", reviewBody: _body });
@@ -529,6 +539,67 @@ if (localClassification) {
   process.exit(0);
 }
 const { processReview } = await import("@/lib/reviewer");
+if (generationDiagnostic) {
+  const originalError = console.error;
+  const errors: unknown[][] = [];
+  console.error = (...args: unknown[]) => { errors.push(args); };
+  try {
+    for (const [scenario, code, keyOwner, status] of [
+      ["terminated", "STREAM_TERMINATED", "platform", 503],
+      ["organization-auth", "http_401", "organization", 401],
+    ] as const) {
+      generationFailure = scenario;
+      pr.status = "pending";
+      summaries.length = 0; checkOutputs.length = 0; reviewUpdates.length = 0; events.length = 0; errors.length = 0; sentryEvents.length = 0;
+      const beforeCalls = generationDispatches, beforeUsage = usageCount;
+      await processReview("pr");
+      const attempt = archived.at(-1)!;
+      const coverage = attempt.coverage as ReviewCoverage;
+      const failure = coverage.assessment as { state: string; failure?: { stage: string; code: string; keyOwner: string; ownership: string; retryability: string; status?: number } };
+      assert.equal(coverage.complete, true);
+      assert.equal(failure.state, "incomplete");
+      assert.deepEqual(failure.failure, { stage: "generation", code, keyOwner, ownership: "unknown", retryability: "unknown", status });
+      assert.equal(coverage.reviewRequestVersion, pr.reviewRequestVersion);
+      assert.equal(coverage.headSha, pr.headSha);
+      assert.ok(summaries.at(-1)?.includes("review generation failed"));
+      assert.ok(inspect(checkOutputs).includes("Review generation failed"));
+      assert.ok(!/\|[^\n]*[1-5]\/5/.test(summaries.at(-1) ?? ""));
+      assert.equal(generationDispatches, beforeCalls + 1, "no automatic retry");
+      assert.equal(usageCount, beforeUsage, "preserves existing failed-call usage behavior");
+      assert.doesNotMatch(inspect({ errors, summaries, checkOutputs, reviewUpdates, events, archived, sentryEvents }, { depth: 20 }), /synthetic-generation-secret|req_syntheticgenerationsecret/);
+      if (scenario === "terminated") {
+        assert.equal(sentryEvents.at(-1)?.tags?.failure_code, code);
+        assert.equal(sentryEvents.at(-1)?.contexts?.background_failure?.attemptId, attempt.id);
+      }
+    }
+    const { executeCoveredReview } = await import("@/lib/review-assessment");
+    const { AiProviderFailure } = await import("@/lib/provider-failure");
+    const { reviewCheckResult } = await import("@/lib/review-coverage");
+    const input = { model: "gpt-fixture", maxTokens: 10, messages: [{ role: "user" as const, content: "fixture" }] };
+    const unknown = new AiProviderFailure(new Error("synthetic-generation-secret"), "openai", "gpt-fixture", "unknown");
+    Object.assign(unknown.details, { code: "synthetic-generation-secret", status: 999, requestId: "req_syntheticgenerationsecret" });
+    Object.assign(unknown, { keyOwner: "synthetic-generation-secret" });
+    const coverage = structuredClone(archived.at(-1)!.coverage) as ReviewCoverage;
+    await assert.rejects(() => executeCoveredReview(input, coverage, "fixture", async () => { throw unknown; }), error => error === unknown);
+    assert.deepEqual(coverage.assessment?.failure, { stage: "generation", code: "unclassified", keyOwner: "unknown", ownership: "unknown", retryability: "unknown" });
+    assert.doesNotMatch(JSON.stringify(coverage.assessment), /synthetic-generation-secret|req_syntheticgenerationsecret/);
+    const incomplete = structuredClone(coverage); incomplete.complete = false;
+    assert.equal(reviewCheckResult(incomplete, false, 0).title, "Review incomplete — input coverage missing");
+    const cancelled = new AbortController(); cancelled.abort();
+    const cancelledCoverage = structuredClone(coverage);
+    await assert.rejects(() => executeCoveredReview({ ...input, executionWindow: { jobId: "fixture", deadlineEpochMs: Date.now(), signal: cancelled.signal, remainingMs: () => 0 } }, cancelledCoverage, "fixture", async () => { throw unknown; }), error => error === unknown);
+    assert.equal(cancelledCoverage.assessment?.failure, undefined, "cancelled work is not labeled a provider incident");
+    const abort = new AiProviderFailure(Object.assign(new Error("synthetic-generation-secret"), { name: "AbortError" }), "openai", "gpt-fixture", "platform");
+    const abortCoverage = structuredClone(coverage);
+    await assert.rejects(() => executeCoveredReview(input, abortCoverage, "fixture", async () => { throw abort; }), error => error === abort);
+    assert.equal(abortCoverage.assessment?.failure, undefined, "an abort without further evidence remains unclassified");
+    const untyped = structuredClone(coverage);
+    await assert.rejects(() => executeCoveredReview(input, untyped, "fixture", async () => { throw new Error("synthetic-generation-secret"); }));
+    assert.equal(untyped.assessment?.failure, undefined, "unknown errors are not labeled a provider failure");
+  } finally { console.error = originalError; }
+  console.log("PASS generation failures retain safe attempt evidence");
+  process.exit(0);
+}
 if (bestEffortPrivacy) {
   const errors: unknown[][] = [];
   const originalError = console.error;

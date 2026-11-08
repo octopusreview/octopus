@@ -34,6 +34,7 @@ import { gatherCrossFileContext, gatherVerificationContext, validateFindings } f
 import { logAiUsage } from "@/lib/ai-usage";
 import { resolveReviewModel } from "@/lib/review-routing";
 import { createAiMessage } from "@/lib/ai-router";
+import { AiProviderFailure } from "@/lib/provider-failure";
 import { substitutePromptVars } from "@/lib/prompt-substitute";
 import fs from "node:fs";
 import path from "node:path";
@@ -657,6 +658,7 @@ function classifyReviewError(err: unknown): Error {
   if (!(err instanceof Error)) return new Error(String(err));
   const msg = err.message.toLowerCase();
   const authy =
+    (err instanceof AiProviderFailure && err.reviewCategory === "auth") ||
     msg.includes("invalid_api_key") ||
     msg.includes("api key") ||
     msg.includes("unauthorized") ||
@@ -671,7 +673,7 @@ function classifyReviewError(err: unknown): Error {
     );
   }
   // Ollama / local-agent unreachable
-  if (msg.includes("econnrefused") || msg.includes("fetch failed") || msg.includes("ollama")) {
+  if ((err instanceof AiProviderFailure && err.reviewCategory === "local") || msg.includes("econnrefused") || msg.includes("fetch failed") || msg.includes("ollama")) {
     return new ReviewConfigError(
       "Could not reach the configured local model. Ensure Ollama (or your local agent) is running and reachable.",
     );

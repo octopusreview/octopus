@@ -209,9 +209,9 @@ export async function createAiMessage(
     return window ? { ...response, usedOwnKey: !!orgKey } : response;
   } catch (error) {
     if (error instanceof CapacityAdmissionError || error instanceof AiProviderFailure) throw error;
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`[ai-router] ${provider} API error for model ${params.model}:`, message);
-    throw new AiProviderFailure(error, provider, params.model, providerKeyOwner(provider, !!orgKey));
+    const failure = new AiProviderFailure(error, provider, params.model, providerKeyOwner(provider, !!orgKey));
+    console.error(`[ai-router] ${provider} API error:`, failure.details);
+    throw failure;
   }
 }
 

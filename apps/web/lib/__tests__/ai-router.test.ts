@@ -26,6 +26,7 @@ mock.module("@octopus/db", () => ({
 // which would evaluate ai-router (and its "server-only" / prisma imports) before
 // the mocks are registered. A dynamic import after the mocks fixes the ordering.
 const { createAiMessage, resolveProvider } = await import("@/lib/ai-router");
+const { AiProviderFailure } = await import("@/lib/provider-failure");
 
 const baseParams = {
   maxTokens: 256,
@@ -85,15 +86,12 @@ describe("createAiMessage", () => {
     expect(res.model).toBe("db-routed-model");
   });
 
-  it("wraps provider errors with the provider name (error path)", async () => {
-    await expect(
-      createAiMessage({ ...baseParams, model: "mock-fail-1" }, "org_1"),
-    ).rejects.toThrow(/AI provider mock-fail failed: .*deliberate failure/);
-  });
-
-  it("surfaces the model id from the failing provider in the error", async () => {
-    await expect(
-      createAiMessage({ ...baseParams, model: "mock-fail-xyz" }, "org_1"),
-    ).rejects.toThrow(/mock-fail-xyz/);
+  it("retains the provider and model without exposing the provider message", async () => {
+    const error = await createAiMessage({ ...baseParams, model: "mock-fail-xyz" }, "org_1").catch(error => error);
+    expect(error).toBeInstanceOf(AiProviderFailure);
+    expect(error.provider).toBe("mock-fail");
+    expect(error.model).toBe("mock-fail-xyz");
+    expect(error.message).toBe("AI provider mock-fail request failed");
+    expect(error.message).not.toContain("deliberate failure");
   });
 });

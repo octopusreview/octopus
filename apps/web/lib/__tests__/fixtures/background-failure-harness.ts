@@ -1,5 +1,6 @@
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
+import { inspect } from "node:util";
 import type { ErrorEvent } from "@sentry/nextjs";
 import { scrubEvent } from "../../sentry-scrub";
 
@@ -61,7 +62,8 @@ reportBackgroundFailure(new DOMException("private", "TimeoutError"), { stage: "p
 assert.equal(events.at(-1)?.tags?.indexing_deadline, undefined);
 events.length = 0;
 const originalError = console.error;
-console.error = () => {};
+const errorLogs: string[] = [];
+console.error = (...args: unknown[]) => { errorLogs.push(inspect(args)); };
 const request = { model: "claude-fixture", maxTokens: 10, messages: [{ role: "user" as const, content: "secret prompt" }] };
 const context = { stage: "generation" as const, attemptId: "attempt-1", pullRequestId: "pr-1", headSha: "a".repeat(40) };
 async function caught() {
@@ -77,6 +79,16 @@ assert.equal(events[0].contexts?.background_failure?.model, "claude-fixture");
 assert.equal(events[0].tags?.failure_owner, "unknown", "interruption is not a proven provider outage");
 reportBackgroundFailure(error, context);
 assert.equal(events.length, 1, "outer handler cannot duplicate the same failure");
+const privateMarker = "synthetic-credential-and-prompt";
+failure = Object.assign(new Error(`Provider response: ${privateMarker}`, { cause: new Error(privateMarker) }), { status: 401, request_id: "req_123456789" });
+const logStart = errorLogs.length;
+const sanitized = await caught();
+assert.equal(sanitized.details.status, 401);
+assert.equal(sanitized.details.requestId, "req_123456789");
+assert.match(sanitized.message, /HTTP 401/);
+for (const output of [sanitized.message, sanitized.stack ?? "", inspect(sanitized), JSON.stringify(sanitized), errorLogs.slice(logStart).join("\n")]) {
+  assert.ok(!output.includes(privateMarker), "provider response must not reach errors or logs");
+}
 for (const status of [401, 402, 403, 429, 503]) {
   for (byok of [false, true]) {
     failure = Object.assign(new Error("private payload"), { status, request_id: "req_123456789", secret: "secret" });
@@ -156,11 +168,14 @@ try { await createAiMessage({ ...request, model: "claude-code:fixture" }, "org")
 catch (error) {
   assert.ok(error instanceof AiProviderFailure);
   assert.equal(error.keyOwner, "unknown");
-  assert.match(error.message, /Executable not found/);
+  assert.equal(error.details.code, "ENOENT");
+  assert.match(error.message, /executable or file not found/);
 } finally { process.env.PATH = originalPath; }
 
 const circular = { cause: null as unknown, code: "customer-secret", name: "private@example.test" }; circular.cause = circular;
 assert.deepEqual(safeErrorDetails(circular), { name: "Error" });
+const hostile = { get name(): string { throw new Error(privateMarker); }, toString: () => { throw new Error(privateMarker); } };
+assert.equal(new AiProviderFailure(hostile, "anthropic", request.model, "platform").message, "AI provider anthropic request failed");
 const serialized = JSON.stringify(events);
 for (const forbidden of ["secret", "private", "customer source", "authorization", "breadcrumbs", "exception"]) assert.ok(!serialized.includes(forbidden), forbidden);
 telemetryThrows = true;

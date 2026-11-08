@@ -4,6 +4,7 @@ import { escapeHtml, sanitizeUrl } from "@/lib/html";
 import { renderEmailTemplate } from "@/lib/email-renderer";
 import { getAdminRecipients } from "@/lib/org-recipients";
 import { eventBus } from "../bus";
+import { safeErrorDetails } from "@/lib/provider-failure";
 import type {
   RepoIndexedEvent,
   RepoAnalyzedEvent,
@@ -56,7 +57,7 @@ async function sendTemplatedEventEmail(
   await Promise.allSettled(
     recipients.map((r) =>
       sendEmail({ to: r.email, subject: result.subject, html: result.html }).catch((err) =>
-        console.error(`[email-observer] Failed to send to ${r.email}:`, err),
+        console.error(`[email-observer] Failed to send to ${r.email}:`, safeErrorDetails(err)),
       ),
     ),
   );
@@ -203,7 +204,7 @@ async function onCreditLow(event: CreditLowEvent): Promise<void> {
     // the winner already claimed the cooldown and will send (or already
     // sent) the email. Logged as an error so it shows up in alerting if
     // the rate is unexpectedly high, which would point at a hot loop.
-    console.error("[email-observer] credit-low cooldown claim lost:", err);
+    console.error("[email-observer] credit-low cooldown claim lost:", safeErrorDetails(err));
     return;
   }
 
@@ -226,7 +227,7 @@ async function onCreditLow(event: CreditLowEvent): Promise<void> {
   await Promise.allSettled(
     recipients.map((r) =>
       sendEmail({ to: r.email, subject: result.subject, html: result.html }).catch((err) =>
-        console.error(`[email-observer] Failed to send credit-low to ${r.email}:`, err),
+        console.error(`[email-observer] Failed to send credit-low to ${r.email}:`, safeErrorDetails(err)),
       ),
     ),
   );
@@ -267,7 +268,7 @@ async function onAutoReloadFailed(event: AutoReloadFailedEvent): Promise<void> {
       { isolationLevel: "Serializable" },
     );
   } catch (err) {
-    console.error("[email-observer] auto-reload-failed cooldown claim lost:", err);
+    console.error("[email-observer] auto-reload-failed cooldown claim lost:", safeErrorDetails(err));
     return;
   }
 
@@ -292,7 +293,7 @@ async function onAutoReloadFailed(event: AutoReloadFailedEvent): Promise<void> {
   await Promise.allSettled(
     recipients.map((r) =>
       sendEmail({ to: r.email, subject: result.subject, html: result.html }).catch((err) =>
-        console.error(`[email-observer] Failed to send auto-reload-failed to ${r.email}:`, err),
+        console.error(`[email-observer] Failed to send auto-reload-failed to ${r.email}:`, safeErrorDetails(err)),
       ),
     ),
   );

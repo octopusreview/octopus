@@ -34,7 +34,7 @@ import { gatherCrossFileContext, gatherVerificationContext, validateFindings } f
 import { logAiUsage } from "@/lib/ai-usage";
 import { resolveReviewModel } from "@/lib/review-routing";
 import { createAiMessage } from "@/lib/ai-router";
-import { AiProviderFailure } from "@/lib/provider-failure";
+import { AiProviderFailure, safeErrorDetails } from "@/lib/provider-failure";
 import { substitutePromptVars } from "@/lib/prompt-substitute";
 import fs from "node:fs";
 import path from "node:path";
@@ -332,7 +332,7 @@ export async function generateLocalReview(params: LocalReviewParams): Promise<Lo
       }
     }
   } catch (err) {
-    console.warn("[review-core] Failed to fetch feedback context:", err);
+    console.warn("[review-core] Failed to fetch feedback context:", safeErrorDetails(err instanceof AiProviderFailure ? err.details : err));
   }
 
   // Step 3: Build file tree
@@ -510,7 +510,7 @@ Rules:
         console.log(`[review-core] Follow-up recovered ${newFindings.length} new findings`);
       }
     } catch (err) {
-      console.error("[review-core] Follow-up findings call failed:", err);
+      console.error("[review-core] Follow-up findings call failed:", safeErrorDetails(err instanceof AiProviderFailure ? err.details : err));
     }
   }
 
@@ -558,7 +558,7 @@ Rules:
 
       findings = await validateFindings(findings, diff, org.id, confidenceThreshold, crossFileContext || undefined, "[review-core]", verificationContext, fileTreeStr || undefined);
     } catch (err) {
-      console.warn("[review-core] Two-pass validation failed, keeping all findings:", err);
+      console.warn("[review-core] Two-pass validation failed, keeping all findings:", safeErrorDetails(err instanceof AiProviderFailure ? err.details : err));
     }
   }
 

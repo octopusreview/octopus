@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@octopus/db";
 import { clearTerminalCommunityJobToken } from "./community-review-completion";
 import { enqueue } from "./queue";
+import { safeErrorDetails } from "./provider-failure";
 
 const LOG = (msg: string, ...rest: unknown[]) =>
   console.log(`[community-review/recovery] ${msg}`, ...rest);
@@ -84,14 +85,14 @@ export async function recoverCommunityReviewJobs() {
           await enqueue("community-review", { jobId: job.id });
           LOG(`re-enqueued jobId=${job.id} repo=${job.repoFullName} status=${job.status} prevAttempts=${job.attempts}`);
         } catch (err) {
-          ERR(`failed to re-enqueue jobId=${job.id}:`, err);
+          ERR(`failed to re-enqueue jobId=${job.id}:`, safeErrorDetails(err));
         }
       }
     } else {
       LOG("no orphan jobs to recover");
     }
   } catch (err) {
-    ERR("recovery failed:", err);
+    ERR("recovery failed:", safeErrorDetails(err));
   }
 }
 
@@ -136,11 +137,11 @@ export async function cleanupExpiredCommunityReviewJobs() {
           }, {}),
         },
       },
-    }).catch((err) => ERR("cleanup audit log failed (non-fatal):", err));
+    }).catch((err) => ERR("cleanup audit log failed (non-fatal):", safeErrorDetails(err)));
 
     return { deleted: count };
   } catch (err) {
-    ERR("cleanup failed:", err);
+    ERR("cleanup failed:", safeErrorDetails(err));
     return { deleted: 0, error: err };
   }
 }

@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@octopus/db";
 import { calcCost, getModelPricing } from "./cost";
 import { deductCredits } from "./credits";
+import { AiProviderFailure, safeErrorDetails } from "./provider-failure";
 import type { CacheTtl } from "./providers/system-cache";
 
 type LogAiUsageParams = {
@@ -120,6 +121,6 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
       });
     }
   } catch (err) {
-    console.error("[ai-usage] Failed to log:", err);
+    console.error("[ai-usage] Failed to log:", safeErrorDetails(err instanceof AiProviderFailure ? err.details : err));
   }
 }

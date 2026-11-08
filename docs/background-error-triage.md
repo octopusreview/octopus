@@ -16,6 +16,8 @@ On worker-deadline events, `indexing_last_milestone` may identify the last allow
 
 Review startup and preparation failures use generic messages in hosted review outputs and persisted status; logs retain safe diagnostics rather than underlying error text. Best-effort preparation failures likewise log safe diagnostics and retain their existing fallback. For review preparation failures, the optional `preparation_operation` tag distinguishes `review_input` fetches from `repository_tree` fetches. GitHub tree failures can also be grouped by their HTTP status code, for example `failure_code:http_451`. These identify the failed boundary or upstream response, not its cause or a confirmed fix; response bodies are not included in the event.
 
+Hosted generation failures without a recognized provider or admission error and publication failures also use stage-specific generic messages. Post-generation failure logs retain safe diagnostics rather than exception text. GitHub review-creation errors retain the HTTP status, not the response body. Hosted review retains its existing summary-only fallback after inline failures; OSS bot posting uses that fallback only for HTTP 422.
+
 Provider failures use a generic message instead of the provider's error text. The offline local-agent case retains its instruction to run `octp agent serve`. Available safe diagnostics include the provider, key owner, HTTP status and allowlisted error code; raw provider responses and causes are not included.
 
 An embedding failure while preparing search context fails the review with a generic message. Best-effort feedback matching and review or diagram storage failures retain the review outcome; their logs contain only safe diagnostic fields, not the underlying error text.

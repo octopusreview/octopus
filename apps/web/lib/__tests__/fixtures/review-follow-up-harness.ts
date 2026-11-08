@@ -22,7 +22,11 @@ const embeddingCancelPrivacy = process.argv.includes("--embedding-cancel-privacy
 const embeddingErrorPrivacy = process.argv.includes("--embedding-error-privacy") || embeddingCancelPrivacy;
 let embeddingCalls = 0;
 const bestEffortPrivacy = process.argv.includes("--best-effort-privacy");
+const publicationErrorPrivacy = process.argv.includes("--publication-error-privacy");
+const generationSetupErrorPrivacy = process.argv.includes("--generation-setup-error-privacy");
 let failureSite = "";
+const reviewAttempts: number[] = [];
+let privacyGenerationCalls = 0;
 let feedbackMode = "";
 const feedbackUpdates: unknown[] = [];
 const feedbackIssue = { id: "issue", title: "Missing null check", description: "A missing value causes this access to throw.", severity: "high", githubCommentId: 5, createdAt: new Date(0), pullRequest: { repositoryId: "repo", repository: { organizationId: "org" } } };
@@ -184,6 +188,8 @@ mock.module("@/lib/ai-usage", () => ({ logAiUsage: async (usage: { operation: st
 mock.module("@/lib/ai-router", () => ({ getProviderForModel: async () => {
   assert.ok(adaptiveStage, "Legacy fixture must not resolve adaptive capacity"); return "anthropic";
 }, createAiMessage: async (params: AiCreateParams) => {
+  if (generationSetupErrorPrivacy) throw privateFailure();
+  if (bestEffortPrivacy && failureSite === "followup" && ++privacyGenerationCalls > 1) throw privateFailure();
   if (bestEffortPrivacy && failureSite === "classifier" && params.model === "claude-sonnet-5") return { provider: "openai", usedOwnKey: false, text: '["synthetic-secret req_syntheticprivate123",]', usage: { inputTokens: 1, outputTokens: 1 } };
   if (localClassification && localFailure) {
     const { AiProviderFailure } = await import("@/lib/provider-failure");
@@ -243,6 +249,7 @@ mock.module("@/lib/review-validation", () => ({
   gatherVerificationContext: async () => new Map(),
   validateFindings: async (findings: unknown[]) => {
     validatorCalls++;
+    if (bestEffortPrivacy && failureSite === "validation") throw privateFailure();
     if (adaptiveStage === "during-validator") adaptiveAbort.abort();
     if (adaptiveStage === "expired-validator") { adaptiveRemaining = 0; adaptiveAbort.abort(); }
     return findings;
@@ -257,6 +264,7 @@ const published: { body: string; comments: unknown[] }[] = [];
 const checkConclusions: string[] = [];
 const checkOutputs: unknown[] = [];
 mock.module("@/lib/review-summary-comment", () => ({ publishReviewSummary: async (target: { body: string; headSha: string; reviewRequestVersion: number; expectedReviewBody?: string; executionWindow?: ReviewExecutionWindow }) => {
+  if (publicationErrorPrivacy && target.expectedReviewBody !== undefined) throw privateFailure();
   if (peerAlreadyIndexed && target.body.includes("Repository already indexed")) throw new Error("synthetic-secret peer comment");
   if (target.body.includes("Indexing in progress")) {
     assert.ok(repo.indexAttemptId, "Preparation must already own the claim");
@@ -288,7 +296,7 @@ mock.module("@/lib/review-attempt", () => ({
   recordFirstReviewCompletion: realReviewAttempt.recordFirstReviewCompletion,
   withForgejoReviewPublication: directCommentFailure ? realReviewAttempt.withForgejoReviewPublication : async (_id: string, _head: string, _version: number, publish: () => Promise<void>) => publish(),
   createReviewAttemptComment: directCommentFailure ? realReviewAttempt.createReviewAttemptComment : async (_id: string, _head: string, _version: number, create: () => Promise<number>) => create(),
-  updateCurrentReview: indexingPrivacy || preparationDiagnostic || generationDiagnostic || directCommentFailure || firstCompletion || refusalFlow || providerErrorPrivacy || embeddingErrorPrivacy ? realReviewAttempt.updateCurrentReview : async () => ({ count: 1 }),
+  updateCurrentReview: indexingPrivacy || preparationDiagnostic || generationDiagnostic || directCommentFailure || firstCompletion || refusalFlow || providerErrorPrivacy || embeddingErrorPrivacy || publicationErrorPrivacy || generationSetupErrorPrivacy ? realReviewAttempt.updateCurrentReview : async () => ({ count: 1 }),
   saveReviewAttempt: async (_id: string, _pr: string, _coverage: unknown, _body: string, findings: { title: string }[]) => {
     archived.push({ id: _id, findings, coverage: structuredClone(_coverage), body: _body });
     if (firstCompletion) Object.assign(pr, { status: "completed", reviewBody: _body });
@@ -308,6 +316,9 @@ mock.module("@/lib/github", () => ({
   createPullRequestComment: async () => { directComments++; return 123; },
   updatePullRequestComment: async (_installation: number, _owner: string, _repo: string, _id: number, body: string) => { summaries.push(body); },
   createPullRequestReview: async (_installation: number, _owner: string, _repo: string, _number: number, body: string, _event: string, comments: unknown[]) => {
+    reviewAttempts.push(comments.length);
+    if (bestEffortPrivacy && failureSite === "inline-review" && comments.length) throw Object.assign(new Error("synthetic-best-effort-private"), { status: 403, request_id: "req_syntheticprivate123" });
+    if (bestEffortPrivacy && failureSite === "review-fallback") throw privateFailure();
     if (nativeFailure) throw new Error("fixture native review rejected");
     published.push({ body, comments });
     return 456;
@@ -321,7 +332,7 @@ mock.module("@/lib/github", () => ({
   },
   getRepositoryTree: async () => { if (preparationFetchFailure === "repository_tree") throw Object.assign(new Error("synthetic private tree"), { status: 503, request_id: "req_syntheticprivate123" }); return ["src/check.ts"]; },
   getFileContent: async () => "return value.name;",
-  listReviewComments: async () => [],
+  listReviewComments: async () => { if (bestEffortPrivacy && failureSite === "match-ids") throw privateFailure(); return []; },
   listPullRequestReviewComments: async () => (feedbackMode === "reply" || feedbackMode === "classifier-reply") ? [{ id: 6, user: "fixture", body: feedbackMode === "reply" ? "👎" : "Please reconsider this finding", inReplyToId: 5 }] : [{ id: 5, user: "fixture[bot]", path: "src/check.ts", line: 1, body: "🟠 Previous unrelated partial-review issue", inReplyToId: null }],
   listPullRequestIssueComments: async () => feedbackMode === "per-finding" ? [{ user: "fixture", createdAt: new Date().toISOString(), body: "**Missing null check** — 👎" }] : (feedbackMode === "bulk" || feedbackMode === "classifier-bulk") ? [{ user: "fixture", createdAt: new Date().toISOString(), body: feedbackMode === "bulk" ? "👎" : "Please reconsider these findings" }] : [],
   listPullRequestReviews: async () => { if (bestEffortPrivacy && failureSite === "prior-reviews") throw privateFailure(); return []; },
@@ -367,9 +378,10 @@ mock.module("@/lib/gitlab", () => ({
   listPullRequestComments: async () => [],
   createPullRequestComment: async (_org: string, _project: string, _number: number, body: string) => { if (preparationDiagnostic && failureSite === "initial-comment") throw privateFailure(); summaries.push(body); return 123; },
   updatePullRequestComment: async (_org: string, _project: string, _number: number, _id: number, body: string) => { summaries.push(body); },
-  createInlineComment: async () => 456,
+  createInlineComment: async () => { if (bestEffortPrivacy && failureSite === "project-inline") throw privateFailure(); return 456; },
   setCommitStatus: async (_org: string, _project: string, _sha: string, state: string, _name: string, _description: string, _url?: string, window?: ReviewExecutionWindow) => {
     if (bestEffortPrivacy && failureSite === "running-status" && state === "running") throw privateFailure();
+    if (bestEffortPrivacy && failureSite === "final-status" && state === "success") throw privateFailure();
     if (window) {
       await Promise.resolve();
       if (adaptiveStage === "gitlab-auth") adaptiveAbort.abort();
@@ -600,6 +612,22 @@ if (generationDiagnostic) {
   console.log("PASS generation failures retain safe attempt evidence");
   process.exit(0);
 }
+if (publicationErrorPrivacy || generationSetupErrorPrivacy) {
+  const errors: unknown[][] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => { errors.push(args); };
+  try {
+    await processReview("pr");
+    assert.ok(checkConclusions.includes("failure"), "publication failure is reported as a failed check");
+    assert.ok((reviewUpdates as { data: { status?: string } }[]).some(update => update.data.status === "failed"), "publication failure is persisted");
+    assert.ok(events.some(event => event.status === "failed"), "publication failure remains visible to the user");
+    const expected = publicationErrorPrivacy ? "Review failed while publishing the review" : "Review failed during generation";
+    assert.ok(inspect({ checkOutputs, reviewUpdates, events }).includes(expected), "the user sees the correct failure stage");
+    assert.ok(inspect(errors).includes("503"), "safe status remains available in diagnostics");
+    assert.doesNotMatch(inspect({ errors, summaries, checkOutputs, reviewUpdates, events, sentryEvents }, { depth: 20 }), /synthetic-best-effort-private|req_syntheticprivate123/);
+  } finally { console.error = originalError; }
+  process.exit(0);
+}
 if (bestEffortPrivacy) {
   const errors: unknown[][] = [];
   const originalError = console.error;
@@ -624,20 +652,38 @@ if (bestEffortPrivacy) {
       ["", "pr-body-fetch", "Could not fetch PR body"],
       ["", "branch-head", "Failed to fetch branch head"],
       ["", "tree-cache", "Failed to persist tree cache"],
+      ["", "inline-review", "Failed to submit inline review"],
+      ["", "review-fallback", "Failed to submit PR review"],
+      ["", "match-ids", "Failed to match GitHub comment IDs"],
+      ["", "project-inline", "Failed to post inline comment"],
+      ["", "final-status", "Failed to set provider commit status"],
+      ["", "validation", "Two-pass validation failed"],
+      ["", "followup", "Follow-up findings call failed"],
       ["", "", ""],
     ]) {
       feedbackMode = mode; failureSite = site;
-      repo.provider = site === "branch-head" || site === "tree-cache" || site === "running-status" ? "gitlab" : "github";
-      errors.length = 0; events.length = 0; summaries.length = 0; checkOutputs.length = 0; feedbackUpdates.length = 0;
+      privacyGenerationCalls = 0;
+      responseOverride = report.replace("| 🟠 High | 1 |", site === "followup" ? "| 🟠 High | 2 |" : "| 🟠 High | 1 |") + "\n```mermaid\nflowchart TD\nA-->B\n```";
+      repo.provider = ["branch-head", "tree-cache", "running-status", "project-inline", "final-status"].includes(site) ? "gitlab" : "github";
+      errors.length = 0; events.length = 0; summaries.length = 0; checkOutputs.length = 0; feedbackUpdates.length = 0; reviewAttempts.length = 0;
       await processReview("pr");
+      if (site === "inline-review") {
+        assert.deepEqual(reviewAttempts, [1, 0], "hosted 403 falls back once to a summary-only review");
+        assert.equal(published.at(-1)?.comments.length, 0);
+        assert.ok(inspect(errors).includes("403"));
+      }
       if (expected) assert.ok(inspect(errors).includes(expected), `reaches ${site} via ${mode}`);
       else assert.equal(errors.length, 0);
       if (mode) assert.ok(feedbackUpdates.length, "feedback is recorded before best-effort embedding");
-      assert.equal((archived.at(-1)?.coverage as ReviewCoverage).assessment?.state, "completed");
+      assert.equal((archived.at(-1)?.coverage as ReviewCoverage).assessment?.state, site === "followup" ? "incomplete" : "completed");
+      if (site === "followup") {
+        assert.equal(privacyGenerationCalls, 2, "the synthetic failure occurs during the follow-up");
+        assert.doesNotMatch(summaries.at(-1) ?? "", /\|[^\n]*[1-5]\/5/, "incomplete recovery must not publish a score");
+      }
       if (site !== "pubby") assert.ok(events.some(event => event.status === "completed"));
       assert.ok(checkOutputs.length || (site === "check-run" && published.length), "completed review is published");
       assert.doesNotMatch(inspect({ errors, events, summaries, checkOutputs, reviewUpdates, archived, sentryEvents }, { depth: 20 }), /synthetic-best-effort-private|req_syntheticprivate123/);
-      if (expected) assert.ok(inspect(errors).includes("503"));
+      if (expected && site !== "inline-review") assert.ok(inspect(errors).includes("503"));
     }
     for (const mode of ["classifier-reply", "classifier-bulk"]) {
       feedbackMode = mode; failureSite = "classifier"; repo.provider = "github";

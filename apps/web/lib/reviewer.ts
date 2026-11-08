@@ -58,8 +58,8 @@ import { getGithubAppConfig } from "@/lib/github-app-config";
 import { parseOctopusIgnore, detectBadCommits } from "@/lib/octopus-ignore";
 import { buildGeneratedMatcher } from "@/lib/generated-files";
 import { MAX_DIFF_CHARS } from "@/lib/diff-truncate";
-import { completeReviewCandidate, reviewCandidateSha256, assertReviewProcessingActive, isReviewCancelled, ReviewProcessingExpiredError, type CompleteReviewAdmission, type ReviewExecutionWindow } from "@/lib/review-capacity";
-import { safeErrorDetails } from "@/lib/provider-failure";
+import { completeReviewCandidate, reviewCandidateSha256, assertReviewProcessingActive, isReviewCancelled, CapacityAdmissionError, ReviewProcessingExpiredError, type CompleteReviewAdmission, type ReviewExecutionWindow } from "@/lib/review-capacity";
+import { AiProviderFailure, safeErrorDetails } from "@/lib/provider-failure";
 import { confirmCompleteReviewCurrent } from "@/lib/review-capacity-current";
 import { prepareReviewInput, applyReviewCoverage, coverageSummary, reviewCheckResult, reviewAssessmentComplete, type ReviewInput, type ReviewCoverage } from "@/lib/review-coverage";
 import { prepareReviewComment } from "@/lib/review-comment-context";
@@ -1971,7 +1971,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
             console.warn(`[reviewer] Follow-up also returned no parseable findings (provider: ${repo.provider}, pr: #${pr.number})`);
           }
         } catch (err) {
-          console.error("[reviewer] Follow-up findings call failed:", err);
+          console.error("[reviewer] Follow-up findings call failed:", safeErrorDetails(err instanceof AiProviderFailure || err instanceof CapacityAdmissionError ? err.details : err));
         }
     }
 
@@ -2053,7 +2053,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         assertProcessingActive();
       } catch (err) {
         if (err instanceof ReviewProcessingExpiredError) throw err;
-        console.warn("[reviewer] Two-pass validation failed, keeping all findings:", err);
+        console.warn("[reviewer] Two-pass validation failed, keeping all findings:", safeErrorDetails(err));
       }
     }
 
@@ -2130,7 +2130,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
             );
             console.log(`[reviewer] Updated main comment for re-review (${allParsedFindings.length} findings remain)`);
           } catch (err) {
-            console.warn("[reviewer] Failed to update main comment for re-review:", err);
+            console.warn("[reviewer] Failed to update main comment for re-review:", safeErrorDetails(err));
           }
         }
       }
@@ -2302,11 +2302,11 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
             }
             console.log(`[reviewer] Matched ${issueRecords.filter((i) => i.filePath).length} review issues to GitHub comment IDs`);
           } catch (matchErr) {
-            console.error("[reviewer] Failed to match GitHub comment IDs:", matchErr);
+            console.error("[reviewer] Failed to match GitHub comment IDs:", safeErrorDetails(matchErr));
           }
         } catch (err) {
           if (err instanceof ReviewProcessingExpiredError) throw err;
-          console.error("[reviewer] Failed to submit inline review, falling back to summary-only:", err);
+          console.error("[reviewer] Failed to submit inline review, falling back to summary-only:", safeErrorDetails(err));
         }
       }
 
@@ -2327,7 +2327,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           console.log(`[reviewer] PR review submitted without inline comments, ${allSummaryFindings.length} in summary (${reviewEvent})`);
         } catch (err) {
           if (err instanceof ReviewProcessingExpiredError) throw err;
-          console.error("[reviewer] Failed to submit PR review, falling back to comment:", err);
+          console.error("[reviewer] Failed to submit PR review, falling back to comment:", safeErrorDetails(err));
           // Publish fallback findings with the archived result and final summary guards below.
           mainCommentBody += `\n\n${findingsBlock}`;
         }
@@ -2351,7 +2351,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           }
           outcomeRecord.inlinePosted();
         } catch (err) {
-          console.error(`[reviewer] Failed to post inline comment on ${comment.path}:${comment.line}:`, err);
+          console.error(`[reviewer] Failed to post inline comment on ${comment.path}:${comment.line}:`, safeErrorDetails(err));
           failedInlineComments.push(comment);
         }
       }
@@ -2501,7 +2501,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         .setCommitStatus(org.id, projectPath, pr.headSha, state, COMMIT_STATUS_NAME, summaryText, undefined, completeReviewAdmission?.window)
         .catch((err) => {
           assertProcessingActive();
-          console.error("[reviewer] Failed to set provider commit status:", err);
+          console.error("[reviewer] Failed to set provider commit status:", safeErrorDetails(err));
         });
       console.log(`[reviewer] ${repo.provider} commit status set — state: ${state} (threshold: ${threshold})`);
     }
@@ -2621,8 +2621,10 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         : embeddingPreparationFailed ? "Review failed while preparing search context"
         : startingReview ? "Review failed while starting the review"
         : failureStage === "preparation" ? "Review failed during preparation"
+        : failureStage === "publication" ? "Review failed while publishing the review"
+        : failureStage === "generation" && !(err instanceof AiProviderFailure || err instanceof CapacityAdmissionError) ? "Review failed during generation"
         : err instanceof Error ? err.message : "Unknown error";
-    console.error(`[reviewer] Review failed for PR #${pr.number}:`, failureStage === "indexing" ? errorMessage : startingReview || failureStage === "preparation" ? safeErrorDetails(err) : err);
+    console.error(`[reviewer] Review failed for PR #${pr.number}:`, failureStage === "indexing" ? errorMessage : safeErrorDetails(err instanceof AiProviderFailure || err instanceof CapacityAdmissionError ? err.details : err));
 
     // A deadline can expire while a completed assessment is being committed. Keep that immutable
     // record and append the interrupted processing outcome before publishing any scored completion.

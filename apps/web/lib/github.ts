@@ -449,8 +449,8 @@ export async function createPullRequestReview(
   );
 
   if (!res.ok) {
-    const errBody = await res.text();
-    throw new Error(`Failed to create PR review: ${res.status} ${errBody}`);
+    void res.body?.cancel().catch(() => {});
+    throw Object.assign(new Error(`Failed to create PR review: ${res.status}`), { status: res.status });
   }
 
   const data = await res.json();

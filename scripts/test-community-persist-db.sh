@@ -39,3 +39,4 @@ bun run db:generate
 (cd packages/db && bunx prisma db push)
 cd apps/web
 RUN_COMMUNITY_PERSIST_DB_TESTS=1 bun test lib/__tests__/community-persist-tenant.db.test.ts
+RUN_PROVIDER_KEY_DB_TESTS=1 bun test lib/__tests__/ai-router-provider-key.db.test.ts

@@ -454,7 +454,7 @@ if (localClassification) {
       const organizationFailure = await route();
       assert.equal(organizationFailure.status, 422);
       assert.match((await organizationFailure.json()).error, /credentials or access/);
-      for (const code of ["ECONNREFUSED", "ENETUNREACH", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT"]) {
+      for (const code of ["ECONNREFUSED", "ENETUNREACH", "EAI_AGAIN", "ENOTFOUND", "UND_ERR_CONNECT_TIMEOUT"]) {
         localFailure = { provider: "ollama", message: "Connection error. synthetic-secret", code, keyOwner: "unknown" };
         const response = await route();
         assert.equal(response.status, 422);
@@ -464,6 +464,9 @@ if (localClassification) {
         { provider: "openai" as const, message: "synthetic-secret", status: 401, keyOwner: "platform" as const },
         { provider: "openai" as const, message: "fetch failed synthetic-secret", keyOwner: "unknown" as const },
         { provider: "openai" as const, message: "Connection error. synthetic-secret", code: "ENETUNREACH" },
+        { provider: "openai" as const, message: "Connection error. synthetic-secret", code: "ENOTFOUND" },
+        { provider: "ollama" as const, message: "Connection error. synthetic-secret", code: "ENOTFOUND", status: 500 },
+        { provider: "ollama" as const, message: "Connection error. synthetic-secret", code: "ENOTFOUND", name: "AbortError" },
         { provider: "ollama" as const, message: "fetch failed synthetic-secret", status: 500 },
         { provider: "ollama" as const, message: "fetch failed synthetic-secret", code: "UND_ERR_BODY_TIMEOUT" },
         { provider: "ollama" as const, message: "fetch failed synthetic-secret", code: "ECONNRESET" },

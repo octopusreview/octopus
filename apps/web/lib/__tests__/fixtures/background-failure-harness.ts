@@ -109,19 +109,29 @@ for (const status of [401, 402, 403, 429, 503, undefined]) {
     failure = Object.assign(new Error("private payload"), { status, code: status === undefined ? "ECONNRESET" : undefined, request_id: "req_123456789", secret: "secret" });
     const before = events.length;
     reportBackgroundFailure(await caught(), context);
-    const admitted = !byok || status === 503 || status === undefined;
-    assert.equal(events.length - before, admitted ? 1 : 0);
-    if (admitted) {
-      const event = rawEvents.at(-1)!;
-      assert.equal(event.tags?.failure_owner, "unknown");
-      assert.equal(event.tags?.failure_code, status === undefined ? "ECONNRESET" : `http_${status}`);
-      assert.equal(event.contexts?.background_failure?.ownership, "unknown");
-      assert.equal(event.contexts?.background_failure?.keyOwner, byok ? "organization" : "platform");
-      assert.equal(event.contexts?.background_failure?.status, status);
-      assert.doesNotMatch(JSON.stringify(event), /private payload|req_123456789|secret/);
-    }
+    assert.equal(events.length - before, 1, "status and credential route alone do not establish an expected rejection");
+    const event = rawEvents.at(-1)!;
+    assert.equal(event.tags?.failure_owner, "unknown");
+    assert.equal(event.tags?.failure_code, status === undefined ? "ECONNRESET" : `http_${status}`);
+    assert.equal(event.contexts?.background_failure?.ownership, "unknown");
+    assert.equal(event.contexts?.background_failure?.keyOwner, byok ? "organization" : "platform");
+    assert.equal(event.contexts?.background_failure?.status, status);
+    assert.doesNotMatch(JSON.stringify(event), /private payload|req_123456789|secret/);
   }
 }
+const orgUnknown = new AiProviderFailure(Object.assign(new Error("private payload"), { status: 429, request_id: "req_123456789" }), "anthropic", request.model, "organization");
+const beforeOrgUnknown = events.length;
+reportBackgroundFailure(orgUnknown, { ...context, retry: { retryCount: 0, retryLimit: 1 } });
+assert.equal(events.length, beforeOrgUnknown, "an intermediate retry is not a terminal incident");
+reportBackgroundFailure(orgUnknown, { ...context, retry: { retryCount: 1, retryLimit: 1 } });
+reportBackgroundFailure(orgUnknown, { ...context, retry: { retryCount: 1, retryLimit: 1 } });
+assert.equal(events.length, beforeOrgUnknown + 1, "the terminal unknown failure is reported once");
+assert.equal(events.at(-1)?.tags?.failure_owner, "unknown");
+assert.equal(events.at(-1)?.contexts?.background_failure?.keyOwner, "organization");
+assert.doesNotMatch(JSON.stringify(rawEvents.at(-1)), /private payload|req_123456789/);
+const cancelledOrg = new AiProviderFailure(Object.assign(new Error("private payload"), { status: 401 }), "anthropic", request.model, "organization");
+reportBackgroundFailure(cancelledOrg, { ...context, cancelled: true });
+assert.equal(events.length, beforeOrgUnknown + 1, "cancelled work does not create an incident");
 for (const message of ["Out of credits", "Monthly spend limit reached", "Indexing attempt is no longer current"]) {
   const before = events.length;
   reportBackgroundFailure(new Error(message), context);
@@ -172,7 +182,7 @@ for (const provider of ["acp", "opencode", "claude-code"] as const) {
         assert.equal(error.details.status, status);
         reportBackgroundFailure(error, context);
       }
-      assert.equal(events.length - count, owner === "organization" && status !== 503 ? 0 : 1);
+      assert.equal(events.length - count, 1, "unknown provider failures remain observable for either credential route");
       assert.equal(usedKeys.at(-1), owner === "organization" ? "org-secret" : "platform-secret");
     }
     failure = null;

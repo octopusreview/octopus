@@ -36,13 +36,12 @@ export function reportBackgroundFailure(error: unknown, context: FailureContext)
     const details = providerFailure?.details ?? capacityFailure?.details ?? safeErrorDetails(error);
     const keyOwner = providerFailure?.keyOwner ?? capacityFailure?.keyOwner ?? "unknown";
     const status = details.status;
-    const orgKeyFailure = keyOwner === "organization" && [401, 402, 403, 429].includes(status ?? 0);
     // These are known application control-flow messages, not substring matches on provider payloads.
     const expected = !providerFailure && error instanceof Error && [
       "Out of credits", "Monthly spend limit reached",
       "Indexing attempt is no longer current",
     ].includes(error.message);
-    if (orgKeyFailure || expected) return;
+    if (expected) return;
     const permissionFailure = !providerFailure && context.stage === "indexing" && error instanceof Error &&
       error.message.startsWith("GitHub App does not have access to ");
     if (permissionFailure) return;

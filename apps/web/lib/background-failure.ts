@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
+import { isIndexingMilestone, type IndexingMilestone } from "./indexing-milestone";
 import { AiProviderFailure, safeErrorDetails } from "./provider-failure";
 import { CapacityAdmissionError } from "./review-capacity";
 
@@ -9,6 +10,7 @@ export type FailureContext = {
   stage: FailureStage;
   preparationOperation?: PreparationOperation;
   indexingDeadline?: boolean;
+  indexingLastMilestone?: IndexingMilestone;
   attemptId?: string;
   repositoryId?: string;
   pullRequestId?: string;
@@ -55,7 +57,7 @@ export function reportBackgroundFailure(error: unknown, context: FailureContext)
       level: "error",
       message: `Background ${stage} failed: ${provider} / ${code}`,
       fingerprint: [context.synthetic ? "background-failure-synthetic" : "background-failure", stage, provider, code],
-      tags: { error_boundary: "background", failure_stage: stage, failure_owner: ownership, failure_code: code, provider, outcome: "failed", synthetic: context.synthetic ? "true" : "false", ...(operation ? { preparation_operation: operation } : {}), ...(stage === "indexing" && context.indexingDeadline === true ? { indexing_deadline: "worker_25m" } : {}) },
+      tags: { error_boundary: "background", failure_stage: stage, failure_owner: ownership, failure_code: code, provider, outcome: "failed", synthetic: context.synthetic ? "true" : "false", ...(operation ? { preparation_operation: operation } : {}), ...(stage === "indexing" && context.indexingDeadline === true ? { indexing_deadline: "worker_25m", ...(isIndexingMilestone(context.indexingLastMilestone) ? { indexing_last_milestone: context.indexingLastMilestone } : {}) } : {}) },
       contexts: { background_failure: {
         ...details,
         stage, ownership, keyOwner,

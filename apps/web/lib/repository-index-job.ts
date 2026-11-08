@@ -1,5 +1,6 @@
 import "server-only";
 import { reportBackgroundFailure, type RetryState } from "./background-failure";
+import { indexingMilestone, type IndexingMilestone } from "./indexing-milestone";
 import { randomUUID } from "node:crypto";
 import { runRepositoryIndex, SupersededIndexError, isIndexingCancelled } from "@/lib/repository-index-completion";
 import { prisma } from "@octopus/db";
@@ -82,7 +83,9 @@ export async function processRepositoryIndex(job: RepositoryIndexJob, retry?: Re
   const deadlineError = new DOMException("Repository indexing timed out", "TimeoutError");
   const timeout = setTimeout(() => controller.abort(deadlineError), 25 * 60_000);
   const channel = `presence-org-${job.organizationId}`;
+  let lastMilestone: IndexingMilestone = "not_recorded";
   const log = (message: string, level: LogLevel = "info") => {
+    lastMilestone = indexingMilestone(message) ?? lastMilestone;
     writeSyncLog({ orgId: job.organizationId, repoId: repo.id, message, level, timestamp: Date.now() });
   };
   try {
@@ -104,7 +107,7 @@ export async function processRepositoryIndex(job: RepositoryIndexJob, retry?: Re
     void notifyRepositoryIndex(channel, repo.id);
     if (!isCancelled) {
       reportBackgroundFailure(error, { stage: "indexing", attemptId: indexAttemptId, repositoryId: repo.id, retry,
-        indexingDeadline: error === deadlineError && controller.signal.reason === deadlineError });
+        indexingDeadline: error === deadlineError && controller.signal.reason === deadlineError, indexingLastMilestone: lastMilestone });
       throw error;
     }
   } finally {

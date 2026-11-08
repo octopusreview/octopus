@@ -23,7 +23,7 @@ let failureSite = "";
 let feedbackMode = "";
 const feedbackUpdates: unknown[] = [];
 const feedbackIssue = { id: "issue", title: "Missing null check", description: "A missing value causes this access to throw.", severity: "high", githubCommentId: 5, createdAt: new Date(0), pullRequest: { repositoryId: "repo", repository: { organizationId: "org" } } };
-const privateFailure = () => Object.assign(new Error("synthetic-best-effort-private"), { status: 503 });
+const privateFailure = () => Object.assign(new Error("synthetic-best-effort-private"), { status: 503, request_id: "req_syntheticprivate123" });
 const localClassification = process.argv.includes("--local-classification");
 let localFailure: { message: string; provider: "local" | "ollama" | "openai"; status?: number; code?: string; name?: string; keyOwner?: "platform" | "organization" | "unknown"; unwrapped?: boolean; throwValue?: boolean } | null = null;
 if (refusalFlow) process.env.ANTHROPIC_BASE_URL = "https://api.anthropic.com";
@@ -300,7 +300,7 @@ mock.module("@/lib/github", () => ({
     published.push({ body, comments });
     return 456;
   },
-  createCheckRun: async () => 789,
+  createCheckRun: async () => { if (bestEffortPrivacy && failureSite === "check-run") throw privateFailure(); return 789; },
   updateCheckRun: async (_installation: number, _owner: string, _repo: string, _id: number, conclusion: string, _output: unknown, window?: ReviewExecutionWindow) => {
     if (firstCompletion && completionFailure === "check") { completionFailure = null; throw new Error("Fixture final check publication failed"); }
     if (window && adaptiveStage === "check-send") await fetch("https://synthetic.invalid/check", { signal: window.signal });
@@ -312,7 +312,7 @@ mock.module("@/lib/github", () => ({
   listReviewComments: async () => [],
   listPullRequestReviewComments: async () => feedbackMode === "reply" ? [{ id: 6, user: "fixture", body: "👎", inReplyToId: 5 }] : [{ id: 5, user: "fixture[bot]", path: "src/check.ts", line: 1, body: "🟠 Previous unrelated partial-review issue", inReplyToId: null }],
   listPullRequestIssueComments: async () => feedbackMode === "per-finding" ? [{ user: "fixture", createdAt: new Date().toISOString(), body: "**Missing null check** — 👎" }] : feedbackMode === "bulk" ? [{ user: "fixture", createdAt: new Date().toISOString(), body: "👎" }] : [],
-  listPullRequestReviews: async () => [],
+  listPullRequestReviews: async () => { if (bestEffortPrivacy && failureSite === "prior-reviews") throw privateFailure(); return []; },
   getCommentReactions: async () => ({ thumbsUp: feedbackMode === "reaction" ? 1 : 0, thumbsDown: 0 }),
 }));
 mock.module("@/lib/forgejo", () => ({
@@ -353,10 +353,11 @@ mock.module("@/lib/gitlab", () => ({
   getFileContent: async () => "return value.name;",
   getRepositoryTree: async () => ["src/check.ts"],
   listPullRequestComments: async () => [],
-  createPullRequestComment: async (_org: string, _project: string, _number: number, body: string) => { summaries.push(body); return 123; },
+  createPullRequestComment: async (_org: string, _project: string, _number: number, body: string) => { if (preparationDiagnostic && failureSite === "initial-comment") throw privateFailure(); summaries.push(body); return 123; },
   updatePullRequestComment: async (_org: string, _project: string, _number: number, _id: number, body: string) => { summaries.push(body); },
   createInlineComment: async () => 456,
   setCommitStatus: async (_org: string, _project: string, _sha: string, state: string, _name: string, _description: string, _url?: string, window?: ReviewExecutionWindow) => {
+    if (bestEffortPrivacy && failureSite === "running-status" && state === "running") throw privateFailure();
     if (window) {
       await Promise.resolve();
       if (adaptiveStage === "gitlab-auth") adaptiveAbort.abort();
@@ -543,13 +544,16 @@ if (bestEffortPrivacy) {
       ["", "review-storage", "Failed to store review"],
       ["", "diagram-embedding", "Failed to store diagrams"],
       ["", "diagram-storage", "Failed to store diagrams"],
+      ["", "check-run", "Failed to create check run"],
+      ["", "prior-reviews", "Failed to fetch prior review bodies"],
+      ["", "running-status", "Failed to set provider running status"],
       ["", "pr-body-fetch", "Could not fetch PR body"],
       ["", "branch-head", "Failed to fetch branch head"],
       ["", "tree-cache", "Failed to persist tree cache"],
       ["", "", ""],
     ]) {
       feedbackMode = mode; failureSite = site;
-      repo.provider = site === "branch-head" || site === "tree-cache" ? "gitlab" : "github";
+      repo.provider = site === "branch-head" || site === "tree-cache" || site === "running-status" ? "gitlab" : "github";
       errors.length = 0; events.length = 0; summaries.length = 0; checkOutputs.length = 0; feedbackUpdates.length = 0;
       await processReview("pr");
       if (expected) assert.ok(inspect(errors).includes(expected), `reaches ${site} via ${mode}`);
@@ -557,8 +561,8 @@ if (bestEffortPrivacy) {
       if (mode) assert.ok(feedbackUpdates.length, "feedback is recorded before best-effort embedding");
       assert.equal((archived.at(-1)?.coverage as ReviewCoverage).assessment?.state, "completed");
       assert.ok(events.some(event => event.status === "completed"));
-      assert.ok(checkOutputs.length, "completed review is published");
-      assert.doesNotMatch(inspect({ errors, events, summaries, checkOutputs, reviewUpdates, archived, sentryEvents }, { depth: 20 }), /synthetic-best-effort-private/);
+      assert.ok(checkOutputs.length || (site === "check-run" && published.length), "completed review is published");
+      assert.doesNotMatch(inspect({ errors, events, summaries, checkOutputs, reviewUpdates, archived, sentryEvents }, { depth: 20 }), /synthetic-best-effort-private|req_syntheticprivate123/);
       if (expected) assert.ok(inspect(errors).includes("503"));
     }
   } finally { console.error = originalError; console.warn = originalWarn; }
@@ -687,6 +691,18 @@ if (preparationDiagnostic) {
       assert.doesNotMatch(inspect({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }, { depth: 20 }), /synthetic private|req_syntheticprivate123/);
     }
     preparationFetchFailure = null;
+    repo.provider = "gitlab";
+    failureSite = "initial-comment";
+    summaries.length = 0; checkOutputs.length = 0; reviewUpdates.length = 0; events.length = 0; errors.length = 0; sentryEvents.length = 0;
+    await processReview("pr");
+    assert.equal(sentryEvents.at(-1)?.tags?.failure_stage, "review");
+    assert.equal(sentryEvents.at(-1)?.tags?.failure_code, "http_503");
+    assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "Review failed while starting the review"; }));
+    assert.ok(events.some(event => event.status === "failed" && event.error === "Review failed while starting the review"));
+    assert.ok(checkOutputs.some(output => typeof output === "string" && output.includes("Review failed while starting the review")));
+    assert.doesNotMatch(inspect({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }, { depth: 20 }), /synthetic-best-effort-private|req_syntheticprivate123/);
+    failureSite = "";
+    repo.provider = "github";
     pr.status = "pending";
     const before = sentryEvents.length;
     await processReview("pr");
@@ -771,7 +787,7 @@ if (directCommentFailure) {
     const { where, data } = query as { where: unknown; data: { status?: string; errorMessage?: string } };
     if (data.status !== "failed") return false;
     assert.deepEqual(where, { id: pr.id, headSha: pr.headSha, reviewRequestVersion: pr.reviewRequestVersion });
-    assert.equal(data.errorMessage, "Forgejo API returned 403");
+    assert.equal(data.errorMessage, "Review failed while starting the review");
     return true;
   }), "Direct comment failure is persisted for the same review attempt");
   assert.ok(events.some(event => event.type === "review-failed"));

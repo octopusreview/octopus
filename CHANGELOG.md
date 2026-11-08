@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stop fetching later repository file batches when GitHub continues to deny blob requests after a retry.
 - Repository analysis stops before entering the model provider if cancelled during model selection or routing; calls already in progress may still finish.
 
+### Changed
+
+- Add a privacy-safe last indexing milestone to worker-deadline diagnostics.
+
 ### Upgrade notes
 
 - Do not deploy this change until the pg-boss client inventory, old-worker drain, migration permissions and rollback have been audited and production evidence reviewed. Starting any new app instance that starts pg-boss, including an enqueue-only web replica, can migrate the shared queue schema. Stop and drain all old workers before starting the first new instance, and control which instance performs the migration. Synthetic mixed-version tests showed that a pg-boss 12.15 worker can complete a newer retry with 12.37.1 on schema 45 and with 12.38.1 on schema 46; keeping old workers running or immediately rolling back to them is unsafe. The normal blue-green traffic flip alone does not establish a safe rollout or rollback.

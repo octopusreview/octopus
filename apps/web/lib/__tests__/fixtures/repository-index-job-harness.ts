@@ -15,6 +15,7 @@ let claimCount = 1;
 let indexFailure: Error | null = null;
 let cancelled = false;
 let timedOut = false;
+let indexMessages: string[] = [];
 let timeoutCallback: (() => void) | undefined;
 const realSetTimeout = globalThis.setTimeout;
 globalThis.setTimeout = ((callback: () => void, ms?: number, ...args: unknown[]) => {
@@ -81,6 +82,7 @@ mock.module("@/lib/elasticsearch", () => ({ writeSyncLog: () => {}, deleteSyncLo
 mock.module("@/lib/indexer", () => ({
   indexRepository: async (...args: unknown[]) => {
     indexCalls.push(args);
+    for (const message of indexMessages) (args[4] as (message: string) => void)(message);
     if (cancelled) { controller.abort(); throw controller.signal.reason; }
     if (timedOut) { assert.ok(timeoutCallback); timeoutCallback(); throw new Error("Indexing cancelled"); }
     if (replaceAttempt) {
@@ -150,6 +152,7 @@ assert.equal(indexCalls.at(-1)?.[3], 0);
 assert.equal(indexCalls.at(-1)?.[6], "forgejo", "Forgejo jobs must not use GitHub authentication");
 
 cancelled = true;
+indexMessages = ["Fetching and chunking file contents...", "synthetic-private-path-or-token"];
 const beforeCancellation = sentryEvents.length;
 await processRepositoryIndex(job);
 assert.equal(sentryEvents.length, beforeCancellation, "cancelled work is not a platform incident");
@@ -157,6 +160,7 @@ assert.equal(claims.at(-1)?.data.indexStatus, "pending", "cancelled work must re
 assert.equal(notifications.at(-1), "pending");
 cancelled = false;
 timedOut = true;
+indexMessages = ["Authenticating with GitHub...", "Fetching and chunking file contents...", "synthetic-private-path-or-token"];
 const beforeTimeout = sentryEvents.length;
 await assert.rejects(() => processRepositoryIndex(job, { retryCount: 1, retryLimit: 2 }), { name: "TimeoutError" });
 assert.equal(sentryEvents.length, beforeTimeout);
@@ -164,15 +168,43 @@ await assert.rejects(() => processRepositoryIndex(job, { retryCount: 2, retryLim
 assert.equal(sentryEvents.length, beforeTimeout + 1);
 assert.equal(sentryEvents.at(-1)?.contexts?.background_failure?.name, "TimeoutError");
 assert.equal(sentryEvents.at(-1)?.tags?.indexing_deadline, "worker_25m");
+assert.equal(sentryEvents.at(-1)?.tags?.indexing_last_milestone, "fetching_files");
+assert.ok(!JSON.stringify(sentryEvents.at(-1)).includes("synthetic-private-path-or-token"));
 assert.equal(sentryEvents.at(-1)?.contexts?.background_failure?.attemptId, currentRow?.indexAttemptId);
 assert.equal(sentryEvents.at(-1)?.contexts?.background_failure?.retryCount, 2);
 assert.equal(currentRow?.indexStatus, "failed");
 assert.equal(notifications.at(-1), "failed");
 assert.equal(currentRow?.firstIndexedAt, null);
+indexMessages = ["synthetic-private-path-or-token"];
+await assert.rejects(() => processRepositoryIndex(job, { retryCount: 2, retryLimit: 2 }), { name: "TimeoutError" });
+assert.equal(sentryEvents.at(-1)?.tags?.indexing_last_milestone, "not_recorded");
+assert.ok(!JSON.stringify(sentryEvents.at(-1)).includes("synthetic-private-path-or-token"));
+for (const [message, expected] of [
+  ["GitHub authentication successful", "authenticated"],
+  ["Repository cloned successfully", "cloned"],
+  ["Scanning repository files...", "scanning_files"],
+  ["Processing files... 2/3", "fetching_files"],
+  ["Preparing vector database...", "preparing_vectors"],
+  ["Vector database ready", "vector_ready"],
+  ["Generating embeddings for 42 chunks (2 batches)...", "embedding"],
+  ["Generating embeddings for 42 chunks (1 batch)...", "embedding"],
+  ["Processing embedding batch 1/2...", "embedding"],
+  ["Generated 42 embeddings", "embedded"],
+  ["Storing 42 vectors in database (1 batch)...", "writing_vectors"],
+  ["Storing 42 vectors in database (2 batches)...", "writing_vectors"],
+  ["Successfully stored 42 vectors", "vectors_written"],
+] as const) {
+  indexMessages = [message, "synthetic-private-path-or-token"];
+  await assert.rejects(() => processRepositoryIndex(job, { retryCount: 2, retryLimit: 2 }), { name: "TimeoutError" });
+  assert.equal(sentryEvents.at(-1)?.tags?.indexing_last_milestone, expected);
+  assert.ok(!JSON.stringify(sentryEvents.at(-1)).includes("synthetic-private-path-or-token"));
+}
+indexMessages = [];
 timedOut = false;
 indexFailure = new DOMException("other timeout", "TimeoutError");
 await assert.rejects(() => processRepositoryIndex(job, { retryCount: 2, retryLimit: 2 }), { name: "TimeoutError" });
 assert.equal(sentryEvents.at(-1)?.tags?.indexing_deadline, undefined, "a dependency timeout must not be labeled as the worker deadline");
+assert.equal(sentryEvents.at(-1)?.tags?.indexing_last_milestone, undefined, "a dependency timeout must not have a worker-deadline milestone");
 indexFailure = null;
 const priorQueries = queries.length;
 await enqueuePendingRepositoryIndexes("org-1", undefined, ["bitbucket", "gitlab", "unrecognized"]);

@@ -1,4 +1,5 @@
 import type { ErrorEvent } from "@sentry/nextjs";
+import { isIndexingMilestone } from "./indexing-milestone";
 
 // This app handles payment, OAuth tokens, webhook secrets, and API keys, so we
 // scrub aggressively before anything leaves the process. `sendDefaultPii: false`
@@ -42,11 +43,12 @@ export function scrubEvent(event: ErrorEvent): ErrorEvent {
     delete event.transaction;
     event.contexts = { background_failure: event.contexts?.background_failure };
     event.tags = Object.fromEntries(Object.entries(event.tags).filter(([key]) =>
-      ["error_boundary", "failure_stage", "failure_owner", "failure_code", "provider", "outcome", "synthetic", "preparation_operation", "indexing_deadline"].includes(key)));
+      ["error_boundary", "failure_stage", "failure_owner", "failure_code", "provider", "outcome", "synthetic", "preparation_operation", "indexing_deadline", "indexing_last_milestone"].includes(key)));
     if (event.tags.preparation_operation !== "review_input" && event.tags.preparation_operation !== "repository_tree") {
       delete event.tags.preparation_operation;
     }
     if (event.tags.indexing_deadline !== "worker_25m") delete event.tags.indexing_deadline;
+    if (event.tags.failure_stage !== "indexing" || event.tags.indexing_deadline !== "worker_25m" || !isIndexingMilestone(event.tags.indexing_last_milestone)) delete event.tags.indexing_last_milestone;
   }
   if (event.request) {
     delete (event.request as { cookies?: unknown }).cookies;

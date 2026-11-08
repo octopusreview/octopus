@@ -1,6 +1,7 @@
 import "./review-outcome-stub";
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
+import { inspect } from "node:util";
 import type { AiCreateParams } from "@/lib/providers";
 import { assertReviewProcessingActive, type ReviewExecutionWindow, type CapacityRefusalReason } from "@/lib/review-capacity";
 import type { ReviewCoverage } from "@/lib/review-coverage";
@@ -12,6 +13,7 @@ const directCommentFailure = process.argv.includes("--direct-forgejo-comment-fai
 const preserveAutoReview = process.argv.includes("--preserve-auto-review");
 const firstCompletion = process.argv.includes("--first-review-completion");
 const refusalFlow = process.argv.includes("--provider-refusal");
+const providerErrorPrivacy = process.argv.includes("--provider-error-privacy");
 if (refusalFlow) process.env.ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 let refusalCalls = 0;
 let preparationFetchFailure: "review_input" | "repository_tree" | "large_pr" | null = null;
@@ -155,6 +157,10 @@ mock.module("@/lib/ai-usage", () => ({ logAiUsage: async () => { usageCount++; i
 mock.module("@/lib/ai-router", () => ({ getProviderForModel: async () => {
   assert.ok(adaptiveStage, "Legacy fixture must not resolve adaptive capacity"); return "anthropic";
 }, createAiMessage: async (params: AiCreateParams) => {
+  if (providerErrorPrivacy) {
+    const { AiProviderFailure } = await import("@/lib/provider-failure");
+    throw new AiProviderFailure(Object.assign(new Error("synthetic-credential-and-prompt"), { status: 401 }), "openai", params.model, "organization");
+  }
   if (refusalFlow) {
     const { anthropicProvider } = await import("@/lib/providers/anthropic");
     const { AiProviderFailure } = await import("@/lib/provider-failure");
@@ -235,7 +241,7 @@ mock.module("@/lib/review-attempt", () => ({
   recordFirstReviewCompletion: realReviewAttempt.recordFirstReviewCompletion,
   withForgejoReviewPublication: directCommentFailure ? realReviewAttempt.withForgejoReviewPublication : async (_id: string, _head: string, _version: number, publish: () => Promise<void>) => publish(),
   createReviewAttemptComment: directCommentFailure ? realReviewAttempt.createReviewAttemptComment : async (_id: string, _head: string, _version: number, create: () => Promise<number>) => create(),
-  updateCurrentReview: indexingPrivacy || directCommentFailure || firstCompletion || refusalFlow ? realReviewAttempt.updateCurrentReview : async () => ({ count: 1 }),
+  updateCurrentReview: indexingPrivacy || directCommentFailure || firstCompletion || refusalFlow || providerErrorPrivacy ? realReviewAttempt.updateCurrentReview : async () => ({ count: 1 }),
   saveReviewAttempt: async (_id: string, _pr: string, _coverage: unknown, _body: string, findings: { title: string }[]) => {
     archived.push({ id: _id, findings, coverage: structuredClone(_coverage), body: _body });
     if (firstCompletion) Object.assign(pr, { status: "completed", reviewBody: _body });
@@ -372,6 +378,20 @@ ${JSON.stringify([finding])}
 const { prepareReviewInput } = await import("@/lib/review-coverage");
 const { canRestrictReviewToFollowUp } = await import("@/lib/review-follow-up");
 const { processReview } = await import("@/lib/reviewer");
+if (providerErrorPrivacy) {
+  const logs: string[] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => { logs.push(inspect(args)); };
+  try {
+    await processReview("pr");
+    assert.ok(reviewUpdates.some((update) => (update as { data: { status?: string } }).data.status === "failed"));
+    assert.equal((archived.at(-1)?.coverage as ReviewCoverage).assessment?.state, "incomplete");
+    assert.ok(checkOutputs.length, "failure must still update the GitHub check");
+    assert.doesNotMatch(JSON.stringify({ logs, summaries, checkOutputs, reviewUpdates, events, archived, sentryEvents }), /synthetic-credential-and-prompt/);
+  } finally { console.error = originalError; }
+  console.log("PASS provider failure remains private in review outputs");
+  process.exit(0);
+}
 if (indexingPrivacy) {
   const errors: unknown[][] = [];
   const originalError = console.error;

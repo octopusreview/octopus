@@ -74,7 +74,7 @@ for (const call of calls) {
   assert.deepEqual(logs.at(-1)?.[1], { name: "Error", category: "ollama_embedding_url_invalid" });
   assert.equal(urlResponse.status, 500);
   assert.deepEqual(await urlResponse.json(), { error: process.env.NODE_ENV === "development"
-    ? "Configured Ollama embedding URL was rejected; check the URL and deployment network policy. For a self-hosted deployment, check the SELF_HOSTED setting." : "Review generation failed" });
+    ? "Configured Ollama embedding URL was rejected; check the URL and deployment network policy. For a self-hosted deployment, set SELF_HOSTED=true if local access is intentional." : "Review generation failed" });
   failure = new Error("Configured Ollama embedding URL was rejected; synthetic-provider-secret");
   const spoofedResponse = await call();
   assert.deepEqual(logs.at(-1)?.[1], { name: "Error" });

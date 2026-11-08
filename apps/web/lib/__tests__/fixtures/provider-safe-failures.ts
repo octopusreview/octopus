@@ -57,7 +57,7 @@ const beforeRejected = fetchCount;
 for (ollamaUrl of ["http://127.0.0.1:11434", "not-a-url-synthetic-provider-secret"]) {
   await assert.rejects(createEmbeddings(["text"]), (error: unknown) => {
     assert.ok(error instanceof OllamaEmbeddingUrlError);
-    assert.equal(error.message, "Configured Ollama embedding URL was rejected; check the URL and deployment network policy. For a self-hosted deployment, check the SELF_HOSTED setting.");
+    assert.equal(error.message, "Configured Ollama embedding URL was rejected; check the URL and deployment network policy. For a self-hosted deployment, set SELF_HOSTED=true if local access is intentional.");
     return true;
   });
 }

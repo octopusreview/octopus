@@ -6,7 +6,7 @@ const dimensionAdvice = (actual: unknown, configured: unknown) => {
 };
 const keyAdvice = "Set OPENAI_API_KEY to configure OpenAI embeddings.";
 const ollamaAdvice = "Check that the configured embedding model is pulled on the Ollama server.";
-const urlAdvice = "Configured Ollama embedding URL was rejected; check the URL and deployment network policy. For a self-hosted deployment, check the SELF_HOSTED setting.";
+const urlAdvice = "Configured Ollama embedding URL was rejected; check the URL and deployment network policy. For a self-hosted deployment, set SELF_HOSTED=true if local access is intentional.";
 
 export class EmbeddingDimensionError extends Error {
   constructor(readonly actual: number, readonly configured: number) {

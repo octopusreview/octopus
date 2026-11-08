@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { authenticateApiToken } from "@/lib/api-auth";
 import { generateBareLocalReview, ReviewConfigError } from "@/lib/review-core";
+import { safeErrorDetails } from "@/lib/provider-failure";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { writeAuditLog } from "@/lib/audit";
 import { MAX_LOCAL_REVIEW_DIFF_BYTES } from "@/lib/cli-limits";
@@ -106,7 +107,7 @@ export async function POST(request: Request) {
         bareMode: true,
       });
     } catch (err) {
-      console.error("[review-local] Review generation failed:", err);
+      console.error("[review-local] Review generation failed:", safeErrorDetails(err));
       // Recoverable config error — the message is safe to surface in
       // production because it tells the user how to fix the problem
       // (set an API key / pick a different model) without leaking
@@ -115,13 +116,7 @@ export async function POST(request: Request) {
       if (err instanceof ReviewConfigError) {
         return NextResponse.json({ error: err.message }, { status: 422 });
       }
-      // Everything else: generic in prod, real error in dev.
-      const isProd = process.env.NODE_ENV === "production";
-      const detail = err instanceof Error ? err.message : String(err);
-      return NextResponse.json(
-        { error: isProd ? "Review generation failed" : `Review generation failed: ${detail}` },
-        { status: 500 },
-      );
+      return NextResponse.json({ error: "Review generation failed" }, { status: 500 });
     }
   });
 }

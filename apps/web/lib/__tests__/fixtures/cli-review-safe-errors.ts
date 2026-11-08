@@ -1,0 +1,49 @@
+import { mock } from "bun:test";
+import assert from "node:assert/strict";
+import { inspect } from "node:util";
+
+mock.module("server-only", () => ({}));
+let failure: unknown = new Error("synthetic-provider-secret");
+let repositoryExists = true;
+class ReviewConfigError extends Error {}
+const review = async () => {
+  if (failure !== null) throw failure;
+  return { findings: [], summary: "ok", model: "synthetic", usage: {} };
+};
+mock.module("@/lib/api-auth", () => ({ authenticateApiToken: async () => ({ org: { id: "org" }, user: null }) }));
+mock.module("@/lib/cost", () => ({ isOrgOverSpendLimit: async () => false }));
+mock.module("@/lib/audit", () => ({ writeAuditLog: async () => {} }));
+mock.module("@/lib/external-review-activity", () => ({ withExternalReviewActivity: async (_input: unknown, fn: () => Promise<Response>) => fn() }));
+mock.module("@/lib/review-core", () => ({ ReviewConfigError, generateLocalReview: review, generateBareLocalReview: review }));
+mock.module("@octopus/db", () => ({ prisma: { repository: { findFirst: async () => repositoryExists ? { id: "repo" } : null } } }));
+mock.module("next/headers", () => ({ headers: async () => new Headers() }));
+
+const { NextRequest } = await import("next/server");
+const bare = await import("../../../app/api/cli/review-local/route");
+const contextual = await import("../../../app/api/cli/repos/[id]/local-review/route");
+const calls = [
+  () => bare.POST(new NextRequest("http://localhost/api/cli/review-local", { method: "POST", body: JSON.stringify({ diff: "+test" }) })),
+  () => contextual.POST(new NextRequest("http://localhost/api/cli/repos/repo/local-review", { method: "POST", body: JSON.stringify({ diff: "+test" }) }), { params: Promise.resolve({ id: "repo" }) }),
+];
+const logs: unknown[][] = [];
+console.error = (...args: unknown[]) => { logs.push(args); };
+
+for (const call of calls) {
+  for (const value of [Object.assign(new Error("synthetic-provider-secret"), { status: 503, request_id: "req_abcdefgh" }), { message: "synthetic-provider-secret", cause: { token: "synthetic-provider-secret" } }]) {
+    failure = value;
+    const response = await call();
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), { error: "Review generation failed" });
+    assert.ok(!inspect(logs, { depth: 10 }).includes("synthetic-provider-secret"));
+  }
+  assert.ok(inspect(logs).includes("503"));
+  assert.ok(inspect(logs).includes("req_abcdefgh"));
+  failure = new ReviewConfigError("Safe configuration advice");
+  const response = await call();
+  assert.equal(response.status, 422);
+  assert.deepEqual(await response.json(), { error: "Safe configuration advice" });
+  failure = null;
+  assert.equal((await call()).status, 200);
+}
+repositoryExists = false;
+assert.equal((await calls[1]()).status, 404);

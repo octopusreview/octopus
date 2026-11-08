@@ -49,6 +49,7 @@ for (const call of calls) {
   failure = new EmbeddingDimensionError(2, 3);
   failure.message = "synthetic-provider-secret";
   const dimensionResponse = await call();
+  assert.deepEqual(logs.at(-1)?.[1], { name: "Error", category: "embedding_dimension_mismatch" });
   assert.equal(dimensionResponse.status, 500);
   assert.deepEqual(await dimensionResponse.json(), { error: process.env.NODE_ENV === "development"
     ? "Embedding returned 2 dimensions; OCTOPUS_EMBED_DIM is 3. Check the embedding model and configured dimension."
@@ -56,23 +57,27 @@ for (const call of calls) {
   failure = new MissingEmbeddingKeyError();
   failure.message = "synthetic-provider-secret";
   const keyResponse = await call();
+  assert.deepEqual(logs.at(-1)?.[1], { name: "Error", category: "embedding_key_missing" });
   assert.equal(keyResponse.status, 500);
   assert.deepEqual(await keyResponse.json(), { error: process.env.NODE_ENV === "development"
     ? "Set OPENAI_API_KEY to configure OpenAI embeddings." : "Review generation failed" });
   failure = new OllamaEmbeddingResponseError();
   failure.message = "synthetic-provider-secret";
   const ollamaResponse = await call();
+  assert.deepEqual(logs.at(-1)?.[1], { name: "Error", category: "ollama_embedding_response_invalid" });
   assert.equal(ollamaResponse.status, 500);
   assert.deepEqual(await ollamaResponse.json(), { error: process.env.NODE_ENV === "development"
     ? "Check that the configured embedding model is pulled on the Ollama server." : "Review generation failed" });
   failure = new OllamaEmbeddingUrlError();
   failure.message = "synthetic-provider-secret";
   const urlResponse = await call();
+  assert.deepEqual(logs.at(-1)?.[1], { name: "Error", category: "ollama_embedding_url_invalid" });
   assert.equal(urlResponse.status, 500);
   assert.deepEqual(await urlResponse.json(), { error: process.env.NODE_ENV === "development"
     ? "Configured Ollama embedding URL was rejected; check the URL and deployment network policy. For a self-hosted deployment, check the SELF_HOSTED setting." : "Review generation failed" });
   failure = new Error("Configured Ollama embedding URL was rejected; synthetic-provider-secret");
   const spoofedResponse = await call();
+  assert.deepEqual(logs.at(-1)?.[1], { name: "Error" });
   assert.equal(spoofedResponse.status, 500);
   assert.deepEqual(await spoofedResponse.json(), { error: "Review generation failed" });
   failure = new AiProviderFailure({ status: 503, request_id: "req_syntheticsecret123", message: "synthetic-provider-secret" }, "openai", "model", "unknown");

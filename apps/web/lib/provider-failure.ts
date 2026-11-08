@@ -41,7 +41,7 @@ export class AiProviderFailure extends Error {
       ? details.status === 401 || details.status === 403
       : /invalid_api_key|api key|unauthorized|401|403|authentication|placeholder/.test(message);
     const reviewCategory = !cancelled && authFailure
-      ? "auth" : !cancelled && provider === "ollama" && !details.status && (details.code ? ["ECONNREFUSED", "ENETUNREACH", "EAI_AGAIN", "ENOTFOUND", "UND_ERR_CONNECT_TIMEOUT"].includes(details.code) || (details.code === "ETIMEDOUT" && error instanceof Error && error.name === "APIConnectionError") : /(econnrefused|fetch failed)/.test(message))
+      ? "auth" : !cancelled && provider === "ollama" && !details.status && (details.code ? ["ECONNREFUSED", "ENETUNREACH", "EAI_AGAIN", "ENOTFOUND", "ETIMEDOUT", "UND_ERR_CONNECT_TIMEOUT"].includes(details.code) : /(econnrefused|fetch failed)/.test(message))
         ? "local" : undefined;
     const hint = provider === "claude-code" && details.code === "ENOENT" ? ": executable or file not found; check the provider installation" : "";
     super(provider === "local" && error instanceof OfflineLocalAgentError

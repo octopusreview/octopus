@@ -398,6 +398,11 @@ if (localClassification) {
   const { generateLocalReview, generateBareLocalReview, ReviewConfigError } = await import("@/lib/review-core");
   const { AiProviderFailure } = await import("@/lib/provider-failure");
   assert.equal(new AiProviderFailure(new Error("synthetic-secret"), "local", "local:model", "unknown").message, "AI provider local request failed");
+  // Real SDK shape: openai 6.39.0 leaves APIConnectionError.name as "Error", so classification must not depend on the name.
+  const { APIConnectionError, APIConnectionTimeoutError } = await import("openai/error");
+  const connectTimeout = new APIConnectionError({ cause: Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("connect ETIMEDOUT synthetic-secret"), { code: "ETIMEDOUT" }) }) });
+  assert.equal(new AiProviderFailure(connectTimeout, "ollama", "ollama:model", "unknown").reviewCategory, "local");
+  assert.equal(new AiProviderFailure(new APIConnectionTimeoutError(), "ollama", "ollama:model", "unknown").reviewCategory, undefined);
   const paths = [() => generateLocalReview({ diff, repoId: "repo", orgId: "org" }), () => generateBareLocalReview({ diff, orgId: "org" })];
   for (const run of paths) {
     for (const failure of [
@@ -460,7 +465,7 @@ if (localClassification) {
         assert.equal(response.status, 422);
         assert.match((await response.json()).error, /Could not reach the configured local model/);
       }
-      localFailure = { provider: "ollama", message: "Connection error. synthetic-secret", name: "APIConnectionError", code: "ETIMEDOUT" };
+      localFailure = { provider: "ollama", message: "Connection error. synthetic-secret", code: "ETIMEDOUT" };
       const connectionTimeout = await route();
       assert.equal(connectionTimeout.status, 422);
       assert.match((await connectionTimeout.json()).error, /Could not reach the configured local model/);
@@ -479,8 +484,7 @@ if (localClassification) {
         { provider: "ollama" as const, message: "fetch failed synthetic-secret", code: "UND_ERR_BODY_TIMEOUT" },
         { provider: "ollama" as const, message: "fetch failed synthetic-secret", code: "ECONNRESET" },
         { provider: "ollama" as const, message: "fetch failed synthetic-secret", name: "AbortError" },
-        { provider: "ollama" as const, message: "Connection error. synthetic-secret", code: "ETIMEDOUT" },
-        { provider: "ollama" as const, message: "Connection error. synthetic-secret", name: "APIConnectionTimeoutError", code: "ETIMEDOUT" },
+        { provider: "ollama" as const, message: "Request timed out. synthetic-secret", name: "APIConnectionTimeoutError" },
         { provider: "ollama" as const, message: "Connection error. synthetic-secret", name: "APIConnectionError", code: "ETIMEDOUT", status: 500 },
         { provider: "ollama" as const, message: "Connection error. synthetic-secret", name: "AbortError", code: "ETIMEDOUT" },
         { provider: "openai" as const, message: "Connection error. synthetic-secret", name: "APIConnectionError", code: "ETIMEDOUT" },

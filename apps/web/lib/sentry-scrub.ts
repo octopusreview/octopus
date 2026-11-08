@@ -1,10 +1,8 @@
 import type { ErrorEvent } from "@sentry/nextjs";
 import { isIndexingMilestone } from "./indexing-milestone";
 
-// This app handles payment, OAuth tokens, webhook secrets, and API keys, so we
-// scrub aggressively before anything leaves the process. `sendDefaultPii: false`
-// already keeps Sentry from attaching cookies/headers/IP; this is belt-and-
-// suspenders for anything that reaches `extra`/`contexts` via our own code.
+// Error events may contain sensitive data supplied by application code even
+// when Sentry's automatic PII collection is disabled.
 const SENSITIVE_KEY_RX =
   /(authorization|cookie|password|secret|token|api[-_]?key|private[-_]?key|webhook[-_]?secret|access[-_]?token|client[-_]?secret|dsn|credential)/i;
 

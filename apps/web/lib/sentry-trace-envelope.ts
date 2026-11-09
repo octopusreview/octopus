@@ -6,6 +6,15 @@ type Span = Parameters<NonNullable<Options["beforeSendSpan"]>>[0];
 type Transaction = Parameters<NonNullable<Options["beforeSendTransaction"]>>[0];
 type StreamedSpan = Parameters<Parameters<typeof Sentry.withStreamedSpan>[0]>[0];
 
+export function scrubEnvelopeHeader([headers]: [Record<string, unknown>, ...unknown[]]): void {
+  const trace = headers.trace;
+  if (!trace || typeof trace !== "object" || Array.isArray(trace)) return;
+  const transaction = (trace as { transaction?: unknown }).transaction;
+  if (typeof transaction === "string") {
+    headers.trace = { ...trace, transaction: sanitizeTraceDescription(transaction) };
+  }
+}
+
 export function scrubSpan(span: Span): Span {
   if (span.description) span.description = sanitizeTraceDescription(span.description);
   scrubTraceAttributes(span.data);

@@ -3,7 +3,7 @@
 // setting SENTRY_DSN (Sentry stays disabled when it's unset).
 import * as Sentry from "@sentry/nextjs";
 import { scrubDynamicSamplingContext, scrubEvent, parseRate } from "@/lib/sentry-scrub";
-import { scrubStreamedSpan, scrubTransaction } from "@/lib/sentry-trace-envelope";
+import { scrubEnvelopeHeader, scrubStreamedSpan, scrubTransaction } from "@/lib/sentry-trace-envelope";
 
 const dsn = process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN;
 
@@ -22,3 +22,4 @@ Sentry.init({
   beforeSendTransaction: (event) => scrubTransaction(event),
 });
 Sentry.getClient()?.on("createDsc", scrubDynamicSamplingContext);
+Sentry.getClient()?.on("beforeEnvelope", scrubEnvelopeHeader);

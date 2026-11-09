@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type * as Sentry from "@sentry/nextjs";
-import { scrubSpan, scrubStreamedSpan, scrubTransaction } from "@/lib/sentry-trace-envelope";
+import { scrubEnvelopeHeader, scrubSpan, scrubStreamedSpan, scrubTransaction } from "@/lib/sentry-trace-envelope";
 import { sanitizeRequestUrl } from "@/lib/sentry-scrub";
 
 type Options = NonNullable<Parameters<typeof Sentry.init>[0]>;
@@ -55,5 +55,17 @@ describe("Sentry trace request metadata", () => {
     expect(JSON.stringify(span)).not.toContain("synthetic-");
     expect(span.links?.[0]?.attributes?.["http.response.status_code"]).toBe(200);
     expect(sanitizeRequestUrl("https://example.invalid/%zz?private=synthetic-query")).toBeUndefined();
+  });
+
+  it("copies inherited sampling context before sanitizing the envelope header", () => {
+    const trace = { trace_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", public_key: "synthetic",
+      transaction: "GET /safe?private=synthetic-query", sampled: "true" };
+    const envelope: Parameters<typeof scrubEnvelopeHeader>[0] = [{ trace }, []];
+    scrubEnvelopeHeader(envelope);
+    expect(envelope[0].trace).toEqual({ ...trace, transaction: "GET /safe" });
+    expect(trace.transaction).toBe("GET /safe?private=synthetic-query");
+    const unrelated: Parameters<typeof scrubEnvelopeHeader>[0] = [{ trace: "not an object" }, []];
+    scrubEnvelopeHeader(unrelated);
+    expect(unrelated[0].trace).toBe("not an object");
   });
 });

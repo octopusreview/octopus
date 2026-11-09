@@ -20,6 +20,7 @@ import { runOllamaPull } from "./ollama-admin";
 import { reapStuckReviews } from "./reap-stuck-reviews";
 import { discoverRepositories } from "./discover-repositories";
 import { processRepositoryIndex, type RepositoryIndexJob } from "./repository-index-job";
+import { dispatchDeferredIndexes } from "./github-deferred-index";
 import type { QueueConfig } from "./queue";
 
 export interface WelcomeEmailJob {
@@ -61,7 +62,7 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
   await boss.work<RepositoryIndexJob>("index-repository", { localConcurrency: 1, includeMetadata: true }, async (jobs) => {
     for (const job of jobs) {
       const retry = { retryCount: job.retryCount, retryLimit: job.retryLimit };
-      try { await processRepositoryIndex(job.data, retry); }
+      try { await processRepositoryIndex(job.data, retry, job.id); }
       catch (error) {
         reportBackgroundFailure(error, { stage: "indexing", attemptId: job.id, repositoryId: job.data?.repositoryId, retry });
         throw error;
@@ -231,6 +232,8 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
         console.error(`[queue] reap-stuck-reviews failed (job ${job.id}):`, err);
         throw err;
       }
+      try { await dispatchDeferredIndexes(boss); }
+      catch { console.error("[queue] Deferred indexing dispatch failed; the next sweep will retry"); }
     }
   });
 

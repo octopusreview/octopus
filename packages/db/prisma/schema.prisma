@@ -362,6 +362,7 @@ model Repository {
   jiraProjectMappings   JiraProjectMapping[]
   packageAnalyses       PackageAnalysis[]
   repoConfigExtractions RepoConfigExtraction[]
+  githubDeferredIndex   GitHubDeferredIndex?
 
   @@unique([provider, externalId, organizationId])
   @@index([organizationId, isActive])
@@ -1091,6 +1092,19 @@ model GitHubIndexRateSecret {
   secretEnc String
 
   @@map("github_index_rate_secret")
+}
+
+model GitHubDeferredIndex {
+  repositoryId   String @id
+  repository     Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  organizationId String
+  installationId Int
+  indexAttemptId String
+  jobId          String @db.Uuid
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([createdAt, repositoryId])
+  @@map("github_deferred_indexes")
 }
 
 model GitHubIndexRateWindow {

@@ -15,3 +15,16 @@ CREATE TABLE "github_index_rate_windows" (
     "updatedAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "github_index_rate_windows_pkey" PRIMARY KEY ("scope")
 );
+
+CREATE TABLE "github_deferred_indexes" (
+    "repositoryId" TEXT NOT NULL,
+    "organizationId" TEXT NOT NULL,
+    "installationId" INTEGER NOT NULL,
+    "indexAttemptId" TEXT NOT NULL,
+    "jobId" UUID NOT NULL,
+    "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "github_deferred_indexes_pkey" PRIMARY KEY ("repositoryId"),
+    CONSTRAINT "github_deferred_indexes_repositoryId_fkey" FOREIGN KEY ("repositoryId") REFERENCES "repositories"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE INDEX "github_deferred_indexes_createdAt_repositoryId_idx" ON "github_deferred_indexes"("createdAt", "repositoryId");

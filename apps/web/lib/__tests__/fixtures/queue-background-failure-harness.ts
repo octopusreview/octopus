@@ -9,8 +9,11 @@ for (const [path, names] of Object.entries({
   audit: ["enforceAuditLogRetention", "enforceActivityEventRetention"], "webhook-tenant": ["enforceWebhookDeliveryRetention"],
   releases: ["refreshReleaseCache"], subscription: ["renewDueSubscriptions"], credits: ["reconcileAutoReloadAttempts"],
   "marketing-outbox": ["syncMarketingConversions"], "ollama-admin": ["runOllamaPull"],
-  "reap-stuck-reviews": ["reapStuckReviews"], "discover-repositories": ["discoverRepositories"],
+  "discover-repositories": ["discoverRepositories"],
 })) mock.module(`../../${path}`, () => Object.fromEntries(names.map(name => [name, () => { throw new Error("Unexpected unrelated job"); }])));
+let reaperCalls = 0;
+mock.module("../../reap-stuck-reviews", () => ({ reapStuckReviews: async () => { reaperCalls++; return { requeued: 0, failed: 0 }; } }));
+mock.module("../../github-deferred-index", () => ({ dispatchDeferredIndexes: async () => { throw new Error("synthetic private dispatch details"); } }));
 const communityError = Object.assign(new Error("synthetic-community-secret-request-id"), { status: 503 });
 mock.module("../../community-review", () => ({ processCommunityReview: async () => { throw communityError; } }));
 const reviewCalls: unknown[][] = [];
@@ -23,6 +26,13 @@ const { registerWorkers } = await import("../../queue-workers");
 const callbacks = new Map<string, (jobs: unknown[]) => Promise<void>>();
 await registerWorkers({ work: async (name: string, ...args: unknown[]) => { callbacks.set(name, args.at(-1) as never); } } as never,
   { reviewConcurrency: 1 } as never);
+const reaperLogs: unknown[][] = [];
+const originalReaperError = console.error;
+console.error = (...args: unknown[]) => { reaperLogs.push(args); };
+try { await callbacks.get("reap-stuck-reviews")!([{ id: "sweep" }]); }
+finally { console.error = originalReaperError; }
+assert.equal(reaperCalls, 1, "a failed deferred-index sweep must not disable the review reaper");
+assert.equal(JSON.stringify(reaperLogs).includes("synthetic private dispatch details"), false);
 const communityLogs: unknown[][] = [];
 const originalCommunityError = console.error;
 console.error = (...args: unknown[]) => { communityLogs.push(args); };

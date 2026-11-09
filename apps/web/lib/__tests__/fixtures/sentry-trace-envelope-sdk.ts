@@ -44,9 +44,10 @@ if (process.argv[2] !== "unsampled") {
   assert.ok(types.includes(process.argv[2]?.includes("stream") ? "span" : "transaction"), `expected trace envelope was not emitted: ${types.join(",")}`);
   for (const value of [query, header, body, job]) assert.ok(!serialized.includes(value), "trace envelope retained synthetic private metadata");
   if (process.argv[2]?.includes("inherited")) {
-    const trace = (envelopes as Array<[{ trace?: { trace_id?: string; public_key?: string } }, unknown]>)[0]?.[0].trace;
+    const trace = (envelopes as Array<[{ trace?: { trace_id?: string; public_key?: string; transaction?: string } }, unknown]>)[0]?.[0].trace;
     assert.equal(trace?.trace_id, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     assert.equal(trace?.public_key, "synthetic");
+    assert.equal(trace?.transaction, "/api/github-action/review/[jobId]");
     assert.ok(propagated.includes(query), "test must retain the separate unsanitized propagation boundary");
   } else {
     assert.ok(!propagated.includes(query) && !propagated.includes(job), "new trace baggage retained synthetic private metadata");

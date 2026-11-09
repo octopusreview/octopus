@@ -27,8 +27,12 @@ if (mode === "inherited-stream") {
 await Sentry.flush(3000);
 const serialized = JSON.stringify(envelopes);
 const types = (envelopes as Array<[unknown, Array<[{ type?: string }, unknown]>]>).flatMap(envelope => envelope[1].map(item => item[0].type));
+const inheritedHeader = (envelopes as Array<[{ trace?: { trace_id?: string; public_key?: string; transaction?: string } }, unknown]>).some(
+  ([header]) => header.trace?.trace_id === "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" && header.trace.public_key === "synthetic" &&
+    header.trace.transaction === "/api/github-action/review/[jobId]",
+);
 const passed = types.includes(mode.includes("stream") ? "span" : "transaction") && !serialized.includes(marker) && !serialized.includes(job) &&
-  serialized.includes("gen_ai.usage.input_tokens");
+  serialized.includes("gen_ai.usage.input_tokens") && (mode !== "inherited-stream" || inheritedHeader);
 document.getElementById("result")!.textContent = passed ? "pass" : JSON.stringify({ types, retainedMarker: serialized.includes(marker),
-  retainedJob: serialized.includes(job), hasMetric: serialized.includes("gen_ai.usage.input_tokens") });
+  retainedJob: serialized.includes(job), hasMetric: serialized.includes("gen_ai.usage.input_tokens"), inheritedHeader });
 await Sentry.close(3000);

@@ -27,6 +27,7 @@ try {
   const rows = await prisma.$queryRaw<Array<{ secretEnc: string }>>`SELECT "secretEnc" FROM "github_index_rate_secret"`;
   assert.equal(rows.length, 1);
   assert.ok(!rows[0].secretEnc.includes(token));
+  await assert.rejects(prisma.$executeRaw`INSERT INTO "github_index_rate_secret" ("id", "secretEnc") VALUES (2, 'synthetic')`);
   process.env.OCTOPUS_DATA_KEY = "1".repeat(64);
   const migrated = await Promise.all(Array.from({ length: 20 }, () => githubIndexRateScope({ installationId: 0, providedToken: token })));
   assert.ok(migrated.every(scope => scope === scopes[0]), "data-key migration preserves the scope across workers");

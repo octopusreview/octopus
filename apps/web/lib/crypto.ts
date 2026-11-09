@@ -115,6 +115,11 @@ export function decryptString(token: string): string {
   return decryptWithFallback(token).toString("utf8");
 }
 
+/** Decrypt with a specific data key for controlled re-encryption. */
+export function decryptStringWithDataKey(token: string, dataKey: string): string {
+  return aeadDecrypt(parseDataKey(dataKey), token).toString("utf8");
+}
+
 /** Return a replacement ciphertext when the legacy key was needed. */
 export function decryptStringWithRekey(token: string): { value: string; replacement: string | null } {
   try {

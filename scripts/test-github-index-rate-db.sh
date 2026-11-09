@@ -50,6 +50,7 @@ RUN_INDEX_RATE_DB_TESTS=1 bun test \
   lib/__tests__/github-index-secret-rekey.db.test.ts \
   lib/__tests__/github-index-rate-state.db.test.ts \
   lib/__tests__/github-index-fetch.db.test.ts \
+  lib/__tests__/github-index-app-token.db.test.ts \
   lib/__tests__/github-index-rate-integration.db.test.ts \
   lib/__tests__/github-deferred-index.db.test.ts \
   lib/__tests__/github-deferred-dispatch.db.test.ts \

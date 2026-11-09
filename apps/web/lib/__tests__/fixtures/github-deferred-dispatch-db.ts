@@ -27,6 +27,9 @@ try {
   assert.equal(await dispatchDeferredIndexes(boss), 0);
   assert.equal(await boss.getJobById("index-repository", jobId), null, "no job starts during the cooldown");
   await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '1 second' WHERE "scope" = ${scope}`;
+  await recordIndexRateLimit("github-index-app", 3_600_000);
+  assert.equal(await dispatchDeferredIndexes(boss), 0, "app-wide cooldown also holds deferred jobs");
+  await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '1 second' WHERE "scope" = 'github-index-app'`;
   const failingBoss = { send: async (...args: Parameters<typeof boss.send>) => { await boss.send(...args); throw new Error("synthetic failure"); } } as unknown as PgBoss;
   await assert.rejects(dispatchDeferredIndexes(failingBoss), /synthetic failure/);
   assert.equal(await boss.getJobById("index-repository", jobId), null, "queue insertion rolls back with the outbox row");
@@ -67,5 +70,6 @@ try {
   await prisma.$executeRaw`DELETE FROM "repositories" WHERE "id" = ${repo}`;
   await prisma.$executeRaw`DELETE FROM "organizations" WHERE "id" = ${org}`;
   await prisma.$executeRaw`DELETE FROM "github_index_rate_windows" WHERE "scope" = ${scope}`;
+  await prisma.$executeRaw`DELETE FROM "github_index_rate_windows" WHERE "scope" = 'github-index-app'`;
   await prisma.$disconnect();
 }

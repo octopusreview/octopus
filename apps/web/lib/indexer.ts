@@ -281,7 +281,8 @@ export async function indexRepository(
   } else {
     // ── GitHub indexing flow ──
     onLog("Authenticating with GitHub...");
-    const token = providedToken ?? await getInstallationToken(installationId, signal);
+    const token = providedToken ?? await getInstallationToken(installationId, signal,
+      (url, init) => githubIndexFetch("github-index-app", url, init, allowPausedProbe));
     let rateScope: string;
     try { rateScope = await githubIndexRateScope({ installationId, providedToken }); }
     catch {

@@ -141,6 +141,7 @@ function throwIfRateLimited(res: Response): void {
 export async function getInstallationToken(
   installationId: number,
   signal?: AbortSignal,
+  request?: GitHubRequest,
 ): Promise<string> {
   try {
     signal?.throwIfAborted();
@@ -156,6 +157,8 @@ export async function getInstallationToken(
         },
         signal,
       },
+      false,
+      request,
     );
 
     throwIfRateLimited(res);

@@ -2,6 +2,8 @@
 
 Indexing records GitHub rate-limit windows in PostgreSQL. App installations use their installation ID; a provided token uses an HMAC derived from an encrypted database-held secret. Identical provided tokens share a window. Different tokens may still share a GitHub user or Actions quota, which cannot be inferred from the tokens alone.
 
+Indexing's installation-token requests share a separate app-wide window because they authenticate as the GitHub App. A token-endpoint limit can therefore defer indexing across installations. Other application paths that acquire installation tokens do not yet use this indexing guard and can still consume the app's quota.
+
 An automatic background index deferred by a limit keeps a repository-scoped retry intent. The worker sweep checks due intents every five minutes, processes up to 20 per sweep, and verifies that the original attempt, organization and installation are still eligible. After repeated unresolved limits, automatic probes pause. A repository manager using the web action, or an administrator using the reindex endpoint, may request one probe after the current cooldown; the CLI token path does not grant that override. A successful probe clears the window. No review or model call is replayed by this mechanism.
 
 When a primary reset or GitHub server time is unavailable, and there is no untrusted absolute `Retry-After`, recovery checks the authenticated GitHub rate-limit endpoint and waits through its next reported core reset and any known source deadline. GitHub describes this endpoint as an overview that can differ from per-request headers. Cross-region production behavior must be observed; it is not established by the synthetic tests.

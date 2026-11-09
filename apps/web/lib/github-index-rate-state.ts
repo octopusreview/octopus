@@ -6,7 +6,7 @@ type Probe = { kind: "probe"; token: string; version: bigint; paused: boolean; v
 type Admission = { kind: "open" } | { kind: "blocked"; retryAfterMs: number | null; paused: boolean; untrustedRetryDate: boolean } | Probe;
 
 function validateScope(scope: string): void {
-  if (!/^github-index:(?:[0-9a-f]{64})$/.test(scope) && !/^github-index-installation:[1-9]\d*$/.test(scope)) {
+  if (scope !== "github-index-app" && !/^github-index:(?:[0-9a-f]{64})$/.test(scope) && !/^github-index-installation:[1-9]\d*$/.test(scope)) {
     throw new Error("GitHub index rate scope is unavailable");
   }
 }

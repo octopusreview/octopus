@@ -67,3 +67,7 @@ RUN_INDEX_RATE_DB_TESTS=1 bun test lib/__tests__/github-deferred-worker-real.db.
 RUN_INDEX_RATE_DB_TESTS=1 bun test lib/__tests__/github-three-indexes.db.test.ts
 
 RUN_INDEX_RATE_DB_TESTS=1 bun test lib/__tests__/github-index-e2e-recovery.db.test.ts
+
+if [[ "${RUN_INDEX_RATE_QDRANT_TESTS:-0}" == "1" ]]; then
+  OCTOPUS_EMBED_DIM=4 bun test lib/__tests__/github-index-qdrant-recovery.db.test.ts
+fi

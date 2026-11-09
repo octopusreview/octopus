@@ -101,7 +101,7 @@ try {
   await assert.rejects(githubIndexFetch(explicitScope, url), (error: unknown) => error instanceof GitHubIndexDeferredError && error.paused);
   assert.equal(calls, beforePaused, "repeated explicit secondary limits stop automatic requests");
 
-  for (const [offset, variant] of ["primary-no-reset", "primary-no-date", "secondary-no-date"].entries()) {
+  for (const [offset, variant] of ["primary-no-reset", "primary-no-date"].entries()) {
     const unknownScope = `github-index-installation:${801 + offset}`;
     const base = Date.parse("2026-01-01T12:00:00Z");
     const sourceReset = base + 7_200_000;
@@ -120,10 +120,9 @@ try {
       assert.equal(target, url);
       originalCalls++;
       if (recovered) return new Response(null, { status: 200 });
-      const headers: Record<string, string> = variant === "secondary-no-date"
-        ? { "retry-after": new Date(sourceReset).toUTCString() } : { "x-ratelimit-remaining": "0" };
+      const headers: Record<string, string> = { "x-ratelimit-remaining": "0" };
       if (variant === "primary-no-date") headers["x-ratelimit-reset"] = String(sourceReset / 1000);
-      return new Response(null, { status: variant === "secondary-no-date" ? 429 : 403, headers });
+      return new Response(null, { status: 403, headers });
     }) as typeof fetch;
     const options = { headers: { authorization: "Bearer synthetic-private-token" } };
     await assert.rejects(githubIndexFetch(unknownScope, url, options), GitHubIndexDeferredError);
@@ -145,6 +144,26 @@ try {
     assert.equal((await githubIndexFetch(unknownScope, url, options)).status, 200);
     assert.equal(originalCalls, 2);
     assert.equal(quotaCalls, 4);
+  }
+
+  for (const [offset, primary] of [false, true].entries()) {
+    const heldScope = `github-index-installation:${820 + offset}`;
+    let requests = 0;
+    globalThis.fetch = (async () => {
+      requests++;
+      return new Response(null, { status: primary ? 403 : 429, headers: {
+        "retry-after": "Fri, 02 Jan 2026 12:00:00 GMT",
+        ...(primary ? { "x-ratelimit-remaining": "0" } : {}),
+      } });
+    }) as typeof fetch;
+    const options = { headers: { authorization: "Bearer synthetic-private-token" } };
+    await assert.rejects(githubIndexFetch(heldScope, url, options), GitHubIndexDeferredError);
+    await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '1 second' WHERE "scope" = ${heldScope}`;
+    await assert.rejects(githubIndexFetch(heldScope, url, options, true), (error: unknown) => error instanceof GitHubIndexDeferredError && error.paused && error.message.includes("deadline could not be verified"));
+    const cancelled = new AbortController();
+    cancelled.abort(reason);
+    await assert.rejects(githubIndexFetch(heldScope, url, { ...options, signal: cancelled.signal }, true), error => error === reason);
+    assert.equal(requests, 1, "an untrusted absolute deadline cannot trigger any provider probe, including a manual retry");
   }
 
   for (const [offset, mode] of ["malformed", "oversized", "conflicting-header", "missing-authorization"].entries()) {

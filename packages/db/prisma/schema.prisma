@@ -1115,6 +1115,7 @@ model GitHubIndexRateWindow {
   leaseUntil  DateTime? @db.Timestamptz(3)
   strikes     Int      @default(0)
   paused      Boolean  @default(false)
+  untrustedRetryDate Boolean @default(false)
   verifyPrimary Boolean @default(false)
   primaryResetMs BigInt?
   primaryBaseline Boolean @default(false)

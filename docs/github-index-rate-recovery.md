@@ -4,7 +4,9 @@ Indexing records GitHub rate-limit windows in PostgreSQL. App installations use 
 
 An automatic background index deferred by a limit keeps a repository-scoped retry intent. The worker sweep checks due intents every five minutes, processes up to 20 per sweep, and verifies that the original attempt, organization and installation are still eligible. After repeated unresolved limits, automatic probes pause. A repository manager using the web action, or an administrator using the reindex endpoint, may request one probe after the current cooldown; the CLI token path does not grant that override. A successful probe clears the window. No review or model call is replayed by this mechanism.
 
-When a primary reset or GitHub server time is unavailable, recovery checks the authenticated GitHub rate-limit endpoint and waits through its next reported core reset and any known source deadline. GitHub describes this endpoint as an overview that can differ from per-request headers. Cross-region production behavior must be observed; it is not established by the synthetic tests.
+When a primary reset or GitHub server time is unavailable, and there is no untrusted absolute `Retry-After`, recovery checks the authenticated GitHub rate-limit endpoint and waits through its next reported core reset and any known source deadline. GitHub describes this endpoint as an overview that can differ from per-request headers. Cross-region production behavior must be observed; it is not established by the synthetic tests.
+
+An absolute `Retry-After` without a valid GitHub `Date` has no trustworthy duration. That scope remains paused, including manual retries and quota checks; an operator must independently establish that the provider deadline has passed before a separately reviewed recovery. Do not clear the database state just because the local clock or a user retry says it is safe. This is a deliberate availability limit until a trusted time source and audited recovery are available.
 
 ## Migration and rollback
 

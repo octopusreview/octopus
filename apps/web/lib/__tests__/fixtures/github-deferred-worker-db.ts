@@ -33,11 +33,13 @@ try {
   assert.equal(first.indexStatus, "failed");
   assert.notEqual(first.indexAttemptId, "old-attempt");
   await prisma.$executeRaw`UPDATE "repositories" SET "indexStatus" = 'indexing' WHERE "id" = ${repo}`;
-  await assert.rejects(processRepositoryIndex(job, { retryCount: 1, retryLimit: 2 }, jobId), /synthetic transient failure/);
+  // Retry 1 crashed before claiming; retry 2 must still reclaim retry 0's attempt.
+  await assert.rejects(processRepositoryIndex(job, { retryCount: 2, retryLimit: 2 }, jobId), /synthetic transient failure/);
   const second = await prisma.repository.findUniqueOrThrow({ where: { id: repo }, select: { indexStatus: true, indexAttemptId: true } });
   assert.equal(second.indexStatus, "failed");
   assert.notEqual(second.indexAttemptId, first.indexAttemptId, "each retry uses a new fenced attempt");
   assert.equal(calls, 2);
+  await assert.rejects(processRepositoryIndex(job, { retryCount: 101, retryLimit: 101 }, jobId), /valid job identity/);
   await prisma.$executeRaw`UPDATE "repositories" SET "indexAttemptId" = 'manual-replacement' WHERE "id" = ${repo}`;
   await processRepositoryIndex(job, { retryCount: 2, retryLimit: 2 }, jobId);
   assert.equal(calls, 2, "a newer attempt prevents an old queued retry");

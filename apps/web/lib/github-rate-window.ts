@@ -4,6 +4,7 @@ export type GitHubRateWindow = {
   notBefore: number | null;
   verifyPrimary?: true;
   primaryReset?: number | null;
+  untrustedRetryDate?: true;
 };
 
 function parseHttpDate(value: string | null): number | null {
@@ -37,6 +38,9 @@ export function githubRateWindow(response: Response, now = Date.now()): GitHubRa
   const retryAfterHeader = response.headers.get("retry-after");
   const retryAfter = retryAfterTime(retryAfterHeader, now, serverTime);
   const retryAfterDate = parseHttpDate(retryAfterHeader?.trim() ?? null);
+  if (retryAfterDate !== null && serverTime === null && (response.status === 403 || response.status === 429 || response.headers.get("x-ratelimit-remaining")?.trim() === "0")) {
+    return { kind: "retry-after", notBefore: null, untrustedRetryDate: true };
+  }
   if (response.headers.get("x-ratelimit-remaining")?.trim() === "0") {
     const raw = response.headers.get("x-ratelimit-reset") ?? "";
     const parsed = /^\d+$/.test(raw) ? Number(raw) * 1000 : NaN;
@@ -48,9 +52,6 @@ export function githubRateWindow(response: Response, now = Date.now()): GitHubRa
     const relativeReset = now + reset - serverTime;
     if (!Number.isSafeInteger(relativeReset) || relativeReset > 8.64e15) return { kind: "primary", notBefore: retryAfter, verifyPrimary: true, primaryReset: reset };
     return { kind: "primary", notBefore: Math.max(reset, retryAfter ?? now, relativeReset) };
-  }
-  if ((response.status === 403 || response.status === 429) && retryAfterDate !== null && serverTime === null) {
-    return { kind: "retry-after", notBefore: null, verifyPrimary: true, primaryReset: retryAfterDate > 0 ? retryAfterDate : null };
   }
   if ((response.status === 403 || response.status === 429) && retryAfterHeader !== null) {
     return { kind: "retry-after", notBefore: retryAfter === null ? null : Math.max(now + 1000, retryAfter) };

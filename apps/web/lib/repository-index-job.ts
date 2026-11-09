@@ -68,12 +68,14 @@ export async function processRepositoryIndex(job: RepositoryIndexJob, retry?: Re
   const deferred = job.expectedAttemptId !== undefined;
   if (deferred && (typeof job.expectedAttemptId !== "string" || !job.expectedAttemptId ||
       !jobId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId) ||
-      !Number.isSafeInteger(retry?.retryCount) || (retry?.retryCount ?? -1) < 0)) {
+      !Number.isSafeInteger(retry?.retryCount) || !Number.isSafeInteger(retry?.retryLimit) ||
+      (retry?.retryCount ?? -1) < 0 || (retry?.retryCount ?? 0) > (retry?.retryLimit ?? -1) || (retry?.retryLimit ?? 0) > 100)) {
     throw new Error("Deferred repository indexing requires a valid job identity");
   }
   const deferredClaim = deferred && jobId ? { OR: [
     { indexStatus: "failed", indexAttemptId: job.expectedAttemptId! },
-    ...(retry!.retryCount > 0 ? [{ indexStatus: { in: ["failed", "indexing"] }, indexAttemptId: deferredJobAttemptId(jobId, retry!.retryCount - 1) }] : []),
+    ...(retry!.retryCount > 0 ? [{ indexStatus: { in: ["failed", "indexing"] },
+      indexAttemptId: { in: Array.from({ length: retry!.retryCount }, (_, n) => deferredJobAttemptId(jobId, n)) } }] : []),
   ] } : {};
   // Recheck ownership and standing when the job runs: the installation may
   // have been disconnected, or the repository dismissed, while it was queued.

@@ -64,7 +64,9 @@ describe("GitHub rate-limit response windows", () => {
     expect(githubRateWindow(response(429, { "retry-after": "0" }), now)).toEqual({ kind: "retry-after", notBefore: now + 1000 });
     expect(githubRateWindow(response(429, { date: new Date(now).toUTCString(), "retry-after": new Date(now + 120_000).toUTCString() }), now)).toEqual({ kind: "retry-after", notBefore: now + 120_000 });
     expect(githubRateWindow(response(429, { "retry-after": new Date(now + 120_000).toUTCString() }), now))
-      .toEqual({ kind: "retry-after", notBefore: null, verifyPrimary: true, primaryReset: now + 120_000 });
+      .toEqual({ kind: "retry-after", notBefore: null, untrustedRetryDate: true });
+    expect(githubRateWindow(response(403, { "x-ratelimit-remaining": "0", "retry-after": new Date(now - 86_400_000).toUTCString() }), now))
+      .toEqual({ kind: "retry-after", notBefore: null, untrustedRetryDate: true });
   });
 
   it("does not accept a loosely parsed Date header as GitHub server time", () => {

@@ -4,8 +4,9 @@ import { githubRateWindow, githubServerTime, type GitHubRateWindow } from "./git
 import { readReviewJson } from "./review-fetch";
 
 export class GitHubIndexDeferredError extends Error {
-  constructor(readonly status?: number, readonly retryAfterMs?: number, readonly paused = false) {
-    super(paused ? "GitHub indexing paused after repeated rate limits. Check GitHub limits before retrying." : "GitHub indexing is temporarily rate limited");
+  constructor(readonly status?: number, readonly retryAfterMs?: number, readonly paused = false, untrustedRetryDate = false) {
+    super(untrustedRetryDate ? "GitHub indexing paused because the retry deadline could not be verified. Contact an administrator."
+      : paused ? "GitHub indexing paused after repeated rate limits. Check GitHub limits before retrying." : "GitHub indexing is temporarily rate limited");
     this.name = "GitHubIndexDeferredError";
   }
 }
@@ -58,7 +59,7 @@ export async function githubIndexFetch(scope: string, url: string, init: Request
   signal?.throwIfAborted();
   const admission = await stateOperation(() => admitIndexRequest(scope, allowPausedProbe), signal);
   signal?.throwIfAborted();
-  if (admission.kind === "blocked") throw new GitHubIndexDeferredError(undefined, admission.retryAfterMs ?? undefined, admission.paused);
+  if (admission.kind === "blocked") throw new GitHubIndexDeferredError(undefined, admission.retryAfterMs ?? undefined, admission.paused, admission.untrustedRetryDate);
   if (admission.kind === "probe" && admission.verifyPrimary) {
     let quota: Response;
     try {
@@ -78,9 +79,9 @@ export async function githubIndexFetch(scope: string, url: string, init: Request
       const window = await indexRateWindow(quota, now);
       const duration = !window || window.notBefore === null || window.kind === "throttled" ? null : Math.max(0, window.notBefore - now);
       const state = await stateOperation(() => recordIndexRateLimit(scope, duration, true,
-        window?.verifyPrimary ? { resetMs: window.primaryReset ?? null } : undefined), signal);
+        window?.verifyPrimary ? { resetMs: window.primaryReset ?? null } : undefined, window?.untrustedRetryDate), signal);
       signal?.throwIfAborted();
-      throw new GitHubIndexDeferredError(quota.status, undefined, state.paused);
+      throw new GitHubIndexDeferredError(quota.status, undefined, state.paused, window?.untrustedRetryDate);
     }
     if (quota.headers.get("x-ratelimit-remaining")?.trim() === "0") {
       const now = Date.now();
@@ -135,9 +136,9 @@ export async function githubIndexFetch(scope: string, url: string, init: Request
   if (window) {
     const duration = window.notBefore === null || window.kind === "throttled" ? null : Math.max(0, window.notBefore - now);
     const state = await stateOperation(() => recordIndexRateLimit(scope, duration, window.kind !== "primary" || duration === null,
-      window.verifyPrimary ? { resetMs: window.primaryReset ?? null } : undefined), signal);
+      window.verifyPrimary ? { resetMs: window.primaryReset ?? null } : undefined, window.untrustedRetryDate), signal);
     signal?.throwIfAborted();
-    if (!response.ok) throw new GitHubIndexDeferredError(response.status, undefined, state.paused);
+    if (!response.ok) throw new GitHubIndexDeferredError(response.status, undefined, state.paused, window.untrustedRetryDate);
   } else if (admission.kind === "probe") {
     if (response.ok) await stateOperation(() => completeIndexRateProbe(scope, admission), signal);
     else {

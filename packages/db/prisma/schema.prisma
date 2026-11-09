@@ -1093,6 +1093,18 @@ model GitHubIndexRateSecret {
   @@map("github_index_rate_secret")
 }
 
+model GitHubIndexRateWindow {
+  scope       String   @id
+  notBefore   DateTime @db.Timestamptz(3)
+  version     BigInt   @default(1)
+  leaseToken  String?
+  leaseUntil  DateTime? @db.Timestamptz(3)
+  strikes     Int      @default(0)
+  updatedAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  @@map("github_index_rate_windows")
+}
+
 model SystemConfig {
   id        String   @id @default("singleton")
   defaultReviewConfig Json @default("{}")

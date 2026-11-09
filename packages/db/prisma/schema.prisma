@@ -1086,6 +1086,13 @@ model OllamaModelPull {
   @@map("ollama_model_pulls")
 }
 
+model GitHubIndexRateSecret {
+  id        Int    @id @default(1)
+  secretEnc String
+
+  @@map("github_index_rate_secret")
+}
+
 model SystemConfig {
   id        String   @id @default("singleton")
   defaultReviewConfig Json @default("{}")

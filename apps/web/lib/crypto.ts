@@ -2,7 +2,6 @@ import {
   createCipheriv,
   createDecipheriv,
   createHash,
-  createHmac,
   randomBytes,
 } from "node:crypto";
 
@@ -62,14 +61,6 @@ function getLegacyKey(): Buffer | null {
   return createHash("sha256").update(secret).digest();
 }
 
-/** Credential-derived rate scopes never store the token. */
-export function githubIndexRateScopeDigests(token: string): string[] {
-  const primary = getPrimaryKey();
-  const legacy = getLegacyKey();
-  const input = JSON.stringify(["github-index-token-v1", token]);
-  return [...new Set([primary, ...(legacy ? [legacy] : [])].map(key => createHmac("sha256", key).update(input).digest("hex")))];
-}
-
 function aeadEncrypt(key: Buffer, plaintext: Buffer): string {
   const iv = randomBytes(IV_LENGTH);
   const cipher = createCipheriv(ALGORITHM, key, iv);
@@ -122,6 +113,18 @@ export function encryptString(value: string): string {
 
 export function decryptString(token: string): string {
   return decryptWithFallback(token).toString("utf8");
+}
+
+/** Return a replacement ciphertext when the legacy key was needed. */
+export function decryptStringWithRekey(token: string): { value: string; replacement: string | null } {
+  try {
+    return { value: aeadDecrypt(getPrimaryKey(), token).toString("utf8"), replacement: null };
+  } catch (primaryError) {
+    const legacy = getLegacyKey();
+    if (!legacy) throw primaryError;
+    const value = aeadDecrypt(legacy, token).toString("utf8");
+    return { value, replacement: encryptString(value) };
+  }
 }
 
 // Tries decryptString; on any failure (legacy plaintext row, truncated payload,

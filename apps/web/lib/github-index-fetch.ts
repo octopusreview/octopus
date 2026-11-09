@@ -9,11 +9,18 @@ export class GitHubIndexDeferredError extends Error {
   }
 }
 
+export class GitHubIndexUnavailableError extends Error {
+  constructor() {
+    super("GitHub indexing temporarily unavailable");
+    this.name = "GitHubIndexUnavailableError";
+  }
+}
+
 async function stateOperation<T>(operation: () => Promise<T>, signal?: AbortSignal | null): Promise<T> {
   try { return await operation(); }
   catch {
     signal?.throwIfAborted();
-    throw new Error("GitHub indexing temporarily unavailable");
+    throw new GitHubIndexUnavailableError();
   }
 }
 

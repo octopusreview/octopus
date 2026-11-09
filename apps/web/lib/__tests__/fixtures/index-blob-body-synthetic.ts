@@ -1,10 +1,11 @@
 import { mock } from "bun:test";
+import "./index-github-rate-mocks";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 
 const scenario = process.argv[2];
-assert.ok(["cancel", "cancel-body-reason", "timeout", "retry-timeout", "cancel-retry-wait", "cancel-retry-reason", "retry-success", "success"].includes(scenario));
+assert.ok(["cancel", "cancel-body-reason", "timeout", "success"].includes(scenario));
 mock.module("server-only", () => ({}));
 mock.module("@/lib/github", () => ({ getInstallationToken: async () => "fixture", getFileContent: async () => null, getRepositoryDetails: async () => null }));
 let upserts = 0;
@@ -20,12 +21,7 @@ const server = createServer((req, res) => {
   if (req.url?.includes("/contributors")) return res.end("[]");
   if (req.url?.includes("/git/blobs/")) {
     blobRequests++;
-    if (["retry-timeout", "cancel-retry-wait", "cancel-retry-reason", "retry-success"].includes(scenario) && blobRequests === 1) {
-      res.statusCode = 429;
-      res.setHeader("retry-after", scenario.startsWith("cancel-retry") ? "5" : "0");
-      return res.end("{}");
-    }
-    if (scenario === "success" || scenario === "retry-success") return res.end('{"encoding":"base64","content":"Y29uc3QgeCA9IDE7"}');
+    if (scenario === "success") return res.end('{"encoding":"base64","content":"Y29uc3QgeCA9IDE7"}');
     res.write('{"encoding":"base64","content":"');
     entered();
     return;
@@ -50,16 +46,15 @@ try {
   const { indexRepository } = await import("@/lib/indexer");
   const controller = new AbortController();
   const timeoutReason = new DOMException("synthetic deadline", "TimeoutError");
-  const onLog = (message: string) => { if (scenario.startsWith("cancel-retry") && message.startsWith("GitHub returned HTTP")) entered(); };
-  const result = indexRepository({ repoId: "synthetic", indexAttemptId: "synthetic" }, "fixture/repo", "main", 1, onLog, controller.signal, "github", "synthetic", "fixture")
+  const result = indexRepository({ repoId: "synthetic", indexAttemptId: "synthetic" }, "fixture/repo", "main", 1, undefined, controller.signal, "github", "synthetic", "fixture")
     .then(stats => ({ stats }), error => ({ error }));
-  if (scenario === "success" || scenario === "retry-success") {
+  if (scenario === "success") {
     const outcome = await result;
     assert.ok("stats" in outcome);
     assert.equal(outcome.stats.indexedFiles, 1);
     assert.equal(embeddings, 1);
     assert.equal(upserts, 1);
-    assert.equal(blobRequests, scenario === "retry-success" ? 2 : 1);
+    assert.equal(blobRequests, 1);
   } else {
     await started;
     if (scenario.startsWith("cancel")) {
@@ -67,14 +62,14 @@ try {
       controller.abort(scenario.endsWith("reason") ? timeoutReason : undefined);
     }
     let watchdog: ReturnType<typeof setTimeout> | undefined;
-    const outcome = await Promise.race([result, new Promise<"stalled">(resolve => { watchdog = setTimeout(() => resolve("stalled"), scenario.startsWith("cancel-retry") ? 700 : 2_000); })]);
+    const outcome = await Promise.race([result, new Promise<"stalled">(resolve => { watchdog = setTimeout(() => resolve("stalled"), 2_000); })]);
     clearTimeout(watchdog);
     assert.notEqual(outcome, "stalled");
     assert.ok(typeof outcome === "object" && "error" in outcome);
     if (scenario.endsWith("reason")) assert.equal(outcome.error, timeoutReason);
     assert.equal(embeddings, 0);
     assert.equal(upserts, 0);
-    assert.equal(blobRequests, scenario === "retry-timeout" ? 2 : 1);
+    assert.equal(blobRequests, 1);
   }
 } finally {
   globalThis.fetch = originalFetch;

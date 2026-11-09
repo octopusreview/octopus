@@ -1,4 +1,5 @@
 import { mock } from "bun:test";
+import "./index-github-rate-mocks";
 import assert from "node:assert/strict";
 
 mock.module("server-only", () => ({}));
@@ -117,7 +118,7 @@ for (const status of [403, 429, 451, 500, 409]) {
   reset(); responses.set("/git/trees/main?recursive=1", [status, { message: "Failure" }]);
   await assert.rejects(run, (error: unknown) => {
     assert.ok(error instanceof Error);
-    assert.match(error.message, new RegExp(`Failed to fetch tree: ${status}`));
+    assert.match(error.message, status === 429 ? /GitHub indexing is temporarily rate limited/ : new RegExp(`Failed to fetch tree: ${status}`));
     assert.equal((error as Error & { status?: number }).status, status);
     return true;
   });
@@ -127,7 +128,7 @@ for (const status of [403, 429, 451, 500, 409]) {
 reset();
 responses.set("/git/trees/main?recursive=1", [404, {}]);
 responses.set("/commits/main", [429, {}]);
-await assert.rejects(run, /Failed to verify branch.*429/);
+await assert.rejects(run, /GitHub indexing is temporarily rate limited/);
 
 // Keep branch correction and branch names containing slashes working.
 reset(); details = { default_branch: "release/main" };

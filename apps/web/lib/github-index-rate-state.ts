@@ -23,9 +23,11 @@ export async function recordIndexRateLimit(scope: string, durationMs: number | n
   }
   await prisma.$transaction(async tx => {
     await lockScope(tx, scope);
-    const rows = await tx.$queryRaw<Array<{ strikes: number }>>`
-      SELECT "strikes" FROM "github_index_rate_windows" WHERE "scope" = ${scope}`;
-    const strikes = durationMs === null ? Math.min((rows[0]?.strikes ?? 0) + 1, 7) : 0;
+    const rows = await tx.$queryRaw<Array<{ strikes: number; expired: boolean }>>`
+      SELECT "strikes", "notBefore" <= clock_timestamp() AS "expired"
+      FROM "github_index_rate_windows" WHERE "scope" = ${scope}`;
+    const prior = rows[0];
+    const strikes = durationMs === null ? Math.min(Math.max(1, (prior?.strikes ?? 0) + (!prior || prior.expired ? 1 : 0)), 7) : 0;
     const delayMs = durationMs === null ? Math.min(60_000 * 2 ** (strikes - 1), 3_600_000) : Math.max(durationMs, 1_000);
     await tx.$executeRaw`
       INSERT INTO "github_index_rate_windows" ("scope", "notBefore", "strikes")

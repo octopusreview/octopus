@@ -30,7 +30,13 @@ try {
   const backedOff = await admitIndexRequest(other);
   assert.equal(backedOff.kind, "blocked");
   if (backedOff.kind !== "blocked") throw new Error("expected blocked");
-  assert.ok(backedOff.retryAfterMs > 110_000, "concurrent unknown limits increase recovery delay");
+  assert.ok(backedOff.retryAfterMs > 50_000 && backedOff.retryAfterMs <= 60_000, "concurrent responses from one window do not multiply the delay");
+  await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '1 second' WHERE "scope" = ${other}`;
+  await recordIndexRateLimit(other, null);
+  const retried = await admitIndexRequest(other);
+  assert.equal(retried.kind, "blocked");
+  if (retried.kind !== "blocked") throw new Error("expected blocked");
+  assert.ok(retried.retryAfterMs > 110_000, "a new failed probe increases the delay");
   await assert.rejects(recordIndexRateLimit("raw-token", 1000), /scope/i);
   await assert.rejects(recordIndexRateLimit(scope, -1), /window/i);
   await assert.rejects(recordIndexRateLimit(scope, 8.64e15 + 1), /window/i);

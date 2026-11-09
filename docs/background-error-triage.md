@@ -2,6 +2,8 @@
 
 Sentry is the platform error destination for terminal hosted review failures and repository indexing failures. Organization Slack notifications continue to be sent.
 
+Error-event breadcrumbs retain known categories, levels, timestamps and validated HTTP methods and statuses, but omit messages, URLs and arbitrary data. Background failure events omit breadcrumbs entirely. Transaction, span and propagated trace data follow separate paths; error-event scrubbing does not establish their privacy.
+
 In the Octopus Sentry project, filter Issues by:
 
 ```text

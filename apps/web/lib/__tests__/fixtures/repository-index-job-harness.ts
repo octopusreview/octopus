@@ -141,10 +141,10 @@ assert.equal(sentryEvents.length, 0, "a scheduled retry is not a terminal failur
 await assert.rejects(() => processRepositoryIndex(job, { retryCount: 2, retryLimit: 2 }), /GitHub unavailable/);
 assert.equal(sentryEvents.length, 1);
 assert.equal(sentryEvents[0].tags?.failure_stage, "indexing");
-assert.equal(claims.at(-1)?.data.indexStatus, "failed", "failures must release the claim for retry");
+assert.equal(currentRow?.indexStatus, "failed", "failures must release the claim for retry");
 indexFailure = null;
 await processRepositoryIndex(job);
-assert.equal(writes.length, 2, "a retry must be able to complete");
+assert.equal(writes.filter(write => write.data.indexStatus === "indexed").length, 2, "a retry must be able to complete");
 
 currentRow = { ...row, provider: "forgejo", organization: { githubInstallationId: null } };
 await processRepositoryIndex(job);

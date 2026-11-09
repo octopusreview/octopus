@@ -39,6 +39,12 @@ describe("GitHub rate-limit response windows", () => {
     }
   });
 
+  it("does not discard an invalid Retry-After when the primary reset is known", () => {
+    const reset = Math.floor(now / 1000) + 3600;
+    expect(githubRateWindow(response(403, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(reset), "retry-after": "invalid" }), now))
+      .toEqual({ kind: "primary", notBefore: null });
+  });
+
   it("honors explicit retry guidance and backs off on unqualified 429s", () => {
     expect(githubRateWindow(response(403, { "retry-after": "90" }), now)).toEqual({ kind: "retry-after", notBefore: now + 90_000 });
     expect(githubRateWindow(response(429, {}), now)).toEqual({ kind: "throttled", notBefore: now + 60_000 });

@@ -26,6 +26,7 @@ export function githubRateWindow(response: Response, now = Date.now()): GitHubRa
   const retryAfterHeader = response.headers.get("retry-after");
   const retryAfter = retryAfterTime(retryAfterHeader, now, serverTime);
   if (response.headers.get("x-ratelimit-remaining")?.trim() === "0") {
+    if (retryAfterHeader !== null && retryAfter === null) return { kind: "primary", notBefore: null };
     const raw = response.headers.get("x-ratelimit-reset") ?? "";
     if (!/^\d+$/.test(raw)) return { kind: "primary", notBefore: null };
     const reset = Number(raw) * 1000;

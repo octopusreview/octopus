@@ -105,8 +105,9 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
         try {
           await handleLargeReviewResult(job.data);
         } catch (err) {
-          console.error(`[queue] Large review post failed for PR ${job.data.pullRequestId} (job ${job.id}):`, err);
-          throw err;
+          const details = safeErrorDetails(err);
+          console.error(`[queue] Large review post failed for PR ${job.data.pullRequestId} (job ${job.id}):`, details);
+          throw Object.assign(new Error("Large review result delivery failed"), details);
         }
       }
     },

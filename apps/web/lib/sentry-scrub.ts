@@ -20,6 +20,30 @@ function redact(value: unknown, depth = 0): unknown {
   return value;
 }
 
+type Breadcrumb = NonNullable<ErrorEvent["breadcrumbs"]>[number];
+const BREADCRUMB_CATEGORIES = new Set(["console", "http", "fetch", "xhr", "navigation", "ui.click", "ui.input", "sentry.event", "sentry.transaction"]);
+const BREADCRUMB_TYPES = new Set(["default", "debug", "error", "http", "info", "navigation", "query", "transaction", "user"]);
+const BREADCRUMB_LEVELS = new Set(["debug", "info", "log", "warning", "error", "fatal"]);
+const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "CONNECT", "TRACE"]);
+
+function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb {
+  // Breadcrumb messages and arbitrary data can contain request or user content.
+  const category = breadcrumb.category && BREADCRUMB_CATEGORIES.has(breadcrumb.category) ? breadcrumb.category : "custom";
+  const safe: Breadcrumb = { category };
+  if (breadcrumb.type && BREADCRUMB_TYPES.has(breadcrumb.type)) safe.type = breadcrumb.type;
+  if (breadcrumb.level && BREADCRUMB_LEVELS.has(breadcrumb.level)) safe.level = breadcrumb.level;
+  if (typeof breadcrumb.timestamp === "number" && Number.isFinite(breadcrumb.timestamp)) safe.timestamp = breadcrumb.timestamp;
+  if (["http", "fetch", "xhr"].includes(category) && breadcrumb.data && typeof breadcrumb.data === "object") {
+    const method = breadcrumb.data.method ?? breadcrumb.data["http.method"];
+    const status = breadcrumb.data.status_code ?? breadcrumb.data["http.status_code"];
+    const data: Record<string, unknown> = {};
+    if (typeof method === "string" && HTTP_METHODS.has(method.toUpperCase())) data.method = method.toUpperCase();
+    if (typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599) data.status_code = status;
+    if (Object.keys(data).length) safe.data = data;
+  }
+  return safe;
+}
+
 /**
  * Parse a 0..1 Sentry sample rate from env, falling back on missing or invalid
  * input so a fat-fingered value can't turn into a NaN/out-of-range rate.
@@ -70,6 +94,11 @@ export function scrubEvent(event: ErrorEvent): ErrorEvent {
         delete event.request.url;
       }
     }
+  }
+  if (Array.isArray(event.breadcrumbs)) {
+    event.breadcrumbs = event.breadcrumbs.filter((breadcrumb) => breadcrumb && typeof breadcrumb === "object").map(scrubBreadcrumb);
+  } else {
+    delete event.breadcrumbs;
   }
   if (event.extra) event.extra = redact(event.extra) as Record<string, unknown>;
   if (event.contexts) {

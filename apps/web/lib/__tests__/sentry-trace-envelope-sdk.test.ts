@@ -1,7 +1,7 @@
 import { expect, it } from "bun:test";
 import { join } from "node:path";
 
-for (const mode of ["static", "stream", "unsampled", "edge", "edge-stream", "inherited-stream"]) {
+for (const mode of ["static", "stream", "unsampled", "edge", "edge-stream", "inherited-stream", "standalone"]) {
   it(`sanitizes synthetic request fields in ${mode} SDK trace envelopes`, async () => {
     const child = Bun.spawn([process.execPath, ...(mode.startsWith("edge") ? ["--conditions=edge"] : []),
       join(import.meta.dir, "fixtures/sentry-trace-envelope-sdk.ts"), mode], { stdout: "pipe", stderr: "pipe", env: {

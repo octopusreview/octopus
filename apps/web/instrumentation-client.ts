@@ -3,7 +3,7 @@
 // the public self-host image ships with no DSN and client Sentry stays off.
 import * as Sentry from "@sentry/nextjs";
 import { scrubBrowserEvent, scrubDynamicSamplingContext, parseRate } from "@/lib/sentry-scrub";
-import { scrubEnvelopeHeader, scrubStreamedSpan, scrubTransaction } from "@/lib/sentry-trace-envelope";
+import { scrubEnvelope, scrubStreamedSpan, scrubTransaction } from "@/lib/sentry-trace-envelope";
 
 const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
@@ -56,7 +56,7 @@ Sentry.init({
   beforeSendTransaction: (event) => scrubTransaction(event),
 });
 Sentry.getClient()?.on("createDsc", scrubDynamicSamplingContext);
-Sentry.getClient()?.on("beforeEnvelope", scrubEnvelopeHeader);
+Sentry.getClient()?.on("beforeEnvelope", scrubEnvelope);
 
 // Lets Sentry tie client-side navigations to server transactions (Next 15+/16).
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

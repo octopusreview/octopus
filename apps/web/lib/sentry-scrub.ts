@@ -1,4 +1,4 @@
-import type { ErrorEvent } from "@sentry/nextjs";
+import type { ErrorEvent, Event as SentryEvent } from "@sentry/nextjs";
 import { isIndexingMilestone } from "./indexing-milestone";
 
 // Error events may contain sensitive data supplied by application code even
@@ -44,6 +44,58 @@ function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb {
   return safe;
 }
 
+export function sanitizeRequestUrl(value: string, allowRelative = false): string | undefined {
+  try {
+    const relative = allowRelative && value.startsWith("/") && !value.startsWith("//");
+    const url = relative ? new URL(value, "https://sentry.invalid") : new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
+    if (/^\/api\/github-action\/review\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/?$/i.test(decodeURIComponent(url.pathname))) {
+      url.pathname = "/api/github-action/review/[jobId]";
+    }
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return relative ? url.pathname : url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+export function sanitizeTraceDescription(value: string): string {
+  // shortcut: arbitrary free text is not sanitized, upgrade when trace names use an allowlist.
+  const match = /^([A-Za-z]+\s+)?(https?:\/\/\S+|\/\S+)(.*)$/i.exec(value);
+  if (!match) return value;
+  const safe = sanitizeRequestUrl(match[2], true);
+  return safe === undefined ? "[redacted]" : `${match[1] ?? ""}${safe}`;
+}
+
+export function scrubDynamicSamplingContext(context: { transaction?: string }): void {
+  if (context.transaction) context.transaction = sanitizeTraceDescription(context.transaction);
+}
+
+const TRACE_URL_KEYS = new Set(["url", "url.full", "url.path", "http.url", "http.target", "http.route"]);
+const TRACE_PRIVATE_KEYS = /(?:^|[._-])(?:headers?|cookies?|query|fragment|body|baggage)(?:$|[._-])/i;
+const TOKEN_COUNT = /(?:^|[._-])(input|output|total|prompt|completion|cache_read|cache_write)[._-]tokens?$/i;
+
+export function scrubTraceAttributes(data: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(data)) {
+    if (TRACE_PRIVATE_KEYS.test(key) || (SENSITIVE_KEY_RX.test(key) && !(typeof value === "number" && TOKEN_COUNT.test(key)))) {
+      delete data[key];
+    } else if (key.toLowerCase() === "sentry.segment.name") {
+      if (typeof value === "string") data[key] = sanitizeTraceDescription(value);
+      else delete data[key];
+    } else if (TRACE_URL_KEYS.has(key.toLowerCase())) {
+      const safe = typeof value === "string" ? sanitizeRequestUrl(value, true) : undefined;
+      if (safe === undefined) delete data[key];
+      else data[key] = safe;
+    } else if (value !== null && typeof value === "object" &&
+        (!Array.isArray(value) || value.some(item => typeof item !== "number" && typeof item !== "boolean"))) {
+      delete data[key];
+    }
+  }
+}
+
 /**
  * Parse a 0..1 Sentry sample rate from env, falling back on missing or invalid
  * input so a fat-fingered value can't turn into a NaN/out-of-range rate.
@@ -55,7 +107,9 @@ export function parseRate(raw: string | undefined, fallback: number): number {
 }
 
 /** Drop sensitive request metadata and redact sensitive keys from an event. */
-export function scrubEvent(event: ErrorEvent): ErrorEvent {
+export function scrubEvent<T extends SentryEvent>(event: T): T {
+  const traceData = event.contexts?.trace?.data ? { ...event.contexts.trace.data } : undefined;
+  if (traceData) scrubTraceAttributes(traceData);
   if (event.tags?.error_boundary === "background") {
     // A caught SDK error must not inherit request/user/console payloads from its worker scope.
     delete event.request;
@@ -79,20 +133,7 @@ export function scrubEvent(event: ErrorEvent): ErrorEvent {
     delete (event.request as { data?: unknown }).data;
     delete (event.request as { query_string?: unknown }).query_string;
     if (event.request.url) {
-      try {
-        const url = new URL(event.request.url);
-        if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Invalid request URL");
-        if (/^\/api\/github-action\/review\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/?$/i.test(decodeURIComponent(url.pathname))) {
-          url.pathname = "/api/github-action/review/[jobId]";
-        }
-        url.username = "";
-        url.password = "";
-        url.search = "";
-        url.hash = "";
-        event.request.url = url.toString();
-      } catch {
-        delete event.request.url;
-      }
+      event.request.url = sanitizeRequestUrl(event.request.url);
     }
   }
   if (Array.isArray(event.breadcrumbs)) {
@@ -103,6 +144,11 @@ export function scrubEvent(event: ErrorEvent): ErrorEvent {
   if (event.extra) event.extra = redact(event.extra) as Record<string, unknown>;
   if (event.contexts) {
     event.contexts = redact(event.contexts) as typeof event.contexts;
+  }
+  if (traceData && event.contexts?.trace) event.contexts.trace.data = traceData;
+  if (event.transaction) event.transaction = sanitizeTraceDescription(event.transaction);
+  if (event.sdkProcessingMetadata?.dynamicSamplingContext?.transaction) {
+    event.sdkProcessingMetadata.dynamicSamplingContext.transaction = sanitizeTraceDescription(event.sdkProcessingMetadata.dynamicSamplingContext.transaction);
   }
   return event;
 }

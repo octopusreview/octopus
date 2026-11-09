@@ -2,7 +2,7 @@
 
 Sentry is the platform error destination for terminal hosted review failures and repository indexing failures. Organization Slack notifications continue to be sent.
 
-Error-event breadcrumbs retain known categories, levels, timestamps and validated HTTP methods and statuses, but omit messages, URLs and arbitrary data. Background failure events omit breadcrumbs entirely. Transaction, span and propagated trace data follow separate paths; error-event scrubbing does not establish their privacy.
+Error-event breadcrumbs retain known categories, levels, timestamps and validated HTTP methods and statuses, but omit messages, URLs and arbitrary data. Background failure events omit breadcrumbs entirely. Transaction and streamed-span hooks remove known request headers, bodies and query fields, sanitize URL-shaped names and attributes, and apply the breadcrumb policy to transactions. They also sanitize newly generated sampling-context transaction names. This is a bounded policy: arbitrary free text, other path-based identifiers, inherited incoming baggage and the SDK's experimental standalone span envelopes are not covered. Treat propagated trace data as a separate privacy boundary.
 
 In the Octopus Sentry project, filter Issues by:
 

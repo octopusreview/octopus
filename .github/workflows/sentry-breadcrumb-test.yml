@@ -1,10 +1,13 @@
-name: Sentry breadcrumb privacy tests
+name: Sentry telemetry privacy tests
 
 on:
   pull_request:
     paths:
       - 'apps/web/lib/sentry-scrub.ts'
+      - 'apps/web/lib/sentry-trace-envelope.ts'
       - 'apps/web/lib/__tests__/sentry-scrub.test.ts'
+      - 'apps/web/lib/__tests__/sentry-trace-envelope*'
+      - 'apps/web/lib/__tests__/fixtures/sentry-trace-envelope*'
       - 'apps/web/lib/__tests__/sentry-breadcrumb*'
       - 'apps/web/lib/__tests__/fixtures/sentry-breadcrumb*'
       - 'apps/web/sentry.*.config.ts'
@@ -15,7 +18,10 @@ on:
     branches: [master]
     paths:
       - 'apps/web/lib/sentry-scrub.ts'
+      - 'apps/web/lib/sentry-trace-envelope.ts'
       - 'apps/web/lib/__tests__/sentry-scrub.test.ts'
+      - 'apps/web/lib/__tests__/sentry-trace-envelope*'
+      - 'apps/web/lib/__tests__/fixtures/sentry-trace-envelope*'
       - 'apps/web/lib/__tests__/sentry-breadcrumb*'
       - 'apps/web/lib/__tests__/fixtures/sentry-breadcrumb*'
       - 'apps/web/sentry.*.config.ts'
@@ -38,5 +44,5 @@ jobs:
         with:
           bun-version: 1.3.4
       - run: bun install --frozen-lockfile
-      - name: Test breadcrumb privacy in the SDK and Chrome
-        run: bun test apps/web/lib/__tests__/sentry-scrub.test.ts apps/web/lib/__tests__/sentry-breadcrumb-sdk.test.ts apps/web/lib/__tests__/sentry-breadcrumb.browser.test.ts
+      - name: Test telemetry privacy in the SDK and Chrome
+        run: bun test apps/web/lib/__tests__/sentry-scrub.test.ts apps/web/lib/__tests__/sentry-breadcrumb-sdk.test.ts apps/web/lib/__tests__/sentry-breadcrumb.browser.test.ts apps/web/lib/__tests__/sentry-trace-envelope.test.ts apps/web/lib/__tests__/sentry-trace-envelope-sdk.test.ts

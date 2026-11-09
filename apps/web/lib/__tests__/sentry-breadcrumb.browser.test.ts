@@ -38,7 +38,7 @@ it.skipIf(!process.env.OCTOPUS_TEST_CHROME_PATH)("sanitizes an automatic browser
   await runBrowserFixture("sentry-breadcrumb-browser.ts");
 }, 45_000);
 
-for (const mode of ["static", "stream"]) {
+for (const mode of ["static", "stream", "inherited-stream"]) {
   it.skipIf(!process.env.OCTOPUS_TEST_CHROME_PATH)(`sanitizes a browser ${mode} trace envelope`, async () => {
     await runBrowserFixture("sentry-trace-envelope-browser.ts", mode);
   }, 45_000);

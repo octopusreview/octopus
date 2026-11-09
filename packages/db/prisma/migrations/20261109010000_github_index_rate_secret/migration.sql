@@ -20,6 +20,8 @@ CREATE TABLE "github_index_rate_windows" (
     CONSTRAINT "github_index_rate_windows_pkey" PRIMARY KEY ("scope")
 );
 
+CREATE INDEX "github_index_rate_windows_updatedAt_idx" ON "github_index_rate_windows"("updatedAt");
+
 CREATE TABLE "github_deferred_indexes" (
     "repositoryId" TEXT NOT NULL,
     "organizationId" TEXT NOT NULL,

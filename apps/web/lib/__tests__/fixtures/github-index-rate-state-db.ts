@@ -8,7 +8,7 @@ assert.match(db.pathname.slice(1), /(^|[-_])test($|[-_])/);
 assert.equal(db.search + db.hash, "");
 mock.module("server-only", () => ({}));
 const { prisma } = await import("@octopus/db");
-const { admitIndexRequest, completeIndexRateProbe, deferPrimaryVerification, recordIndexRateLimit } = await import("../../github-index-rate-state");
+const { admitIndexRequest, completeIndexRateProbe, deferPrimaryVerification, pruneExpiredIndexRateWindows, recordIndexRateLimit } = await import("../../github-index-rate-state");
 const scope = "github-index-installation:123";
 const other = "github-index-installation:456";
 
@@ -108,6 +108,28 @@ try {
   assert.equal(currentQuota.kind, "blocked");
   if (currentQuota.kind !== "blocked") throw new Error("expected blocked");
   assert.ok((currentQuota.retryAfterMs ?? 0) > 3_500_000);
+
+  const expired = "github-index-installation:792", unresolved = "github-index-installation:793", leased = "github-index-installation:794";
+  await recordIndexRateLimit(expired, 1000);
+  await recordIndexRateLimit(unresolved, null, true, { resetMs: null });
+  await recordIndexRateLimit(leased, 1000);
+  await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '31 days',
+    "updatedAt" = clock_timestamp() - interval '31 days' WHERE "scope" IN (${expired}, ${unresolved}, ${leased})`;
+  await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "leaseUntil" = clock_timestamp() + interval '1 hour' WHERE "scope" = ${leased}`;
+  const pruned = await Promise.all([pruneExpiredIndexRateWindows(), pruneExpiredIndexRateWindows()]);
+  assert.equal(pruned[0] + pruned[1], 1, "concurrent cleanup removes one settled window");
+  const retained = await prisma.$queryRaw<Array<{ scope: string }>>`SELECT "scope" FROM "github_index_rate_windows" WHERE "scope" IN (${expired}, ${unresolved}, ${leased})`;
+  assert.deepEqual(retained.map(row => row.scope).sort(), [leased, unresolved].sort(), "unresolved and leased windows remain");
+  for (let i = 0; i < 10; i++) {
+    await recordIndexRateLimit(expired, 1000);
+    await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '31 days',
+      "updatedAt" = clock_timestamp() - interval '31 days' WHERE "scope" = ${expired}`;
+    await Promise.all([recordIndexRateLimit(expired, 3_600_000), pruneExpiredIndexRateWindows()]);
+    const fresh = await admitIndexRequest(expired);
+    assert.equal(fresh.kind, "blocked");
+    if (fresh.kind !== "blocked") throw new Error("expected blocked");
+    assert.ok((fresh.retryAfterMs ?? 0) > 3_500_000, "cleanup cannot erase a concurrently renewed limit");
+  }
 } finally {
   await prisma.$executeRaw`DELETE FROM "github_index_rate_windows"`;
   await prisma.$disconnect();

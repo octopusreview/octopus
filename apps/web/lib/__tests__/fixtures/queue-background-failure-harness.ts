@@ -14,6 +14,7 @@ for (const [path, names] of Object.entries({
 let reaperCalls = 0;
 mock.module("../../reap-stuck-reviews", () => ({ reapStuckReviews: async () => { reaperCalls++; return { requeued: 0, failed: 0 }; } }));
 mock.module("../../github-deferred-index", () => ({ dispatchDeferredIndexes: async () => { throw new Error("synthetic private dispatch details"); } }));
+mock.module("../../github-index-rate-state", () => ({ pruneExpiredIndexRateWindows: async () => { throw new Error("Unexpected unrelated job"); } }));
 const communityError = Object.assign(new Error("synthetic-community-secret-request-id"), { status: 503 });
 mock.module("../../community-review", () => ({ processCommunityReview: async () => { throw communityError; } }));
 const reviewCalls: unknown[][] = [];

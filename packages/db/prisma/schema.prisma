@@ -1120,6 +1120,7 @@ model GitHubIndexRateWindow {
   primaryBaseline Boolean @default(false)
   updatedAt   DateTime @default(now()) @db.Timestamptz(3)
 
+  @@index([updatedAt])
   @@map("github_index_rate_windows")
 }
 

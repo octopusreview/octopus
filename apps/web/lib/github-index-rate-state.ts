@@ -104,3 +104,23 @@ export async function completeIndexRateProbe(scope: string, probe: Probe): Promi
     return count === 1;
   });
 }
+
+/** Retain unresolved and paused limits; only settled, long-expired primary windows are pruned. */
+export async function pruneExpiredIndexRateWindows(): Promise<number> {
+  const candidates = await prisma.$queryRaw<Array<{ scope: string }>>`
+    SELECT "scope" FROM "github_index_rate_windows"
+    WHERE "notBefore" < clock_timestamp() - interval '30 days' AND "updatedAt" < clock_timestamp() - interval '30 days'
+      AND ("leaseUntil" IS NULL OR "leaseUntil" < clock_timestamp()) AND NOT "verifyPrimary" AND NOT "paused" AND "strikes" = 0
+    ORDER BY "updatedAt", "scope" LIMIT 20`;
+  let removed = 0;
+  for (const { scope } of candidates) {
+    removed += await prisma.$transaction(async tx => {
+      await lockScope(tx, scope);
+      return tx.$executeRaw`
+        DELETE FROM "github_index_rate_windows" WHERE "scope" = ${scope}
+          AND "notBefore" < clock_timestamp() - interval '30 days' AND "updatedAt" < clock_timestamp() - interval '30 days'
+          AND ("leaseUntil" IS NULL OR "leaseUntil" < clock_timestamp()) AND NOT "verifyPrimary" AND NOT "paused" AND "strikes" = 0`;
+    });
+  }
+  return removed;
+}

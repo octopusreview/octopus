@@ -21,6 +21,7 @@ import { reapStuckReviews } from "./reap-stuck-reviews";
 import { discoverRepositories } from "./discover-repositories";
 import { processRepositoryIndex, type RepositoryIndexJob } from "./repository-index-job";
 import { dispatchDeferredIndexes } from "./github-deferred-index";
+import { pruneExpiredIndexRateWindows } from "./github-index-rate-state";
 import type { QueueConfig } from "./queue";
 
 export interface WelcomeEmailJob {
@@ -232,8 +233,8 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
         console.error(`[queue] reap-stuck-reviews failed (job ${job.id}):`, err);
         throw err;
       }
-      try { await dispatchDeferredIndexes(boss); }
-      catch { console.error("[queue] Deferred indexing dispatch failed; the next sweep will retry"); }
+      try { await dispatchDeferredIndexes(boss); await pruneExpiredIndexRateWindows(); }
+      catch { console.error("[queue] GitHub indexing recovery sweep failed; the next sweep will retry"); }
     }
   });
 

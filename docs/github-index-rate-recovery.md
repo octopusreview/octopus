@@ -16,4 +16,4 @@ For a rotation from one unrelated `OCTOPUS_DATA_KEY` to another, the scoped util
 
 Rolling back to an image that uses this feature with the previous data key requires a coordinated reverse rekey as part of the whole application rollback. An image from before this feature ignores the new tables and does not enforce their cooldowns.
 
-The current implementation retains rate-window rows until a successful recovery probe clears them. A retention approach for abandoned credentials remains an operational follow-up; deleting an unresolved row can allow early requests.
+The recovery sweep also removes up to 20 settled primary windows that have been expired and untouched for at least 30 days. It retains paused windows, unresolved primary windows and secondary-limit retry histories; deleting those can allow early or unbounded requests. Retention of abandoned unresolved credentials remains an operational follow-up.

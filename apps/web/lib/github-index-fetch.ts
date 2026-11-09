@@ -88,9 +88,9 @@ export async function githubIndexFetch(scope: string, url: string, init: Request
       const window = githubRateWindow(quota, now)!;
       const duration = window.notBefore === null ? null : Math.max(0, window.notBefore - now);
       const state = await stateOperation(() => recordIndexRateLimit(scope, duration, duration === null,
-        window.verifyPrimary ? { resetMs: window.primaryReset ?? null } : undefined), signal);
+        window.verifyPrimary ? { resetMs: window.primaryReset ?? null } : undefined, window.untrustedRetryDate), signal);
       signal?.throwIfAborted();
-      throw new GitHubIndexDeferredError(undefined, undefined, state.paused);
+      throw new GitHubIndexDeferredError(undefined, undefined, state.paused, window.untrustedRetryDate);
     }
     let serverTime: number;
     let remaining: number;

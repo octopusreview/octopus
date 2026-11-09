@@ -146,6 +146,23 @@ try {
     assert.equal(quotaCalls, 4);
   }
 
+  const quotaHoldScope = "github-index-installation:819";
+  await recordIndexRateLimit(quotaHoldScope, 1000, false, { resetMs: null });
+  await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '1 second' WHERE "scope" = ${quotaHoldScope}`;
+  let quotaHoldCalls = 0;
+  globalThis.fetch = (async () => {
+    quotaHoldCalls++;
+    return new Response(null, { status: 200, headers: {
+      "x-ratelimit-remaining": "0", "retry-after": "Fri, 02 Jan 2026 12:00:00 GMT",
+    } });
+  }) as typeof fetch;
+  const quotaOptions = { headers: { authorization: "Bearer synthetic-private-token" } };
+  await assert.rejects(githubIndexFetch(quotaHoldScope, url, quotaOptions), (error: unknown) =>
+    error instanceof GitHubIndexDeferredError && error.paused && error.message.includes("deadline could not be verified"));
+  await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '1 second' WHERE "scope" = ${quotaHoldScope}`;
+  await assert.rejects(githubIndexFetch(quotaHoldScope, url, quotaOptions, true), GitHubIndexDeferredError);
+  assert.equal(quotaHoldCalls, 1, "an untrusted quota deadline blocks even manual recovery probes");
+
   for (const [offset, primary] of [false, true].entries()) {
     const heldScope = `github-index-installation:${820 + offset}`;
     let requests = 0;

@@ -3,9 +3,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-it.skipIf(!process.env.OCTOPUS_TEST_CHROME_PATH)("sanitizes an automatic browser fetch breadcrumb", async () => {
+async function runBrowserFixture(fixture: string, mode = "static") {
   const marker = crypto.randomUUID();
-  const build = await Bun.build({ entrypoints: [join(import.meta.dir, "fixtures/sentry-breadcrumb-browser.ts")], target: "browser",
+  const job = crypto.randomUUID();
+  const build = await Bun.build({ entrypoints: [join(import.meta.dir, `fixtures/${fixture}`)], target: "browser",
     define: { "process.env": "{}" } });
   expect(build.success, build.logs.join("\n")).toBe(true);
   const bundle = await build.outputs[0].text();
@@ -14,7 +15,7 @@ it.skipIf(!process.env.OCTOPUS_TEST_CHROME_PATH)("sanitizes an automatic browser
     const path = new URL(request.url).pathname;
     if (path === "/fixture.js") return new Response(bundle, { headers: { "Content-Type": "text/javascript" } });
     if (path === "/receiver") return new Response("ok");
-    return new Response(`<pre id="result">pending</pre><script>window.syntheticMarker=${JSON.stringify(marker)};addEventListener('error',e=>document.getElementById('result').textContent='error:'+e.message);addEventListener('unhandledrejection',e=>document.getElementById('result').textContent='error:'+String(e.reason))</script><script type="module" src="/fixture.js"></script>`,
+    return new Response(`<pre id="result">pending</pre><script>window.process={env:{}};window.syntheticMarker=${JSON.stringify(marker)};window.syntheticJob=${JSON.stringify(job)};window.syntheticMode=${JSON.stringify(mode)};addEventListener('error',e=>document.getElementById('result').textContent='error:'+e.message);addEventListener('unhandledrejection',e=>document.getElementById('result').textContent='error:'+String(e.reason))</script><script type="module" src="/fixture.js"></script>`,
       { headers: { "Content-Type": "text/html" } });
   } });
   try {
@@ -31,4 +32,14 @@ it.skipIf(!process.env.OCTOPUS_TEST_CHROME_PATH)("sanitizes an automatic browser
     server.stop(true);
     await rm(directory, { recursive: true, force: true });
   }
+}
+
+it.skipIf(!process.env.OCTOPUS_TEST_CHROME_PATH)("sanitizes an automatic browser fetch breadcrumb", async () => {
+  await runBrowserFixture("sentry-breadcrumb-browser.ts");
 }, 45_000);
+
+for (const mode of ["static", "stream"]) {
+  it.skipIf(!process.env.OCTOPUS_TEST_CHROME_PATH)(`sanitizes a browser ${mode} trace envelope`, async () => {
+    await runBrowserFixture("sentry-trace-envelope-browser.ts", mode);
+  }, 45_000);
+}

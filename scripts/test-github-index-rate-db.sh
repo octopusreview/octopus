@@ -61,3 +61,5 @@ export DATABASE_URL="postgresql://postgres:$POSTGRES_PASSWORD@127.0.0.1:$port/oc
 cd apps/web
 RUN_FIRST_INDEX_DB_TESTS=1 bun test lib/__tests__/repository-index-completion.test.ts
 RUN_INDEX_RATE_DB_TESTS=1 bun test lib/__tests__/github-deferred-recovery.db.test.ts
+
+RUN_INDEX_RATE_DB_TESTS=1 bun test lib/__tests__/github-deferred-worker-real.db.test.ts

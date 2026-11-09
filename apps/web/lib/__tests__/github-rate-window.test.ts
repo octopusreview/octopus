@@ -42,7 +42,8 @@ describe("GitHub rate-limit response windows", () => {
   it("honors explicit retry guidance and backs off on unqualified 429s", () => {
     expect(githubRateWindow(response(403, { "retry-after": "90" }), now)).toEqual({ kind: "retry-after", notBefore: now + 90_000 });
     expect(githubRateWindow(response(429, {}), now)).toEqual({ kind: "throttled", notBefore: now + 60_000 });
-    expect(githubRateWindow(response(429, { "retry-after": "-1" }), now)).toEqual({ kind: "throttled", notBefore: now + 60_000 });
+    expect(githubRateWindow(response(429, { "retry-after": "-1" }), now)).toEqual({ kind: "retry-after", notBefore: null });
+    expect(githubRateWindow(response(403, { "retry-after": "invalid" }), now)).toEqual({ kind: "retry-after", notBefore: null });
     expect(githubRateWindow(response(429, { "retry-after": "0" }), now)).toEqual({ kind: "retry-after", notBefore: now + 1000 });
     expect(githubRateWindow(response(429, { "retry-after": new Date(now + 120_000).toUTCString() }), now)).toEqual({ kind: "retry-after", notBefore: now + 120_000 });
   });

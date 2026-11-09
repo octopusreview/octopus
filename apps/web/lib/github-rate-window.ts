@@ -1,6 +1,6 @@
 export type GitHubRateWindow = {
   kind: "primary" | "retry-after" | "throttled";
-  /** Null means the primary limit was exhausted but its reset is unknown. */
+  /** Null means GitHub asked for a delay but its safe end is unknown. */
   notBefore: number | null;
 };
 
@@ -15,14 +15,16 @@ function retryAfterTime(value: string | null, now: number, serverTime: number | 
   if (/^[+-]?\d/.test(text) && !/[A-Za-z]/.test(text)) return null;
   const date = Date.parse(text);
   if (!Number.isFinite(date)) return null;
-  return Math.max(now, date, serverTime === null ? now : now + Math.max(0, date - serverTime));
+  const deadline = Math.max(now, date, serverTime === null ? now : now + Math.max(0, date - serverTime));
+  return Number.isSafeInteger(deadline) && deadline <= 8.64e15 ? deadline : null;
 }
 
 /** Interpret only fixed GitHub rate headers; an unmarked 403 remains unknown. */
 export function githubRateWindow(response: Response, now = Date.now()): GitHubRateWindow | null {
   const date = Date.parse(response.headers.get("date") ?? "");
   const serverTime = Number.isFinite(date) ? date : null;
-  const retryAfter = retryAfterTime(response.headers.get("retry-after"), now, serverTime);
+  const retryAfterHeader = response.headers.get("retry-after");
+  const retryAfter = retryAfterTime(retryAfterHeader, now, serverTime);
   if (response.headers.get("x-ratelimit-remaining")?.trim() === "0") {
     const raw = response.headers.get("x-ratelimit-reset") ?? "";
     if (!/^\d+$/.test(raw)) return { kind: "primary", notBefore: null };
@@ -32,8 +34,8 @@ export function githubRateWindow(response: Response, now = Date.now()): GitHubRa
     if (!Number.isSafeInteger(relativeReset) || relativeReset > 8.64e15) return { kind: "primary", notBefore: null };
     return { kind: "primary", notBefore: Math.max(reset, retryAfter ?? now, relativeReset) };
   }
-  if ((response.status === 403 || response.status === 429) && retryAfter !== null) {
-    return { kind: "retry-after", notBefore: Math.max(now + 1000, retryAfter) };
+  if ((response.status === 403 || response.status === 429) && retryAfterHeader !== null) {
+    return { kind: "retry-after", notBefore: retryAfter === null ? null : Math.max(now + 1000, retryAfter) };
   }
   if (response.status === 429) return { kind: "throttled", notBefore: now + 60_000 };
   return null;

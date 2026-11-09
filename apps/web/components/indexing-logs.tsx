@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getPubbyClient } from "@/lib/pubby-client";
 import { safeIndexLogMessage, WITHHELD_INDEX_LOG } from "@/lib/index-log-safety";
@@ -351,7 +351,8 @@ export function IndexingLogs({
     };
   }, [repoId, orgId, router]);
 
-  useEffect(() => {
+  // Follow before paint so new rows do not look like a user scroll.
+  useLayoutEffect(() => {
     if (scrollRef.current && boundary === null && followLogs.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }

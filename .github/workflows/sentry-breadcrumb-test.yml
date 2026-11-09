@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'apps/web/lib/sentry-scrub.ts'
+      - 'apps/web/lib/__tests__/sentry-scrub.test.ts'
       - 'apps/web/lib/__tests__/sentry-breadcrumb*'
       - 'apps/web/lib/__tests__/fixtures/sentry-breadcrumb*'
       - 'apps/web/sentry.*.config.ts'
@@ -14,6 +15,7 @@ on:
     branches: [master]
     paths:
       - 'apps/web/lib/sentry-scrub.ts'
+      - 'apps/web/lib/__tests__/sentry-scrub.test.ts'
       - 'apps/web/lib/__tests__/sentry-breadcrumb*'
       - 'apps/web/lib/__tests__/fixtures/sentry-breadcrumb*'
       - 'apps/web/sentry.*.config.ts'

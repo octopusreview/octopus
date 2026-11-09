@@ -6,19 +6,32 @@ type Span = Parameters<NonNullable<Options["beforeSendSpan"]>>[0];
 type Transaction = Parameters<NonNullable<Options["beforeSendTransaction"]>>[0];
 type StreamedSpan = Parameters<Parameters<typeof Sentry.withStreamedSpan>[0]>[0];
 
-export function scrubEnvelopeHeader([headers]: [Record<string, unknown>, ...unknown[]]): void {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function scrubLegacySpan(span: Record<string, unknown>): void {
+  if (typeof span.description === "string") span.description = sanitizeTraceDescription(span.description);
+  if (isRecord(span.data)) scrubTraceAttributes(span.data);
+  if (Array.isArray(span.links)) {
+    for (const link of span.links) {
+      if (isRecord(link) && isRecord(link.attributes)) scrubTraceAttributes(link.attributes);
+    }
+  }
+}
+
+export function scrubEnvelope([headers, items]: [Record<string, unknown>, Array<[Record<string, unknown>, unknown]>]): void {
   const trace = headers.trace;
-  if (!trace || typeof trace !== "object" || Array.isArray(trace)) return;
-  const transaction = (trace as { transaction?: unknown }).transaction;
-  if (typeof transaction === "string") {
-    headers.trace = { ...trace, transaction: sanitizeTraceDescription(transaction) };
+  if (isRecord(trace) && typeof trace.transaction === "string") {
+    headers.trace = { ...trace, transaction: sanitizeTraceDescription(trace.transaction) };
+  }
+  for (const [itemHeader, payload] of items) {
+    if (itemHeader.type === "span" && isRecord(payload) && typeof payload.span_id === "string") scrubLegacySpan(payload);
   }
 }
 
 export function scrubSpan(span: Span): Span {
-  if (span.description) span.description = sanitizeTraceDescription(span.description);
-  scrubTraceAttributes(span.data);
-  span.links?.forEach(link => { if (link.attributes) scrubTraceAttributes(link.attributes); });
+  scrubLegacySpan(span as unknown as Record<string, unknown>);
   return span;
 }
 

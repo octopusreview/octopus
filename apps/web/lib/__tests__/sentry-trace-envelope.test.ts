@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type * as Sentry from "@sentry/nextjs";
-import { scrubEnvelopeHeader, scrubSpan, scrubStreamedSpan, scrubTransaction } from "@/lib/sentry-trace-envelope";
+import { scrubEnvelope, scrubSpan, scrubStreamedSpan, scrubTransaction } from "@/lib/sentry-trace-envelope";
 import { sanitizeRequestUrl } from "@/lib/sentry-scrub";
 
 type Options = NonNullable<Parameters<typeof Sentry.init>[0]>;
@@ -60,12 +60,32 @@ describe("Sentry trace request metadata", () => {
   it("copies inherited sampling context before sanitizing the envelope header", () => {
     const trace = { trace_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", public_key: "synthetic",
       transaction: "GET /safe?private=synthetic-query", sampled: "true" };
-    const envelope: Parameters<typeof scrubEnvelopeHeader>[0] = [{ trace }, []];
-    scrubEnvelopeHeader(envelope);
+    const envelope: Parameters<typeof scrubEnvelope>[0] = [{ trace }, []];
+    scrubEnvelope(envelope);
     expect(envelope[0].trace).toEqual({ ...trace, transaction: "GET /safe" });
     expect(trace.transaction).toBe("GET /safe?private=synthetic-query");
-    const unrelated: Parameters<typeof scrubEnvelopeHeader>[0] = [{ trace: "not an object" }, []];
-    scrubEnvelopeHeader(unrelated);
+    const unrelated: Parameters<typeof scrubEnvelope>[0] = [{ trace: "not an object" }, []];
+    scrubEnvelope(unrelated);
     expect(unrelated[0].trace).toBe("not an object");
+  });
+
+  it("sanitizes legacy span items without changing streamed containers or unrelated items", () => {
+    const span = { span_id: "1111111111111111", trace_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", start_timestamp: 1, timestamp: 2,
+      description: "GET /path?code=synthetic-query", data: { "http.request.header.x_probe": "synthetic-header", "gen_ai.usage.input_tokens": 42 },
+      links: [{ attributes: { "url.query": "synthetic-query", "http.response.status_code": 200 } }, null] };
+    const streamed = { version: 2, items: [{ name: "safe-stream" }] };
+    const unrelated = { description: "preserve unrelated item" };
+    const envelope: Parameters<typeof scrubEnvelope>[0] = [{}, [
+      [{ type: "span" }, span], [{ type: "span" }, streamed], [{ type: "event" }, unrelated],
+      [{ type: "span" }, null], [{ type: "span" }, { span_id: "2", data: null, links: "invalid" }],
+    ]];
+    expect(() => scrubEnvelope(envelope)).not.toThrow();
+    expect(JSON.stringify(span)).not.toContain("synthetic-");
+    expect(span.description).toBe("GET /path");
+    expect(span.data["gen_ai.usage.input_tokens"]).toBe(42);
+    expect(span.trace_id).toBe("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    expect([span.start_timestamp, span.timestamp]).toEqual([1, 2]);
+    expect(streamed).toEqual({ version: 2, items: [{ name: "safe-stream" }] });
+    expect(unrelated.description).toBe("preserve unrelated item");
   });
 });

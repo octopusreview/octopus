@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/nextjs";
 import { scrubBrowserEvent, scrubDynamicSamplingContext } from "../../sentry-scrub";
-import { scrubEnvelopeHeader, scrubStreamedSpan, scrubTransaction } from "../../sentry-trace-envelope";
+import { scrubEnvelope, scrubStreamedSpan, scrubTransaction } from "../../sentry-trace-envelope";
 
 const { syntheticMarker: marker, syntheticJob: job, syntheticMode: mode } = window as unknown as {
   syntheticMarker: string; syntheticJob: string; syntheticMode: string;
@@ -12,7 +12,7 @@ Sentry.init({ dsn: "https://synthetic@example.invalid/1", sendDefaultPii: false,
   beforeSend: scrubBrowserEvent, beforeSendSpan: Sentry.withStreamedSpan(scrubStreamedSpan), beforeSendTransaction: scrubTransaction,
   transport: () => ({ send: async (envelope) => { envelopes.push(envelope); return { statusCode: 200 }; }, flush: async () => true }) });
 Sentry.getClient()?.on("createDsc", scrubDynamicSamplingContext);
-Sentry.getClient()?.on("beforeEnvelope", scrubEnvelopeHeader);
+Sentry.getClient()?.on("beforeEnvelope", scrubEnvelope);
 const path = `/api/github-action/review/${job}`;
 const runTrace = () => Sentry.startSpan({ name: `GET ${path}?code=${marker}`, op: "http.server", forceTransaction: true, parentSpan: null, attributes: {
   "url.full": `https://example.invalid${path}?code=${marker}`, "http.request.header.x_probe": marker,

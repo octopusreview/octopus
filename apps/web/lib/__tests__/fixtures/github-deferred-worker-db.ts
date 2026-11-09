@@ -44,6 +44,17 @@ try {
   await processRepositoryIndex(job, { retryCount: 2, retryLimit: 2 }, jobId);
   assert.equal(calls, 2, "a newer attempt prevents an old queued retry");
 
+  const initialJob = { repositoryId: repo, organizationId: org };
+  const initialJobId = randomUUID();
+  await prisma.$executeRaw`UPDATE "repositories" SET "indexStatus" = 'pending', "indexAttemptId" = NULL WHERE "id" = ${repo}`;
+  await assert.rejects(processRepositoryIndex(initialJob, { retryCount: 0, retryLimit: 2 }, initialJobId), /synthetic transient failure/);
+  await prisma.$executeRaw`UPDATE "repositories" SET "indexStatus" = 'indexing' WHERE "id" = ${repo}`;
+  await assert.rejects(processRepositoryIndex(initialJob, { retryCount: 1, retryLimit: 2 }, initialJobId), /synthetic transient failure/);
+  assert.equal(calls, 4, "an initial job retry reclaims its own stranded attempt");
+  await prisma.$executeRaw`UPDATE "repositories" SET "indexStatus" = 'indexing', "indexAttemptId" = 'manual-replacement' WHERE "id" = ${repo}`;
+  await processRepositoryIndex(initialJob, { retryCount: 2, retryLimit: 2 }, initialJobId);
+  assert.equal(calls, 4, "an initial retry cannot reclaim a replacement");
+
   await prisma.$executeRaw`UPDATE "repositories" SET "indexStatus" = 'pending', "indexAttemptId" = NULL WHERE "id" = ${repo}`;
   mode = "deferred";
   await processRepositoryIndex({ repositoryId: repo, organizationId: org }, { retryCount: 0, retryLimit: 2 }, randomUUID());

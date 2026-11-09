@@ -4,6 +4,7 @@ import { readFile, readdir, stat, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
+import { setTimeout as delay } from "node:timers/promises";
 import { getInstallationToken, getFileContent as ghGetFileContent, getRepositoryDetails } from "@/lib/github";
 import { githubIndexRateScope } from "@/lib/github-index-rate-scope";
 import { githubIndexFetch, GitHubIndexDeferredError, GitHubIndexUnavailableError } from "@/lib/github-index-fetch";
@@ -447,7 +448,11 @@ export async function indexRepository(
     async function fetchBlob(file: TreeItem): Promise<void> {
       try {
         const url = `${GITHUB_API}/repos/${fullName}/git/blobs/${file.sha}`;
-        const blobRes = await fetchWithTimeout(url);
+        let blobRes = await fetchWithTimeout(url);
+        if (blobRes.status === 403) {
+          await delay(5_000, undefined, { signal });
+          blobRes = await fetchWithTimeout(url);
+        }
 
         if (!blobRes.ok) {
           if (blobRes.status === 403 || blobRes.status === 429) {

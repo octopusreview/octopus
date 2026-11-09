@@ -66,7 +66,7 @@ export async function processRepositoryIndex(job: RepositoryIndexJob, retry?: Re
     throw new Error("Repository indexing requires repositoryId and organizationId");
   }
   const deferred = job.expectedAttemptId !== undefined;
-  if (deferred && (typeof job.expectedAttemptId !== "string" || !job.expectedAttemptId ||
+  if ((deferred || jobId) && ((deferred && (typeof job.expectedAttemptId !== "string" || !job.expectedAttemptId)) ||
       !jobId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId) ||
       !Number.isSafeInteger(retry?.retryCount) || !Number.isSafeInteger(retry?.retryLimit) ||
       (retry?.retryCount ?? -1) < 0 || (retry?.retryCount ?? 0) > (retry?.retryLimit ?? -1) || (retry?.retryLimit ?? 0) > 100)) {
@@ -77,6 +77,11 @@ export async function processRepositoryIndex(job: RepositoryIndexJob, retry?: Re
     ...(retry!.retryCount > 0 ? [{ indexStatus: { in: ["failed", "indexing"] },
       indexAttemptId: { in: Array.from({ length: retry!.retryCount }, (_, n) => deferredJobAttemptId(jobId, n)) } }] : []),
   ] } : {};
+  const initialClaim = jobId && retry && retry.retryCount > 0 ? { OR: [
+    ...needsIndex.OR,
+    { indexStatus: { in: ["failed", "indexing"] },
+      indexAttemptId: { in: Array.from({ length: retry.retryCount }, (_, n) => deferredJobAttemptId(jobId, n)) } },
+  ] } : needsIndex;
   // Recheck ownership and standing when the job runs: the installation may
   // have been disconnected, or the repository dismissed, while it was queued.
   const repo = await prisma.repository.findFirst({
@@ -96,13 +101,13 @@ export async function processRepositoryIndex(job: RepositoryIndexJob, retry?: Re
   if (!repo || (repo.provider === "github" && (!installationId || (repo.installationId && repo.installationId !== installationId)))) return;
 
   // Share the reviewer's claim so a first PR and discovery cannot both index.
-  const indexAttemptId = deferred && jobId ? deferredJobAttemptId(jobId, retry!.retryCount) : randomUUID();
+  const indexAttemptId = jobId ? deferredJobAttemptId(jobId, retry!.retryCount) : randomUUID();
   const claim = await prisma.repository.updateMany({
     where: { id: repo.id, organizationId: job.organizationId, provider: repo.provider,
       installationId: repo.installationId, isActive: true, dismissedAt: null,
       organization: { deletedAt: null, bannedAt: null, autoDiscoverRepos: true,
         ...(repo.provider === "github" ? { githubInstallationId: installationId } : {}) },
-      ...(deferred ? deferredClaim : needsIndex) },
+      ...(deferred ? deferredClaim : initialClaim) },
     data: { indexStatus: "indexing", indexAttemptId },
   });
   if (!claim.count) return;

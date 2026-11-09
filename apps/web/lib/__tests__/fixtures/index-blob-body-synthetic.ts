@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 
 const scenario = process.argv[2];
-assert.ok(["cancel", "cancel-body-reason", "timeout", "success"].includes(scenario));
+assert.ok(["cancel", "cancel-body-reason", "timeout", "success", "retry", "cancel-retry"].includes(scenario));
 mock.module("server-only", () => ({}));
 mock.module("@/lib/github", () => ({ getInstallationToken: async () => "fixture", getFileContent: async () => null, getRepositoryDetails: async () => null }));
 let upserts = 0;
@@ -21,7 +21,12 @@ const server = createServer((req, res) => {
   if (req.url?.includes("/contributors")) return res.end("[]");
   if (req.url?.includes("/git/blobs/")) {
     blobRequests++;
-    if (scenario === "success") return res.end('{"encoding":"base64","content":"Y29uc3QgeCA9IDE7"}');
+    if ((scenario === "retry" || scenario === "cancel-retry") && blobRequests === 1) {
+      res.statusCode = 403;
+      entered();
+      return res.end('{}');
+    }
+    if (scenario === "success" || scenario === "retry") return res.end('{"encoding":"base64","content":"Y29uc3QgeCA9IDE7"}');
     res.write('{"encoding":"base64","content":"');
     entered();
     return;
@@ -48,13 +53,13 @@ try {
   const timeoutReason = new DOMException("synthetic deadline", "TimeoutError");
   const result = indexRepository({ repoId: "synthetic", indexAttemptId: "synthetic" }, "fixture/repo", "main", 1, undefined, controller.signal, "github", "synthetic", "fixture")
     .then(stats => ({ stats }), error => ({ error }));
-  if (scenario === "success") {
+  if (scenario === "success" || scenario === "retry") {
     const outcome = await result;
     assert.ok("stats" in outcome);
     assert.equal(outcome.stats.indexedFiles, 1);
     assert.equal(embeddings, 1);
     assert.equal(upserts, 1);
-    assert.equal(blobRequests, 1);
+    assert.equal(blobRequests, scenario === "retry" ? 2 : 1);
   } else {
     await started;
     if (scenario.startsWith("cancel")) {

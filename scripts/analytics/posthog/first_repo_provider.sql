@@ -7,11 +7,16 @@
 -- once, by the provider of its first repository connected at or after
 -- creation.
 
-WITH orgs AS (
-  SELECT organization_id, created_at
-  FROM octopus_analyticspostgres_organizations_v1
-  WHERE provisional_eligible
-    AND created_at < toDateTime(toStartOfWeek(now(), 1), 'UTC')
+WITH params AS (
+  SELECT toDateTime(toStartOfWeek(now(), 1), 'UTC') AS cutoff
+),
+
+orgs AS (
+  SELECT o.organization_id, o.created_at, p.cutoff
+  FROM octopus_analyticspostgres_organizations_v1 o
+  CROSS JOIN params p
+  WHERE o.provisional_eligible
+    AND o.created_at < p.cutoff
 ),
 
 first_repo AS (
@@ -21,7 +26,7 @@ first_repo AS (
   FROM octopus_analyticspostgres_repositories_v1 r
   JOIN orgs o ON r.organization_id = o.organization_id
   WHERE r.connected_at >= o.created_at
-    AND r.connected_at <  toDateTime(toStartOfWeek(now(), 1), 'UTC')
+    AND r.connected_at <  o.cutoff
   GROUP BY r.organization_id
 )
 

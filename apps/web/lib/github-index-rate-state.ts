@@ -18,7 +18,7 @@ async function lockScope(tx: Prisma.TransactionClient, scope: string): Promise<v
 /** Keep the longest observed limit; unknown windows use bounded exponential probing. */
 export async function recordIndexRateLimit(scope: string, durationMs: number | null): Promise<void> {
   validateScope(scope);
-  if (durationMs !== null && (!Number.isSafeInteger(durationMs) || durationMs < 0 || durationMs > 8e15)) {
+  if (durationMs !== null && (!Number.isSafeInteger(durationMs) || durationMs < 0 || durationMs > 8.64e15)) {
     throw new Error("Invalid GitHub index rate window");
   }
   await prisma.$transaction(async tx => {

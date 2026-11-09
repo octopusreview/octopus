@@ -33,6 +33,7 @@ try {
   assert.ok(backedOff.retryAfterMs > 110_000, "concurrent unknown limits increase recovery delay");
   await assert.rejects(recordIndexRateLimit("raw-token", 1000), /scope/i);
   await assert.rejects(recordIndexRateLimit(scope, -1), /window/i);
+  await assert.rejects(recordIndexRateLimit(scope, 8.64e15 + 1), /window/i);
 
   await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '1 second' WHERE "scope" = ${scope}`;
   const admissions = await Promise.all(Array.from({ length: 20 }, () => admitIndexRequest(scope)));

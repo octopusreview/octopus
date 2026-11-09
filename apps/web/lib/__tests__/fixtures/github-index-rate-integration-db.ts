@@ -16,6 +16,7 @@ mock.module("@/lib/embeddings", () => ({ createEmbeddings: async (texts: string[
 const { prisma } = await import("@octopus/db");
 const { indexRepository } = await import("../../indexer");
 const { GitHubIndexDeferredError } = await import("../../github-index-fetch");
+const { recordIndexRateLimit } = await import("../../github-index-rate-state");
 const scope = "github-index-installation:123";
 const blobs = Array.from({ length: 12 }, (_, i) => ({ path: `file${i}.ts`, type: "blob", sha: String(i), size: 16 }));
 let limited = true;
@@ -49,6 +50,19 @@ try {
   const result = await run();
   assert.equal(result.indexedFiles, 12);
   assert.equal(vectorWrites, 1);
+
+  for (let i = 0; i < 7; i++) {
+    await recordIndexRateLimit(scope, null);
+    if (i < 6) await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '1 second' WHERE "scope" = ${scope}`;
+  }
+  const manual = () => indexRepository({ repoId: "synthetic", indexAttemptId: "manual" }, "synthetic/repo", "main", 123, undefined, undefined, "github", undefined, undefined, true);
+  const beforeManual = requests;
+  await assert.rejects(manual(), (error: unknown) => error instanceof GitHubIndexDeferredError && error.paused);
+  assert.equal(requests, beforeManual, "manual retry cannot bypass an active cooldown");
+  await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '1 second' WHERE "scope" = ${scope}`;
+  await assert.rejects(run(), (error: unknown) => error instanceof GitHubIndexDeferredError && error.paused);
+  assert.equal(requests, beforeManual, "automatic work stops after the probe limit");
+  assert.equal((await manual()).indexedFiles, 12, "one authorized manual probe can restore indexing");
 } finally {
   await prisma.$executeRaw`DELETE FROM "github_index_rate_windows"`;
   await prisma.$disconnect();

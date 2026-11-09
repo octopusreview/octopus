@@ -1114,6 +1114,7 @@ model GitHubIndexRateWindow {
   leaseToken  String?
   leaseUntil  DateTime? @db.Timestamptz(3)
   strikes     Int      @default(0)
+  paused      Boolean  @default(false)
   updatedAt   DateTime @default(now()) @db.Timestamptz(3)
 
   @@map("github_index_rate_windows")

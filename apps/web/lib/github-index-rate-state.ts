@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { prisma, type Prisma } from "@octopus/db";
 
 type Probe = { kind: "probe"; token: string; version: bigint };
-type Admission = { kind: "open" } | { kind: "blocked"; retryAfterMs: number } | Probe;
+type Admission = { kind: "open" } | { kind: "blocked"; retryAfterMs: number | null; paused: boolean } | Probe;
 
 function validateScope(scope: string): void {
   if (!/^github-index:(?:[0-9a-f]{64})$/.test(scope) && !/^github-index-installation:[1-9]\d*$/.test(scope)) {
@@ -16,41 +16,45 @@ async function lockScope(tx: Prisma.TransactionClient, scope: string): Promise<v
 }
 
 /** Keep the longest observed limit; unknown windows use bounded exponential probing. */
-export async function recordIndexRateLimit(scope: string, durationMs: number | null): Promise<void> {
+export async function recordIndexRateLimit(scope: string, durationMs: number | null, boundedRetry = durationMs === null): Promise<{ paused: boolean }> {
   validateScope(scope);
   if (durationMs !== null && (!Number.isSafeInteger(durationMs) || durationMs < 0 || durationMs > 8.64e15)) {
     throw new Error("Invalid GitHub index rate window");
   }
-  await prisma.$transaction(async tx => {
+  return prisma.$transaction(async tx => {
     await lockScope(tx, scope);
-    const rows = await tx.$queryRaw<Array<{ strikes: number; expired: boolean }>>`
-      SELECT "strikes", "notBefore" <= clock_timestamp() AS "expired"
+    const rows = await tx.$queryRaw<Array<{ strikes: number; expired: boolean; paused: boolean }>>`
+      SELECT "strikes", "paused", "notBefore" <= clock_timestamp() AS "expired"
       FROM "github_index_rate_windows" WHERE "scope" = ${scope}`;
     const prior = rows[0];
-    const strikes = durationMs === null ? Math.min(Math.max(1, (prior?.strikes ?? 0) + (!prior || prior.expired ? 1 : 0)), 7) : 0;
+    const strikes = boundedRetry ? Math.min(Math.max(1, (prior?.strikes ?? 0) + (!prior || prior.expired ? 1 : 0)), 7) : (prior?.paused ? prior.strikes : 0);
+    const paused = !!prior?.paused || strikes >= 7;
     const delayMs = durationMs === null ? Math.min(60_000 * 2 ** (strikes - 1), 3_600_000) : Math.max(durationMs, 1_000);
     await tx.$executeRaw`
-      INSERT INTO "github_index_rate_windows" ("scope", "notBefore", "strikes")
-      VALUES (${scope}, clock_timestamp() + ${delayMs}::double precision * interval '1 millisecond', ${strikes})
+      INSERT INTO "github_index_rate_windows" ("scope", "notBefore", "strikes", "paused")
+      VALUES (${scope}, clock_timestamp() + ${delayMs}::double precision * interval '1 millisecond', ${strikes}, ${paused})
       ON CONFLICT ("scope") DO UPDATE SET
         "notBefore" = GREATEST("github_index_rate_windows"."notBefore", EXCLUDED."notBefore"),
         "version" = "github_index_rate_windows"."version" + 1,
-        "leaseToken" = NULL, "leaseUntil" = NULL, "strikes" = EXCLUDED."strikes", "updatedAt" = clock_timestamp()`;
+        "leaseToken" = NULL, "leaseUntil" = NULL, "strikes" = EXCLUDED."strikes", "paused" = EXCLUDED."paused", "updatedAt" = clock_timestamp()`;
+    return { paused };
   });
 }
 
 /** The database clock governs both cooldowns and recovery leases. */
-export async function admitIndexRequest(scope: string): Promise<Admission> {
+export async function admitIndexRequest(scope: string, allowPausedProbe = false): Promise<Admission> {
   validateScope(scope);
   return prisma.$transaction(async tx => {
     await lockScope(tx, scope);
-    const rows = await tx.$queryRaw<Array<{ version: bigint; waitMs: bigint }>>`
-      SELECT "version", GREATEST(0, CEIL(EXTRACT(EPOCH FROM
+    const rows = await tx.$queryRaw<Array<{ version: bigint; waitMs: bigint; paused: boolean }>>`
+      SELECT "version", "paused", GREATEST(0, CEIL(EXTRACT(EPOCH FROM
         (GREATEST("notBefore", COALESCE("leaseUntil", "notBefore")) - clock_timestamp())) * 1000))::bigint AS "waitMs"
       FROM "github_index_rate_windows" WHERE "scope" = ${scope}`;
     if (!rows.length) return { kind: "open" };
     const retryAfterMs = Number(rows[0].waitMs);
-    if (retryAfterMs > 0) return { kind: "blocked", retryAfterMs };
+    if (retryAfterMs > 0 || (rows[0].paused && !allowPausedProbe)) {
+      return { kind: "blocked", retryAfterMs: retryAfterMs || null, paused: rows[0].paused };
+    }
     const token = randomUUID();
     await tx.$executeRaw`
       UPDATE "github_index_rate_windows" SET "leaseToken" = ${token},

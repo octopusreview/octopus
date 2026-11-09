@@ -4,6 +4,6 @@ import { mock } from "bun:test";
 mock.module("@/lib/github-index-rate-scope", () => ({ githubIndexRateScope: async () => "github-index-installation:1" }));
 mock.module("@/lib/github-index-rate-state", () => ({
   admitIndexRequest: async () => ({ kind: "open" }),
-  recordIndexRateLimit: async () => {},
+  recordIndexRateLimit: async () => ({ paused: false }),
   completeIndexRateProbe: async () => true,
 }));

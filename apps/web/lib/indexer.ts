@@ -60,6 +60,7 @@ export async function indexRepository(
   organizationId?: string,
   /** Pre-resolved token (e.g. GITHUB_TOKEN from Actions). Skips getInstallationToken when provided. */
   providedToken?: string,
+  allowPausedProbe = false,
 ): Promise<IndexStats> {
   const { repoId } = attempt;
   const owner = { ...attempt, signal };
@@ -286,7 +287,11 @@ export async function indexRepository(
       signal?.throwIfAborted();
       throw new GitHubIndexUnavailableError();
     }
-    const indexFetch = (url: string, init?: RequestInit) => githubIndexFetch(rateScope, url, init);
+    const indexFetch = (url: string, init?: RequestInit) => {
+      const mayProbe = allowPausedProbe;
+      allowPausedProbe = false;
+      return githubIndexFetch(rateScope, url, init, mayProbe);
+    };
     const headers = {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github+json",

@@ -3,8 +3,8 @@ import { admitIndexRequest, completeIndexRateProbe, recordIndexRateLimit } from 
 import { githubRateWindow } from "./github-rate-window";
 
 export class GitHubIndexDeferredError extends Error {
-  constructor(readonly status?: number, readonly retryAfterMs?: number) {
-    super("GitHub indexing is temporarily rate limited");
+  constructor(readonly status?: number, readonly retryAfterMs?: number, readonly paused = false) {
+    super(paused ? "GitHub indexing paused after repeated rate limits. Check GitHub limits before retrying." : "GitHub indexing is temporarily rate limited");
     this.name = "GitHubIndexDeferredError";
   }
 }
@@ -25,34 +25,35 @@ async function stateOperation<T>(operation: () => Promise<T>, signal?: AbortSign
 }
 
 /** Each request consults the shared window; an expired window permits one bounded probe. */
-export async function githubIndexFetch(scope: string, url: string, init: RequestInit = {}): Promise<Response> {
+export async function githubIndexFetch(scope: string, url: string, init: RequestInit = {}, allowPausedProbe = false): Promise<Response> {
   const signal = init.signal;
   signal?.throwIfAborted();
-  const admission = await stateOperation(() => admitIndexRequest(scope), signal);
+  const admission = await stateOperation(() => admitIndexRequest(scope, allowPausedProbe), signal);
   signal?.throwIfAborted();
-  if (admission.kind === "blocked") throw new GitHubIndexDeferredError(undefined, admission.retryAfterMs);
+  if (admission.kind === "blocked") throw new GitHubIndexDeferredError(undefined, admission.retryAfterMs ?? undefined, admission.paused);
   let response: Response;
   try {
     const timeout = AbortSignal.timeout(30_000);
     response = await fetch(url, { ...init, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
   } catch {
-    if (admission.kind === "probe") await stateOperation(() => recordIndexRateLimit(scope, null), signal);
+    const state = admission.kind === "probe" ? await stateOperation(() => recordIndexRateLimit(scope, null), signal) : null;
     signal?.throwIfAborted();
+    if (state) throw new GitHubIndexDeferredError(undefined, undefined, state.paused);
     throw new Error("GitHub indexing request failed");
   }
   const now = Date.now();
   const window = githubRateWindow(response, now);
   if (window) {
     const duration = window.notBefore === null || window.kind === "throttled" ? null : Math.max(0, window.notBefore - now);
-    await stateOperation(() => recordIndexRateLimit(scope, duration), signal);
+    const state = await stateOperation(() => recordIndexRateLimit(scope, duration, window.kind !== "primary" || duration === null), signal);
     signal?.throwIfAborted();
-    if (!response.ok) throw new GitHubIndexDeferredError(response.status);
+    if (!response.ok) throw new GitHubIndexDeferredError(response.status, undefined, state.paused);
   } else if (admission.kind === "probe") {
     if (response.ok) await stateOperation(() => completeIndexRateProbe(scope, admission), signal);
     else {
-      await stateOperation(() => recordIndexRateLimit(scope, null), signal);
+      const state = await stateOperation(() => recordIndexRateLimit(scope, null), signal);
       signal?.throwIfAborted();
-      throw new GitHubIndexDeferredError(response.status);
+      throw new GitHubIndexDeferredError(response.status, undefined, state.paused);
     }
   }
   signal?.throwIfAborted();

@@ -38,7 +38,7 @@ export async function dispatchDeferredIndexes(boss: PgBoss): Promise<number> {
         LEFT JOIN "repositories" r ON r."id" = d."repositoryId"
         LEFT JOIN "organizations" o ON o."id" = d."organizationId"
         LEFT JOIN "github_index_rate_windows" w ON w."scope" = 'github-index-installation:' || d."installationId"::text
-        WHERE w."scope" IS NULL OR (w."notBefore" <= clock_timestamp() AND (w."leaseUntil" IS NULL OR w."leaseUntil" <= clock_timestamp()))
+        WHERE w."scope" IS NULL OR (NOT w."paused" AND w."notBefore" <= clock_timestamp() AND (w."leaseUntil" IS NULL OR w."leaseUntil" <= clock_timestamp()))
         ORDER BY d."createdAt", d."repositoryId"
         FOR UPDATE OF d SKIP LOCKED LIMIT 1`;
       const row = rows[0];

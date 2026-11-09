@@ -133,7 +133,8 @@ export async function processRepositoryIndex(job: RepositoryIndexJob, retry?: Re
   } catch (error) {
     if (error instanceof SupersededIndexError) return;
     const isCancelled = isIndexingCancelled(controller.signal);
-    log(`Indexing failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+    log(error instanceof GitHubIndexDeferredError && error.paused
+      ? error.message : `Indexing failed: ${error instanceof Error ? error.message : String(error)}`, "error");
     void notifyRepositoryIndex(channel, repo.id);
     if (error instanceof GitHubIndexDeferredError && !controller.signal.aborted && repo.provider === "github" && installationId) return;
     if (!isCancelled) {

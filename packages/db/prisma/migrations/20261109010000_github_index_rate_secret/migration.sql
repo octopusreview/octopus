@@ -12,6 +12,7 @@ CREATE TABLE "github_index_rate_windows" (
     "leaseToken" TEXT,
     "leaseUntil" TIMESTAMPTZ(3),
     "strikes" INTEGER NOT NULL DEFAULT 0,
+    "paused" BOOLEAN NOT NULL DEFAULT false,
     "updatedAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "github_index_rate_windows_pkey" PRIMARY KEY ("scope")
 );

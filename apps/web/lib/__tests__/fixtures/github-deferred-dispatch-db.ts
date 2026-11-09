@@ -54,6 +54,14 @@ try {
   await prisma.$executeRaw`UPDATE "repositories" SET "indexStatus" = 'pending' WHERE "id" = ${repo}`;
   assert.equal(await dispatchDeferredIndexes(boss), 0);
   assert.equal(await boss.getJobById("index-repository", cancelled[0].jobId), null, "a cancelled attempt cannot restart");
+  await prisma.$executeRaw`UPDATE "repositories" SET "indexStatus" = 'failed' WHERE "id" = ${repo}`;
+  await remember();
+  for (let i = 0; i < 7; i++) {
+    await recordIndexRateLimit(scope, null);
+    await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '1 second' WHERE "scope" = ${scope}`;
+  }
+  assert.equal(await dispatchDeferredIndexes(boss), 0, "paused limits are not automatically enqueued");
+  assert.equal((await prisma.$queryRaw<unknown[]>`SELECT 1 FROM "github_deferred_indexes" WHERE "repositoryId" = ${repo}`).length, 1);
 } finally {
   await boss.stop();
   await prisma.$executeRaw`DELETE FROM "repositories" WHERE "id" = ${repo}`;

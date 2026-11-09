@@ -86,6 +86,16 @@ try {
   duringProbe.abort(reason);
   await assert.rejects(cancelled, error => error === reason);
   assert.equal((await admitIndexRequest(cancelScope)).kind, "blocked", "cancelled probes do not reopen the scope");
+
+  const explicitScope = "github-index-installation:790";
+  globalThis.fetch = (async () => { calls++; return new Response(null, { status: 429, headers: { "retry-after": "0" } }); }) as typeof fetch;
+  for (let i = 0; i < 7; i++) {
+    await assert.rejects(githubIndexFetch(explicitScope, url), GitHubIndexDeferredError);
+    await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '1 second' WHERE "scope" = ${explicitScope}`;
+  }
+  const beforePaused = calls;
+  await assert.rejects(githubIndexFetch(explicitScope, url), (error: unknown) => error instanceof GitHubIndexDeferredError && error.paused);
+  assert.equal(calls, beforePaused, "repeated explicit secondary limits stop automatic requests");
 } finally {
   await prisma.$executeRaw`DELETE FROM "github_index_rate_windows"`;
   await prisma.$disconnect();

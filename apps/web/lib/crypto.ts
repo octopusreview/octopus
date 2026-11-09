@@ -2,6 +2,7 @@ import {
   createCipheriv,
   createDecipheriv,
   createHash,
+  createHmac,
   randomBytes,
 } from "node:crypto";
 
@@ -59,6 +60,14 @@ function getLegacyKey(): Buffer | null {
   const secret = process.env.BETTER_AUTH_SECRET;
   if (!secret) return null;
   return createHash("sha256").update(secret).digest();
+}
+
+/** Credential-derived rate scopes never store the token. */
+export function githubIndexRateScopeDigests(token: string): string[] {
+  const primary = getPrimaryKey();
+  const legacy = getLegacyKey();
+  const input = JSON.stringify(["github-index-token-v1", token]);
+  return [...new Set([primary, ...(legacy ? [legacy] : [])].map(key => createHmac("sha256", key).update(input).digest("hex")))];
 }
 
 function aeadEncrypt(key: Buffer, plaintext: Buffer): string {

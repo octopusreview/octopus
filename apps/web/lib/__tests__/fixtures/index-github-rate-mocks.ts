@@ -6,4 +6,5 @@ mock.module("@/lib/github-index-rate-state", () => ({
   admitIndexRequest: async () => ({ kind: "open" }),
   recordIndexRateLimit: async () => ({ paused: false }),
   completeIndexRateProbe: async () => true,
+  deferPrimaryVerification: async () => true,
 }));

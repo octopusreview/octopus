@@ -7,13 +7,13 @@ const response = (status: number, headers: Record<string, string>) => new Respon
 describe("GitHub rate-limit response windows", () => {
   it("honors a primary reset even when Retry-After is shorter", () => {
     const reset = Math.floor(now / 1000) + 3600;
-    expect(githubRateWindow(response(403, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(reset), "retry-after": "5" }), now))
+    expect(githubRateWindow(response(403, { date: new Date(now).toUTCString(), "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(reset), "retry-after": "5" }), now))
       .toEqual({ kind: "primary", notBefore: reset * 1000 });
   });
 
   it("does not ignore an exhausted quota on a successful response", () => {
     const reset = Math.floor(now / 1000) + 90;
-    expect(githubRateWindow(response(200, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(reset) }), now))
+    expect(githubRateWindow(response(200, { date: new Date(now).toUTCString(), "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(reset) }), now))
       .toEqual({ kind: "primary", notBefore: reset * 1000 });
   });
 
@@ -33,16 +33,22 @@ describe("GitHub rate-limit response windows", () => {
 
   it("does not invent a reset when the primary reset header is missing or invalid", () => {
     for (const reset of [undefined, "not-a-time", "999999999999999999999", String(Math.floor(now / 1000) - 1)]) {
-      const headers: Record<string, string> = { "x-ratelimit-remaining": "0", "retry-after": "5" };
+      const headers: Record<string, string> = { date: new Date(now).toUTCString(), "x-ratelimit-remaining": "0", "retry-after": "5" };
       if (reset !== undefined) headers["x-ratelimit-reset"] = reset;
-      expect(githubRateWindow(response(403, headers), now)).toEqual({ kind: "primary", notBefore: null });
+      expect(githubRateWindow(response(403, headers), now)).toEqual({ kind: "primary", notBefore: null, verifyPrimary: true, primaryReset: null });
     }
   });
 
   it("does not discard an invalid Retry-After when the primary reset is known", () => {
     const reset = Math.floor(now / 1000) + 3600;
-    expect(githubRateWindow(response(403, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(reset), "retry-after": "invalid" }), now))
-      .toEqual({ kind: "primary", notBefore: null });
+    expect(githubRateWindow(response(403, { date: new Date(now).toUTCString(), "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(reset), "retry-after": "invalid" }), now))
+      .toEqual({ kind: "primary", notBefore: null, verifyPrimary: true, primaryReset: reset * 1000 });
+  });
+
+  it("does not trust the local clock when GitHub omits its Date header", () => {
+    const reset = Math.floor(now / 1000) + 3600;
+    expect(githubRateWindow(response(403, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(reset) }), now))
+      .toEqual({ kind: "primary", notBefore: null, verifyPrimary: true, primaryReset: reset * 1000 });
   });
 
   it("honors explicit retry guidance and backs off on unqualified 429s", () => {
@@ -51,7 +57,15 @@ describe("GitHub rate-limit response windows", () => {
     expect(githubRateWindow(response(429, { "retry-after": "-1" }), now)).toEqual({ kind: "retry-after", notBefore: null });
     expect(githubRateWindow(response(403, { "retry-after": "invalid" }), now)).toEqual({ kind: "retry-after", notBefore: null });
     expect(githubRateWindow(response(429, { "retry-after": "0" }), now)).toEqual({ kind: "retry-after", notBefore: now + 1000 });
-    expect(githubRateWindow(response(429, { "retry-after": new Date(now + 120_000).toUTCString() }), now)).toEqual({ kind: "retry-after", notBefore: now + 120_000 });
+    expect(githubRateWindow(response(429, { date: new Date(now).toUTCString(), "retry-after": new Date(now + 120_000).toUTCString() }), now)).toEqual({ kind: "retry-after", notBefore: now + 120_000 });
+    expect(githubRateWindow(response(429, { "retry-after": new Date(now + 120_000).toUTCString() }), now))
+      .toEqual({ kind: "retry-after", notBefore: null, verifyPrimary: true, primaryReset: now + 120_000 });
+  });
+
+  it("does not accept a loosely parsed Date header as GitHub server time", () => {
+    const reset = Math.floor(now / 1000) + 3600;
+    expect(githubRateWindow(response(403, { date: "1", "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(reset) }), now))
+      .toEqual({ kind: "primary", notBefore: null, verifyPrimary: true, primaryReset: reset * 1000 });
   });
 
   it("does not classify an unmarked 403 as either a permission or rate-limit failure", () => {

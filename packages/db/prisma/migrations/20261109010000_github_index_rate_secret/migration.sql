@@ -13,6 +13,9 @@ CREATE TABLE "github_index_rate_windows" (
     "leaseUntil" TIMESTAMPTZ(3),
     "strikes" INTEGER NOT NULL DEFAULT 0,
     "paused" BOOLEAN NOT NULL DEFAULT false,
+    "verifyPrimary" BOOLEAN NOT NULL DEFAULT false,
+    "primaryResetMs" BIGINT,
+    "primaryBaseline" BOOLEAN NOT NULL DEFAULT false,
     "updatedAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "github_index_rate_windows_pkey" PRIMARY KEY ("scope")
 );

@@ -8,7 +8,7 @@ assert.match(db.pathname.slice(1), /(^|[-_])test($|[-_])/);
 assert.equal(db.search + db.hash, "");
 mock.module("server-only", () => ({}));
 const { prisma } = await import("@octopus/db");
-const { admitIndexRequest, completeIndexRateProbe, recordIndexRateLimit } = await import("../../github-index-rate-state");
+const { admitIndexRequest, completeIndexRateProbe, deferPrimaryVerification, recordIndexRateLimit } = await import("../../github-index-rate-state");
 const scope = "github-index-installation:123";
 const other = "github-index-installation:456";
 
@@ -94,6 +94,20 @@ try {
   assert.equal(explicit.kind, "blocked");
   if (explicit.kind !== "blocked") throw new Error("expected blocked");
   assert.equal(explicit.paused, true, "explicit secondary retry guidance also has a retry limit");
+
+  const quotaScope = "github-index-installation:791";
+  await recordIndexRateLimit(quotaScope, null, true, { resetMs: 1_900_000_000_000 });
+  await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '1 second' WHERE "scope" = ${quotaScope}`;
+  const oldQuotaProbe = await admitIndexRequest(quotaScope);
+  assert.equal(oldQuotaProbe.kind, "probe");
+  if (oldQuotaProbe.kind !== "probe") throw new Error("expected probe");
+  await recordIndexRateLimit(quotaScope, 3_600_000, false, { resetMs: 1_900_003_600_000 });
+  assert.equal(await deferPrimaryVerification(quotaScope, oldQuotaProbe, 1_900_000_000_000, 1000), false,
+    "a stale quota check cannot overwrite a newer primary observation");
+  const currentQuota = await admitIndexRequest(quotaScope);
+  assert.equal(currentQuota.kind, "blocked");
+  if (currentQuota.kind !== "blocked") throw new Error("expected blocked");
+  assert.ok((currentQuota.retryAfterMs ?? 0) > 3_500_000);
 } finally {
   await prisma.$executeRaw`DELETE FROM "github_index_rate_windows"`;
   await prisma.$disconnect();

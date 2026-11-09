@@ -16,7 +16,7 @@ const cancelScope = "github-index-installation:789";
 const url = "https://api.github.invalid/synthetic";
 let calls = 0;
 let response = () => new Response(null, { status: 403, headers: {
-  "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 3600),
+  date: new Date().toUTCString(), "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 3600),
 } });
 globalThis.fetch = (async () => { calls++; return response(); }) as typeof fetch;
 
@@ -58,7 +58,7 @@ try {
   assert.equal((await admitIndexRequest(other)).kind, "blocked", "a failed probe cannot clear the window");
 
   response = () => new Response(null, { status: 200, headers: {
-    "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 3600),
+    date: new Date().toUTCString(), "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 3600),
   } });
   globalThis.fetch = (async () => { calls++; return response(); }) as typeof fetch;
   assert.equal((await githubIndexFetch(scope, url)).status, 200, "the response that consumed the last request stays usable");
@@ -96,6 +96,78 @@ try {
   const beforePaused = calls;
   await assert.rejects(githubIndexFetch(explicitScope, url), (error: unknown) => error instanceof GitHubIndexDeferredError && error.paused);
   assert.equal(calls, beforePaused, "repeated explicit secondary limits stop automatic requests");
+
+  for (const [offset, variant] of ["primary-no-reset", "primary-no-date", "secondary-no-date"].entries()) {
+    const unknownScope = `github-index-installation:${801 + offset}`;
+    const base = Date.parse("2026-01-01T12:00:00Z");
+    const sourceReset = base + 7_200_000;
+    let currentServerTime = base + 60_000;
+    let quotaReset = base + 3_600_000;
+    let withDate = false, recovered = false, originalCalls = 0, quotaCalls = 0;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const target = String(input);
+      if (target === "https://api.github.com/rate_limit") {
+        quotaCalls++;
+        assert.equal(new Headers(init?.headers).get("authorization"), "Bearer synthetic-private-token");
+        assert.equal(init?.redirect, "error");
+        return Response.json({ resources: { core: { remaining: 10, reset: quotaReset / 1000 } } },
+          { headers: withDate ? { date: new Date(currentServerTime).toUTCString() } : {} });
+      }
+      assert.equal(target, url);
+      originalCalls++;
+      if (recovered) return new Response(null, { status: 200 });
+      const headers: Record<string, string> = variant === "secondary-no-date"
+        ? { "retry-after": new Date(sourceReset).toUTCString() } : { "x-ratelimit-remaining": "0" };
+      if (variant === "primary-no-date") headers["x-ratelimit-reset"] = String(sourceReset / 1000);
+      return new Response(null, { status: variant === "secondary-no-date" ? 429 : 403, headers });
+    }) as typeof fetch;
+    const options = { headers: { authorization: "Bearer synthetic-private-token" } };
+    await assert.rejects(githubIndexFetch(unknownScope, url, options), GitHubIndexDeferredError);
+    await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '1 second' WHERE "scope" = ${unknownScope}`;
+    await assert.rejects(githubIndexFetch(unknownScope, url, options), GitHubIndexDeferredError);
+    assert.equal(originalCalls, 1, "a quota response without trusted time cannot reopen the original endpoint");
+    withDate = true;
+    await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '1 second' WHERE "scope" = ${unknownScope}`;
+    await assert.rejects(githubIndexFetch(unknownScope, url, options), GitHubIndexDeferredError);
+    const targetReset = variant === "primary-no-reset" ? quotaReset : sourceReset;
+    currentServerTime = targetReset - 1000;
+    quotaReset = targetReset + 3_600_000;
+    await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '1 second' WHERE "scope" = ${unknownScope}`;
+    await assert.rejects(githubIndexFetch(unknownScope, url, options), GitHubIndexDeferredError);
+    assert.equal(originalCalls, 1, "the original endpoint stays closed before the conservative reset boundary");
+    currentServerTime = targetReset + 1000;
+    recovered = true;
+    await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '1 second' WHERE "scope" = ${unknownScope}`;
+    assert.equal((await githubIndexFetch(unknownScope, url, options)).status, 200);
+    assert.equal(originalCalls, 2);
+    assert.equal(quotaCalls, 4);
+  }
+
+  for (const [offset, mode] of ["malformed", "oversized", "conflicting-header", "missing-authorization"].entries()) {
+    const invalidScope = `github-index-installation:${810 + offset}`;
+    let originalCalls = 0, quotaCalls = 0;
+    const base = Date.parse("2026-01-01T12:00:00Z");
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      if (String(input) !== "https://api.github.com/rate_limit") {
+        originalCalls++;
+        return new Response(null, { status: 403, headers: { "x-ratelimit-remaining": "0" } });
+      }
+      quotaCalls++;
+      const headers: Record<string, string> = { date: new Date(base).toUTCString() };
+      if (mode === "conflicting-header") {
+        headers["x-ratelimit-remaining"] = "0";
+        headers["x-ratelimit-reset"] = String(base / 1000 + 3600);
+      }
+      if (mode === "oversized") return new Response("x".repeat(65_537), { headers });
+      return Response.json({ resources: { core: { remaining: mode === "malformed" ? true : 10, reset: base / 1000 + 3600 } } }, { headers });
+    }) as typeof fetch;
+    const options = mode === "missing-authorization" ? {} : { headers: { authorization: "Bearer synthetic-private-token" } };
+    await assert.rejects(githubIndexFetch(invalidScope, url, options), GitHubIndexDeferredError);
+    await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '1 second' WHERE "scope" = ${invalidScope}`;
+    await assert.rejects(githubIndexFetch(invalidScope, url, options), GitHubIndexDeferredError);
+    assert.equal(originalCalls, 1, `${mode} must fail closed`);
+    assert.equal(quotaCalls, mode === "missing-authorization" ? 0 : 1);
+  }
 } finally {
   await prisma.$executeRaw`DELETE FROM "github_index_rate_windows"`;
   await prisma.$disconnect();

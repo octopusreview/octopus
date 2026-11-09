@@ -32,7 +32,7 @@ globalThis.fetch = (async (input: string | URL | Request) => {
   assert.ok(match);
   blobIds.add(match[1]);
   if (limited) return new Response(null, { status: 403, headers: {
-    "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 3600),
+    date: new Date().toUTCString(), "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 3600),
   } });
   return Response.json({ encoding: "base64", content: Buffer.from("export const x = 1;").toString("base64") });
 }) as typeof fetch;

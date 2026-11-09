@@ -32,6 +32,7 @@ try {
   const first = await prisma.repository.findUniqueOrThrow({ where: { id: repo }, select: { indexStatus: true, indexAttemptId: true } });
   assert.equal(first.indexStatus, "failed");
   assert.notEqual(first.indexAttemptId, "old-attempt");
+  await prisma.$executeRaw`UPDATE "repositories" SET "indexStatus" = 'indexing' WHERE "id" = ${repo}`;
   await assert.rejects(processRepositoryIndex(job, { retryCount: 1, retryLimit: 2 }, jobId), /synthetic transient failure/);
   const second = await prisma.repository.findUniqueOrThrow({ where: { id: repo }, select: { indexStatus: true, indexAttemptId: true } });
   assert.equal(second.indexStatus, "failed");

@@ -71,9 +71,10 @@ export async function processRepositoryIndex(job: RepositoryIndexJob, retry?: Re
       !Number.isSafeInteger(retry?.retryCount) || (retry?.retryCount ?? -1) < 0)) {
     throw new Error("Deferred repository indexing requires a valid job identity");
   }
-  const expectedAttempts = deferred && jobId ? [job.expectedAttemptId!,
-    ...(retry!.retryCount > 0 ? [deferredJobAttemptId(jobId, retry!.retryCount - 1)] : []),
-  ] : [];
+  const deferredClaim = deferred && jobId ? { OR: [
+    { indexStatus: "failed", indexAttemptId: job.expectedAttemptId! },
+    ...(retry!.retryCount > 0 ? [{ indexStatus: { in: ["failed", "indexing"] }, indexAttemptId: deferredJobAttemptId(jobId, retry!.retryCount - 1) }] : []),
+  ] } : {};
   // Recheck ownership and standing when the job runs: the installation may
   // have been disconnected, or the repository dismissed, while it was queued.
   const repo = await prisma.repository.findFirst({
@@ -83,7 +84,7 @@ export async function processRepositoryIndex(job: RepositoryIndexJob, retry?: Re
       provider: { in: ["github", "forgejo"] },
       isActive: true,
       dismissedAt: null,
-      ...(deferred ? { indexStatus: "failed", indexAttemptId: { in: expectedAttempts } } : {}),
+      ...(deferred ? deferredClaim : {}),
       organization: { deletedAt: null, bannedAt: null, autoDiscoverRepos: true },
     },
     select: { id: true, fullName: true, defaultBranch: true, provider: true, installationId: true,
@@ -99,7 +100,7 @@ export async function processRepositoryIndex(job: RepositoryIndexJob, retry?: Re
       installationId: repo.installationId, isActive: true, dismissedAt: null,
       organization: { deletedAt: null, bannedAt: null, autoDiscoverRepos: true,
         ...(repo.provider === "github" ? { githubInstallationId: installationId } : {}) },
-      ...(deferred ? { indexStatus: "failed", indexAttemptId: { in: expectedAttempts } } : needsIndex) },
+      ...(deferred ? deferredClaim : needsIndex) },
     data: { indexStatus: "indexing", indexAttemptId },
   });
   if (!claim.count) return;

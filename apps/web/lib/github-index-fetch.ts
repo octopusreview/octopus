@@ -1,6 +1,6 @@
 import "server-only";
 import { admitIndexRequest, completeIndexRateProbe, deferPrimaryVerification, recordIndexRateLimit } from "./github-index-rate-state";
-import { githubRateWindow, githubServerTime } from "./github-rate-window";
+import { githubRateWindow, githubServerTime, type GitHubRateWindow } from "./github-rate-window";
 import { readReviewJson } from "./review-fetch";
 
 export class GitHubIndexDeferredError extends Error {
@@ -23,6 +23,33 @@ async function stateOperation<T>(operation: () => Promise<T>, signal?: AbortSign
     signal?.throwIfAborted();
     throw new GitHubIndexUnavailableError();
   }
+}
+
+async function indexRateWindow(response: Response, now: number): Promise<GitHubRateWindow | null> {
+  const window = githubRateWindow(response, now);
+  if (window || response.status !== 403) return window;
+  try {
+    const reader = response.clone().body?.getReader();
+    if (!reader) return null;
+    const decoder = new TextDecoder();
+    let size = 0, text = "";
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > 65_536) return null;
+        text += decoder.decode(value, { stream: true });
+      }
+    } finally {
+      void reader.cancel().catch(() => {});
+    }
+    const body = JSON.parse(text + decoder.decode()) as { message?: unknown };
+    if (typeof body?.message === "string" && /secondary rate limit/i.test(body.message)) {
+      return { kind: "throttled" as const, notBefore: now + 60_000 };
+    }
+  } catch {}
+  return null;
 }
 
 /** Each request consults the shared window; an expired window permits one bounded probe. */
@@ -48,7 +75,7 @@ export async function githubIndexFetch(scope: string, url: string, init: Request
     }
     if (!quota.ok) {
       const now = Date.now();
-      const window = githubRateWindow(quota, now);
+      const window = await indexRateWindow(quota, now);
       const duration = !window || window.notBefore === null || window.kind === "throttled" ? null : Math.max(0, window.notBefore - now);
       const state = await stateOperation(() => recordIndexRateLimit(scope, duration, true,
         window?.verifyPrimary ? { resetMs: window.primaryReset ?? null } : undefined), signal);
@@ -104,7 +131,7 @@ export async function githubIndexFetch(scope: string, url: string, init: Request
     throw new Error("GitHub indexing request failed");
   }
   const now = Date.now();
-  const window = githubRateWindow(response, now);
+  const window = await indexRateWindow(response, now);
   if (window) {
     const duration = window.notBefore === null || window.kind === "throttled" ? null : Math.max(0, window.notBefore - now);
     const state = await stateOperation(() => recordIndexRateLimit(scope, duration, window.kind !== "primary" || duration === null,

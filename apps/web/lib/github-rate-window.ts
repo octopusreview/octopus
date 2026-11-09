@@ -42,11 +42,11 @@ export function githubRateWindow(response: Response, now = Date.now()): GitHubRa
     const parsed = /^\d+$/.test(raw) ? Number(raw) * 1000 : NaN;
     const reset = Number.isSafeInteger(parsed) && parsed > 0 && parsed <= 8.64e15 && (serverTime === null || parsed > serverTime) ? parsed : null;
     if (reset === null || serverTime === null || (retryAfterHeader !== null && retryAfter === null)) {
-      return { kind: "primary", notBefore: null, verifyPrimary: true,
+      return { kind: "primary", notBefore: retryAfter, verifyPrimary: true,
         primaryReset: retryAfterDate === null || retryAfterDate <= 0 ? reset : Math.max(reset ?? 0, retryAfterDate) };
     }
     const relativeReset = now + reset - serverTime;
-    if (!Number.isSafeInteger(relativeReset) || relativeReset > 8.64e15) return { kind: "primary", notBefore: null, verifyPrimary: true, primaryReset: reset };
+    if (!Number.isSafeInteger(relativeReset) || relativeReset > 8.64e15) return { kind: "primary", notBefore: retryAfter, verifyPrimary: true, primaryReset: reset };
     return { kind: "primary", notBefore: Math.max(reset, retryAfter ?? now, relativeReset) };
   }
   if ((response.status === 403 || response.status === 429) && retryAfterDate !== null && serverTime === null) {

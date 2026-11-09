@@ -51,6 +51,10 @@ try {
   globalThis.fetch = (async () => { calls++; return new Response(null, { status: 403 }); }) as typeof fetch;
   assert.equal((await githubIndexFetch(other, url)).status, 403, "an unmarked 403 remains unclassified");
   assert.deepEqual(await admitIndexRequest(other), { kind: "open" });
+  globalThis.fetch = (async () => { calls++; return Response.json({ message: "You have exceeded a secondary rate limit." }, { status: 403 }); }) as typeof fetch;
+  await assert.rejects(githubIndexFetch(other, url), GitHubIndexDeferredError);
+  assert.equal((await admitIndexRequest(other)).kind, "blocked", "message-only secondary limits coordinate workers");
+  await prisma.$executeRaw`DELETE FROM "github_index_rate_windows" WHERE "scope" = ${other}`;
   await recordIndexRateLimit(other, 1000);
   await prisma.$executeRaw`UPDATE "github_index_rate_windows" SET "notBefore" = clock_timestamp() - interval '1 second' WHERE "scope" = ${other}`;
   globalThis.fetch = (async () => { calls++; return new Response(null, { status: 503 }); }) as typeof fetch;

@@ -35,8 +35,13 @@ describe("GitHub rate-limit response windows", () => {
     for (const reset of [undefined, "not-a-time", "999999999999999999999", String(Math.floor(now / 1000) - 1)]) {
       const headers: Record<string, string> = { date: new Date(now).toUTCString(), "x-ratelimit-remaining": "0", "retry-after": "5" };
       if (reset !== undefined) headers["x-ratelimit-reset"] = reset;
-      expect(githubRateWindow(response(403, headers), now)).toEqual({ kind: "primary", notBefore: null, verifyPrimary: true, primaryReset: null });
+      expect(githubRateWindow(response(403, headers), now)).toEqual({ kind: "primary", notBefore: now + 5000, verifyPrimary: true, primaryReset: null });
     }
+  });
+
+  it("preserves a long Retry-After while verifying an unknown primary reset", () => {
+    expect(githubRateWindow(response(403, { "x-ratelimit-remaining": "0", "retry-after": "86400" }), now))
+      .toEqual({ kind: "primary", notBefore: now + 86_400_000, verifyPrimary: true, primaryReset: null });
   });
 
   it("does not discard an invalid Retry-After when the primary reset is known", () => {

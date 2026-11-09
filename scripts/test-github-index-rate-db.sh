@@ -65,3 +65,5 @@ RUN_INDEX_RATE_DB_TESTS=1 bun test lib/__tests__/github-deferred-recovery.db.tes
 RUN_INDEX_RATE_DB_TESTS=1 bun test lib/__tests__/github-deferred-worker-real.db.test.ts
 
 RUN_INDEX_RATE_DB_TESTS=1 bun test lib/__tests__/github-three-indexes.db.test.ts
+
+RUN_INDEX_RATE_DB_TESTS=1 bun test lib/__tests__/github-index-e2e-recovery.db.test.ts

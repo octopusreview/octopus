@@ -40,7 +40,7 @@ export interface SyncLogEntry {
   timestamp: number;
 }
 
-type ExactField = { type?: string; fields?: Record<string, { type?: string }> };
+type ExactField = { type?: string; normalizer?: string; fields?: Record<string, { type?: string; normalizer?: string }> };
 
 async function legacyScope(es: Client, index: string, orgId: string, repoId: string) {
   const mappings = await es.indices.getMapping({ index });
@@ -52,8 +52,8 @@ async function legacyScope(es: Client, index: string, orgId: string, repoId: str
     const properties = value.mappings.properties as Record<string, ExactField> | undefined;
     const exactField = (field: "orgId" | "repoId") => {
       const mapping = properties?.[field];
-      if (mapping?.type === "keyword") return field;
-      if (mapping?.fields?.keyword?.type === "keyword") return `${field}.keyword`;
+      if (mapping?.type === "keyword" && mapping.normalizer === undefined) return field;
+      if (mapping?.fields?.keyword?.type === "keyword" && mapping.fields.keyword.normalizer === undefined) return `${field}.keyword`;
       throw new Error("Exact index identifier mapping unavailable");
     };
     return { bool: { filter: [

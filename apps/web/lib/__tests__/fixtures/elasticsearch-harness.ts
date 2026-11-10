@@ -16,7 +16,7 @@ const tagged: Entry[] = [
 ];
 const writes: Array<{ index: string; body: Entry }> = [];
 let fail: "write" | "read" | "delete" | null = null;
-let legacyMapping: "text" | "keyword" | "unsupported" = "text";
+let legacyMapping: "text" | "keyword" | "unsupported" | "normalized" | "normalized-subfield" = "text";
 let lastDelete: Clause | undefined;
 const matches = (row: Entry, clause: Clause, index: string): boolean => {
   if (clause.term) return Object.entries(clause.term).every(([field, value]) => {
@@ -35,8 +35,8 @@ const matches = (row: Entry, clause: Clause, index: string): boolean => {
 };
 class SyntheticElasticsearch {
   indices = { exists: async () => true, getMapping: async () => ({ octopus_repo_sync: { mappings: { properties: {
-    orgId: legacyMapping === "text" ? { type: "text", fields: { keyword: { type: "keyword" } } } : { type: legacyMapping },
-    repoId: legacyMapping === "text" ? { type: "text", fields: { keyword: { type: "keyword" } } } : { type: legacyMapping },
+    orgId: legacyMapping === "text" || legacyMapping === "normalized-subfield" ? { type: "text", fields: { keyword: { type: "keyword", ...(legacyMapping === "normalized-subfield" ? { normalizer: "lowercase" } : {}) } } } : legacyMapping === "normalized" ? { type: "keyword", normalizer: "lowercase" } : { type: legacyMapping },
+    repoId: legacyMapping === "text" || legacyMapping === "normalized-subfield" ? { type: "text", fields: { keyword: { type: "keyword", ...(legacyMapping === "normalized-subfield" ? { normalizer: "lowercase" } : {}) } } } : legacyMapping === "normalized" ? { type: "keyword", normalizer: "lowercase" } : { type: legacyMapping },
   } } } }) };
   async index(request: { index: string; body: Entry }) {
     if (fail === "write") throw new Error("synthetic-private-exception");
@@ -119,11 +119,13 @@ const errors: unknown[][] = [];
 const originalError = console.error;
 console.error = (...args) => { errors.push(args); };
 try {
-  legacyMapping = "unsupported";
-  assert.deepEqual(await getSyncLogs("org-a", "repo-a"), []);
-  const previousDelete = lastDelete;
-  await deleteSyncLogs("org-a", "repo-a");
-  assert.equal(lastDelete, previousDelete, "unsupported mappings must not trigger a broad delete");
+  for (const mode of ["unsupported", "normalized", "normalized-subfield"] as const) {
+    legacyMapping = mode;
+    assert.deepEqual(await getSyncLogs("org-a", "repo-a"), []);
+    const previousDelete = lastDelete;
+    await deleteSyncLogs("org-a", "repo-a");
+    assert.equal(lastDelete, previousDelete, "unsafe mappings must not trigger a broad delete");
+  }
   legacyMapping = "text";
   fail = "write";
   await writeSyncLog(currentEntry);
@@ -131,5 +133,5 @@ try {
   assert.deepEqual(await getSyncLogs("org-a", "repo-a"), []);
   fail = "delete";
   await deleteSyncLogs("org-a", "repo-a");
-  assert.deepEqual(errors, [["Failed to read sync logs from ES"], ["Failed to delete sync logs from ES"], ["Failed to write sync log to ES"], ["Failed to read sync logs from ES"], ["Failed to delete sync logs from ES"]]);
+  assert.deepEqual(errors, [...Array.from({ length: 3 }, () => [["Failed to read sync logs from ES"], ["Failed to delete sync logs from ES"]]).flat(), ["Failed to write sync log to ES"], ["Failed to read sync logs from ES"], ["Failed to delete sync logs from ES"]]);
 } finally { console.error = originalError; }

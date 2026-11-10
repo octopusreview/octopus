@@ -38,6 +38,9 @@ const react = {
       });
     }
   },
+  useLayoutEffect(fn: () => void | (() => void), deps: unknown[]) {
+    react.useEffect(fn, deps);
+  },
 };
 function render() {
   hookIndex = 0;

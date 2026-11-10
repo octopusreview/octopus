@@ -40,6 +40,31 @@ export interface SyncLogEntry {
   timestamp: number;
 }
 
+type ExactField = { type?: string; fields?: Record<string, { type?: string }> };
+
+async function legacyScope(es: Client, index: string, orgId: string, repoId: string) {
+  const mappings = await es.indices.getMapping({ index });
+  const indices = Object.entries(mappings);
+  if (!indices.length) throw new Error("Index mapping unavailable");
+
+  // Legacy aliases can mix direct keywords and analyzed fields with keyword subfields.
+  const should = indices.map(([name, value]) => {
+    const properties = value.mappings.properties as Record<string, ExactField> | undefined;
+    const exactField = (field: "orgId" | "repoId") => {
+      const mapping = properties?.[field];
+      if (mapping?.type === "keyword") return field;
+      if (mapping?.fields?.keyword?.type === "keyword") return `${field}.keyword`;
+      throw new Error("Exact index identifier mapping unavailable");
+    };
+    return { bool: { filter: [
+      { term: { _index: name } },
+      { term: { [exactField("orgId")]: orgId } },
+      { term: { [exactField("repoId")]: repoId } },
+    ] } };
+  });
+  return { bool: { should, minimum_should_match: 1 } };
+}
+
 export async function writeSyncLog(entry: SyncLogEntry): Promise<void> {
   try {
     const es = getClient();
@@ -77,9 +102,11 @@ export async function getSyncLogs(
       query: {
         bool: {
           filter: [
-            { term: { [indexAttemptId ? "orgId.keyword" : "orgId"]: orgId } },
-            { term: { [indexAttemptId ? "repoId.keyword" : "repoId"]: repoId } },
-            ...(indexAttemptId ? [{ term: { "indexAttemptId.keyword": indexAttemptId } }] : []),
+            ...(indexAttemptId ? [
+              { term: { "orgId.keyword": orgId } },
+              { term: { "repoId.keyword": repoId } },
+              { term: { "indexAttemptId.keyword": indexAttemptId } },
+            ] : [await legacyScope(es, index, orgId, repoId)]),
           ],
         },
       },
@@ -118,8 +145,7 @@ export async function deleteSyncLogs(
       query: {
         bool: {
           filter: [
-            { term: { orgId } },
-            { term: { repoId } },
+            await legacyScope(es, index, orgId, repoId),
           ],
         },
       },

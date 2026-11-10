@@ -14,11 +14,14 @@ psql_fixture <<'SQL'
 DO $$ BEGIN
   IF current_setting('server_version_num')::int / 10000 <> 17 THEN RAISE EXCEPTION 'PostgreSQL 17 required'; END IF;
 END $$;
-CREATE TABLE organizations (id text PRIMARY KEY,"createdAt" timestamp,type int,"bannedAt" timestamp,"deletedAt" timestamp,"anthropicApiKey" text);
+CREATE TABLE organizations (id text PRIMARY KEY,"createdAt" timestamp,type int,"bannedAt" timestamp,"deletedAt" timestamp,"anthropicApiKey" text,"creationSource" text,"creatorFirstOrganization" boolean);
+CREATE TABLE users (id text PRIMARY KEY,"arrivalSource" text);
+CREATE TABLE organization_members (id text PRIMARY KEY,"organizationId" text NOT NULL,"userId" text NOT NULL,role text NOT NULL,"createdAt" timestamp NOT NULL,"deletedAt" timestamp, UNIQUE ("organizationId","userId"));
+CREATE INDEX organization_members_userId_idx ON organization_members ("userId");
 CREATE TABLE repositories (id text PRIMARY KEY,"organizationId" text,provider text,"createdAt" timestamp,"isActive" boolean,"autoReview" boolean,"indexStatus" text,"indexedAt" timestamp,"firstIndexedAt" timestamp);
 CREATE TABLE pull_requests (id text PRIMARY KEY,"repositoryId" text,"createdAt" timestamp,"firstReviewCompletedAt" timestamp,status text,"reviewBody" text);
 CREATE TABLE marketing_conversions ("organizationId" text,environment text,status text,kind text,payload text);
-INSERT INTO organizations VALUES ('one','2026-09-01',1,null,null,'DO-NOT-EXPORT'),('banned','2026-09-01',1,now(),null,'PRIVATE');
+INSERT INTO organizations (id,"createdAt",type,"bannedAt","deletedAt","anthropicApiKey") VALUES ('one','2026-09-01',1,null,null,'DO-NOT-EXPORT'),('banned','2026-09-01',1,now(),null,'PRIVATE');
 INSERT INTO repositories VALUES ('repo','one','github','2026-09-02',true,true,'indexed','2026-09-09','2026-09-09');
 INSERT INTO pull_requests VALUES ('pr','repo','2026-09-03','2026-09-04','completed','private source content');
 INSERT INTO marketing_conversions VALUES ('one','live','delivered','purchase',json_build_object('schemaVersion',1,'eventId','payment_'||repeat('a',64),'eventType','purchase','currency','USD','amountMinor','1000','occurredAt','2026-09-05T00:00:00Z')::text);
@@ -153,9 +156,9 @@ assert float(row['median_hours_to_observed_publication'])==72, row
 assert float(row['p90_hours_to_observed_publication'])==72, row
 PYTEST
 psql_fixture <<'SQL'
-INSERT INTO organizations
+INSERT INTO organizations (id,"createdAt",type,"bannedAt","deletedAt","anthropicApiKey")
 SELECT 'scale-'||i, '2026-09-14', 1, NULL, NULL, 'PRIVATE' FROM generate_series(1,10000) i;
-INSERT INTO organizations VALUES
+INSERT INTO organizations (id,"createdAt",type,"bannedAt","deletedAt","anthropicApiKey") VALUES
   ('immature','2026-09-28',1,NULL,NULL,'PRIVATE'),
   ('cutoff','2026-10-01',1,NULL,NULL,'PRIVATE'),
   ('future','2026-10-02',1,NULL,NULL,'PRIVATE'),
@@ -241,3 +244,207 @@ check(plan['Plan'])
 print(f"PASS: synthetic scale plan, execution {plan['Execution Time']} ms")
 PYTEST
 printf '%s\n' 'PASS: PostgreSQL 17 fresh and upgraded first-index projection, repeat update, retained grants and deny checks, cash safeguards, unknown activation, collision refusal and scaled UTC funnel'
+
+# Provenance cases are synthetic identifiers and bounded categories only.
+psql_fixture <<'SQL'
+CREATE TABLE provenance_cases (
+  id text PRIMARY KEY, source text, first_membership boolean, arrival text,
+  expected_source text NOT NULL, expected_first text NOT NULL, expected_arrival text NOT NULL
+);
+INSERT INTO provenance_cases VALUES
+ ('signup','auto_default',true,'signup','auto_default','yes','signup'),
+ ('invite','user_created',false,'invite','user_created','no','invite'),
+ ('system',NULL,NULL,'system','not_recorded','not_recorded','system'),
+ ('legacy',NULL,NULL,NULL,'not_recorded','not_recorded','not_recorded'),
+ ('null-arrival','auto_default',NULL,NULL,'auto_default','not_recorded','not_recorded'),
+ ('other-arrival','user_created',true,'unexpected','user_created','yes','other'),
+ ('removed','auto_default',false,'signup','auto_default','no','signup'),
+ ('two-owners','auto_default',true,'invite','auto_default','yes','no_creator'),
+ ('late-owner','user_created',false,'system','user_created','no','no_creator'),
+ ('no-owner',NULL,NULL,NULL,'not_recorded','not_recorded','no_creator'),
+ ('community','community_bot',NULL,'signup','community_bot','not_recorded','no_creator'),
+ ('demo','demo_seed',NULL,'signup','demo_seed','not_recorded','no_creator'),
+ ('other-source','auto-default',NULL,'signup','other','not_recorded','no_creator'),
+ ('missing-user','auto_default',NULL,'signup','auto_default','not_recorded','no_creator');
+INSERT INTO organizations (id,"createdAt",type,"creationSource","creatorFirstOrganization")
+SELECT 'provenance-'||id, timestamp '2026-09-02', 1, source, first_membership FROM provenance_cases;
+INSERT INTO users SELECT 'provenance-'||id, arrival FROM provenance_cases WHERE id <> 'missing-user';
+INSERT INTO organization_members
+SELECT 'provenance-'||id, 'provenance-'||id, 'provenance-'||id, 'owner',
+  timestamp '2026-09-02' + CASE WHEN id='late-owner' THEN interval '1 second' ELSE interval '0' END,
+  CASE WHEN id='removed' THEN timestamp '2026-09-03' END
+FROM provenance_cases WHERE id <> 'no-owner';
+INSERT INTO organization_members VALUES
+ ('provenance-second-owner','provenance-two-owners','provenance-signup','owner','2026-09-02',NULL),
+ ('provenance-non-owner','provenance-signup','provenance-invite','member','2026-09-02',NULL);
+CREATE TABLE provenance_fresh AS
+SELECT pg_get_viewdef(c.oid) AS definition, c.relowner, c.relacl, c.reloptions,
+  (SELECT jsonb_agg(jsonb_build_array(a.attname,a.atttypid,a.atttypmod,a.attcollation) ORDER BY a.attnum)
+   FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped) AS columns
+FROM pg_class c WHERE c.oid='octopus_analytics.organization_provenance_v1'::regclass;
+SQL
+check_provenance() {
+  psql_fixture <<'SQL'
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT FROM provenance_cases c LEFT JOIN octopus_analytics.organization_provenance_v1 v
+      ON v.organization_id='octopus:org:provenance-'||c.id
+    WHERE v.creation_source IS DISTINCT FROM c.expected_source
+      OR v.creator_first_membership IS DISTINCT FROM c.expected_first
+      OR v.creator_arrival_source IS DISTINCT FROM c.expected_arrival
+  ) THEN RAISE EXCEPTION 'provenance label or creator rules'; END IF;
+  IF EXISTS (SELECT FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a
+    WHERE c.oid='octopus_analytics.organization_provenance_v1'::regclass AND a.grantee=0)
+    THEN RAISE EXCEPTION 'provenance PUBLIC access'; END IF;
+END $$;
+SET ROLE octopus_analytics_reader;
+DO $$ BEGIN
+  IF (SELECT array_agg(column_name::text ORDER BY ordinal_position)
+      FROM information_schema.columns WHERE table_schema='octopus_analytics'
+        AND table_name='organization_provenance_v1') IS DISTINCT FROM
+    ARRAY['organization_id','creation_source','creator_first_membership','creator_arrival_source']
+    THEN RAISE EXCEPTION 'provenance column contract'; END IF;
+  IF (SELECT count(*) FROM octopus_analytics.organization_provenance_v1)
+      <> (SELECT count(*) FROM octopus_analytics.organizations_v1)
+    OR (SELECT count(DISTINCT organization_id) FROM octopus_analytics.organization_provenance_v1)
+      <> (SELECT count(*) FROM octopus_analytics.organizations_v1)
+    THEN RAISE EXCEPTION 'provenance cardinality'; END IF;
+  IF EXISTS (SELECT FROM octopus_analytics.organization_provenance_v1
+    WHERE creation_source IS NULL OR creator_first_membership IS NULL OR creator_arrival_source IS NULL
+      OR creation_source NOT IN ('auto_default','user_created','community_bot','demo_seed','not_recorded','other')
+      OR creator_first_membership NOT IN ('yes','no','not_recorded')
+      OR creator_arrival_source NOT IN ('signup','invite','system','not_recorded','other','no_creator'))
+    THEN RAISE EXCEPTION 'provenance label allowlist'; END IF;
+  BEGIN PERFORM id FROM public.organizations; RAISE EXCEPTION 'organizations readable'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  BEGIN PERFORM id FROM public.users; RAISE EXCEPTION 'users readable'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  BEGIN PERFORM id FROM public.organization_members; RAISE EXCEPTION 'members readable'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END $$;
+RESET ROLE;
+SQL
+}
+check_provenance
+psql_fixture <<'SQL'
+-- Removing only this new view simulates an existing pre-feature installation.
+DROP VIEW octopus_analytics.organization_provenance_v1;
+CREATE TABLE provenance_baseline AS
+SELECT c.oid,c.relname,c.relowner,c.relacl,c.reloptions,pg_get_viewdef(c.oid) AS definition
+FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+WHERE n.nspname='octopus_analytics' AND c.relkind='v';
+SQL
+for prerequisite in schema role view creationSource creatorFirstOrganization arrivalSource; do
+  case "$prerequisite" in
+    schema) setup='ALTER SCHEMA octopus_analytics RENAME TO provenance_saved_schema;'; message='Analytics schema missing;' ;;
+    role) setup='ALTER ROLE octopus_analytics_reader RENAME TO provenance_saved_role;'; message='Analytics reader role missing;' ;;
+    view) setup='ALTER VIEW octopus_analytics.organizations_v1 RENAME TO provenance_saved_view;'; message='Analytics organizations_v1 view missing;' ;;
+    creationSource|creatorFirstOrganization)
+      setup="ALTER TABLE public.organizations RENAME COLUMN \"$prerequisite\" TO provenance_saved_column;"
+      message="Source column public.organizations.\"$prerequisite\" missing;" ;;
+    arrivalSource) setup='ALTER TABLE public.users RENAME COLUMN "arrivalSource" TO provenance_saved_column;'; message='Source column public.users."arrivalSource" missing;' ;;
+  esac
+  # Failure closes the session and rolls back the transaction-local rename too.
+  if output=$({ printf 'BEGIN;\n%s\n' "$setup"; cat update-organization-provenance.sql; } | psql_fixture 2>&1); then
+    echo "Provenance update unexpectedly accepted missing $prerequisite" >&2; exit 1
+  fi
+  [[ "$output" == *"$message"* ]]
+  psql_fixture <<'SQL'
+DO $$ BEGIN
+  IF to_regclass('octopus_analytics.organization_provenance_v1') IS NOT NULL
+    OR NOT EXISTS (SELECT FROM pg_roles WHERE rolname='octopus_analytics_reader')
+    OR EXISTS (
+      SELECT FROM provenance_baseline b LEFT JOIN pg_class c ON c.oid=b.oid
+      WHERE c.oid IS NULL OR c.relname IS DISTINCT FROM b.relname
+        OR c.relowner IS DISTINCT FROM b.relowner OR c.relacl IS DISTINCT FROM b.relacl
+        OR c.reloptions IS DISTINCT FROM b.reloptions OR pg_get_viewdef(c.oid) IS DISTINCT FROM b.definition
+    ) OR (SELECT count(*) FROM pg_attribute
+      WHERE attrelid='public.organizations'::regclass AND attname IN ('creationSource','creatorFirstOrganization')
+        AND attnum>0 AND NOT attisdropped) <> 2
+    OR NOT EXISTS (SELECT FROM pg_attribute WHERE attrelid='public.users'::regclass
+      AND attname='arrivalSource' AND attnum>0 AND NOT attisdropped)
+    THEN RAISE EXCEPTION 'failed provenance update changed installed objects'; END IF;
+END $$;
+SQL
+  printf 'PASS: provenance missing %s stops and rolls back\n' "$prerequisite"
+done
+for iteration in 1 2; do
+  if [[ "$iteration" == 2 ]]; then
+    psql_fixture -c "CREATE TABLE provenance_previous AS SELECT oid,relowner,relacl,reloptions FROM pg_class WHERE oid='octopus_analytics.organization_provenance_v1'::regclass"
+    psql_fixture -c 'GRANT SELECT ON octopus_analytics.organization_provenance_v1 TO PUBLIC'
+  fi
+  psql_fixture < update-organization-provenance.sql
+  psql_fixture <<'SQL'
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT FROM pg_class c CROSS JOIN provenance_fresh f
+    WHERE c.oid='octopus_analytics.organization_provenance_v1'::regclass
+      AND c.relowner=f.relowner AND c.relacl IS NOT DISTINCT FROM f.relacl
+      AND c.reloptions IS NOT DISTINCT FROM f.reloptions
+      AND 'security_barrier=true'=ANY(c.reloptions)
+      AND pg_get_viewdef(c.oid)=f.definition
+      AND (SELECT jsonb_agg(jsonb_build_array(a.attname,a.atttypid,a.atttypmod,a.attcollation) ORDER BY a.attnum)
+           FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped)=f.columns
+  ) THEN RAISE EXCEPTION 'provenance fresh/update definition, columns, owner, grants or barrier'; END IF;
+END $$;
+SQL
+  if [[ "$iteration" == 2 ]]; then
+    psql_fixture <<'SQL'
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_class c CROSS JOIN provenance_previous p
+    WHERE c.oid='octopus_analytics.organization_provenance_v1'::regclass AND c.oid=p.oid
+      AND c.relowner=p.relowner AND c.relacl IS NOT DISTINCT FROM p.relacl
+      AND c.reloptions IS NOT DISTINCT FROM p.reloptions)
+    THEN RAISE EXCEPTION 'repeat provenance update changed identity, owner, grants or barrier'; END IF;
+END $$;
+DROP TABLE provenance_previous;
+SQL
+  fi
+  check_provenance
+  printf 'PASS: provenance update %s matches fresh install and retains contract/privileges\n' "$iteration"
+done
+psql_fixture <<'SQL'
+-- Reuse the existing 10,000 synthetic organisations after all funnel assertions.
+INSERT INTO users
+SELECT 'provenance-scale-user-'||i,
+  CASE i%4 WHEN 0 THEN 'signup' WHEN 1 THEN 'invite' WHEN 2 THEN 'system' END
+FROM generate_series(1,10000) i;
+INSERT INTO organization_members
+SELECT 'provenance-scale-member-'||i, 'scale-'||i, 'provenance-scale-user-'||i,
+  'owner', timestamp '2026-09-14', NULL FROM generate_series(1,10000) i;
+ANALYZE;
+SQL
+check_provenance
+provenance_plan=$(psql_fixture -qAt -c "SET ROLE octopus_analytics_reader; SET statement_timeout = '15s'" -c 'EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT * FROM octopus_analytics.organization_provenance_v1')
+ANALYTICS_TEST_PLAN="$provenance_plan" python3 - <<'PYTEST'
+import json, os
+p = json.loads(os.environ['ANALYTICS_TEST_PLAN'])[0]
+scans = {}
+def visit(n, depth=0):
+    relation = n.get('Relation Name')
+    if relation in ('organizations', 'organization_members', 'users'):
+        assert n['Actual Loops'] == 1, 'repeated source scan'
+        scans[relation] = scans.get(relation, 0) + 1
+    if n.get('Parent Relationship') == 'SubPlan':
+        assert n['Actual Loops'] <= 1, 'per-organisation subplan'
+    print('  '*depth + f"{n['Node Type']} {relation or ''}: rows={n['Actual Rows']}, loops={n['Actual Loops']}")
+    for child in n.get('Plans', []): visit(child, depth+1)
+visit(p['Plan'])
+assert scans.get('organization_members') == 1, scans
+assert scans.get('users') == 1, scans
+assert p['Execution Time'] < 15000, p['Execution Time']
+print(f"PASS: synthetic provenance plan, execution {p['Execution Time']} ms / 15000 ms timeout")
+PYTEST
+psql_fixture <<'SQL'
+SET ROLE octopus_analytics_reader;
+DO $$ BEGIN
+  IF (SELECT count(*) FROM octopus_analytics.organization_provenance_v1
+    WHERE organization_id LIKE 'octopus:org:scale-%') <> 10000
+    OR (SELECT count(DISTINCT creator_arrival_source) FROM octopus_analytics.organization_provenance_v1
+      WHERE organization_id LIKE 'octopus:org:scale-%') <> 4
+    OR EXISTS (SELECT FROM octopus_analytics.organization_provenance_v1
+      WHERE organization_id LIKE 'octopus:org:scale-%'
+      GROUP BY creator_arrival_source HAVING count(*)<>2500)
+    THEN RAISE EXCEPTION 'scaled provenance labels'; END IF;
+END $$;
+RESET ROLE;
+DROP TABLE provenance_fresh, provenance_baseline, provenance_cases;
+SQL
+printf '%s\n' 'PASS: provenance labels, creator rules, four-column contract, all-organisation cardinality, source denials, PUBLIC denial, fresh/update parity, repeat update and 10000-organisation plan'

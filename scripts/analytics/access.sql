@@ -98,9 +98,39 @@ WITH parsed AS (
 SELECT event_id, organization_id, event_type, currency, amount_minor, occurred_at
 FROM counted_events WHERE fact_count = 1;
 
+CREATE VIEW octopus_analytics.organization_provenance_v1
+WITH (security_barrier = true) AS
+WITH creators AS (
+  -- Both birth timestamps use the same transaction's now(); retain removed owners.
+  SELECT o.id AS organization_id,
+    CASE WHEN count(m.id) = 1 THEN min(m."userId") END AS creator_id
+  FROM public.organizations o
+  LEFT JOIN public.organization_members m
+    ON m."organizationId" = o.id AND m.role = 'owner'
+    AND m."createdAt" = o."createdAt"
+    AND (o."creationSource" IS NULL OR o."creationSource" IN ('auto_default', 'user_created'))
+  GROUP BY o.id
+)
+SELECT 'octopus:org:' || o.id AS organization_id,
+  CASE WHEN o."creationSource" IN ('auto_default','user_created','community_bot','demo_seed')
+    THEN o."creationSource" WHEN o."creationSource" IS NULL THEN 'not_recorded'
+    ELSE 'other' END AS creation_source,
+  CASE WHEN o."creatorFirstOrganization" THEN 'yes'
+    WHEN o."creatorFirstOrganization" = false THEN 'no'
+    ELSE 'not_recorded' END AS creator_first_membership,
+  CASE WHEN u.id IS NULL THEN 'no_creator'
+    WHEN u."arrivalSource" IN ('signup','invite','system') THEN u."arrivalSource"
+    WHEN u."arrivalSource" IS NULL THEN 'not_recorded'
+    ELSE 'other' END AS creator_arrival_source
+FROM public.organizations o
+JOIN creators c ON c.organization_id = o.id
+LEFT JOIN public.users u ON u.id = c.creator_id;
+
+REVOKE ALL ON octopus_analytics.organization_provenance_v1 FROM PUBLIC;
+
 GRANT USAGE ON SCHEMA octopus_analytics TO octopus_analytics_reader;
 GRANT SELECT ON octopus_analytics.organizations_v1,
   octopus_analytics.repositories_v1, octopus_analytics.review_milestones_v1,
-  octopus_analytics.cash_events_v1 TO octopus_analytics_reader;
+  octopus_analytics.cash_events_v1, octopus_analytics.organization_provenance_v1 TO octopus_analytics_reader;
 -- No future-object grants, source-table grants, password or LOGIN here.
 COMMIT;

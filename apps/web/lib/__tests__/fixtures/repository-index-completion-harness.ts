@@ -1,4 +1,5 @@
 import { mock } from "bun:test";
+import "./index-github-rate-mocks";
 import assert from "node:assert/strict";
 import { randomUUID, createHmac } from "node:crypto";
 import { readFile } from "node:fs/promises";

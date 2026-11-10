@@ -1,4 +1,5 @@
 import { mock } from "bun:test";
+import "./index-github-rate-mocks";
 import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -46,7 +47,8 @@ try {
   await started;
   controller.abort();
   assert.equal(await Promise.race([result, delay(500).then(() => "pending")]), "rejected");
-  assert.equal(signalSeen, controller.signal);
+  assert.equal(signalSeen?.aborted, true);
+  assert.equal(signalSeen?.reason, controller.signal.reason);
   assert.equal(collections, 0, "cancelled indexing must not proceed to storage");
 } finally {
   release?.();

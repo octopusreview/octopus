@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
 import { getInstallationToken, getFileContent as ghGetFileContent, getRepositoryDetails } from "@/lib/github";
+import { githubIndexRateScope } from "@/lib/github-index-rate-scope";
+import { githubIndexFetch, GitHubIndexDeferredError, GitHubIndexUnavailableError } from "@/lib/github-index-fetch";
 import * as bitbucketLib from "@/lib/bitbucket";
 import * as gitlabLib from "@/lib/gitlab";
 import * as forgejoLib from "@/lib/forgejo";
@@ -59,6 +61,7 @@ export async function indexRepository(
   organizationId?: string,
   /** Pre-resolved token (e.g. GITHUB_TOKEN from Actions). Skips getInstallationToken when provided. */
   providedToken?: string,
+  allowPausedProbe = false,
 ): Promise<IndexStats> {
   const { repoId } = attempt;
   const owner = { ...attempt, signal };
@@ -278,7 +281,19 @@ export async function indexRepository(
   } else {
     // ── GitHub indexing flow ──
     onLog("Authenticating with GitHub...");
-    const token = providedToken ?? await getInstallationToken(installationId, signal);
+    const token = providedToken ?? await getInstallationToken(installationId, signal,
+      (url, init) => githubIndexFetch("github-index-app", url, init, allowPausedProbe));
+    let rateScope: string;
+    try { rateScope = await githubIndexRateScope({ installationId, providedToken }); }
+    catch {
+      signal?.throwIfAborted();
+      throw new GitHubIndexUnavailableError();
+    }
+    const indexFetch = (url: string, init?: RequestInit) => {
+      const mayProbe = allowPausedProbe;
+      allowPausedProbe = false;
+      return githubIndexFetch(rateScope, url, init, mayProbe);
+    };
     const headers = {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github+json",
@@ -291,7 +306,7 @@ export async function indexRepository(
     let activeBranch = defaultBranch;
 
     onLog(`Fetching repository tree for ${fullName}@${activeBranch}...`);
-    let treeRes = await fetch(
+    let treeRes = await indexFetch(
       `${GITHUB_API}/repos/${fullName}/git/trees/${encodeURIComponent(activeBranch)}?recursive=1`,
       { headers, signal },
     );
@@ -299,7 +314,7 @@ export async function indexRepository(
     let branchExists = false;
     if (!treeRes.ok && treeRes.status === 404) {
       const [owner, repoName] = fullName.split("/");
-      const details = await getRepositoryDetails(installationId, owner, repoName, token, signal);
+      const details = await getRepositoryDetails(installationId, owner, repoName, token, signal, indexFetch);
       if (!details) {
         onLog(`Repository not found or GitHub App lacks access to ${fullName}`, "error");
         onLog("Go to GitHub Settings → Applications → Configure to grant access", "warning");
@@ -309,7 +324,7 @@ export async function indexRepository(
         onLog(`Default branch mismatch: stored '${activeBranch}', actual '${details.default_branch}' — retrying`, "warning");
         activeBranch = details.default_branch;
         resolvedDefaultBranch = details.default_branch;
-        treeRes = await fetch(
+        treeRes = await indexFetch(
           `${GITHUB_API}/repos/${fullName}/git/trees/${encodeURIComponent(activeBranch)}?recursive=1`,
           { headers, signal },
         );
@@ -319,7 +334,7 @@ export async function indexRepository(
     // GitHub can return 404 for an existing branch whose commit references
     // Git's empty tree. Verify the commit instead of calling it a missing branch.
     if (!treeRes.ok && treeRes.status === 404) {
-      const commitRes = await fetch(
+      const commitRes = await indexFetch(
         `${GITHUB_API}/repos/${fullName}/commits/${encodeURIComponent(activeBranch)}`,
         { headers, signal },
       );
@@ -360,7 +375,7 @@ export async function indexRepository(
     if (ignoreBlob) {
       try {
         const [owner, repoName] = fullName.split("/");
-        const ignoreContent = await ghGetFileContent(installationId, owner, repoName, activeBranch, ".octopusignore", token, signal);
+        const ignoreContent = await ghGetFileContent(installationId, owner, repoName, activeBranch, ".octopusignore", token, signal, indexFetch);
         if (ignoreContent === null) throw new Error("Missing .octopusignore content");
         if (ignoreContent) {
           ig = parseOctopusIgnore(ignoreContent);
@@ -368,6 +383,7 @@ export async function indexRepository(
         }
       } catch (error) {
         if (signal?.aborted) throw error;
+        if (error instanceof GitHubIndexDeferredError || error instanceof GitHubIndexUnavailableError) throw error;
         throw new Error("Indexing incomplete: could not read .octopusignore");
       }
     }
@@ -380,7 +396,7 @@ export async function indexRepository(
 
     // 1b. Fetch contributors
     try {
-      const contribRes = await fetch(
+      const contribRes = await indexFetch(
         `${GITHUB_API}/repos/${fullName}/contributors?per_page=30`,
         { headers, signal },
       );
@@ -402,7 +418,9 @@ export async function indexRepository(
         }
       }
       onLog(`Found ${contributorCount} contributors`, "success");
-    } catch {
+    } catch (error) {
+      signal?.throwIfAborted();
+      if (error instanceof GitHubIndexDeferredError || error instanceof GitHubIndexUnavailableError) throw error;
       onLog("Could not fetch contributor count", "warning");
     }
 
@@ -416,7 +434,7 @@ export async function indexRepository(
 
     async function fetchWithTimeout(url: string): Promise<Response> {
       const timeout = AbortSignal.timeout(BLOB_FETCH_TIMEOUT_MS);
-      return fetch(url, { headers, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+      return indexFetch(url, { headers, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
     }
 
     function skip(filePath: string, reason: string, failed = true) {
@@ -426,26 +444,21 @@ export async function indexRepository(
     }
 
     let deniedBlobStatus: number | undefined;
+    let deferred: GitHubIndexDeferredError | GitHubIndexUnavailableError | undefined;
 
     async function fetchBlob(file: TreeItem): Promise<void> {
       try {
         const url = `${GITHUB_API}/repos/${fullName}/git/blobs/${file.sha}`;
-        const blobRes = await fetchWithTimeout(url);
+        let blobRes = await fetchWithTimeout(url);
+        if (blobRes.status === 403) {
+          await delay(5_000, undefined, { signal });
+          blobRes = await fetchWithTimeout(url);
+        }
 
         if (!blobRes.ok) {
           if (blobRes.status === 403 || blobRes.status === 429) {
-            const retryAfter = parseInt(blobRes.headers.get("retry-after") ?? "5", 10);
-            onLog(`GitHub returned HTTP ${blobRes.status}, waiting ${retryAfter}s before retry...`, "warning");
-            await delay(retryAfter * 1000, undefined, { signal });
-
-            const retry = await fetchWithTimeout(url);
-            if (!retry.ok) {
-              if (retry.status === 403 || retry.status === 429) deniedBlobStatus ??= retry.status;
-              skip(file.path, `HTTP ${retry.status} after retry`);
-              return;
-            }
-            const retryData = await retry.json();
-            processBlob(retryData, file.path);
+            deniedBlobStatus ??= blobRes.status;
+            skip(file.path, `HTTP ${blobRes.status}`);
             return;
           }
           skip(file.path, `HTTP ${blobRes.status}`);
@@ -456,6 +469,7 @@ export async function indexRepository(
         processBlob(blobData, file.path);
       } catch (err) {
         signal?.throwIfAborted();
+        if (err instanceof GitHubIndexDeferredError || err instanceof GitHubIndexUnavailableError) { deferred ??= err; return; }
         const msg = err instanceof Error ? err.message : String(err);
         skip(file.path, msg);
       }
@@ -493,10 +507,13 @@ export async function indexRepository(
     for (let i = 0; i < files.length; i += CONCURRENCY) {
       signal?.throwIfAborted();
       const batch = files.slice(i, i + CONCURRENCY);
-      await Promise.all(batch.map(fetchBlob));
+      const settled = await Promise.allSettled(batch.map(fetchBlob));
       signal?.throwIfAborted();
+      const rejected = settled.find(result => result.status === "rejected");
+      if (rejected?.status === "rejected") throw rejected.reason;
+      if (deferred) throw deferred;
       if (deniedBlobStatus !== undefined) {
-        throw Object.assign(new Error("GitHub denied blob requests after retry"), { status: deniedBlobStatus });
+        throw Object.assign(new Error("GitHub denied blob requests"), { status: deniedBlobStatus });
       }
       if (processed > 0) {
         onLog(`Processing files... ${processed}/${files.length}`);

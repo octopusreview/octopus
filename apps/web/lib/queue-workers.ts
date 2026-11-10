@@ -20,6 +20,8 @@ import { runOllamaPull } from "./ollama-admin";
 import { reapStuckReviews } from "./reap-stuck-reviews";
 import { discoverRepositories } from "./discover-repositories";
 import { processRepositoryIndex, type RepositoryIndexJob } from "./repository-index-job";
+import { dispatchDeferredIndexes } from "./github-deferred-index";
+import { pruneExpiredIndexRateWindows } from "./github-index-rate-state";
 import type { QueueConfig } from "./queue";
 
 export interface WelcomeEmailJob {
@@ -61,7 +63,7 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
   await boss.work("index-repository", { localConcurrency: 1, includeMetadata: true }, async (jobs: JobWithMetadata<RepositoryIndexJob>[]) => {
     for (const job of jobs) {
       const retry = { retryCount: job.retryCount, retryLimit: job.retryLimit };
-      try { await processRepositoryIndex(job.data, retry); }
+      try { await processRepositoryIndex(job.data, retry, job.id); }
       catch (error) {
         reportBackgroundFailure(error, { stage: "indexing", attemptId: job.id, repositoryId: job.data?.repositoryId, retry });
         throw error;
@@ -231,6 +233,8 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
         console.error(`[queue] reap-stuck-reviews failed (job ${job.id}):`, err);
         throw err;
       }
+      try { await dispatchDeferredIndexes(boss); await pruneExpiredIndexRateWindows(); }
+      catch { console.error("[queue] GitHub indexing recovery sweep failed; the next sweep will retry"); }
     }
   });
 

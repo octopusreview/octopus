@@ -462,6 +462,7 @@ model ReviewAttempt {
   baseSha       String?
   coverage      Json
   reviewBody    String
+  failureFingerprint String?
   createdAt     DateTime @default(now())
 
   delivery ReviewAttemptDelivery?

@@ -12,7 +12,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-docker run --rm -d --name "$task_container" -e POSTGRES_PASSWORD -e POSTGRES_DB=octopus_index_rate_test \
+docker run --rm -d --name "$task_container" --label octopus.synthetic-index-test=true -e POSTGRES_PASSWORD -e POSTGRES_DB=octopus_index_rate_test \
   -p 127.0.0.1::5432 postgres:16-alpine >/dev/null
 started=true
 ready=false
@@ -34,6 +34,7 @@ if [[ ! "$binding" =~ ^127\.0\.0\.1:([0-9]+)$ ]]; then
   exit 1
 fi
 port=${BASH_REMATCH[1]}
+export OCTOPUS_INDEX_TEST_CONTAINER="$task_container"
 
 # Exercise the actual migration independently; db push alone skips SQL-only constraints.
 docker exec "$task_container" psql -v ON_ERROR_STOP=1 -U postgres -d octopus_index_rate_test -c 'CREATE DATABASE octopus_index_migration_test' >/dev/null

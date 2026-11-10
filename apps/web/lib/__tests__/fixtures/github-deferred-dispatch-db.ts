@@ -1,12 +1,9 @@
+import { assertDisposableIndexDatabase } from "./disposable-index-db";
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
 import { PgBoss } from "pg-boss";
 
-const db = new URL(process.env.DATABASE_URL ?? "http://invalid");
-assert.ok(["postgres:", "postgresql:"].includes(db.protocol));
-assert.ok(["localhost", "127.0.0.1"].includes(db.hostname));
-assert.match(db.pathname.slice(1), /(^|[-_])test($|[-_])/);
-assert.equal(db.search + db.hash, "");
+assertDisposableIndexDatabase();
 mock.module("server-only", () => ({}));
 const { prisma } = await import("@octopus/db");
 const { dispatchDeferredIndexes, rememberDeferredIndex } = await import("../../github-deferred-index");

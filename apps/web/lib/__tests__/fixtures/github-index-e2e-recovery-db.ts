@@ -1,13 +1,10 @@
+import { assertDisposableIndexDatabase } from "./disposable-index-db";
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { PgBoss } from "pg-boss";
 
-const db = new URL(process.env.DATABASE_URL ?? "http://invalid");
-assert.ok(["postgres:", "postgresql:"].includes(db.protocol));
-assert.ok(["localhost", "127.0.0.1"].includes(db.hostname));
-assert.match(db.pathname.slice(1), /(^|[-_])test($|[-_])/);
-assert.equal(db.search + db.hash, "");
+assertDisposableIndexDatabase();
 const status = Number(process.argv[2]);
 assert.ok(status === 403 || status === 429);
 mock.module("server-only", () => ({}));

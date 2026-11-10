@@ -48,13 +48,16 @@ export function mergeSavedLogs(previous: LogEntry[], saved: LogEntry[]): LogEntr
   const old = previous.slice(-MAX_SAVED_LOGS);
   const oldKeys = old.map(logKey);
   const newKeys = saved.map(logKey);
-  // A refresh normally returns the same window, or the same window moved
-  // forward: the tail of the old one is the head of the new one. Both are
-  // linear; only a snapshot that really diverged pays for the alignment below.
-  for (let shift = Math.max(0, old.length - saved.length); shift < old.length; shift++) {
-    let same = true;
-    for (let k = shift; same && k < old.length; k++) same = oldKeys[k] === newKeys[k - shift];
-    if (same) return prefix.concat(old.slice(0, shift), saved);
+  if (old.length <= saved.length && oldKeys.every((key, i) => key === newKeys[i])) {
+    return prefix.concat(saved);
+  }
+  const overlap = newKeys.indexOf(oldKeys[oldKeys.length - 1]) + 1;
+  const shift = old.length - overlap;
+  if (overlap > 0 && shift > 0 && oldKeys.slice(shift).every((key, i) => key === newKeys[i])) {
+    const newKeySet = new Set(newKeys);
+    if (oldKeys.slice(0, shift).every((key) => !newKeySet.has(key))) {
+      return prefix.concat(old.slice(0, shift), saved);
+    }
   }
   const lengths = Array.from({ length: old.length + 1 }, () => new Uint16Array(saved.length + 1));
   for (let i = old.length - 1; i >= 0; i--) {

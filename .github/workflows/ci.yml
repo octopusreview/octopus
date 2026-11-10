@@ -129,6 +129,16 @@ jobs:
         run: bun test lib/__tests__/agent-task-security.db.test.ts
         working-directory: apps/web
 
+      - name: Test queue database safety guard
+        run: bun test lib/__tests__/queue-test-database.test.ts
+        working-directory: apps/web
+
+      - name: Test queue attempt fencing against PostgreSQL
+        run: bun test lib/__tests__/queue-attempt-fence.db.test.ts
+        working-directory: apps/web
+        env:
+          RUN_QUEUE_DB_TESTS: "1"
+
       - name: Test billing auto-reload invariants against PostgreSQL
         run: bun test lib/__tests__/billing.db.test.ts
         working-directory: apps/web
@@ -172,6 +182,12 @@ jobs:
         working-directory: apps/web
         env:
           RUN_REVIEW_OUTCOME_DB_TESTS: "1"
+
+      - name: Test review reaper claims against PostgreSQL
+        run: bun test lib/__tests__/reap-stuck-reviews.db.test.ts
+        working-directory: apps/web
+        env:
+          RUN_REAPER_DB_TESTS: "1"
 
       - name: Test external review activity against PostgreSQL
         run: bun test lib/__tests__/external-review-activity.test.ts

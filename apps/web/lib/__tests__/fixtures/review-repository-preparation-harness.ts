@@ -1,5 +1,6 @@
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
+import { inspect } from "node:util";
 
 mock.module("server-only", () => ({}));
 const repo = {
@@ -13,6 +14,8 @@ type Where = {
 type Write = { where: Where; data: Record<string, unknown> };
 const calls: string[] = [];
 const notifications: string[] = [];
+const emitted: unknown[] = [];
+let failNotifications = false;
 const writes: Write[] = [];
 const queued: unknown[][] = [];
 let failAt: "summary" | "analysis" | undefined;
@@ -71,8 +74,8 @@ mock.module("@/lib/analyzer", () => ({
     return "Repository analysis";
   },
 }));
-mock.module("@/lib/pubby", () => ({ pubby: { trigger: async (_channel: string, event: string) => { notifications.push(event); } } }));
-mock.module("@/lib/events", () => ({ eventBus: { emit: () => {} } }));
+mock.module("@/lib/pubby", () => ({ pubby: { trigger: async (_channel: string, event: string, data: { status?: string }) => { notifications.push(data.status ?? event); if (failNotifications) throw Object.assign(new Error("synthetic-private-response"), { status: 503, request_id: "req_syntheticprivate123" }); } } }));
+mock.module("@/lib/events", () => ({ eventBus: { emit: (event: unknown) => { emitted.push(event); } } }));
 mock.module("@/lib/queue", () => ({
   enqueueAfter: async (...args: unknown[]) => {
     assert.equal(prStatus, "pending", "deferred reviews must be claimable by the retry worker");
@@ -89,6 +92,7 @@ assert.deepEqual(calls, ["summary", "analysis", "persist-analysis"]);
 assert.equal(repo.analysisStatus, "analyzed");
 assert.equal(writes.at(-1)?.data.analysis, "Repository analysis");
 assert.ok(notifications.includes("repo-analyzed"));
+assert.deepEqual(emitted.at(-1), { type: "repo-analyzed", orgId: repo.organizationId, repoFullName: repo.fullName });
 calls.length = 0;
 assert.equal(await prepare(), "ready");
 assert.deepEqual(calls, [], "completed analysis should be reused on later reviews");
@@ -128,6 +132,26 @@ for (const failure of ["summary", "analysis"] as const) {
   failAt = undefined;
   assert.equal(await prepare(), "ready");
 }
+const errors: unknown[][] = [];
+const originalError = console.error;
+console.error = (...args: unknown[]) => { errors.push(args); };
+try {
+  failNotifications = true;
+  repo.analysisStatus = "none";
+  notifications.length = 0; emitted.length = 0;
+  assert.equal(await prepare(), "ready");
+  assert.equal(repo.analysisStatus, "analyzed");
+  assert.deepEqual(notifications, ["analyzing", "analyzed", "repo-analyzed"]);
+  assert.deepEqual(emitted, [{ type: "repo-analyzed", orgId: repo.organizationId, repoFullName: repo.fullName }]);
+  repo.analysisStatus = "none"; failAt = "summary";
+  notifications.length = 0;
+  await assert.rejects(prepare, /Summary unavailable/);
+  assert.equal(repo.analysisStatus, "failed");
+  assert.deepEqual(notifications, ["analyzing", "failed"]);
+  assert.equal(errors.length, 5);
+  assert.match(inspect(errors), /503/);
+  assert.doesNotMatch(inspect(errors, { depth: 20 }), /synthetic-private-response|req_syntheticprivate123/);
+} finally { console.error = originalError; failNotifications = false; failAt = undefined; }
 repo.analysisStatus = "analyzing";
 repo.updatedAt = new Date(Date.now() - 36 * 60_000);
 assert.equal(await prepare(), "ready", "an abandoned analysis should recover");

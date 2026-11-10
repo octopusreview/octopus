@@ -9,7 +9,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Scope community review reuse to the owning organization, repository identity and posting mode, and check identity when starting and polling jobs.
+
+### Upgrade notes
+
+- Before deploying 1.4.3, apply the `20261108123000_community_job_repository_external_id` migration. Existing jobs have no external-ID snapshot. In-flight work and mixed-version workers are not fully fenced by this change.
+- Conflicting community review requests return HTTP 409 without a job ID. Existing GitHub Action clients may fail on this response; monitor the 409 rate after deployment.
+
+## [1.4.2] - 2026-11-10
+
+### Fixed
+
+- Prevent abandoned queue workers from settling a later review or indexing retry.
+
+### Upgrade notes
+
+- This release upgrades the job queue library (pg-boss 12.37.1). The first upgraded instance to start, including a web instance that only enqueues jobs, migrates the shared queue schema. Stop every review worker on an earlier version before starting the first upgraded instance, then start the workers on this version. Do not run old and new workers side by side: an old worker can still settle a retry that a new worker has claimed. To roll back, stop the new workers before starting old ones. There are no Prisma migrations in this release.
+
+## [1.4.1] - 2026-11-10
+
+### Fixed
+
+- Redact provider error details from review failures and logs while retaining safe diagnostics.
+- Start the review summary publication timeout after acquiring the pull-request lock, while respecting the transaction deadline.
+- Honor the configured Qdrant API key in application and maintenance clients.
+- Stop fetching later repository file batches when GitHub continues to deny blob requests after a retry.
+- Keep provider error details out of Ask Octopus, CLI, GitHub Action and review failure messages. Authentication guidance now appears only when the organization's own API key is rejected.
+- Remove sensitive request data from Sentry error events, breadcrumbs, trace envelopes and spans.
+- Recheck repository state and permissions under a lock before a repository transfer commits.
+- Stop community reviews and local-index uploads from starting on, or saving results to, a repository that has since changed organization or identity.
+- Clear the stored GitHub token when a community review job finishes or expires.
+- A corrupt API key for one provider no longer blocks requests that use a different provider.
+
+### Changed
+
+- Add a privacy-safe last indexing milestone to worker-deadline diagnostics.
+
+## [1.4.0] - 2026-11-04
+
+### Added
+
+- Record CLI and GitHub Action review activity to improve product analytics.
+
+### Fixed
+
+- Cancelled indexing stops waiting for or starting another Qdrant vector upsert retry; an already dispatched write may still finish.
+- Indexing that supplies a cancellation signal interrupts an in-flight Qdrant collection lookup and does not start collection setup after a cancelled lookup. Creation already underway may still finish.
 - Chat requests reject malformed JSON and invalid input types before database access.
+- GitHub repository indexing now times out stalled blob downloads, including after response headers arrive.
+- Cancelling indexing now interrupts GitHub blob rate-limit retry waits.
+- GitHub indexing now interrupts installation-token requests and retry waits when an indexing cancellation signal is available.
+- When a cancellation signal is available, full repository indexing interrupts in-flight OpenAI and Ollama embedding requests and stops later batches. Provider-side work or charges may still continue.
+
+### Upgrade notes
+
+- Apply the `20261022120000_external_review_activity` migration before starting 1.4.0 web instances. CLI and authenticated GitHub Action review activity missed before the migration is not recovered.
 
 ## [1.3.3] - 2026-10-21
 
@@ -624,7 +678,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.98] - 2026-08-05
 
 ### Added
-- Self-hosted deployments can now enable Sentry error, performance, and session-replay monitoring by setting `SENTRY_DSN` (and optionally `NEXT_PUBLIC_SENTRY_DSN` for browser capture). Session replay masks all text, inputs, and media, and sensitive fields are scrubbed before anything leaves the app; Sentry stays fully disabled when no DSN is configured.
+- Self-hosted deployments can now enable Sentry error, performance, and session-replay monitoring by setting `SENTRY_DSN` (and optionally `NEXT_PUBLIC_SENTRY_DSN` for browser capture). Session replay masks all text, inputs, and media, and error events are scrubbed for selected sensitive fields; Sentry stays fully disabled when no DSN is configured.
 
 ## [1.0.97] - 2026-08-05
 

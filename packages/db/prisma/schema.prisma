@@ -363,6 +363,7 @@ model Repository {
   jiraProjectMappings   JiraProjectMapping[]
   packageAnalyses       PackageAnalysis[]
   repoConfigExtractions RepoConfigExtraction[]
+  githubDeferredIndex   GitHubDeferredIndex?
 
   @@unique([provider, externalId, organizationId])
   @@index([organizationId, isActive])
@@ -462,6 +463,7 @@ model ReviewAttempt {
   baseSha       String?
   coverage      Json
   reviewBody    String
+  failureFingerprint String?
   createdAt     DateTime @default(now())
 
   delivery ReviewAttemptDelivery?
@@ -1087,6 +1089,44 @@ model OllamaModelPull {
   @@map("ollama_model_pulls")
 }
 
+model GitHubIndexRateSecret {
+  id        Int    @id @default(1)
+  secretEnc String
+
+  @@map("github_index_rate_secret")
+}
+
+model GitHubDeferredIndex {
+  repositoryId   String @id
+  repository     Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  organizationId String
+  installationId Int
+  indexAttemptId String
+  jobId          String @db.Uuid
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([createdAt, repositoryId])
+  @@map("github_deferred_indexes")
+}
+
+model GitHubIndexRateWindow {
+  scope       String   @id
+  notBefore   DateTime @db.Timestamptz(3)
+  version     BigInt   @default(1)
+  leaseToken  String?
+  leaseUntil  DateTime? @db.Timestamptz(3)
+  strikes     Int      @default(0)
+  paused      Boolean  @default(false)
+  untrustedRetryDate Boolean @default(false)
+  verifyPrimary Boolean @default(false)
+  primaryResetMs BigInt?
+  primaryBaseline Boolean @default(false)
+  updatedAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([updatedAt])
+  @@map("github_index_rate_windows")
+}
+
 model SystemConfig {
   id        String   @id @default("singleton")
   defaultReviewConfig Json @default("{}")
@@ -1654,6 +1694,7 @@ model CommunityReviewJob {
   repoFullName         String
   repositoryId         String
   organizationId       String
+  repositoryExternalId String? // Null for jobs queued before identity snapshots were introduced.
 
   // Request payload (so the worker can replay the review without the action retransmitting)
   prNumber             Int?

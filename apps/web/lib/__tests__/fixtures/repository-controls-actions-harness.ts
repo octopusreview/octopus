@@ -23,11 +23,12 @@ mock.module("@/lib/request-ip", () => ({ getClientIp() {} }));
 mock.module("@/lib/presence", () => ({ clearPresence() {} }));
 mock.module("@/lib/events/bus", () => ({ eventBus: { emit() {} } }));
 let starts = 0;
+let pausedProbeFlag: unknown;
 let aborts = 0;
 let replaceBeforeCancel = false;
 let abortedAttempt: string | undefined;
 mock.module("@/lib/indexing-abort", () => ({ createAbortController: () => new AbortController(), abortIndexing: (attempt: string) => { aborts++; abortedAttempt = attempt; return true; } }));
-mock.module("@/lib/indexing-runner", () => ({ runIndexingInBackground: async (_id: string, _name: string, _branch: string, _org: string, _installation: number, _channel: string, emitLog: (message: string) => void) => { starts++; emitLog("Processed 5 files, skipped 0"); emitLog("Error /private/path synthetic-token"); } }));
+mock.module("@/lib/indexing-runner", () => ({ runIndexingInBackground: async (...args: unknown[]) => { starts++; pausedProbeFlag = args[10]; const emit = args[6] as (value: string) => void; emit("Processed 5 files, skipped 0"); emit("Error /private/path synthetic-token"); emit("synthetic-private-path synthetic-secret"); emit("Processing local batch 1/2"); } }));
 
 const row = {
   id: "repo", fullName: "team/project", provider: "github", isActive: true, dismissedAt: null as Date | null,
@@ -107,7 +108,9 @@ row.indexStatus = "pending";
 row.autoReview = false;
 assert.deepEqual(await indexRepository("repo"), {});
 assert.equal(starts, 1);
-assert.deepEqual(notifications.filter(item => item.event === "index-log").map(item => item.data.message), ["Processed 5 files, skipped 0", "Indexing message withheld for privacy."]);
+assert.equal(pausedProbeFlag, true, "an authorized repository manager may request one paused-limit probe");
+assert.deepEqual(notifications.filter(item => item.event === "index-log").map(item => item.data.message), ["Processed 5 files, skipped 0", "Indexing message withheld for privacy.", "Indexing message withheld for privacy.", "Processing local batch 1/2"]);
+assert.doesNotMatch(JSON.stringify(notifications), /synthetic-private-path|synthetic-secret|synthetic-token|private\/path/);
 assert.equal(row.autoReview, false, "manual indexing must preserve disabled automatic reviews");
 assert.equal(row.indexStatus, "indexing");
 const attempt = row.indexAttemptId;

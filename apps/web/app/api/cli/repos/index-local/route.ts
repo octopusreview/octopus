@@ -40,6 +40,7 @@ import {
  *   - 400 malformed input or invalid field values
  *   - 409 platform-managed repo, in-flight upload, stale/out-of-order batch,
  *     duplicate path or declared file-count mismatch
+ *   - 412 repository identity changed before the upload could start
  *   - 500 on indexing failure — marks only the still-owned attempt failed.
  *
  * Audit log: one row per first-batch (cli.index_local_start) and one per
@@ -131,10 +132,12 @@ export async function POST(request: Request) {
       const message =
         prep.reason === "managed-by-platform"
           ? "This repo is connected via the platform installation. Use the dashboard to re-index it."
+          : prep.reason === "repository-changed"
+            ? "This repository changed while starting the upload. Refresh its connection and try again."
           : `Another local index for this repo is in-flight. Wait for it to complete or fail (status flips after ${Math.round(IN_FLIGHT_WINDOW_MS / 60_000)}min of no activity), then retry.`;
       return NextResponse.json(
-        { error: message, repoId: prep.repoId, reason: prep.reason },
-        { status: 409 },
+        { error: message, ...("repoId" in prep ? { repoId: prep.repoId } : {}), reason: prep.reason },
+        { status: prep.reason === "repository-changed" ? 412 : 409 },
       );
     }
     repoId = prep.repoId;
@@ -181,7 +184,7 @@ export async function POST(request: Request) {
 
   let claim: Awaited<ReturnType<typeof claimLocalIndexBatch>>;
   try {
-    claim = await claimLocalIndexBatch(repoId, body.batchIndex, body.totalBatches, body.files,
+    claim = await claimLocalIndexBatch(repoId, auth.org.id, body.batchIndex, body.totalBatches, body.files,
       isFirstBatch ? firstUploadId : (body as SubsequentBatchBody).uploadId);
   } catch (error) {
     if (error instanceof LocalIndexConflict) {
@@ -200,7 +203,7 @@ export async function POST(request: Request) {
   // re-index UI both rely on indexStatus="failed" to allow user-driven
   // recovery; "indexing" is treated as "in flight, do not touch."
   if (await isOrgOverSpendLimit(auth.org.id)) {
-    await markLocalIndexFailed(repoId, claim.attemptId).catch((e) =>
+    await markLocalIndexFailed(repoId, claim).catch((e) =>
       console.error("[cli.index-local] failed to mark repo failed on 402:", e),
     );
     return NextResponse.json({ error: "Monthly spend limit reached" }, { status: 402 });
@@ -244,7 +247,7 @@ export async function POST(request: Request) {
       done: isLastBatch,
     });
   } catch (e) {
-    await markLocalIndexFailed(repoId, claim.attemptId).catch(() => {});
+    await markLocalIndexFailed(repoId, claim).catch(() => {});
     const detail = e instanceof Error ? e.message : String(e);
     console.error(`[cli.index-local] batch ${body.batchIndex}/${body.totalBatches} for ${fullName} failed:`, detail);
     const isProd = process.env.NODE_ENV === "production";

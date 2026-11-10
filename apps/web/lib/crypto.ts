@@ -115,6 +115,23 @@ export function decryptString(token: string): string {
   return decryptWithFallback(token).toString("utf8");
 }
 
+/** Decrypt with a specific data key for controlled re-encryption. */
+export function decryptStringWithDataKey(token: string, dataKey: string): string {
+  return aeadDecrypt(parseDataKey(dataKey), token).toString("utf8");
+}
+
+/** Return a replacement ciphertext when the legacy key was needed. */
+export function decryptStringWithRekey(token: string): { value: string; replacement: string | null } {
+  try {
+    return { value: aeadDecrypt(getPrimaryKey(), token).toString("utf8"), replacement: null };
+  } catch (primaryError) {
+    const legacy = getLegacyKey();
+    if (!legacy) throw primaryError;
+    const value = aeadDecrypt(legacy, token).toString("utf8");
+    return { value, replacement: encryptString(value) };
+  }
+}
+
 // Tries decryptString; on any failure (legacy plaintext row, truncated payload,
 // bad auth tag from a key rotation) returns the input as-is. Used during the
 // rolling encryption migration so reads still work against unmigrated rows;

@@ -1,7 +1,7 @@
 import "server-only";
 import { ReviewOutcomeRecorder, startReviewOutcome } from "@/lib/review-attempt-outcome";
 import { isReviewRequestVersion } from "@/lib/review-status-state";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { deliverReviewAttempt } from "@/lib/review-attempt-delivery";
 import { saveReviewAttempt, updateCurrentReview, hasReviewAttempt, recordFirstReviewCompletion } from "@/lib/review-attempt";
 import { publishReviewSummary } from "@/lib/review-summary-comment";
@@ -28,6 +28,7 @@ import {
   type ReviewConfig,
 } from "@/lib/review-helpers";
 import { eventBus } from "@/lib/events";
+import { safeErrorDetails } from "@/lib/provider-failure";
 
 export type LargeReviewResultJob = {
   pullRequestId: string;
@@ -48,6 +49,12 @@ const SEVERITY_TO_DB: Record<string, string> = {
   "🔵": "low",
   "💡": "low",
 };
+
+function safeLargeReviewError(error: string): string {
+  if (error === "No Anthropic API key available for this large review"
+    || /^Large review failed during (authentication|repository metadata|repository clone|repository inspection|model credential setup|review generation|result queueing)$/.test(error)) return error;
+  return "Large review failed";
+}
 
 export async function handleLargeReviewResult(
   data: LargeReviewResultJob,
@@ -90,14 +97,24 @@ export async function handleLargeReviewResult(
     coverage.baseSha = data.baseSha!;
     if (Number.isSafeInteger(data.checkRunId) && data.checkRunId! > 0) coverage.nativeCheckId = String(data.checkRunId);
   }
-  const reviewBody = applyReviewCoverage(data.error ? `Large review failed: ${data.error}` : data.reviewBody, coverage, attemptId);
+  const errorMessage = data.error ? safeLargeReviewError(data.error) : null;
+  let reviewBody = applyReviewCoverage(errorMessage ? `Large review failed: ${errorMessage}` : data.reviewBody, coverage, attemptId);
+  let failureFingerprint = data.error ? createHash("sha256").update(JSON.stringify(["large-review-error-v1", attemptId, data.error])).digest("hex") : null;
+  if (data.error && correlated) {
+    // An older worker may already have archived the original body before retrying.
+    const existing = await prisma.reviewAttempt.findUnique({ where: { id: attemptId }, select: { reviewBody: true, failureFingerprint: true } });
+    if (existing?.failureFingerprint == null && existing?.reviewBody === applyReviewCoverage(`Large review failed: ${data.error}`, coverage, attemptId)) {
+      reviewBody = existing.reviewBody;
+      failureFingerprint = null;
+    }
+  }
   const outcomeKey = { organizationId: org.id, repositoryId: repo.id, pullRequestId: pr.id,
     requestVersion: data.reviewRequestVersion ?? -1 };
   const outcomeRecord = new ReviewOutcomeRecorder(outcomeKey, true);
   const recordOutcome = correlated && Number.isInteger(data.reviewRequestVersion) && data.reviewRequestVersion! > 0;
   if (recordOutcome) await startReviewOutcome(outcomeKey, new Date());
   try {
-  await hasReviewAttempt(attemptId, pr.id, coverage, reviewBody);
+  await hasReviewAttempt(attemptId, pr.id, coverage, reviewBody, prisma, failureFingerprint);
   // 1. Parse findings out of the markdown, then apply the SAME per-category
   // confidence filter + severity cap as the standard path (#652) so the largest,
   // most bug-prone PRs no longer get raw model output straight to comments.
@@ -167,7 +184,7 @@ export async function handleLargeReviewResult(
   // The immutable result (and eligible current findings) must commit before
   // any final comment or native completion. Identical retries cannot promote
   // the same archive again or overwrite a replacement report.
-  await saveReviewAttempt(attemptId, pr.id, coverage, reviewBody, data.error ? undefined : merged);
+  await saveReviewAttempt(attemptId, pr.id, coverage, reviewBody, data.error ? undefined : merged, failureFingerprint);
   outcomeRecord.assessment(coverage, attemptId);
   if (coverage.nativeCheckId) {
     const result = reviewCheckResult(coverage, false, 0);
@@ -192,7 +209,7 @@ export async function handleLargeReviewResult(
     if (!mainCommentId) {
       const errorBody = [
         "> 🐙 **Octopus Review** encountered an error while analyzing this large pull request.",
-        ">", `> \`${data.error}\``, ">",
+        ">", `> \`${errorMessage}\``, ">",
         "> Please try again by commenting `@octopus-review` on this PR.",
       ].join("\n");
       const commentBody = data.error ? applyReviewCoverage(errorBody, coverage, attemptId) : stripDetailedFindings(reviewBody);
@@ -205,9 +222,9 @@ export async function handleLargeReviewResult(
       await checkpoint({ mainCommentId });
     }
     if (!await stillCurrent()) return;
-    if (data.error) {
-      const failedUpdate = await updateCurrentReview(pr.id, coverage.headSha, coverage.reviewRequestVersion, { status: "failed", errorMessage: data.error }, reviewBody);
-      if (failedUpdate.count) eventBus.emit({ type: "review-failed", orgId: org.id, prNumber: pr.number, prTitle: pr.title, error: data.error });
+    if (errorMessage) {
+      const failedUpdate = await updateCurrentReview(pr.id, coverage.headSha, coverage.reviewRequestVersion, { status: "failed", errorMessage }, reviewBody);
+      if (failedUpdate.count) eventBus.emit({ type: "review-failed", orgId: org.id, prNumber: pr.number, prTitle: pr.title, error: errorMessage });
       return;
     }
     if (progress.mainCommentId && !data.error && recordOutcome) {
@@ -245,7 +262,7 @@ export async function handleLargeReviewResult(
       } catch (err) {
         console.error(
           "[large-review-result] Failed to submit review, falling back to comment:",
-          err,
+          safeErrorDetails(err),
         );
         if (await publishReviewSummary({ pullRequestId: pr.id, headSha: coverage.headSha,
           reviewRequestVersion: coverage.reviewRequestVersion, installationId, owner, repo: repoName,
@@ -268,7 +285,7 @@ export async function handleLargeReviewResult(
         step: "completed",
       })
       .catch((e) =>
-        console.error("[large-review-result] Pubby trigger failed:", e),
+        console.error("[large-review-result] Pubby trigger failed:", safeErrorDetails(e)),
       );
 
     eventBus.emit({

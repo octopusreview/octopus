@@ -6,6 +6,7 @@ import { notifyRepositoryIndex } from "@/lib/repository-index-notifications";
 import { clearAbortController } from "@/lib/indexing-abort";
 import { eventBus } from "@/lib/events";
 import type { LogLevel } from "@/lib/indexer";
+import { GitHubIndexDeferredError } from "@/lib/github-index-fetch";
 
 export async function runIndexingInBackground(
   repoId: string,
@@ -18,6 +19,7 @@ export async function runIndexingInBackground(
   abortController: AbortController,
   indexAttemptId: string,
   provider: string = "github",
+  allowPausedProbe = false,
 ) {
   try {
     const stats = await runRepositoryIndex(repoId, indexAttemptId, async () => {
@@ -26,7 +28,7 @@ export async function runIndexingInBackground(
       emitLog("Starting indexing");
       return runIndexing(
         { repoId, indexAttemptId }, fullName, defaultBranch, installationId, emitLog,
-        abortController.signal, provider, organizationId,
+        abortController.signal, provider, organizationId, undefined, allowPausedProbe,
       );
     }, abortController.signal);
 
@@ -69,7 +71,9 @@ export async function runIndexingInBackground(
     clearAbortController(indexAttemptId);
     if (error instanceof SupersededIndexError) return;
 
-    const errorMsg = "Indexing failed";
+    const errorMsg = error instanceof GitHubIndexDeferredError && error.paused
+      ? "GitHub indexing paused after repeated rate limits. Check GitHub limits before retrying."
+      : "Indexing failed";
     const isCancelled = isIndexingCancelled(abortController.signal);
 
     console.error("Failed to index repository");
@@ -79,7 +83,7 @@ export async function runIndexingInBackground(
       void notifyRepositoryIndex(channel, repoId);
     } else {
       reportBackgroundFailure(error, { stage: "indexing", repositoryId: repoId, attemptId: indexAttemptId });
-      emitLog("Indexing failed", "error");
+      emitLog(errorMsg, "error");
       eventBus.emit({
         type: "repo-indexed",
         orgId: organizationId,

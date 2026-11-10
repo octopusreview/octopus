@@ -10,10 +10,12 @@ import { getRepositoryTree, getPullRequestDiff } from "@/lib/github";
 import { buildGeneratedMatcher, splitDiffByIgnore } from "@/lib/generated-files";
 import { truncateDiff } from "@/lib/diff-truncate";
 import { eventBus } from "@/lib/events/bus";
-import { persistCommunityReviewToPR } from "@/lib/community-pr-persist";
+import { persistCommunityReviewToPR, CommunityRepositoryChangedError } from "@/lib/community-pr-persist";
+import { clearTerminalCommunityJobToken, completeCommunityReviewJob } from "@/lib/community-review-completion";
 import { decryptString } from "@/lib/crypto";
 import { getBotToken } from "@/lib/oss-bot";
 import { postOssReview } from "@/lib/oss-review-post";
+import { AiProviderFailure, safeErrorDetails } from "@/lib/provider-failure";
 
 const LOG = (jobId: string, msg: string, ...rest: unknown[]) =>
   console.log(`[community-review] [${jobId}] ${msg}`, ...rest);
@@ -33,31 +35,51 @@ export async function processCommunityReview(jobId: string): Promise<void> {
     return;
   }
 
-  if (job.status === "completed" || job.status === "failed") {
+  if (job.status === "completed" || job.status === "failed" || job.status === "cancelled") {
+    await clearTerminalCommunityJobToken(job);
     LOG(jobId, `already in terminal state (${job.status}), skipping`);
     return;
   }
 
-  if (job.expiresAt < new Date()) {
+  const now = new Date();
+  if (job.expiresAt < now) {
     LOG(jobId, "expired before processing, marking failed");
-    await prisma.communityReviewJob.update({
-      where: { id: jobId },
-      data: { status: "failed", errorMessage: "Job expired before processing", completedAt: new Date() },
+    const updated = await prisma.communityReviewJob.updateMany({
+      where: { id: jobId, organizationId: job.organizationId, repositoryId: job.repositoryId,
+        status: { notIn: ["completed", "failed", "cancelled"] }, expiresAt: { lt: now } },
+      data: { status: "failed", errorMessage: "Job expired before processing", completedAt: now, githubToken: null },
     });
+    if (updated.count === 0) await clearTerminalCommunityJobToken(job);
     return;
   }
 
-  await prisma.communityReviewJob.update({
-    where: { id: jobId },
+  const activeJob = { id: jobId, organizationId: job.organizationId, repositoryId: job.repositoryId,
+    status: { notIn: ["completed", "failed", "cancelled"] } };
+  const stillActive = async () => {
+    if (await prisma.communityReviewJob.findFirst({ where: activeJob, select: { id: true } })) return true;
+    await clearTerminalCommunityJobToken(job);
+    return false;
+  };
+  const started = await prisma.communityReviewJob.updateMany({
+    where: activeJob,
     data: {
       startedAt: job.startedAt ?? new Date(),
       attempts: { increment: 1 },
     },
   });
+  if (!started.count) {
+    await clearTerminalCommunityJobToken(job);
+    return;
+  }
 
   try {
     const repo = await prisma.repository.findUnique({ where: { id: job.repositoryId } });
-    if (!repo) throw new Error(`Repository ${job.repositoryId} not found`);
+    // shortcut: legacy jobs lack an external-ID snapshot; require one after old workers and jobs drain.
+    if (!repo || repo.organizationId !== job.organizationId || repo.provider !== "github" ||
+        (job.repositoryExternalId != null && repo.externalId !== job.repositoryExternalId) ||
+        repo.fullName.toLowerCase() !== job.repoFullName.toLowerCase()) {
+      throw new CommunityRepositoryChangedError("Repository ownership changed before community review");
+    }
 
     // bot_account mode authenticates with the shared bot PAT (server posts the review
     // itself); action_client mode uses the short-lived token the Action captured.
@@ -72,7 +94,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
       try {
         githubToken = decryptString(job.githubToken);
       } catch (err) {
-        ERR(jobId, "githubToken decrypt failed:", err);
+        ERR(jobId, "githubToken decrypt failed:", safeErrorDetails(err));
         throw new Error("githubToken decrypt failed");
       }
     }
@@ -86,19 +108,28 @@ export async function processCommunityReview(jobId: string): Promise<void> {
 
     if (needsIndex) {
       const indexAttemptId = randomUUID();
-      // Atomic claim
-      const claim = await prisma.repository.updateMany({
-        where: { id: repo.id, indexStatus: { notIn: ["indexed", "indexing"] } },
-        data: { indexStatus: "indexing", indexAttemptId },
-      });
-
-      if (claim.count === 0) {
-        // Either already indexed or another worker is indexing
-        const fresh = await prisma.repository.findUnique({
-          where: { id: repo.id },
-          select: { indexStatus: true },
+      let previous = { indexStatus: repo.indexStatus, indexAttemptId: repo.indexAttemptId };
+      const claimIndex = async (snapshot: typeof previous) => {
+        if (["indexed", "indexing"].includes(snapshot.indexStatus)) return false;
+        const claim = await prisma.repository.updateMany({
+          where: { id: repo.id, organizationId: job.organizationId, provider: "github", externalId: repo.externalId,
+            fullName: { equals: fullName, mode: "insensitive" }, indexStatus: snapshot.indexStatus, indexAttemptId: snapshot.indexAttemptId },
+          data: { indexStatus: "indexing", indexAttemptId },
         });
-        const cur = fresh?.indexStatus ?? "failed";
+        return claim.count === 1;
+      };
+
+      if (!await claimIndex(previous)) {
+        // Either already indexed or another worker is indexing
+        const fresh = await prisma.repository.findFirst({
+          where: { id: repo.id, organizationId: job.organizationId, provider: "github", externalId: repo.externalId,
+            fullName: { equals: fullName, mode: "insensitive" } },
+          select: { indexStatus: true, indexAttemptId: true },
+        });
+        if (!fresh) {
+          throw new CommunityRepositoryChangedError("Repository ownership changed during community review");
+        }
+        const cur = fresh.indexStatus;
         LOG(jobId, `claim lost, current indexStatus=${cur}`);
 
         if (cur === "indexing") {
@@ -107,11 +138,8 @@ export async function processCommunityReview(jobId: string): Promise<void> {
         }
         if (cur !== "indexed") {
           // failed/stale: try to reclaim
-          const reclaim = await prisma.repository.updateMany({
-            where: { id: repo.id, indexStatus: { notIn: ["indexed", "indexing"] } },
-            data: { indexStatus: "indexing", indexAttemptId },
-          });
-          if (reclaim.count === 0) {
+          previous = fresh;
+          if (!await claimIndex(previous)) {
             throw new Error(`Could not reclaim indexing for ${fullName}`);
           }
         } else {
@@ -120,9 +148,25 @@ export async function processCommunityReview(jobId: string): Promise<void> {
       }
 
       if (needsIndex) {
+        const releaseClaim = () => prisma.repository.updateMany({
+          where: { id: repo.id, organizationId: job.organizationId, provider: "github", externalId: repo.externalId,
+            fullName: { equals: fullName, mode: "insensitive" }, indexStatus: "indexing", indexAttemptId },
+          data: previous,
+        });
+        let updated;
+        try {
+          updated = await prisma.communityReviewJob.updateMany({ where: activeJob, data: { status: "indexing" } });
+        } catch (error) {
+          await releaseClaim();
+          throw error;
+        }
+        if (!updated.count) {
+          await releaseClaim();
+          await clearTerminalCommunityJobToken(job);
+          return;
+        }
         try {
           const indexStats = await runRepositoryIndex(repo.id, indexAttemptId, async () => {
-            await prisma.communityReviewJob.update({ where: { id: jobId }, data: { status: "indexing" } });
             LOG(jobId, "indexing repository...");
             return indexRepository(
               { repoId: repo.id, indexAttemptId }, fullName, repo.defaultBranch, 0,
@@ -132,6 +176,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
           });
 
           LOG(jobId, `index done: ${indexStats.indexedFiles} files, ${indexStats.totalVectors} vectors`);
+          if (!await stillActive()) return;
 
           // Best-effort summarize + analyze
           try {
@@ -145,6 +190,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
             ERR(jobId, "summarize failed (non-fatal)");
           }
 
+          if (!await stillActive()) return;
           try {
             const analysis = await analyzeRepository(repo.id, fullName, job.organizationId);
             await prisma.repository.update({
@@ -169,17 +215,21 @@ export async function processCommunityReview(jobId: string): Promise<void> {
 
     // ── Phase 2: Review ───────────────────────────────────────────────────
 
-    await prisma.communityReviewJob.update({
-      where: { id: jobId },
+    const reviewing = await prisma.communityReviewJob.updateMany({
+      where: activeJob,
       data: { status: "reviewing" },
     });
+    if (!reviewing.count) {
+      await clearTerminalCommunityJobToken(job);
+      return;
+    }
 
     let fileTree: string[] | undefined;
     try {
       const [ownerPart, repoPart] = fullName.split("/");
       fileTree = await getRepositoryTree(0, ownerPart, repoPart, repo.defaultBranch, githubToken);
     } catch (err) {
-      LOG(jobId, "fileTree fetch failed (non-fatal):", err);
+      LOG(jobId, "fileTree fetch failed (non-fatal):", safeErrorDetails(err));
     }
 
     // bot_account mode does not receive a diff from the Action (the workflow grants no
@@ -201,6 +251,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
       }
     }
 
+    if (!await stillActive()) return;
     LOG(jobId, "generating review...");
     const reviewResult = await generateLocalReview({
       diff,
@@ -223,6 +274,8 @@ export async function processCommunityReview(jobId: string): Promise<void> {
       try {
         await persistCommunityReviewToPR({
           repositoryId: repo.id,
+          organizationId: job.organizationId,
+          externalId: repo.externalId,
           fullName,
           prNumber: job.prNumber,
           prTitle: job.prTitle,
@@ -232,7 +285,8 @@ export async function processCommunityReview(jobId: string): Promise<void> {
           findings: reviewResult.findings,
         });
       } catch (persistErr) {
-        ERR(jobId, "persist community PR failed (non-fatal):", persistErr);
+        if (persistErr instanceof CommunityRepositoryChangedError) throw persistErr;
+        ERR(jobId, "persist community PR failed (non-fatal):", safeErrorDetails(persistErr));
       }
     }
 
@@ -261,39 +315,39 @@ export async function processCommunityReview(jobId: string): Promise<void> {
         });
         LOG(jobId, `bot-account posted: ${posted} inline, ${skipped} skipped`);
       } catch (postErr) {
-        ERR(jobId, "bot-account post failed (non-fatal):", postErr);
+        ERR(jobId, "bot-account post failed (non-fatal):", safeErrorDetails(postErr));
       }
     }
 
-    await prisma.communityReviewJob.update({
-      where: { id: jobId },
-      data: {
-        status: "completed",
-        findings: JSON.parse(JSON.stringify(reviewResult.findings)),
-        summary: reviewResult.summary,
-        model: reviewResult.model,
-        indexed: needsIndex,
-        firstCommunityReview,
-        usage: reviewResult.usage ? JSON.parse(JSON.stringify(reviewResult.usage)) : undefined,
-        completedAt: new Date(),
-        // Clear short-lived secret once we no longer need it
-        githubToken: null,
-      },
+    await completeCommunityReviewJob(jobId, {
+      repositoryId: repo.id, organizationId: job.organizationId, externalId: repo.externalId, fullName,
+    }, {
+      status: "completed",
+      findings: JSON.parse(JSON.stringify(reviewResult.findings)),
+      summary: reviewResult.summary,
+      model: reviewResult.model,
+      indexed: needsIndex,
+      firstCommunityReview,
+      usage: reviewResult.usage ? JSON.parse(JSON.stringify(reviewResult.usage)) : undefined,
+      completedAt: new Date(),
+      // Clear short-lived secret once we no longer need it
+      githubToken: null,
     });
 
     LOG(jobId, `completed: ${reviewResult.findings.length} findings`);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    ERR(jobId, "fatal:", err);
-    await prisma.communityReviewJob.update({
-      where: { id: jobId },
+    ERR(jobId, "fatal:", safeErrorDetails(err instanceof AiProviderFailure ? err.details : err));
+    const updated = await prisma.communityReviewJob.updateMany({
+      where: { id: jobId, organizationId: job.organizationId, repositoryId: job.repositoryId,
+        status: { notIn: ["completed", "failed", "cancelled"] } },
       data: {
         status: "failed",
-        errorMessage: message.slice(0, 1000),
+        errorMessage: "Review failed",
         completedAt: new Date(),
         githubToken: null,
       },
     });
+    if (updated.count === 0) await clearTerminalCommunityJobToken(job);
     throw err;
   }
 }

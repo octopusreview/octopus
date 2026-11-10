@@ -1,4 +1,5 @@
 import { prisma, type Prisma } from "@octopus/db";
+import { safeErrorDetails } from "@/lib/provider-failure";
 
 /**
  * Canonical list of audit-log categories. Any API endpoint accepting a
@@ -175,6 +176,6 @@ export async function writeAuditLog(entry: AuditEntry): Promise<void> {
       },
     });
   } catch (err) {
-    console.error("[audit] Failed to write audit log:", err);
+    console.error("[audit] Failed to write audit log:", safeErrorDetails(err));
   }
 }

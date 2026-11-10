@@ -41,13 +41,21 @@ function logKey(log: LogEntry): string {
   return JSON.stringify([log.indexAttemptId ?? null, log.timestamp, log.level, log.message]);
 }
 
-function mergeSavedLogs(previous: LogEntry[], saved: LogEntry[]): LogEntry[] {
+export function mergeSavedLogs(previous: LogEntry[], saved: LogEntry[]): LogEntry[] {
   if (!previous.length) return saved;
   if (!saved.length) return previous;
   const prefix = previous.slice(0, -MAX_SAVED_LOGS);
   const old = previous.slice(-MAX_SAVED_LOGS);
   const oldKeys = old.map(logKey);
   const newKeys = saved.map(logKey);
+  // A refresh normally returns the same window, or the same window moved
+  // forward: the tail of the old one is the head of the new one. Both are
+  // linear; only a snapshot that really diverged pays for the alignment below.
+  for (let shift = Math.max(0, old.length - saved.length); shift < old.length; shift++) {
+    let same = true;
+    for (let k = shift; same && k < old.length; k++) same = oldKeys[k] === newKeys[k - shift];
+    if (same) return prefix.concat(old.slice(0, shift), saved);
+  }
   const lengths = Array.from({ length: old.length + 1 }, () => new Uint16Array(saved.length + 1));
   for (let i = old.length - 1; i >= 0; i--) {
     for (let j = saved.length - 1; j >= 0; j--) {

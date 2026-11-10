@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Scope community review reuse to the owning organization, repository identity and posting mode, and check identity when starting and polling jobs.
+
+### Upgrade notes
+
+- Before deploying 1.4.3, apply the `20261108123000_community_job_repository_external_id` migration. Existing jobs have no external-ID snapshot. In-flight work and mixed-version workers are not fully fenced by this change.
+- Conflicting community review requests return HTTP 409 without a job ID. Existing GitHub Action clients may fail on this response; monitor the 409 rate after deployment.
+
 ## [1.4.2] - 2026-11-10
 
 ### Fixed

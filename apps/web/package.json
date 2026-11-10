@@ -1,6 +1,6 @@
 {
   "name": "@octopus/web",
-  "version": "1.4.0",
+  "version": "1.4.2",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -45,7 +45,7 @@
     "nodemailer": "^9.0.1",
     "openai": "^6.39.0",
     "pdfkit": "^0.19.1",
-    "pg-boss": "^12.15.0",
+    "pg-boss": "12.37.1",
     "radix-ui": "^1.4.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",

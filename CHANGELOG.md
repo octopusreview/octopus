@@ -7,12 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-11-10
+
 ### Fixed
 
+- Prevent abandoned queue workers from settling a later review or indexing retry.
+
+### Upgrade notes
+
+- This release upgrades the job queue library (pg-boss 12.37.1). The first upgraded instance to start, including a web instance that only enqueues jobs, migrates the shared queue schema. Stop every review worker on an earlier version before starting the first upgraded instance, then start the workers on this version. Do not run old and new workers side by side: an old worker can still settle a retry that a new worker has claimed. To roll back, stop the new workers before starting old ones. There are no Prisma migrations in this release.
+
+## [1.4.1] - 2026-11-10
+
+### Fixed
+
+- Redact provider error details from review failures and logs while retaining safe diagnostics.
 - Start the review summary publication timeout after acquiring the pull-request lock, while respecting the transaction deadline.
 - Honor the configured Qdrant API key in application and maintenance clients.
 - Stop fetching later repository file batches when GitHub continues to deny blob requests after a retry.
-- Repository analysis stops before entering the model provider if cancelled during model selection or routing; calls already in progress may still finish.
+- Keep provider error details out of Ask Octopus, CLI, GitHub Action and review failure messages. Authentication guidance now appears only when the organization's own API key is rejected.
+- Remove sensitive request data from Sentry error events, breadcrumbs, trace envelopes and spans.
+- Recheck repository state and permissions under a lock before a repository transfer commits.
+- Stop community reviews and local-index uploads from starting on, or saving results to, a repository that has since changed organization or identity.
+- Clear the stored GitHub token when a community review job finishes or expires.
+- A corrupt API key for one provider no longer blocks requests that use a different provider.
 
 ### Changed
 

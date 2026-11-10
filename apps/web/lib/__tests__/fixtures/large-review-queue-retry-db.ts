@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
+mock.module('server-only', () => ({}));
 const root = resolve(import.meta.dir, '../../../../..');
 const req = createRequire(root + '/apps/web/package.json');
 const { PgBoss } = req('pg-boss');

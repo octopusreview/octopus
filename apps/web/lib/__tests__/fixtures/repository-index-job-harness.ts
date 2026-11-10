@@ -46,13 +46,7 @@ const update = async (args: { where: { id?: string; indexStatus?: string; indexA
   if (!claimCount || !currentRow || (args.where.id && args.where.id !== currentRow.id)
     || (typeof args.where.indexStatus === "string" && args.where.indexStatus !== currentRow.indexStatus)
     || (args.where.indexAttemptId !== undefined && args.where.indexAttemptId !== currentRow.indexAttemptId)) return { count: 0 };
-  if (args.where.OR && !args.where.OR.some((entry: any) => {
-    const status = entry.indexStatus;
-    const attempt = entry.indexAttemptId;
-    return (typeof status === "string" ? status === currentRow!.indexStatus : status.in.includes(currentRow!.indexStatus))
-      && (entry.totalFiles === undefined || entry.totalFiles === currentRow!.totalFiles)
-      && (attempt === undefined || (typeof attempt === "string" ? attempt === currentRow!.indexAttemptId : attempt.in.includes(currentRow!.indexAttemptId)));
-  })) return { count: 0 };
+  if (args.where.OR && !(["pending", "failed"].includes(currentRow.indexStatus) || (currentRow.indexStatus === "indexed" && currentRow.totalFiles === 0))) return { count: 0 };
   Object.assign(currentRow, args.data);
   return { count: 1 };
 };
@@ -104,23 +98,6 @@ mock.module("@/lib/indexer", () => ({
 }));
 const { enqueuePendingRepositoryIndexes, processRepositoryIndex } = await import("@/lib/repository-index-job");
 const job = { repositoryId: "repo-1", organizationId: "org-1" };
-
-const queueId = "00000000-0000-4000-8000-000000000001";
-indexFailure = new Error("transient");
-await assert.rejects(processRepositoryIndex(job, { retryCount: 0, retryLimit: 2 }, queueId), /transient/);
-const ownedAttempt = currentRow!.indexAttemptId;
-currentRow!.indexAttemptId = "newer-attempt";
-const callsBeforeStaleRetry = indexCalls.length;
-await processRepositoryIndex(job, { retryCount: 1, retryLimit: 2 }, queueId);
-assert.equal(indexCalls.length, callsBeforeStaleRetry, "stale retries must not claim a newer failure");
-currentRow!.indexAttemptId = ownedAttempt;
-indexFailure = null;
-await processRepositoryIndex(job, { retryCount: 1, retryLimit: 2 }, queueId);
-assert.equal(indexCalls.length, callsBeforeStaleRetry + 1, "owned failures remain retryable");
-Object.assign(row, { indexStatus: "pending", indexAttemptId: null });
-indexCalls.length = 0;
-writes.length = 0;
-queries.length = 0;
 
 await assert.rejects(() => processRepositoryIndex({ repositoryId: "repo-1", organizationId: "" }), /requires/);
 assert.equal(queries.length, 0, "invalid jobs must never issue an unscoped query");

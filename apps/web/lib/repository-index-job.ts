@@ -78,6 +78,7 @@ export async function processRepositoryIndex(job: RepositoryIndexJob, retry?: Re
       indexAttemptId: { in: Array.from({ length: retry!.retryCount }, (_, n) => deferredJobAttemptId(jobId, n)) } }] : []),
   ] } : {};
   const initialClaim = jobId && retry && retry.retryCount > 0 ? { OR: [
+    ...needsIndex.OR,
     { indexStatus: { in: ["failed", "indexing"] },
       indexAttemptId: { in: Array.from({ length: retry.retryCount }, (_, n) => deferredJobAttemptId(jobId, n)) } },
   ] } : needsIndex;

@@ -168,7 +168,7 @@ try {
     let queued = 0;
     mock.module("@/lib/queue", () => ({ enqueue: async () => { queued++; } }));
     mock.module("@/lib/crypto", () => ({ encryptString: () => "fixture" }));
-    mock.module("@/lib/community-pr-persist", () => ({ persistCommunityReviewToPR: async () => {} }));
+    mock.module("@/lib/community-pr-persist", () => ({ CommunityRepositoryChangedError: class extends Error {}, persistCommunityReviewToPR: async () => {} }));
     mock.module("@/lib/repository-index-completion", () => ({ runRepositoryIndex: async () => {} }));
     mock.module("@/lib/oss-bot", () => ({ isBotAccountConfigured: () => true, getBotToken: () => "fixture", hasConsentFile: async () => true }));
     // All network calls in route fixtures are intercepted; nothing leaves the process.
@@ -315,7 +315,7 @@ try {
           ? { status: "completed", ...result, indexed: false, community: false, firstCommunityReview: false }
           : source === "cli_local" ? { ...result, bareMode: true } : result);
         if (mode === "config") assert.deepEqual(json, { error: source === "github_action" ? "Review generation failed" : "fixture-config" });
-        if (mode === "caught") assert.deepEqual(json, { error: source === "github_action" ? "Review generation failed" : "Review generation failed: fixture-failure" });
+        if (mode === "caught") assert.deepEqual(json, { error: "Review generation failed" });
       }
       if (mode === "lock") {
         assert.ok(performance.now() - before < 500, "lock timeout must let generation continue");

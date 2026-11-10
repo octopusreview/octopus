@@ -5,6 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { QdrantClient, QdrantClientTimeoutError } from "@qdrant/js-client-rest";
 import { generateSparseVector } from "@/lib/sparse-vector";
 import { getEmbedConfig } from "@/lib/embed-config";
+import { safeErrorDetails } from "@/lib/provider-failure";
 
 // Qdrant point IDs must be uint or UUID. Existing UUID inputs pass through
 // unchanged (so callers using crypto.randomUUID() are unaffected); non-UUID
@@ -93,7 +94,7 @@ async function withQdrantRetry<T>(fn: () => Promise<T>, label: string, signal?: 
       lastError = error;
       if (!isTransientError(error) || attempt === maxAttempts) throw error;
       const delay = Math.min(500 * 2 ** (attempt - 1), 4000);
-      console.warn(`[qdrant] ${label} transient failure (attempt ${attempt}/${maxAttempts}), retrying in ${delay}ms:`, error instanceof Error ? error.message : error);
+      console.warn(`[qdrant] ${label} transient failure (attempt ${attempt}/${maxAttempts}), retrying in ${delay}ms:`, safeErrorDetails(error));
       try {
         await sleep(delay, undefined, { signal });
       } catch (error) {
@@ -237,7 +238,7 @@ export async function upsertChunks(
     } catch (error) {
       owner.signal?.throwIfAborted();
       if (!isSparseVectorError(error)) throw error;
-      console.warn("[qdrant] Falling back to dense-only upsert", { collection: COLLECTION_NAME, error: error instanceof Error ? error.message : error });
+      console.warn("[qdrant] Falling back to dense-only upsert", { collection: COLLECTION_NAME, error: safeErrorDetails(error) });
       const denseBatch = slice.map((p) => ({
         id: p.id,
         vector: p.vector,
@@ -310,7 +311,7 @@ export async function searchSimilarChunks(
       points = result.points;
     } catch (error) {
       if (!isSparseVectorError(error)) throw error;
-      console.warn("[qdrant] Falling back to dense-only search", { collection: COLLECTION_NAME, error: error instanceof Error ? error.message : error });
+      console.warn("[qdrant] Falling back to dense-only search", { collection: COLLECTION_NAME, error: safeErrorDetails(error) });
       points = await qdrant.search(COLLECTION_NAME, {
         vector: queryVector,
         filter,
@@ -366,7 +367,7 @@ export async function searchCodeChunksAcrossRepos(
       points = result.points;
     } catch (error) {
       if (!isSparseVectorError(error)) throw error;
-      console.warn("[qdrant] Falling back to dense-only search", { collection: COLLECTION_NAME, error: error instanceof Error ? error.message : error });
+      console.warn("[qdrant] Falling back to dense-only search", { collection: COLLECTION_NAME, error: safeErrorDetails(error) });
       points = await qdrant.search(COLLECTION_NAME, {
         vector: queryVector,
         filter,
@@ -460,7 +461,7 @@ export async function upsertKnowledgeChunks(
       await withQdrantRetry(() => qdrant.upsert(KNOWLEDGE_COLLECTION_NAME, { points: batch }), `upsert ${KNOWLEDGE_COLLECTION_NAME}`);
     } catch (error) {
       if (!isSparseVectorError(error)) throw error;
-      console.warn("[qdrant] Falling back to dense-only upsert", { collection: KNOWLEDGE_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
+      console.warn("[qdrant] Falling back to dense-only upsert", { collection: KNOWLEDGE_COLLECTION_NAME, error: safeErrorDetails(error) });
       const denseBatch = slice.map((p) => ({
         id: p.id,
         vector: p.vector,
@@ -507,7 +508,7 @@ export async function searchKnowledgeChunks(
       points = result.points;
     } catch (error) {
       if (!isSparseVectorError(error)) throw error;
-      console.warn("[qdrant] Falling back to dense-only search", { collection: KNOWLEDGE_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
+      console.warn("[qdrant] Falling back to dense-only search", { collection: KNOWLEDGE_COLLECTION_NAME, error: safeErrorDetails(error) });
       points = await qdrant.search(KNOWLEDGE_COLLECTION_NAME, {
         vector: queryVector,
         filter,
@@ -626,7 +627,7 @@ export async function upsertReviewChunks(
       await withQdrantRetry(() => qdrant.upsert(REVIEW_COLLECTION_NAME, { points: batch }), `upsert ${REVIEW_COLLECTION_NAME}`);
     } catch (error) {
       if (!isSparseVectorError(error)) throw error;
-      console.warn("[qdrant] Falling back to dense-only upsert", { collection: REVIEW_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
+      console.warn("[qdrant] Falling back to dense-only upsert", { collection: REVIEW_COLLECTION_NAME, error: safeErrorDetails(error) });
       const denseBatch = slice.map((p) => ({
         id: p.id,
         vector: p.vector,
@@ -673,7 +674,7 @@ export async function searchReviewChunks(
       points = result.points;
     } catch (error) {
       if (!isSparseVectorError(error)) throw error;
-      console.warn("[qdrant] Falling back to dense-only search", { collection: REVIEW_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
+      console.warn("[qdrant] Falling back to dense-only search", { collection: REVIEW_COLLECTION_NAME, error: safeErrorDetails(error) });
       points = await qdrant.search(REVIEW_COLLECTION_NAME, {
         vector: queryVector,
         filter,
@@ -765,7 +766,7 @@ export async function upsertChatChunk(point: {
     await withQdrantRetry(() => qdrant.upsert(CHAT_COLLECTION_NAME, { points: [qdrantPoint] }), `upsert ${CHAT_COLLECTION_NAME}`);
   } catch (error) {
     if (!isSparseVectorError(error)) throw error;
-    console.warn("[qdrant] Falling back to dense-only upsert", { collection: CHAT_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
+    console.warn("[qdrant] Falling back to dense-only upsert", { collection: CHAT_COLLECTION_NAME, error: safeErrorDetails(error) });
     await withQdrantRetry(() => qdrant.upsert(CHAT_COLLECTION_NAME, { points: [{ id, vector: point.vector, payload }] }), `upsert ${CHAT_COLLECTION_NAME} dense`);
   }
 }
@@ -806,7 +807,7 @@ export async function searchChatChunks(
         points = result.points;
       } catch (error) {
         if (!isSparseVectorError(error)) throw error;
-        console.warn("[qdrant] Falling back to dense-only search", { collection: CHAT_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
+        console.warn("[qdrant] Falling back to dense-only search", { collection: CHAT_COLLECTION_NAME, error: safeErrorDetails(error) });
         points = await qdrant.search(CHAT_COLLECTION_NAME, {
           vector: queryVector,
           filter,
@@ -918,7 +919,7 @@ export async function upsertDiagramChunk(point: {
     await withQdrantRetry(() => qdrant.upsert(DIAGRAM_COLLECTION_NAME, { points: [qdrantPoint] }), `upsert ${DIAGRAM_COLLECTION_NAME}`);
   } catch (error) {
     if (!isSparseVectorError(error)) throw error;
-    console.warn("[qdrant] Falling back to dense-only upsert", { collection: DIAGRAM_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
+    console.warn("[qdrant] Falling back to dense-only upsert", { collection: DIAGRAM_COLLECTION_NAME, error: safeErrorDetails(error) });
     await withQdrantRetry(() => qdrant.upsert(DIAGRAM_COLLECTION_NAME, { points: [{ id, vector: point.vector, payload }] }), `upsert ${DIAGRAM_COLLECTION_NAME} dense`);
   }
 }
@@ -960,7 +961,7 @@ export async function searchDiagramChunks(
         points = result.points;
       } catch (error) {
         if (!isSparseVectorError(error)) throw error;
-        console.warn("[qdrant] Falling back to dense-only search", { collection: DIAGRAM_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
+        console.warn("[qdrant] Falling back to dense-only search", { collection: DIAGRAM_COLLECTION_NAME, error: safeErrorDetails(error) });
         points = await qdrant.search(DIAGRAM_COLLECTION_NAME, {
           vector: queryVector,
           filter,
@@ -1059,7 +1060,7 @@ export async function upsertFeedbackPattern(point: {
     await withQdrantRetry(() => qdrant.upsert(FEEDBACK_COLLECTION_NAME, { points: [qdrantPoint] }), `upsert ${FEEDBACK_COLLECTION_NAME}`);
   } catch (error) {
     if (!isSparseVectorError(error)) throw error;
-    console.warn("[qdrant] Falling back to dense-only upsert", { collection: FEEDBACK_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
+    console.warn("[qdrant] Falling back to dense-only upsert", { collection: FEEDBACK_COLLECTION_NAME, error: safeErrorDetails(error) });
     await withQdrantRetry(() => qdrant.upsert(FEEDBACK_COLLECTION_NAME, { points: [{ id: applied.id, vector: point.vector, payload: applied.payload }] }), `upsert ${FEEDBACK_COLLECTION_NAME} dense`);
   }
 }
@@ -1153,7 +1154,7 @@ export async function ensureDocsCollection() {
         sparse_vectors: { [SPARSE_VECTOR_NAME]: {} },
       });
     } catch (err) {
-      console.debug(`[qdrant] sparse vector config already exists or update failed:`, err);
+      console.debug(`[qdrant] sparse vector config already exists or update failed:`, safeErrorDetails(err));
     }
   }
 }
@@ -1188,7 +1189,7 @@ export async function upsertDocsChunks(
       await withQdrantRetry(() => qdrant.upsert(DOCS_COLLECTION_NAME, { points: batch }), `upsert ${DOCS_COLLECTION_NAME}`);
     } catch (error) {
       if (!isSparseVectorError(error)) throw error;
-      console.warn("[qdrant] Falling back to dense-only upsert", { collection: DOCS_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
+      console.warn("[qdrant] Falling back to dense-only upsert", { collection: DOCS_COLLECTION_NAME, error: safeErrorDetails(error) });
       const denseBatch = slice.map((p) => ({
         id: p.id,
         vector: p.vector,
@@ -1235,7 +1236,7 @@ export async function searchDocsChunks(
       points = result.points;
     } catch (error) {
       if (!isSparseVectorError(error)) throw error;
-      console.warn("[qdrant] Falling back to dense-only search", { collection: DOCS_COLLECTION_NAME, error: error instanceof Error ? error.message : error });
+      console.warn("[qdrant] Falling back to dense-only search", { collection: DOCS_COLLECTION_NAME, error: safeErrorDetails(error) });
       points = await qdrant.search(DOCS_COLLECTION_NAME, {
         vector: queryVector,
         limit,

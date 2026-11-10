@@ -6,11 +6,12 @@ import { authenticateApiToken } from "@/lib/api-auth";
 import { prisma } from "@octopus/db";
 import { generateLocalReview } from "@/lib/review-core";
 import { isOrgOverSpendLimit } from "@/lib/cost";
+import { AiProviderFailure, safeErrorDetails } from "@/lib/provider-failure";
 import { ORG_TYPE } from "@/lib/org-types";
 import { getRepositoryTree } from "@/lib/github";
 import { eventBus } from "@/lib/events/bus";
 import { enqueue } from "@/lib/queue";
-import { persistCommunityReviewToPR } from "@/lib/community-pr-persist";
+import { persistCommunityReviewToPR, CommunityRepositoryChangedError } from "@/lib/community-pr-persist";
 import { encryptString } from "@/lib/crypto";
 import { NextRequest } from "next/server";
 
@@ -318,6 +319,8 @@ export async function POST(request: NextRequest) {
           try {
             await persistCommunityReviewToPR({
               repositoryId: repo.id,
+              organizationId: orgId,
+              externalId: repo.externalId,
               fullName,
               prNumber,
               prTitle: typeof prTitle === "string" ? prTitle : null,
@@ -327,7 +330,8 @@ export async function POST(request: NextRequest) {
               findings: reviewResult.findings,
             });
           } catch (persistErr) {
-            ERR("persist community PR failed (non-fatal):", persistErr);
+            if (persistErr instanceof CommunityRepositoryChangedError) throw persistErr;
+            ERR("persist community PR failed (non-fatal):", safeErrorDetails(persistErr));
           }
         }
 
@@ -351,7 +355,7 @@ export async function POST(request: NextRequest) {
         usage: reviewResult.usage,
       });
     } catch (err) {
-      ERR("review generation failed:", err);
+      ERR("review generation failed:", safeErrorDetails(err instanceof AiProviderFailure ? err.details : err));
       return Response.json({ error: "Review generation failed" }, { status: 500 });
     }
   });
@@ -446,7 +450,7 @@ async function enqueueCommunityReview(params: {
         diffSize: diff.length,
       },
     },
-  }).catch((err) => ERR("audit log create failed (non-fatal):", err));
+  }).catch((err) => ERR("audit log create failed (non-fatal):", safeErrorDetails(err)));
 
   await enqueue("community-review", { jobId: job.id });
 

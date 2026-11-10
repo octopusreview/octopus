@@ -3,6 +3,8 @@ import { withExternalReviewActivity } from "@/lib/external-review-activity";
 import { authenticateApiToken } from "@/lib/api-auth";
 import { prisma } from "@octopus/db";
 import { generateLocalReview, ReviewConfigError } from "@/lib/review-core";
+import { AiProviderFailure, safeErrorDetails } from "@/lib/provider-failure";
+import { embeddingConfigAdvice } from "@/lib/embedding-error";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { writeAuditLog } from "@/lib/audit";
 import { MAX_LOCAL_REVIEW_DIFF_BYTES } from "@/lib/cli-limits";
@@ -102,25 +104,15 @@ export async function POST(
         usage: reviewResult.usage,
       });
     } catch (err) {
-      // Log the real error server-side. Generic message in production;
-      // include err.message in dev so self-hosters can diagnose their
-      // first install without grepping server logs.
-      console.error("[local-review] Review generation failed:", err);
+      console.error("[local-review] Review generation failed:", safeErrorDetails(err instanceof AiProviderFailure
+        ? err.details : err));
       if (err instanceof ReviewConfigError) {
         // Safe-to-surface actionable message; 422 lets the CLI handle this
         // case distinctly from generic 500s.
         return Response.json({ error: err.message }, { status: 422 });
       }
-      const isProd = process.env.NODE_ENV === "production";
-      const detail = err instanceof Error ? err.message : String(err);
-      return Response.json(
-        {
-          error: isProd
-            ? "Review generation failed"
-            : `Review generation failed: ${detail}`,
-        },
-        { status: 500 },
-      );
+      return Response.json({ error: (process.env.NODE_ENV === "development" && embeddingConfigAdvice(err))
+        || "Review generation failed" }, { status: 500 });
     }
   });
 }

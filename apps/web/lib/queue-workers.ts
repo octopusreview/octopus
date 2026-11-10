@@ -1,4 +1,5 @@
 import { reportBackgroundFailure } from "./background-failure";
+import { AiProviderFailure, safeErrorDetails } from "./provider-failure";
 import { cleanupForgejoConnectorRequests } from "./forgejo-connector";
 import type { JobWithMetadata, PgBoss } from "pg-boss";
 import { sendWelcomeEmail } from "./emails/welcome";
@@ -120,7 +121,7 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
         try {
           await processCommunityReview(job.data.jobId);
         } catch (err) {
-          console.error(`[queue] community-review failed for jobId=${job.data.jobId} (job ${job.id}):`, err);
+          console.error(`[queue] community-review failed for jobId=${job.data.jobId} (job ${job.id}):`, safeErrorDetails(err instanceof AiProviderFailure ? err.details : err));
           throw err;
         }
       }

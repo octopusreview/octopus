@@ -10,18 +10,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Prevent abandoned queue workers from settling a later review or indexing retry.
-- Start the review summary publication timeout after acquiring the pull-request lock, while respecting the transaction deadline.
-- Honor the configured Qdrant API key in application and maintenance clients.
-- Stop fetching later repository file batches when GitHub continues to deny blob requests after a retry.
-- Repository analysis stops before entering the model provider if cancelled during model selection or routing; calls already in progress may still finish.
-
-### Changed
-
-- Add a privacy-safe last indexing milestone to worker-deadline diagnostics.
 
 ### Upgrade notes
 
 - Do not deploy this change until the pg-boss client inventory, old-worker drain, migration permissions and rollback have been audited and production evidence reviewed. Starting any new app instance that starts pg-boss, including an enqueue-only web replica, can migrate the shared queue schema. Stop and drain all old workers before starting the first new instance, and control which instance performs the migration. Synthetic mixed-version tests showed that a pg-boss 12.15 worker can complete a newer retry with 12.37.1 on schema 45 and with 12.38.1 on schema 46; keeping old workers running or immediately rolling back to them is unsafe. The normal blue-green traffic flip alone does not establish a safe rollout or rollback.
+
+## [1.4.1] - 2026-11-10
+
+### Fixed
+
+- Redact provider error details from review failures and logs while retaining safe diagnostics.
+- Start the review summary publication timeout after acquiring the pull-request lock, while respecting the transaction deadline.
+- Honor the configured Qdrant API key in application and maintenance clients.
+- Stop fetching later repository file batches when GitHub continues to deny blob requests after a retry.
+- Keep provider error details out of Ask Octopus, CLI, GitHub Action and review failure messages. Authentication guidance now appears only when the organization's own API key is rejected.
+- Remove sensitive request data from Sentry error events, breadcrumbs, trace envelopes and spans.
+- Recheck repository state and permissions under a lock before a repository transfer commits.
+- Stop community reviews and local-index uploads from starting on, or saving results to, a repository that has since changed organization or identity.
+- Clear the stored GitHub token when a community review job finishes or expires.
+- A corrupt API key for one provider no longer blocks requests that use a different provider.
+
+### Changed
+
+- Add a privacy-safe last indexing milestone to worker-deadline diagnostics.
 
 ## [1.4.0] - 2026-11-04
 
@@ -656,7 +667,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.98] - 2026-08-05
 
 ### Added
-- Self-hosted deployments can now enable Sentry error, performance, and session-replay monitoring by setting `SENTRY_DSN` (and optionally `NEXT_PUBLIC_SENTRY_DSN` for browser capture). Session replay masks all text, inputs, and media, and sensitive fields are scrubbed before anything leaves the app; Sentry stays fully disabled when no DSN is configured.
+- Self-hosted deployments can now enable Sentry error, performance, and session-replay monitoring by setting `SENTRY_DSN` (and optionally `NEXT_PUBLIC_SENTRY_DSN` for browser capture). Session replay masks all text, inputs, and media, and error events are scrubbed for selected sensitive fields; Sentry stays fully disabled when no DSN is configured.
 
 ## [1.0.97] - 2026-08-05
 

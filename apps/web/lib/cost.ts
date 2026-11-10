@@ -3,6 +3,7 @@ import "server-only";
 import { prisma } from "@octopus/db";
 import { ORG_TYPE } from "@/lib/org-types";
 import { getUtcMonthBounds } from "@/lib/billing-period";
+import { AiProviderFailure, safeErrorDetails } from "@/lib/provider-failure";
 import type { CacheTtl } from "./providers/system-cache";
 // Keep the review-model/provider resolvers lazy so pure pricing helpers do not
 // initialize the provider stack and its configuration during module startup.
@@ -254,7 +255,7 @@ export async function getOrgSpendLimitStatus(
     })();
     if (orgOwnsKeyForProvider(org, provider)) return { blocked: false };
   } catch (err) {
-    console.error("[cost] spend-gate provider resolution failed; using strict BYOK check:", err);
+    console.error("[cost] spend-gate provider resolution failed; using strict BYOK check:", safeErrorDetails(err instanceof AiProviderFailure ? err.details : err));
     if (org.anthropicApiKey && org.openaiApiKey && org.googleApiKey) return { blocked: false };
   }
 

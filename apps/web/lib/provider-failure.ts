@@ -1,4 +1,5 @@
 import type { AiProvider } from "./providers";
+import { EmbeddingDimensionError, MissingEmbeddingKeyError, OllamaEmbeddingResponseError, OllamaEmbeddingUrlError } from "./embedding-error";
 
 export type KeyOwner = "platform" | "organization" | "unknown";
 const OFFLINE_LOCAL_AGENT_MESSAGE = "No local agent is online for this organisation. Run `octp agent serve` on a machine with the API token.";
@@ -6,22 +7,24 @@ const OFFLINE_LOCAL_AGENT_MESSAGE = "No local agent is online for this organisat
 export class OfflineLocalAgentError extends Error {
   constructor() { super(OFFLINE_LOCAL_AGENT_MESSAGE); }
 }
-const SAFE_ERROR_CODES = new Set(["ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "ENETUNREACH", "EAI_AGAIN", "ENOENT", "UND_ERR_SOCKET", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT", "PROVIDER_REFUSAL"]);
+const SAFE_ERROR_CODES = new Set(["ECONNRESET", "ECONNREFUSED", "ConnectionRefused", "ETIMEDOUT", "ENETUNREACH", "EAI_AGAIN", "ENOTFOUND", "ENOENT", "UND_ERR_SOCKET", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT", "PROVIDER_REFUSAL", "STREAM_TERMINATED"]);
 const ERROR_NAMES = new Set(["Error", "TypeError", "APIError", "APIConnectionError", "APIConnectionTimeoutError", "AuthenticationError", "PermissionDeniedError", "RateLimitError", "InternalServerError", "TimeoutError", "AbortError"]);
 
 /** Only retain diagnostic primitives; never attach an SDK request/response or raw cause. */
 export function safeErrorDetails(error: unknown) {
-  const details: { name: string; code?: string; status?: number; requestId?: string } = { name: "Error" };
+  const details: { name: string; code?: string; status?: number; category?: string } = { name: "Error" };
   const seen = new Set<unknown>();
   for (let value = error, depth = 0; value && typeof value === "object" && depth < 4 && !seen.has(value); depth++) {
     seen.add(value);
     try {
+      if (value instanceof EmbeddingDimensionError) details.category ??= "embedding_dimension_mismatch";
+      else if (value instanceof MissingEmbeddingKeyError) details.category ??= "embedding_key_missing";
+      else if (value instanceof OllamaEmbeddingResponseError) details.category ??= "ollama_embedding_response_invalid";
+      else if (value instanceof OllamaEmbeddingUrlError) details.category ??= "ollama_embedding_url_invalid";
       const item = value as Record<string, unknown>;
       if (typeof item.name === "string" && ERROR_NAMES.has(item.name)) details.name = item.name;
       if (typeof item.code === "string" && SAFE_ERROR_CODES.has(item.code)) details.code ??= item.code;
       if (typeof item.status === "number" && Number.isInteger(item.status) && item.status >= 400 && item.status <= 599) details.status ??= item.status;
-      const requestId = item.request_id ?? item.requestID;
-      if (typeof requestId === "string" && /^(req_[a-zA-Z0-9]{8,80}|[a-f0-9]{8}-[a-f0-9-]{27,36})$/.test(requestId)) details.requestId ??= requestId;
       if (item.message === "terminated") details.code ??= "STREAM_TERMINATED";
       value = item.cause;
     } catch { break; }
@@ -36,8 +39,12 @@ export class AiProviderFailure extends Error {
     const details = safeErrorDetails(error);
     let message = "";
     try { message = (error instanceof Error ? error.message : String(error)).toLowerCase(); } catch {}
-    const reviewCategory = /invalid_api_key|api key|unauthorized|401|403|authentication|placeholder/.test(message) || details.status === 401 || details.status === 403
-      ? "auth" : provider === "ollama" || /econnrefused|fetch failed|ollama/.test(message)
+    const cancelled = details.name === "AbortError" || (error instanceof Error && error.name === "AbortError");
+    const authFailure = details.status !== undefined
+      ? details.status === 401 || details.status === 403
+      : /invalid_api_key|api key|unauthorized|401|403|authentication|placeholder/.test(message);
+    const reviewCategory = !cancelled && authFailure
+      ? "auth" : !cancelled && provider === "ollama" && !details.status && (details.code ? ["ECONNREFUSED", "ConnectionRefused", "ENETUNREACH", "EAI_AGAIN", "ENOTFOUND", "UND_ERR_CONNECT_TIMEOUT"].includes(details.code) : /(econnrefused|fetch failed)/.test(message))
         ? "local" : undefined;
     const hint = provider === "claude-code" && details.code === "ENOENT" ? ": executable or file not found; check the provider installation" : "";
     super(provider === "local" && error instanceof OfflineLocalAgentError

@@ -5,12 +5,14 @@ const events: Array<{ contexts?: Record<string, Record<string, unknown>> }> = []
 mock.module("@sentry/nextjs", () => ({ captureEvent: (event: typeof events[number]) => { events.push(event); return "e".repeat(32); } }));
 for (const [path, names] of Object.entries({
   "forgejo-connector": ["cleanupForgejoConnectorRequests"], "emails/welcome": ["sendWelcomeEmail"],
-  "large-review-result": ["handleLargeReviewResult"], "community-review": ["processCommunityReview"],
+  "large-review-result": ["handleLargeReviewResult"],
   audit: ["enforceAuditLogRetention", "enforceActivityEventRetention"], "webhook-tenant": ["enforceWebhookDeliveryRetention"],
   releases: ["refreshReleaseCache"], subscription: ["renewDueSubscriptions"], credits: ["reconcileAutoReloadAttempts"],
   "marketing-outbox": ["syncMarketingConversions"], "ollama-admin": ["runOllamaPull"],
   "reap-stuck-reviews": ["reapStuckReviews"], "discover-repositories": ["discoverRepositories"],
 })) mock.module(`../../${path}`, () => Object.fromEntries(names.map(name => [name, () => { throw new Error("Unexpected unrelated job"); }])));
+const communityError = Object.assign(new Error("synthetic-community-secret-request-id"), { status: 503 });
+mock.module("../../community-review", () => ({ processCommunityReview: async () => { throw communityError; } }));
 const reviewCalls: unknown[][] = [];
 let reviewError: Error | undefined;
 mock.module("../../reviewer", () => ({ processReview: async (...args: unknown[]) => {
@@ -21,6 +23,14 @@ const { registerWorkers } = await import("../../queue-workers");
 const callbacks = new Map<string, (jobs: unknown[]) => Promise<void>>();
 await registerWorkers({ work: async (name: string, ...args: unknown[]) => { callbacks.set(name, args.at(-1) as never); } } as never,
   { reviewConcurrency: 1 } as never);
+const communityLogs: unknown[][] = [];
+const originalCommunityError = console.error;
+console.error = (...args: unknown[]) => { communityLogs.push(args); };
+try {
+  await assert.rejects(() => callbacks.get("community-review")!([{ id: "queue-job", data: { jobId: "community-job" } }]), error => error === communityError);
+  assert.deepEqual(communityLogs[0][1], { name: "Error", status: 503 });
+  assert.equal(JSON.stringify(communityLogs).includes("synthetic-community-secret-request-id"), false);
+} finally { console.error = originalCommunityError; }
 const job = { id: "job", data: { pullRequestId: "pr", repositoryId: "repo" }, retryCount: 1, retryLimit: 2,
   startedOn: new Date(), expireInSeconds: 900, signal: new AbortController().signal };
 await callbacks.get("process-review")!([job]);

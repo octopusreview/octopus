@@ -5,11 +5,13 @@ import { getEmbedModel } from "@/lib/ai-client";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { getEmbedConfig, type EmbedConfig } from "@/lib/embed-config";
 import { validateProviderUrl } from "@/lib/providers/url-validation";
+import { EmbeddingDimensionError, MissingEmbeddingKeyError, OllamaEmbeddingResponseError, OllamaEmbeddingUrlError } from "@/lib/embedding-error";
 
 let openai: OpenAI | null = null;
 
 function getOpenAIClient(): OpenAI {
   if (!openai) {
+    if (!process.env.OPENAI_API_KEY) throw new MissingEmbeddingKeyError();
     openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
   }
   return openai;
@@ -195,11 +197,7 @@ async function embedWithOpenAI(
     if (res.data.length > 0) {
       const gotDim = res.data[0].embedding.length;
       if (gotDim !== config.dim) {
-        throw new Error(
-          `OpenAI embeddings dim mismatch: model "${config.model}" returned ` +
-            `${gotDim}-dim vectors, but OCTOPUS_EMBED_DIM is ${config.dim}. ` +
-            `Set OCTOPUS_EMBED_DIM=${gotDim} (and wipe Qdrant collections so they get re-created).`,
-        );
+        throw new EmbeddingDimensionError(gotDim, config.dim);
       }
     }
     for (const item of res.data) vectors.push(item.embedding);
@@ -247,9 +245,14 @@ async function embedWithOllama(
   // (low SSRF risk), route it through the same validator the per-org BYOK
   // path uses. `hosted: false` mirrors the `SELF_HOSTED` env default and
   // allows localhost / RFC1918 destinations for self-hosters.
-  const safeBaseUrl = validateProviderUrl(config.ollamaBaseUrl, {
-    hosted: process.env.SELF_HOSTED !== "true",
-  });
+  let safeBaseUrl: string;
+  try {
+    safeBaseUrl = validateProviderUrl(config.ollamaBaseUrl, {
+      hosted: process.env.SELF_HOSTED !== "true",
+    });
+  } catch {
+    throw new OllamaEmbeddingUrlError();
+  }
   const vectors: number[][] = [];
   let promptTokens = 0;
 
@@ -263,10 +266,9 @@ async function embedWithOllama(
       signal,
     });
     if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      throw new Error(
-        `Ollama embeddings HTTP ${res.status} from ${safeBaseUrl}/api/embed: ${detail.slice(0, 200)}`,
-      );
+      void res.body?.cancel().catch(() => {});
+      throw Object.assign(new Error("Ollama embeddings request failed"),
+        Number.isInteger(res.status) && res.status >= 400 && res.status <= 599 ? { status: res.status } : {});
     }
     const j = (await res.json()) as { embeddings?: number[][]; embedding?: number[] };
     // /api/embed returns `embeddings`; the older /api/embeddings returned `embedding`
@@ -274,17 +276,10 @@ async function embedWithOllama(
     // is on an older Ollama build.
     const got = j.embeddings ?? (j.embedding ? [j.embedding] : null);
     if (!got || got.length !== batch.length) {
-      throw new Error(
-        `Ollama embeddings: expected ${batch.length} vectors, got ${got?.length ?? 0}. ` +
-          `Check that model "${config.model}" is pulled (ollama pull ${config.model}).`,
-      );
+      throw new OllamaEmbeddingResponseError();
     }
     if (got[0].length !== config.dim) {
-      throw new Error(
-        `Ollama embeddings dim mismatch: model "${config.model}" returned ` +
-          `${got[0].length}-dim vectors, but OCTOPUS_EMBED_DIM is ${config.dim}. ` +
-          `Set OCTOPUS_EMBED_DIM=${got[0].length} (and wipe Qdrant collections so they get re-created).`,
-      );
+      throw new EmbeddingDimensionError(got[0].length, config.dim);
     }
     vectors.push(...got);
     for (const t of batch) promptTokens += estimateTokens(t);

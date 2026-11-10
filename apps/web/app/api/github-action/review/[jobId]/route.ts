@@ -60,11 +60,11 @@ export async function GET(
   }
 
   if (job.status === "failed") {
-    LOG(`jobId=${jobId} returning failed: ${job.errorMessage}`);
+    LOG(`jobId=${jobId} returning failed`);
     return Response.json({
       status: "failed",
       jobId: job.id,
-      error: job.errorMessage ?? "Review failed",
+      error: "Review failed",
     });
   }
 

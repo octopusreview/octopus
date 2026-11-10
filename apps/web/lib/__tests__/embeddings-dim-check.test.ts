@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 
 // `server-only` is a Next.js marker module that throws if imported from a
 // non-server context. The test runner is "non-server" enough to trip it.
@@ -51,8 +51,15 @@ mock.module("openai", () => {
 const { createEmbeddings } = await import("@/lib/embeddings");
 
 describe("createEmbeddings — Qdrant dim validation", () => {
+  let originalKey: string | undefined;
   beforeEach(() => {
+    originalKey = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "synthetic-test-key";
     mockReturnedDim = QDRANT_DENSE_VECTOR_SIZE; // default: matches
+  });
+  afterEach(() => {
+    if (originalKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = originalKey;
   });
 
   // tracking arg forces `embedModel = await getEmbedModel(orgId, repoId)`
@@ -72,22 +79,21 @@ describe("createEmbeddings — Qdrant dim validation", () => {
   it("throws an actionable error when returned dim doesn't match the configured dim (e.g. text-embedding-3-small native)", async () => {
     mockReturnedDim = 1536; // text-embedding-3-small / ada-002 native
     await expect(createEmbeddings(["hello"], TRACKING)).rejects.toThrow(
-      /OpenAI embeddings dim mismatch: model "text-embedding-3-small" returned 1536-dim vectors, but OCTOPUS_EMBED_DIM is 3072/,
+      /Embedding returned 1536 dimensions; OCTOPUS_EMBED_DIM is 3072/,
     );
   });
 
-  it("error message names BOTH dims AND the model so the user can act", async () => {
+  it("error message names both dimensions and gives safe configuration advice", async () => {
     mockReturnedDim = 1536;
     try {
       await createEmbeddings(["x"], TRACKING);
       throw new Error("expected createEmbeddings to throw");
     } catch (err) {
       const msg = (err as Error).message;
-      expect(msg).toContain("text-embedding-3-small");
       expect(msg).toContain("1536");
       expect(msg).toContain(String(QDRANT_DENSE_VECTOR_SIZE));
-      // Actionable remediation guidance must be in the message.
-      expect(msg).toMatch(/Set OCTOPUS_EMBED_DIM|wipe Qdrant collections/);
+      expect(msg).toContain("Check the embedding model and configured dimension");
+      expect(msg).not.toContain("wipe Qdrant");
     }
   });
 
@@ -99,6 +105,6 @@ describe("createEmbeddings — Qdrant dim validation", () => {
     mockReturnedDim = 1536;
     await expect(
       createEmbeddings(["a", "b", "c", "d"], TRACKING),
-    ).rejects.toThrow(/returned 1536-dim vectors, but OCTOPUS_EMBED_DIM is 3072/);
+    ).rejects.toThrow(/returned 1536 dimensions; OCTOPUS_EMBED_DIM is 3072/);
   });
 });

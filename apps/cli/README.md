@@ -51,9 +51,19 @@ octp --version | -v        Print version
 octp --help | -h           Print this help
 ```
 
+Local review failures return a generic message when provider details are unsafe
+to expose. Configuration errors can provide actionable advice; development
+servers also return vetted embedding configuration advice.
+
 For Ollama tasks, `octp agent serve` allows five minutes for the full response,
 including success and error bodies. Set `OCTP_OLLAMA_TIMEOUT_MS` to a positive
 number of milliseconds to change this limit.
+
+For `octp review`, an organization-owned provider credential rejection advises
+checking the key and its permissions or choosing another model in
+`/settings/models`. An Ollama connection failure advises checking that the local
+model is running and reachable. Other provider failures can return a generic
+error without identifying the cause or exposing provider response details.
 
 The first invocation of bare `octp` triggers the onboarding wizard:
 

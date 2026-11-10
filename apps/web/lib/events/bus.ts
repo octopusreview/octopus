@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { AppEvent, AppEventType } from "./types";
+import { safeErrorDetails } from "@/lib/provider-failure";
 
 class EventBus {
   private emitter: EventEmitter;
@@ -26,11 +27,11 @@ class EventBus {
         const result = listener(event);
         if (result instanceof Promise) {
           result.catch((err) =>
-            console.error(`[event-bus] Observer error on "${type}":`, err),
+            console.error(`[event-bus] Observer error on "${type}":`, safeErrorDetails(err)),
           );
         }
       } catch (err) {
-        console.error(`[event-bus] Observer error on "${type}":`, err);
+        console.error(`[event-bus] Observer error on "${type}":`, safeErrorDetails(err));
       }
     });
   }

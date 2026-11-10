@@ -7,6 +7,7 @@ import type Stripe from "stripe";
 import { getStripe, getOffSessionPaymentMethodId } from "./stripe";
 import { eventBus } from "./events/bus";
 import { volumeBonusUsd } from "./plans";
+import { safeErrorDetails } from "./provider-failure";
 
 export type OffSessionPurchaseResult =
   | { status: "succeeded"; paymentIntentId: string }
@@ -443,7 +444,7 @@ export async function deductCredits(
       deduction.totalAfter,
       deduction.durableClaim.attempt,
     ).catch((err) =>
-      console.error("[credits] Auto-reload processing failed:", err),
+      console.error("[credits] Auto-reload processing failed:", safeErrorDetails(err)),
     );
   }
 }
@@ -737,7 +738,7 @@ function kickDurableAutoReloadClaim(
 ): void {
   if (!claim?.readyToProcess) return;
   void processDurableAutoReloadAttempt(orgId, currentBalance, claim.attempt).catch((err) =>
-    console.error("[credits] Auto-reload processing failed:", err),
+    console.error("[credits] Auto-reload processing failed:", safeErrorDetails(err)),
   );
 }
 
@@ -1492,7 +1493,7 @@ async function executeAutoReloadAttempt(
       { idempotencyKey: attempt.idempotencyKey },
     );
   } catch (err) {
-    console.error("[credits] Auto-reload payment request failed:", err);
+    console.error("[credits] Auto-reload payment request failed:", safeErrorDetails(err));
     const code = (err as { code?: unknown } | null)?.code;
     const reason = typeof code === "string" ? code : undefined;
     const indeterminate = isIndeterminateStripeError(err);

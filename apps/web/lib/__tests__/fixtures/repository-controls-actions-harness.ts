@@ -23,11 +23,12 @@ mock.module("@/lib/request-ip", () => ({ getClientIp() {} }));
 mock.module("@/lib/presence", () => ({ clearPresence() {} }));
 mock.module("@/lib/events/bus", () => ({ eventBus: { emit() {} } }));
 let starts = 0;
+let pausedProbeFlag: unknown;
 let aborts = 0;
 let replaceBeforeCancel = false;
 let abortedAttempt: string | undefined;
 mock.module("@/lib/indexing-abort", () => ({ createAbortController: () => new AbortController(), abortIndexing: (attempt: string) => { aborts++; abortedAttempt = attempt; return true; } }));
-mock.module("@/lib/indexing-runner", () => ({ runIndexingInBackground: async (...args: unknown[]) => { starts++; const emit = args[6] as (value: string) => void; emit("synthetic-private-path synthetic-secret"); emit("Processing local batch 1/2"); } }));
+mock.module("@/lib/indexing-runner", () => ({ runIndexingInBackground: async (...args: unknown[]) => { starts++; pausedProbeFlag = args[10]; const emit = args[6] as (value: string) => void; emit("synthetic-private-path synthetic-secret"); emit("Processing local batch 1/2"); } }));
 
 const row = {
   id: "repo", fullName: "team/project", provider: "github", isActive: true, dismissedAt: null as Date | null,
@@ -107,6 +108,7 @@ row.indexStatus = "pending";
 row.autoReview = false;
 assert.deepEqual(await indexRepository("repo"), {});
 assert.equal(starts, 1);
+assert.equal(pausedProbeFlag, true, "an authorized repository manager may request one paused-limit probe");
 assert.doesNotMatch(JSON.stringify(broadcasts), /synthetic-private-path|synthetic-secret/);
 assert.match(JSON.stringify(broadcasts), /Processing local batch 1\/2/);
 assert.equal(row.autoReview, false, "manual indexing must preserve disabled automatic reviews");

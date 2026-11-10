@@ -42,7 +42,7 @@ mock.module("@/lib/queue", () => ({ enqueue: () => { throw new Error("unexpected
 const { processCommunityReview } = await import("@/lib/community-review");
 const { recoverCommunityReviewJobs } = await import("@/lib/community-review-recovery");
 const { CommunityRepositoryChangedError } = await import("@/lib/community-pr-persist");
-const newJob = () => prisma.communityReviewJob.create({ data: { repositoryId: repo.id, organizationId: source.id, repoFullName: repo.fullName,
+const newJob = (repositoryExternalId?: string) => prisma.communityReviewJob.create({ data: { repositoryId: repo.id, organizationId: source.id, repoFullName: repo.fullName, repositoryExternalId,
   status: "reviewing", prNumber: 1, diff: "synthetic", githubToken: "synthetic", expiresAt: new Date(Date.now() + 60_000) } });
 const jobState = (id: string) => prisma.communityReviewJob.findUniqueOrThrow({ where: { id } });
 const prState = () => prisma.pullRequest.findUniqueOrThrow({ where: { repositoryId_number: { repositoryId: repo.id, number: 1 } }, include: { reviewIssues: true } });
@@ -295,7 +295,19 @@ try {
     } });
   }
 
-  const first = await newJob();
+  for (const postMode of ["action_client", "bot_account"]) {
+    const identityChanged = await newJob(repo.externalId);
+    await prisma.communityReviewJob.update({ where: { id: identityChanged.id }, data: { postMode } });
+    await prisma.repository.update({ where: { id: repo.id }, data: { externalId: randomUUID() } });
+    await assert.rejects(() => processCommunityReview(identityChanged.id), CommunityRepositoryChangedError);
+    assert.equal((await jobState(identityChanged.id)).status, "failed");
+    assert.equal((await jobState(identityChanged.id)).githubToken, null);
+    assert.equal(run, 0);
+    assert.equal(treeRequests, 0);
+    await prisma.repository.update({ where: { id: repo.id }, data: { externalId: repo.externalId } });
+  }
+
+  const first = await newJob(repo.externalId);
   await prisma.communityReviewJob.update({ where: { id: first.id }, data: { repoFullName: repo.fullName.toUpperCase() } });
   await processCommunityReview(first.id);
   const completed = await jobState(first.id);
@@ -312,6 +324,7 @@ try {
 
   await prisma.reviewIssue.update({ where: { id: pr.reviewIssues[0].id }, data: { feedback: "up", acknowledgedAt: new Date("2026-01-01T00:00:00Z") } });
   const second = await newJob();
+  assert.equal((await jobState(second.id)).repositoryExternalId, null);
   await processCommunityReview(second.id);
   assert.equal((await jobState(second.id)).status, "completed");
   const reReviewed = await prState();

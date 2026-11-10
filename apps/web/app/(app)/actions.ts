@@ -728,6 +728,7 @@ export async function indexRepository(repoId: string): Promise<{ error?: string 
     abortController,
     indexAttemptId,
     repo.provider,
+    true,
   );
 
   return {};

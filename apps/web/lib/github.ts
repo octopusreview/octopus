@@ -11,15 +11,17 @@ const GITHUB_API = "https://api.github.com";
 const RETRYABLE_STATUSES = new Set([502, 503, 504]);
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 1000;
+type GitHubRequest = (url: string, init?: RequestInit) => Promise<Response>;
 
 async function fetchWithRetry(
   url: string,
   init?: RequestInit,
   retryFirst500 = false,
+  request: GitHubRequest = fetch,
 ): Promise<Response> {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     init?.signal?.throwIfAborted();
-    const res = await fetch(url, init);
+    const res = await request(url, init);
     if ((!RETRYABLE_STATUSES.has(res.status) && !(retryFirst500 && res.status === 500 && attempt === 0)) || attempt === MAX_RETRIES) {
       return res;
     }
@@ -139,6 +141,7 @@ function throwIfRateLimited(res: Response): void {
 export async function getInstallationToken(
   installationId: number,
   signal?: AbortSignal,
+  request?: GitHubRequest,
 ): Promise<string> {
   try {
     signal?.throwIfAborted();
@@ -154,6 +157,8 @@ export async function getInstallationToken(
         },
         signal,
       },
+      false,
+      request,
     );
 
     throwIfRateLimited(res);
@@ -1130,6 +1135,7 @@ export async function getRepositoryDetails(
   repo: string,
   providedToken?: string,
   signal?: AbortSignal,
+  request?: GitHubRequest,
 ): Promise<GitHubRepo | null> {
   const token = providedToken ?? await getInstallationToken(installationId, signal);
   const res = await fetchWithRetry(
@@ -1140,7 +1146,7 @@ export async function getRepositoryDetails(
         Accept: "application/vnd.github+json",
       },
       signal,
-    },
+    }, false, request,
   );
 
   if (res.status === 404) return null;
@@ -1232,6 +1238,7 @@ export async function getFileContent(
   /** Pre-resolved token. Skips getInstallationToken when provided. */
   providedToken?: string,
   signal?: AbortSignal,
+  request?: GitHubRequest,
 ): Promise<string | null> {
   const token = providedToken ?? await getInstallationToken(installationId, signal);
   const res = await fetchWithRetry(
@@ -1242,7 +1249,7 @@ export async function getFileContent(
         Accept: "application/vnd.github.raw+json",
       },
       signal,
-    },
+    }, false, request,
   );
 
   if (!res.ok) return null;

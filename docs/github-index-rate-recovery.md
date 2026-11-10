@@ -1,0 +1,23 @@
+# GitHub indexing rate-limit recovery
+
+Indexing records GitHub rate-limit windows in PostgreSQL. App installations use their installation ID; a provided token uses an HMAC derived from an encrypted database-held secret. Identical provided tokens share a window. Different tokens may still share a GitHub user or Actions quota, which cannot be inferred from the tokens alone.
+
+Indexing's installation-token requests share a separate app-wide window because they authenticate as the GitHub App. A token-endpoint limit can therefore defer indexing across installations. Other application paths that acquire installation tokens do not yet use this indexing guard and can still consume the app's quota.
+
+An automatic background index deferred by a limit keeps a repository-scoped retry intent. The worker sweep checks due intents every five minutes, processes up to 20 per sweep, and verifies that the original attempt, organization and installation are still eligible. After repeated unresolved limits, automatic probes pause. A repository manager using the web action, or an administrator using the reindex endpoint, may request one probe after the current cooldown; the CLI token path does not grant that override. A successful probe clears the window. No review or model call is replayed by this mechanism.
+
+When a primary reset or GitHub server time is unavailable, and there is no untrusted absolute `Retry-After`, recovery checks the authenticated GitHub rate-limit endpoint and waits through its next reported core reset and any known source deadline. GitHub describes this endpoint as an overview that can differ from per-request headers. Cross-region production behavior must be observed; it is not established by the synthetic tests.
+
+An absolute `Retry-After` without a valid GitHub `Date` has no trustworthy duration. That scope remains paused, including manual retries and quota checks; an operator must independently establish that the provider deadline has passed before a separately reviewed recovery. Do not clear the database state just because the local clock or a user retry says it is safe. This is a deliberate availability limit until a trusted time source and audited recovery are available.
+
+## Migration and rollback
+
+Apply the expand-only migration before starting an image that uses the new tables. Older images do not read those tables, but they also do not honor the new shared cooldown. During a mixed-version rollout or rollback, older workers can still send requests that the new image would defer. Do not claim the guard is active for the fleet until all relevant web and worker processes use the new image and post-deployment checks confirm it. Follow the approved release artifact and infrastructure procedures; source tests do not prove deployment.
+
+The rate-scope secret uses the existing data encryption key. A fresh `OCTOPUS_DATA_KEY` can read the legacy `BETTER_AUTH_SECRET`-derived ciphertext while the legacy key remains available, and the first read re-encrypts the secret under the current key. Workers still using only the legacy key cannot decrypt the updated ciphertext; coordinate and drain them before switching keys.
+
+For a rotation from one unrelated `OCTOPUS_DATA_KEY` to another, the scoped utility `apps/web/scripts/rekey-github-index-secret.ts` re-encrypts **only the GitHub index rate-scope secret**. It does not rotate any other encrypted application data. Before using it, arrange the full application data-key migration, a verified backup, a rollback plan, and a coordinated drain of processes using the previous key. Supply the old key as `OCTOPUS_PREVIOUS_DATA_KEY` and the new key as `OCTOPUS_DATA_KEY` through the approved private secret mechanism, not command-line arguments or logs. Run `bun run --cwd apps/web scripts/rekey-github-index-secret.ts` for a dry run; add `--apply` only within the approved rotation. Repeating the command after an uncertain result is safe when the secret is already under the new key. Never delete or replace the secret to recover access: doing so changes token scopes and can discard active cooldowns.
+
+Rolling back to an image that uses this feature with the previous data key requires a coordinated reverse rekey as part of the whole application rollback. An image from before this feature ignores the new tables and does not enforce their cooldowns.
+
+The recovery sweep also removes up to 20 settled primary windows that have been expired and untouched for at least 30 days. It retains paused windows, unresolved primary windows and secondary-limit retry histories; deleting those can allow early or unbounded requests. Retention of abandoned unresolved credentials remains an operational follow-up.

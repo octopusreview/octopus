@@ -1,9 +1,12 @@
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
+import "./index-github-rate-mocks";
 
 const scenario = process.argv[2];
-assert.ok(["denied-403", "denied-429", "mixed-denial", "recovered", "normal", "other-error", "retry-server-error", "completion-denied", "abort", "slow-sibling"].includes(scenario));
+assert.ok(["denied-403", "denied-429", "mixed-denial", "recovered", "normal", "other-error", "retry-server-error", "completion-denied", "abort", "slow-sibling", "primary-reset"].includes(scenario));
 mock.module("server-only", () => ({}));
+const resetAt = (Math.floor(Date.now() / 1000) + 3600) * 1000;
+const retryTimes: number[] = [];
 let indexStatus = "indexing";
 mock.module("@octopus/db", () => ({ prisma: { repository: {
   findUniqueOrThrow: async () => ({ indexStatus, indexAttemptId: "synthetic" }),
@@ -15,8 +18,9 @@ mock.module("@/lib/gitlab", () => ({}));
 let vectorWrites = 0;
 mock.module("@/lib/qdrant", () => ({ ensureCollection: async () => {}, upsertChunks: async () => { vectorWrites++; }, deleteRepoFileChunks: async () => {} }));
 mock.module("@/lib/embeddings", () => ({ createEmbeddings: async (texts: string[]) => texts.map(() => [0.1]) }));
-const blobs = Array.from({ length: 12 }, (_, i) => ({ path: `file${i}.ts`, type: "blob", sha: String(i), size: 16 }));
+const blobs = Array.from({ length: scenario === "primary-reset" ? 1 : 12 }, (_, i) => ({ path: `file${i}.ts`, type: "blob", sha: String(i), size: 16 }));
 const blobCalls = new Map<string, number>();
+let upstreamRecovered = false;
 const logs: string[] = [];
 let releaseSibling!: () => void;
 const siblingGate = new Promise<void>(resolve => { releaseSibling = resolve; });
@@ -31,12 +35,20 @@ globalThis.fetch = (async (input: string | URL | Request) => {
   const id = match[1];
   const n = (blobCalls.get(id) ?? 0) + 1;
   blobCalls.set(id, n);
+  if (scenario === "primary-reset") {
+    if (n === 1) return Response.json({}, { status: 403, headers: {
+      "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(resetAt / 1000),
+    } });
+    retryTimes.push(Date.now());
+    return Response.json({ encoding: "base64", content: Buffer.from("export const x = 1;").toString("base64") });
+  }
   if (scenario === "slow-sibling" && id === "1") await siblingGate;
-  if (scenario === "slow-sibling" && id === "0" && n === 2) deniedRetryDone();
+  if (scenario === "slow-sibling" && id === "0" && n === 1) deniedRetryDone();
+  if (scenario === "abort" && id === "0" && n === 1) controller.abort(reason);
   const limited = scenario === "denied-403" || scenario === "denied-429" || scenario === "completion-denied" || scenario === "abort" || scenario === "recovered" || ((scenario === "mixed-denial" || scenario === "slow-sibling") && id === "0");
   if (scenario === "other-error" || (scenario === "retry-server-error" && n > 1)) return Response.json({}, { status: 500 });
   if (scenario === "retry-server-error") return Response.json({}, { status: 403, headers: { "retry-after": "0" } });
-  if (limited && (scenario !== "recovered" || n === 1)) return Response.json({}, { status: scenario === "denied-429" ? 429 : 403, headers: { "retry-after": scenario === "abort" ? "10" : "0" } });
+  if (limited && (scenario !== "recovered" || !upstreamRecovered)) return Response.json({}, { status: scenario === "denied-429" ? 429 : 403, headers: { "retry-after": scenario === "abort" ? "10" : "0" } });
   return Response.json({ encoding: "base64", content: Buffer.from("export const x = 1;").toString("base64") });
 }) as typeof fetch;
 const { indexRepository } = await import("@/lib/indexer");
@@ -49,7 +61,13 @@ const index = () => indexRepository({ repoId: "synthetic", indexAttemptId: "synt
 const run = async () => scenario === "completion-denied"
   ? (await import("@/lib/repository-index-completion")).runRepositoryIndex("synthetic", "synthetic", index)
   : index();
-if (scenario === "denied-403" || scenario === "denied-429" || scenario === "mixed-denial" || scenario === "completion-denied") {
+if (scenario === "primary-reset") {
+  let failed = false;
+  try { await run(); } catch { failed = true; }
+  assert.ok(blobCalls.size > 0, "the synthetic initial response was exercised");
+  assert.ok(retryTimes.every(time => time >= resetAt), "a known exhausted primary limit must not retry before reset");
+  if (!retryTimes.length) assert.equal(failed, true, "deferred work cannot claim index success");
+} else if (scenario === "denied-403" || scenario === "denied-429" || scenario === "mixed-denial" || scenario === "completion-denied" || scenario === "retry-server-error") {
   await assert.rejects(run, (err: unknown) => {
     assert.ok(err instanceof Error);
     assert.equal((err as Error & { status?: number }).status, scenario === "denied-429" ? 429 : 403);
@@ -78,22 +96,18 @@ if (scenario === "denied-403" || scenario === "denied-429" || scenario === "mixe
 } else if (scenario === "abort") {
   await assert.rejects(run, error => error === reason);
   assert.equal(vectorWrites, 0);
-} else if (scenario === "other-error" || scenario === "retry-server-error") {
+} else if (scenario === "other-error") {
   await assert.rejects(run, /Indexing incomplete/);
   assert.equal(blobCalls.size, 12);
   assert.equal(vectorWrites, 0);
 } else {
+  if (scenario === "recovered") {
+    await assert.rejects(run);
+    upstreamRecovered = true;
+  }
   const result = await run();
   assert.equal(result.indexedFiles, 12);
   assert.equal(blobCalls.size, 12);
   assert.equal(vectorWrites, 1);
-  if (scenario === "recovered") assert.ok([...blobCalls.values()].every(n => n === 2));
-}
-
-if (scenario === "denied-403" || scenario === "denied-429") {
-  const { safeIndexLogMessage } = await import("@/lib/index-log-safety");
-  const status = scenario === "denied-429" ? 429 : 403;
-  const warning = `GitHub returned HTTP ${status}, waiting 0s before retry...`;
-  assert.ok(logs.includes(warning));
-  assert.equal(safeIndexLogMessage(warning), warning);
+  if (scenario === "recovered") assert.ok([...blobCalls.values()].every(n => n <= 2));
 }

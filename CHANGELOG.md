@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.4.1] - 2026-11-08
+## [1.4.1] - 2026-11-10
 
 ### Fixed
 
@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Start the review summary publication timeout after acquiring the pull-request lock, while respecting the transaction deadline.
 - Honor the configured Qdrant API key in application and maintenance clients.
 - Stop fetching later repository file batches when GitHub continues to deny blob requests after a retry.
+- Keep provider error details out of Ask Octopus, CLI, GitHub Action and review failure messages. Authentication guidance now appears only when the organization's own API key is rejected.
+- Remove sensitive request data from Sentry error events, breadcrumbs, trace envelopes and spans.
+- Recheck repository state and permissions under a lock before a repository transfer commits.
+- Stop community reviews and local-index uploads from starting on, or saving results to, a repository that has since changed organization or identity.
+- Clear the stored GitHub token when a community review job finishes or expires.
+- A corrupt API key for one provider no longer blocks requests that use a different provider.
 
 ### Changed
 

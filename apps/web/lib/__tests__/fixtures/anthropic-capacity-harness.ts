@@ -142,7 +142,7 @@ async function refusal(reason: CapacityRefusalReason, edit?: (params: AiCreatePa
   const incidentCount = sentryEvents.length;
   reportBackgroundFailure(caught, { stage: "generation", cancelled: isReviewCancelled(params.completeReviewAdmission?.window) });
   const actionable = ["metadata-unavailable", "count-unavailable", "invalid-count", "pricing-unavailable", "final-check-failed", "execution-window"].includes(reason);
-  const expected = controller.signal.aborted || (!!org.anthropicApiKey && [401, 402, 403, 429].includes(providerStatus ?? 0));
+  const expected = controller.signal.aborted;
   assert.equal(sentryEvents.length - incidentCount, actionable && !expected ? 1 : 0, reason);
   if (actionable && !expected) {
     assert.equal(sentryEvents.at(-1)?.tags?.failure_code, `capacity_${reason}`);

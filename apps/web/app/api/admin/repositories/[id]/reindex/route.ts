@@ -121,6 +121,7 @@ export async function POST(
     abortController,
     indexAttemptId,
     repo.provider,
+    true,
   );
 
   return NextResponse.json({ message: "Reindex started", repoId: repo.id });

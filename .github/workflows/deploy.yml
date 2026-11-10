@@ -8,10 +8,9 @@ name: deploy (blue-green cutover)
 #   3. cutover: point the Cloudflare LB's default pool at the target leg
 #   4. verify the public hostname, then print rollback instructions
 #
-# The previous leg is left running, so rollback = re-run this with the other
-# target (instant traffic flip back). This assumes additive (expand-only)
-# migrations so both legs can serve one shared DB during cutover — enforced by
-# the migrate-check workflow.
+# The previous leg is left running. Check the release's CHANGELOG.md upgrade
+# notes before using it: database and worker compatibility may require a drain
+# and a separately audited rollback, even with expand-only Prisma migrations.
 #
 # ── Required configuration (set in repo Settings) ───────────────────────────
 #   Secrets:
@@ -151,8 +150,7 @@ jobs:
         run: |
           set -euo pipefail
           # Make the target pool the LB's sole default pool — all traffic routes
-          # to it. The other leg stays up for an instant rollback (re-run with
-          # the other target).
+          # to it. The other leg stays up; check the release upgrade notes before rollback.
           resp=$(curl -fsS -X PATCH \
             "https://api.cloudflare.com/client/v4/zones/$ZONE/load_balancers/$LB" \
             -H "Authorization: Bearer $CF_TOKEN" \
@@ -178,7 +176,7 @@ jobs:
           done
           # Post-cutover: don't hard-fail (traffic is already switched and we
           # don't auto-rollback), but make an unconfirmed cutover visible.
-          [ "$ok" = 1 ] || echo "::warning::public hostname never returned 200 after cutover — verify manually (rollback = re-run with the other target)."
+          [ "$ok" = 1 ] || echo "::warning::public hostname never returned 200 after cutover — verify manually and follow the release upgrade notes before rollback."
 
       - name: Summary
         run: |
@@ -187,5 +185,5 @@ jobs:
             echo ""
             echo "- Image tag: \`${{ inputs.tag }}\`"
             echo "- Traffic now on pool: \`${{ steps.t.outputs.pool }}\`"
-            echo "- **Rollback:** re-run this workflow with the *other* target — the previous leg is still running, so it's an instant flip back."
+            echo "- **Rollback:** follow the release upgrade notes and verify database and worker compatibility before switching to the other target."
           } >> "$GITHUB_STEP_SUMMARY"

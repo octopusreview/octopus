@@ -15,6 +15,7 @@ import { clearTerminalCommunityJobToken, completeCommunityReviewJob } from "@/li
 import { decryptString } from "@/lib/crypto";
 import { getBotToken } from "@/lib/oss-bot";
 import { postOssReview } from "@/lib/oss-review-post";
+import { AiProviderFailure, safeErrorDetails } from "@/lib/provider-failure";
 
 const LOG = (jobId: string, msg: string, ...rest: unknown[]) =>
   console.log(`[community-review] [${jobId}] ${msg}`, ...rest);
@@ -93,7 +94,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
       try {
         githubToken = decryptString(job.githubToken);
       } catch (err) {
-        ERR(jobId, "githubToken decrypt failed:", err);
+        ERR(jobId, "githubToken decrypt failed:", safeErrorDetails(err));
         throw new Error("githubToken decrypt failed");
       }
     }
@@ -228,7 +229,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
       const [ownerPart, repoPart] = fullName.split("/");
       fileTree = await getRepositoryTree(0, ownerPart, repoPart, repo.defaultBranch, githubToken);
     } catch (err) {
-      LOG(jobId, "fileTree fetch failed (non-fatal):", err);
+      LOG(jobId, "fileTree fetch failed (non-fatal):", safeErrorDetails(err));
     }
 
     // bot_account mode does not receive a diff from the Action (the workflow grants no
@@ -285,7 +286,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
         });
       } catch (persistErr) {
         if (persistErr instanceof CommunityRepositoryChangedError) throw persistErr;
-        ERR(jobId, "persist community PR failed (non-fatal):", persistErr);
+        ERR(jobId, "persist community PR failed (non-fatal):", safeErrorDetails(persistErr));
       }
     }
 
@@ -314,7 +315,7 @@ export async function processCommunityReview(jobId: string): Promise<void> {
         });
         LOG(jobId, `bot-account posted: ${posted} inline, ${skipped} skipped`);
       } catch (postErr) {
-        ERR(jobId, "bot-account post failed (non-fatal):", postErr);
+        ERR(jobId, "bot-account post failed (non-fatal):", safeErrorDetails(postErr));
       }
     }
 
@@ -335,14 +336,13 @@ export async function processCommunityReview(jobId: string): Promise<void> {
 
     LOG(jobId, `completed: ${reviewResult.findings.length} findings`);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    ERR(jobId, "fatal:", err);
+    ERR(jobId, "fatal:", safeErrorDetails(err instanceof AiProviderFailure ? err.details : err));
     const updated = await prisma.communityReviewJob.updateMany({
       where: { id: jobId, organizationId: job.organizationId, repositoryId: job.repositoryId,
         status: { notIn: ["completed", "failed", "cancelled"] } },
       data: {
         status: "failed",
-        errorMessage: message.slice(0, 1000),
+        errorMessage: "Review failed",
         completedAt: new Date(),
         githubToken: null,
       },

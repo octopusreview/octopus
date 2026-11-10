@@ -216,14 +216,18 @@ export function reviewAssessmentComplete(coverage: ReviewCoverage): boolean {
 }
 
 export function reviewCheckResult(coverage: ReviewCoverage, blocking: boolean, findings: number): { conclusion: "failure" | "success"; title: string; summary: string } {
-  if (!reviewAssessmentComplete(coverage)) return { conclusion: "failure", title: coverage.complete ? "Input complete — assessment invalid or unavailable" : "Review incomplete — input coverage missing", summary: coverageSummary(coverage) };
+  if (!reviewAssessmentComplete(coverage)) return { conclusion: "failure", title: coverage.complete ? generationFailed(coverage) ? "Review generation failed" : "Input complete — assessment invalid or unavailable" : "Review incomplete — input coverage missing", summary: coverageSummary(coverage) };
   if (coverage.assessment?.state === "not-required") return { conclusion: "success", title: "No eligible changes under repository policy", summary: coverage.assessment.reason };
   return { conclusion: blocking ? "failure" : "success", title: `${coverageCounts(coverage).total} changed files, ${findings} findings`, summary: blocking ? "Issues above the configured severity threshold require attention." : findings > 0 ? "Review scope complete. No issues above the configured threshold." : "Review scope complete. No issues found in the reviewed files." };
 }
 
 export function coverageSummary(coverage: ReviewCoverage): string {
   const c = coverageCounts(coverage);
-  return `${reviewAssessmentComplete(coverage) ? "Review scope complete" : coverage.complete ? "Input complete; assessment invalid or unavailable" : "Review incomplete"}: ${c.supplied}/${coverage.expectedFiles === null && !coverage.inventoryComplete ? "unknown" : c.total} files fully supplied, ${c.partial} partial, ${c.omitted} omitted, ${c.unavailable} unavailable, ${c.excluded} excluded${coverage.inventoryComplete ? "" : "; changed-file inventory incomplete"}.`;
+  return `${reviewAssessmentComplete(coverage) ? "Review scope complete" : coverage.complete ? generationFailed(coverage) ? "Input complete; review generation failed" : "Input complete; assessment invalid or unavailable" : "Review incomplete"}: ${c.supplied}/${coverage.expectedFiles === null && !coverage.inventoryComplete ? "unknown" : c.total} files fully supplied, ${c.partial} partial, ${c.omitted} omitted, ${c.unavailable} unavailable, ${c.excluded} excluded${coverage.inventoryComplete ? "" : "; changed-file inventory incomplete"}.`;
+}
+
+function generationFailed(coverage: ReviewCoverage): boolean {
+  return coverage.assessment?.state === "incomplete" && coverage.assessment.failure?.stage === "generation";
 }
 
 function safeCell(value: string): string { return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("|", "&#124;").replaceAll("`", "&#96;").replace(/[\r\n]/g, " "); }
@@ -246,6 +250,7 @@ export function renderReviewCoverage(coverage: ReviewCoverage, attemptId: string
 
 function unassessedReason(coverage: ReviewCoverage): string {
   if (coverage.assessment?.state === "not-required") return "no eligible changes under repository policy";
+  if (coverage.complete && generationFailed(coverage)) return "review generation failed";
   return coverage.complete ? "assessment invalid or unavailable" : "incomplete coverage";
 }
 

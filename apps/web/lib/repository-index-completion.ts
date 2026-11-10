@@ -17,6 +17,7 @@ export async function runRepositoryIndex(
   indexAttemptId: string,
   work: () => Promise<IndexStats>,
   signal?: AbortSignal,
+  onFailure?: (tx: Prisma.TransactionClient, error: unknown) => Promise<void>,
 ): Promise<IndexStats> {
   const where = { id: repositoryId, indexStatus: "indexing", indexAttemptId };
   try {
@@ -56,9 +57,14 @@ export async function runRepositoryIndex(
     return stats;
   } catch (error) {
     // Never let an expired worker overwrite its replacement's state.
-    const released = await prisma.repository.updateMany({ where, data: {
-      indexStatus: isIndexingCancelled(signal) ? "pending" : "failed",
-    } });
+    const data = { indexStatus: isIndexingCancelled(signal) ? "pending" : "failed" };
+    const released = onFailure && !signal?.aborted
+      ? await prisma.$transaction(async tx => {
+        const result = await tx.repository.updateMany({ where, data });
+        if (result.count) await onFailure(tx, error);
+        return result;
+      })
+      : await prisma.repository.updateMany({ where, data });
     if (!released.count) throw new SupersededIndexError();
     signal?.throwIfAborted();
     throw error;

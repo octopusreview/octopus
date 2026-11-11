@@ -5,7 +5,8 @@
 --
 -- Grain: one row per Monday week, from the first eligible sign-up to the
 -- cutoff. Weeks with no sign-ups show 0, because a calendar of weeks is joined
--- to the counts.
+-- to the counts. The number of weeks is rounded up, so a cutoff that isn't a
+-- Monday keeps its last, partial week.
 
 WITH params AS (
   SELECT toDateTime(toStartOfWeek(now(), 1), 'UTC') AS cutoff
@@ -29,7 +30,7 @@ signups AS (
 
 weeks AS (
   SELECT
-    addWeeks(first_week, arrayJoin(range(toInt(intDiv(dateDiff('day', first_week, toDate(cutoff)), 7))))) AS signup_week
+    addWeeks(first_week, arrayJoin(range(toInt(intDiv(dateDiff('day', first_week, toDate(cutoff)) + 6, 7))))) AS signup_week
   FROM (
     SELECT
       min(toDate(toStartOfWeek(o.created_at, 1))) AS first_week,

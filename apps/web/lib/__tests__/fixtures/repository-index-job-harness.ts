@@ -8,6 +8,7 @@ const row = {
   id: "repo-1", provider: "github", organizationId: "org-1", fullName: "acme/new", defaultBranch: "main",
   installationId: 123, indexStatus: "pending", totalFiles: 0,
   indexAttemptId: null as string | null, indexedAt: null as Date | null, firstIndexedAt: null as Date | null,
+  indexBlockedAt: null as Date | null,
   organization: { githubInstallationId: 123 as number | null },
 };
 let currentRow: typeof row | null = row;
@@ -41,11 +42,12 @@ mock.module("@/lib/indexing-abort", () => ({
   createAbortController: () => { controller = new AbortController(); return controller; },
   clearAbortController: () => {},
 }));
-const update = async (args: { where: { id?: string; indexStatus?: string; indexAttemptId?: string; OR?: unknown[] }; data: Record<string, unknown> }) => {
+const update = async (args: { where: { id?: string; indexStatus?: string; indexAttemptId?: string; indexBlockedAt?: null; OR?: unknown[] }; data: Record<string, unknown> }) => {
   (transactionActive ? writes : claims).push(args);
   if (!claimCount || !currentRow || (args.where.id && args.where.id !== currentRow.id)
     || (typeof args.where.indexStatus === "string" && args.where.indexStatus !== currentRow.indexStatus)
     || (args.where.indexAttemptId !== undefined && args.where.indexAttemptId !== currentRow.indexAttemptId)) return { count: 0 };
+  if (args.where.indexBlockedAt === null && currentRow.indexBlockedAt) return { count: 0 };
   if (args.where.OR && !(["pending", "failed"].includes(currentRow.indexStatus) || (currentRow.indexStatus === "indexed" && currentRow.totalFiles === 0))) return { count: 0 };
   Object.assign(currentRow, args.data);
   return { count: 1 };
@@ -68,7 +70,7 @@ const db = {
   },
   repository: {
     findUniqueOrThrow: async () => ({ ...currentRow }),
-    findMany: async (args: { where: Record<string, unknown> }) => { queries.push(args); return [{ id: "repo-1" }]; },
+    findMany: async (args: { where: Record<string, unknown> }) => { queries.push(args); return args.where.indexBlockedAt === null && currentRow?.indexBlockedAt ? [] : [{ id: "repo-1" }]; },
     findFirst: async (args: { where: Record<string, unknown> }) => { queries.push(args); return currentRow ? { ...currentRow } : null; },
     updateMany: update,
   },
@@ -105,7 +107,7 @@ assert.equal(queries.length, 0, "invalid jobs must never issue an unscoped query
 await enqueuePendingRepositoryIndexes("org-1");
 assert.deepEqual(queued, [["index-repository", job, { singletonKey: "repo-1", singletonSeconds: 60 }]]);
 assert.deepEqual(queries[0].where, {
-  organizationId: "org-1", provider: { in: ["github", "forgejo"] }, isActive: true, dismissedAt: null,
+  organizationId: "org-1", provider: { in: ["github", "forgejo"] }, isActive: true, dismissedAt: null, indexBlockedAt: null,
   organization: { deletedAt: null, bannedAt: null, autoDiscoverRepos: true },
   OR: [{ indexStatus: { in: ["pending", "failed"] } }, { indexStatus: "indexed", totalFiles: 0 }],
 });
@@ -218,6 +220,34 @@ assert.ok(currentRow?.firstIndexedAt);
 assert.equal(currentRow?.indexedAt, currentRow?.firstIndexedAt);
 assert.ok(transactions > 0);
 const firstDate = currentRow?.firstIndexedAt;
+
+// A provider block settles the job without a queue retry and keeps automatic indexing away.
+Object.assign(currentRow!, { indexStatus: "pending", indexBlockedAt: null });
+indexFailure = Object.assign(new Error("Failed to fetch tree: 451"), { status: 451 });
+await processRepositoryIndex(job, { retryCount: 0, retryLimit: 2 }, "00000000-0000-4000-8000-000000000002");
+assert.equal(currentRow?.indexStatus, "failed", "a blocked repository stays failed so it can be retried by hand");
+assert.ok(currentRow?.indexBlockedAt instanceof Date);
+queued.length = 0;
+await enqueuePendingRepositoryIndexes("org-1");
+assert.equal(queued.length, 0, "the sweep must leave a blocked repository alone");
+const callsWhileBlocked = indexCalls.length;
+await processRepositoryIndex(job, { retryCount: 0, retryLimit: 2 }, "00000000-0000-4000-8000-000000000003");
+assert.equal(indexCalls.length, callsWhileBlocked, "an already queued job must not index a blocked repository");
+// Other failures keep their queue retry and are not marked.
+Object.assign(currentRow!, { indexStatus: "pending", indexBlockedAt: null });
+indexFailure = Object.assign(new Error("Failed to fetch tree: 500"), { status: 500 });
+await assert.rejects(() => processRepositoryIndex(job, { retryCount: 0, retryLimit: 2 }, "00000000-0000-4000-8000-000000000004"), /500/);
+assert.equal(currentRow?.indexBlockedAt, null);
+// A manual retry claims the row itself; a successful index lifts the block.
+indexFailure = null;
+const { runRepositoryIndex } = await import("@/lib/repository-index-completion");
+Object.assign(currentRow!, { indexStatus: "indexing", indexAttemptId: "manual", indexBlockedAt: new Date() });
+await runRepositoryIndex("repo-1", "manual", async () => ({
+  indexedFiles: 1, totalFiles: 1, totalChunks: 1, totalVectors: 1, contributors: [], contributorCount: 0, durationMs: 1,
+}));
+assert.equal(currentRow?.indexBlockedAt, null, "a successful index must lift the block");
+queued.length = 0;
+
 preparationFailure = true;
 currentRow!.indexStatus = "pending";
 const beforeFailure = indexCalls.length;

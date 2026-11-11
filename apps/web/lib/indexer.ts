@@ -13,6 +13,7 @@ import * as gitlabLib from "@/lib/gitlab";
 import * as forgejoLib from "@/lib/forgejo";
 import { ForgejoResponseTooLargeError } from "@/lib/forgejo-http";
 import { ensureCollection, upsertChunks, deleteRepoFileChunks } from "@/lib/qdrant";
+import { PROVIDER_BLOCK_INDEX_LOG } from "@/lib/index-log-safety";
 import { generateSparseVectors } from "@/lib/sparse-vector";
 import { parseOctopusIgnore, type Ignore } from "@/lib/octopus-ignore";
 import { shouldIndex, chunkText, treeBlobs, MAX_FILE_SIZE, exceedsMaxFileSize } from "@/lib/index-chunking";
@@ -356,7 +357,7 @@ export async function indexRepository(
         onLog(`Branch '${activeBranch}' not found on ${fullName}`, "error");
         throw new Error(`Branch '${activeBranch}' not found on ${fullName}`);
       }
-      onLog(`Failed to fetch tree: HTTP ${treeRes.status}`, "error");
+      onLog(treeRes.status === 451 ? PROVIDER_BLOCK_INDEX_LOG : `Failed to fetch tree: HTTP ${treeRes.status}`, "error");
       throw Object.assign(new Error(`Failed to fetch tree: ${treeRes.status}`), { status: treeRes.status });
     }
 

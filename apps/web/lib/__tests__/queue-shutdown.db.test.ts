@@ -13,9 +13,7 @@ async function terminateMidJob(mode: "next" | "manual" | "unfixed") {
   const schema = `pgboss_test_${randomUUID().replaceAll("-", "")}`;
   const observer = new PgBoss({ connectionString: databaseUrl!, schema });
   observer.on("error", () => {});
-  const env = { ...process.env, ...(mode === "manual" ? { NEXT_MANUAL_SIG_HANDLE: "true" } : {}) } as Record<string, string>;
-  if (mode !== "manual") delete env.NEXT_MANUAL_SIG_HANDLE;
-  const child = Bun.spawn([process.execPath, harness, schema, mode], { env, stdout: "pipe", stderr: "pipe" });
+  const child = Bun.spawn([process.execPath, harness, schema, mode], { stdout: "pipe", stderr: "pipe" });
   try {
     let output = "";
     const reader = child.stdout.getReader();
@@ -41,7 +39,7 @@ it.skipIf(!enabled)("lets an in-flight job finish before Next's signal handler e
   expect(await terminateMidJob("next")).toEqual({ code: 143, state: "completed" });
 }, 40_000);
 
-it.skipIf(!enabled)("exits by itself after the drain when Next's signal handling is switched off", async () => {
+it.skipIf(!enabled)("exits by itself after the drain when nothing else handles the signal", async () => {
   expect(await terminateMidJob("manual")).toEqual({ code: 0, state: "completed" });
 }, 40_000);
 

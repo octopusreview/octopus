@@ -13,7 +13,7 @@ const DRAIN_TIMEOUT_MS = 300_000;
  */
 export function installQueueShutdown(boss: Pick<PgBoss, "stop">, timeout = DRAIN_TIMEOUT_MS): void {
   let shuttingDown = false;
-  const shutdown = async () => {
+  const shutdown = async (signal: NodeJS.Signals) => {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log("[queue] Graceful shutdown, waiting for active jobs...");
@@ -26,9 +26,10 @@ export function installQueueShutdown(boss: Pick<PgBoss, "stop">, timeout = DRAIN
       console.error("[queue] Graceful shutdown failed:", error instanceof Error ? error.name : "unknown error");
     }
     process.exit = exit;
-    // Next exits by itself once HTTP has closed; with NEXT_MANUAL_SIG_HANDLE nothing else will.
+    // Next exits by itself once HTTP has closed. Where this is the only handler
+    // (NEXT_MANUAL_SIG_HANDLE, or a process that is not a Next server) nothing else will.
     if (held) exit(held.code);
-    else if (process.env.NEXT_MANUAL_SIG_HANDLE) exit(0);
+    else if (process.listenerCount(signal) <= 1) exit(0);
   };
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);

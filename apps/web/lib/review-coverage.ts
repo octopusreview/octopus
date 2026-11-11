@@ -3,6 +3,7 @@ import type { Ignore } from "ignore";
 import { buildGeneratedMatcher } from "@/lib/generated-files";
 import { validateBinaryAssetEvidence, type BinaryAssetEvidence } from "@/lib/review-binary-assets";
 import { validateEmptyFileEvidence, type EmptyFileEvidence } from "@/lib/github-empty-files";
+import { isSafeFailureCode } from "@/lib/provider-failure";
 
 const defaultGenerated = buildGeneratedMatcher();
 
@@ -230,10 +231,17 @@ function generationFailed(coverage: ReviewCoverage): boolean {
   return coverage.assessment?.state === "incomplete" && coverage.assessment.failure?.stage === "generation";
 }
 
+/** Shown beside the attempt ID only for a recorded generation failure, and only from the fixed allowlist. */
+export function generationFailureCode(coverage: ReviewCoverage): string | null {
+  const code = generationFailed(coverage) ? coverage.assessment?.failure?.code : null;
+  return isSafeFailureCode(code) ? code : null;
+}
+
 function safeCell(value: string): string { return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("|", "&#124;").replaceAll("`", "&#96;").replace(/[\r\n]/g, " "); }
 
 export function renderReviewCoverage(coverage: ReviewCoverage, attemptId: string): string {
   const summary = coverageSummary(coverage);
+  const failureCode = generationFailureCode(coverage);
   const attemptUrl = new URL(`/api/review-attempts/${attemptId}`, process.env.NEXT_PUBLIC_APP_URL ?? "https://octopus-review.ai").href;
   // Full inventory is retained in the immutable attempt; keep provider comments
   // bounded so a huge path list cannot cut the useful findings off GitHub's end.
@@ -245,7 +253,7 @@ export function renderReviewCoverage(coverage: ReviewCoverage, attemptId: string
     rows.push(row);
     renderedChars += row.length + 1;
   }
-  return `### Review coverage\n\n**${summary}**\n\nAttempt: ${attemptId} ${attemptUrl}.\nHead: \`${coverage.headSha ?? "unknown"}\`. Base: \`${coverage.baseSha ?? "unknown"}\`.\n\n${coverage.comment ? `Author context: ${coverage.comment.suppliedChars}/${coverage.comment.receivedChars} characters supplied${coverage.comment.truncated ? " (truncated)" : ""}; source excerpts and hashes remain unverified and do not add changed-file coverage.\n\n` : ""}${reviewAssessmentComplete(coverage) ? "Coverage describes the supplied review scope and assessment disposition; excluded files were not reviewed." : `**Overall: not assessed — ${unassessedReason(coverage)}.** Findings apply only to the supplied material; this is not a complete PR assessment.`}\n\n#### Changed-file coverage (${coverage.files.length} known paths)\n\n| File | Input coverage | Reason |\n| --- | --- | --- |\n${rows.join("\n")}\n${coverage.files.length > rows.length ? "\nThe full inventory is stored with this review attempt.\n" : ""}\n`;
+  return `### Review coverage\n\n**${summary}**\n\nAttempt: ${attemptId} ${attemptUrl}.${failureCode ? ` Failure code: \`${failureCode}\`.` : ""}\nHead: \`${coverage.headSha ?? "unknown"}\`. Base: \`${coverage.baseSha ?? "unknown"}\`.\n\n${coverage.comment ? `Author context: ${coverage.comment.suppliedChars}/${coverage.comment.receivedChars} characters supplied${coverage.comment.truncated ? " (truncated)" : ""}; source excerpts and hashes remain unverified and do not add changed-file coverage.\n\n` : ""}${reviewAssessmentComplete(coverage) ? "Coverage describes the supplied review scope and assessment disposition; excluded files were not reviewed." : `**Overall: not assessed — ${unassessedReason(coverage)}.** Findings apply only to the supplied material; this is not a complete PR assessment.`}\n\n#### Changed-file coverage (${coverage.files.length} known paths)\n\n| File | Input coverage | Reason |\n| --- | --- | --- |\n${rows.join("\n")}\n${coverage.files.length > rows.length ? "\nThe full inventory is stored with this review attempt.\n" : ""}\n`;
 }
 
 function unassessedReason(coverage: ReviewCoverage): string {

@@ -40,16 +40,18 @@ try {
     catch (error) { caught = error; }
     assert.ok(caught);
     assert.equal(calls, before + 1);
-    assert.deepEqual(coverage.assessment?.failure, { stage: "generation", code: "STREAM_TERMINATED", keyOwner: byok ? "organization" : "platform", ownership: "unknown", retryability: "unknown", status: 503 });
+    assert.deepEqual(coverage.assessment?.failure, { stage: "generation", code: "STREAM_TERMINATED", keyOwner: byok ? "organization" : "platform", ownership: byok ? "unknown" : "platform", retryability: "transient", status: 503 });
     assert.equal(coverage.assessment?.requests[0]?.provider, "openai");
     const check = reviewCheckResult(coverage, false, 0);
     const comment = applyReviewCoverage("Assessment failed.", coverage, "fixture-attempt");
     assert.equal(check.title, "Review generation failed");
     assert.ok(comment.includes("review generation failed"));
+    assert.ok(comment.includes("Attempt: fixture-attempt") && comment.includes("Failure code: `STREAM_TERMINATED`."));
     reportBackgroundFailure(caught, { stage: "generation", attemptId: "fixture-attempt" });
     assert.equal(events.at(-1)?.tags?.failure_code, coverage.assessment?.failure?.code);
-    assert.equal(events.at(-1)?.tags?.failure_owner, "unknown");
-    assert.equal(events.at(-1)?.contexts?.background_failure?.ownership, "unknown");
+    assert.equal(events.at(-1)?.tags?.failure_owner, byok ? "unknown" : "platform");
+    assert.equal(events.at(-1)?.contexts?.background_failure?.ownership, byok ? "unknown" : "platform");
+    assert.equal(events.at(-1)?.contexts?.background_failure?.retryability, "transient");
     assert.equal(events.at(-1)?.contexts?.background_failure?.keyOwner, byok ? "organization" : "platform");
     assert.equal(events.at(-1)?.contexts?.background_failure?.attemptId, "fixture-attempt");
     assert.doesNotMatch(inspect({ coverage, check, comment, logs, events }, { depth: 20 }), /synthetic-route-secret|req_syntheticroutesecret|fake-key/);

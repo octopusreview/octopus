@@ -61,7 +61,7 @@ import { MAX_DIFF_CHARS } from "@/lib/diff-truncate";
 import { completeReviewCandidate, reviewCandidateSha256, assertReviewProcessingActive, isReviewCancelled, CapacityAdmissionError, ReviewProcessingExpiredError, type CompleteReviewAdmission, type ReviewExecutionWindow } from "@/lib/review-capacity";
 import { AiProviderFailure, safeErrorDetails } from "@/lib/provider-failure";
 import { confirmCompleteReviewCurrent } from "@/lib/review-capacity-current";
-import { prepareReviewInput, applyReviewCoverage, coverageSummary, reviewCheckResult, reviewAssessmentComplete, type ReviewInput, type ReviewCoverage } from "@/lib/review-coverage";
+import { prepareReviewInput, applyReviewCoverage, coverageSummary, reviewCheckResult, reviewAssessmentComplete, generationFailureCode, type ReviewInput, type ReviewCoverage } from "@/lib/review-coverage";
 import { prepareReviewComment } from "@/lib/review-comment-context";
 import { createCoveredReviewRequest } from "@/lib/review-request";
 import { canRestrictReviewToFollowUp } from "@/lib/review-follow-up";
@@ -2660,6 +2660,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
     }
 
     // Update check run as failed (GitHub only)
+    const failureCode = attemptCoverage ? generationFailureCode(attemptCoverage) : null;
     if (checkRunId && isGitHub && installationId) {
       await ghUpdateCheckRun(
         installationId,
@@ -2669,7 +2670,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         "failure",
         {
           title: attemptCoverage?.assessment?.failure?.stage === "generation" ? "Review generation failed" : "Review failed",
-          summary: `Octopus Review encountered an error: ${errorMessage}`,
+          summary: `Octopus Review encountered an error: ${errorMessage}${failureCode ? `. Attempt: ${failureAttemptId}. Failure code: \`${failureCode}\`.` : ""}`,
         },
       ).catch((e) => console.error("[reviewer] Failed to update check run:", safeErrorDetails(e)));
     }

@@ -10,6 +10,9 @@ export class OfflineLocalAgentError extends Error {
 const SAFE_ERROR_CODES = new Set(["ECONNRESET", "ECONNREFUSED", "ConnectionRefused", "ETIMEDOUT", "ENETUNREACH", "EAI_AGAIN", "ENOTFOUND", "ENOENT", "UND_ERR_SOCKET", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT", "PROVIDER_REFUSAL", "STREAM_TERMINATED"]);
 const ERROR_NAMES = new Set(["Error", "TypeError", "APIError", "APIConnectionError", "APIConnectionTimeoutError", "AuthenticationError", "PermissionDeniedError", "RateLimitError", "InternalServerError", "TimeoutError", "AbortError"]);
 
+/** Codes that may be shown to customers: the fixed allowlist and the forms derived from an HTTP status. */
+export const isSafeFailureCode = (code: unknown): code is string => typeof code === "string" && (SAFE_ERROR_CODES.has(code) || code === "unclassified" || /^http_[45]\d\d$/.test(code));
+
 /** Only retain diagnostic primitives; never attach an SDK request/response or raw cause. */
 export function safeErrorDetails(error: unknown) {
   const details: { name: string; code?: string; status?: number; category?: string } = { name: "Error" };
@@ -54,6 +57,26 @@ export class AiProviderFailure extends Error {
     this.details = details;
     this.reviewCategory = reviewCategory;
   }
+}
+
+const TRANSIENT_CODES = new Set(["STREAM_TERMINATED", "ECONNRESET", "UND_ERR_SOCKET", "UND_ERR_BODY_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "ETIMEDOUT"]);
+export type FailureClass = { code: string; ownership: KeyOwner; retryability: "transient" | "permanent" | "unknown" };
+
+/** Classify by cause and credential route, not HTTP status alone. Only "transient" may ever be retried; unknown stays unknown. */
+export function classifyFailure(details: { name?: string; code?: string; status?: number }, keyOwner: KeyOwner, stage: string, cancelled = false): FailureClass {
+  const { status } = details;
+  const code = details.code ?? (status ? `http_${status}` : "unclassified");
+  const result = (ownership: KeyOwner, retryability: FailureClass["retryability"]): FailureClass => ({ code, ownership, retryability });
+  if (cancelled || details.name === "AbortError") return result("unknown", "permanent");
+  // Other stages carry statuses from Git hosts or storage, which say nothing about the AI credential route.
+  if (stage !== "generation") return result("unknown", "unknown");
+  if (status === 401 || status === 402 || status === 403) return result(keyOwner, "permanent");
+  if (status === 429) return result(keyOwner, keyOwner === "platform" ? "transient" : keyOwner === "organization" ? "permanent" : "unknown");
+  if (status !== undefined && [500, 502, 503, 504, 529].includes(status)) return result(keyOwner === "platform" ? "platform" : "unknown", "transient");
+  if (status !== undefined && [400, 404, 413, 422].includes(status)) return result("unknown", "permanent");
+  if (details.code === "PROVIDER_REFUSAL") return result("unknown", "permanent");
+  if (details.code && TRANSIENT_CODES.has(details.code)) return result("unknown", "transient");
+  return result("unknown", "unknown");
 }
 
 export function providerKeyOwner(provider: AiProvider, hasOrgKey: boolean): KeyOwner {

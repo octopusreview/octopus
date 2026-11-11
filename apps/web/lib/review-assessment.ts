@@ -4,7 +4,7 @@ import { sha256, type ReviewCoverage } from "@/lib/review-coverage";
 import { parseRecoveryFindingsSet, recoveryFindingsBody } from "@/lib/review-evidence";
 import { parseFindingsFromJson, type InlineFinding } from "@/lib/review-dedup";
 import { CapacityAdmissionError, markCapacityNotDispatched, type CapacityAdmissionReceipt } from "./review-capacity";
-import { AiProviderFailure, safeErrorDetails, type KeyOwner } from "./provider-failure";
+import { AiProviderFailure, classifyFailure, safeErrorDetails, type FailureClass, type KeyOwner } from "./provider-failure";
 
 export type FindingsRecoveryEvidence = {
   state: "completed" | "incomplete" | "failed";
@@ -21,7 +21,7 @@ export type FindingsRecoveryEvidence = {
 
 export type ReviewAssessment = {
   capacityAdmission?: CapacityAdmissionReceipt;
-  failure?: { stage: "generation"; code: string; keyOwner: KeyOwner; ownership: "unknown"; retryability: "unknown"; status?: number };
+  failure?: { stage: "generation"; keyOwner: KeyOwner; status?: number } & FailureClass;
   state: "completed" | "incomplete" | "not-required";
   reason: string;
   model: string | null;
@@ -289,9 +289,8 @@ export async function executeCoveredReview(
         try {
           const details = safeErrorDetails(error.details);
           if (details.name !== "AbortError") {
-            assessment.failure = { stage: "generation", code: details.code ?? (details.status ? `http_${details.status}` : "unclassified"),
-              keyOwner: error.keyOwner === "platform" || error.keyOwner === "organization" ? error.keyOwner : "unknown",
-              ownership: "unknown", retryability: "unknown", ...(details.status ? { status: details.status } : {}) };
+            const keyOwner = error.keyOwner === "platform" || error.keyOwner === "organization" ? error.keyOwner : "unknown";
+            assessment.failure = { stage: "generation", ...classifyFailure(details, keyOwner, "generation"), keyOwner, ...(details.status ? { status: details.status } : {}) };
             assessment.reason = "Provider request failed during review generation";
           }
         } catch { /* Preserve the original failure if diagnostics are unavailable. */ }

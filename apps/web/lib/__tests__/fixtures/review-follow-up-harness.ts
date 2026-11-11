@@ -558,9 +558,9 @@ if (generationDiagnostic) {
   const errors: unknown[][] = [];
   console.error = (...args: unknown[]) => { errors.push(args); };
   try {
-    for (const [scenario, code, keyOwner, status] of [
-      ["terminated", "STREAM_TERMINATED", "platform", 503],
-      ["organization-auth", "http_401", "organization", 401],
+    for (const [scenario, code, keyOwner, status, retryability] of [
+      ["terminated", "STREAM_TERMINATED", "platform", 503, "transient"],
+      ["organization-auth", "http_401", "organization", 401, "permanent"],
     ] as const) {
       generationFailure = scenario;
       pr.status = "pending";
@@ -572,11 +572,14 @@ if (generationDiagnostic) {
       const failure = coverage.assessment as { state: string; failure?: { stage: string; code: string; keyOwner: string; ownership: string; retryability: string; status?: number } };
       assert.equal(coverage.complete, true);
       assert.equal(failure.state, "incomplete");
-      assert.deepEqual(failure.failure, { stage: "generation", code, keyOwner, ownership: "unknown", retryability: "unknown", status });
+      assert.deepEqual(failure.failure, { stage: "generation", code, keyOwner, ownership: keyOwner, retryability, status });
       assert.equal(coverage.reviewRequestVersion, pr.reviewRequestVersion);
       assert.equal(coverage.headSha, pr.headSha);
       assert.ok(summaries.at(-1)?.includes("review generation failed"));
       assert.ok(inspect(checkOutputs).includes("Review generation failed"));
+      for (const output of [summaries.at(-1) ?? "", inspect(checkOutputs)]) {
+        assert.ok(output.includes(`Failure code: \`${code}\`.`) && output.includes(attempt.id), "the failure code is shown next to the attempt ID");
+      }
       assert.ok(!/\|[^\n]*[1-5]\/5/.test(summaries.at(-1) ?? ""));
       assert.equal(generationDispatches, beforeCalls + 1, "no automatic retry");
       assert.equal(usageCount, beforeUsage, "preserves existing failed-call usage behavior");

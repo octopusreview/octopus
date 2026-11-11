@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/nextjs";
 import { isIndexingMilestone, type IndexingMilestone } from "./indexing-milestone";
-import { AiProviderFailure, safeErrorDetails } from "./provider-failure";
+import { AiProviderFailure, classifyFailure, safeErrorDetails } from "./provider-failure";
 import { CapacityAdmissionError } from "./review-capacity";
 
 export type FailureStage = "review" | "indexing" | "preparation" | "generation" | "publication";
@@ -45,10 +45,10 @@ export function reportBackgroundFailure(error: unknown, context: FailureContext)
     const permissionFailure = !providerFailure && context.stage === "indexing" && error instanceof Error &&
       error.message.startsWith("GitHub App does not have access to ");
     if (permissionFailure) return;
-    const ownership = "unknown";
     const code = capacityFailure ? `capacity_${capacityFailure.receipt.reason ?? "final-check-failed"}` : details.code ?? (status ? `http_${status}` : "unclassified");
     const provider = providerFailure?.provider ?? capacityFailure?.provider ?? "unknown";
     const stage = capacityFailure ? "preparation" : providerFailure && context.stage === "review" ? "generation" : context.stage;
+    const { ownership, retryability } = classifyFailure(details, keyOwner, stage);
     const operation = stage === "preparation" && (context.preparationOperation === "review_input" || context.preparationOperation === "repository_tree")
       ? context.preparationOperation : undefined;
     const eventId = Sentry.captureEvent({
@@ -58,7 +58,7 @@ export function reportBackgroundFailure(error: unknown, context: FailureContext)
       tags: { error_boundary: "background", failure_stage: stage, failure_owner: ownership, failure_code: code, provider, outcome: "failed", synthetic: context.synthetic ? "true" : "false", ...(operation ? { preparation_operation: operation } : {}), ...(stage === "indexing" && context.indexingDeadline === true ? { indexing_deadline: "worker_25m", ...(isIndexingMilestone(context.indexingLastMilestone) ? { indexing_last_milestone: context.indexingLastMilestone } : {}) } : {}) },
       contexts: { background_failure: {
         ...details,
-        stage, ownership, keyOwner,
+        stage, ownership, retryability, keyOwner,
         model: providerFailure && /^[a-zA-Z0-9_.:/-]{1,100}$/.test(providerFailure.model) ? providerFailure.model : undefined,
         attemptId: identifier(context.attemptId), repositoryId: identifier(context.repositoryId),
         pullRequestId: identifier(context.pullRequestId), headSha: identifier(context.headSha),

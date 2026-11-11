@@ -142,29 +142,29 @@ How fast organisations that do connect a repository get there. Always shown besi
 - **Recent sign-ups.** Excluded by the 7-day maturity rule. Without it, an organisation created 2 days before the cutoff could only appear if it connected within 2 days, which would make recent weeks look faster. *Example: with a cutoff of 26 Oct, an organisation created 24 Oct isn't measured yet.*
 - **Connected within seconds.** Shows as about 0 hours, which is normal, not an error: connecting a provider can import its repositories at once. *Example: Kestrel Labs installs the GitHub App at 10:00:00, and its repository arrives at 10:00:20: 0 hours.*
 
-## Publication observed, and within 7 or 14 days
+## Publication observed, and within 14 days
 
 The closest thing to activation we can measure today: an organisation's first review recorded as published. It's a proxy, never reported as the activation rate.
 
 | Field | Content |
 | --- | --- |
-| Name, version, status | `publication_observed_14d` (also `_7d`), v0, provisional |
+| Name, version, status | `publication_observed_14d`, v0, provisional |
 | Question | What share of new customer organisations get a first review published within 14 days? |
 | Grain | One row per organisation |
-| Denominator | Eligible organisations created from 21 Sep 2026 and at least 14 days (or 7) before the cutoff |
-| Numerator | Of those, organisations whose earliest recorded publication is before creation + 14 days (or 7) |
+| Denominator | Eligible organisations created from 21 Sep 2026 and at least 14 days before the cutoff |
+| Numerator | Of those, organisations whose earliest recorded publication is before creation + 14 days |
 | Time fields | `organizations_v1.created_at`; `review_milestones_v1.first_publication_recorded_at` (earliest across the organisation's PRs, at or after creation) |
 | Exclusions | As in "Eligible organisation" |
-| Why it's a proxy | The marker also covers empty and skipped reviews; it's set just before posting, so a failed post still counts; and publishing doesn't prove anyone read the review. |
+| Why it's a proxy | The marker is set only after the review is posted successfully. It also covers pull requests with nothing to review (Octopus posts a short coverage report, with no review by the model); skipped reviews don't set it. A posted review can occasionally lack it, if a later step in the same run fails. Publishing doesn't prove anyone read the review. |
 | Unknown and limits | The marker exists only from 21 Sep 2026, so earlier cohorts can't be measured. A deleted PR takes its marker with it. |
 | Coverage | Cohorts from 21 Sep 2026 |
-| Windows | 14 days in the weekly check (decided 23 Oct); 7 days in the provisional dashboard |
+| Window | 14 days (decided 23 Oct). The provisional dashboard uses 7 days, so its number differs; there's no reference query for 7 days. |
 | Reference | `scripts/analytics/posthog/publication_observed_14d.sql`. `funnel.sql` (7 days) and the provisional dashboard also include organisations created before 21 Sep, and the dashboard's summary tile uses `now()`, so their totals differ from this definition. |
 
 **Awkward cases**
 
-- **Empty review.** Counts as a publication observed, though it wouldn't count as activation. *Example (invented organisation): Kestrel Labs opens a PR with no changes to review. Octopus records the review as completed: publication observed yes, activation no.*
-- **Posting failed.** Still counts, because the marker is set just before posting. *Example: Kestrel Labs's first review is marked at 10:00, and posting to GitHub fails at 10:01. It still counts as published.*
+- **Empty review.** Counts as a publication observed, though it wouldn't count as activation. *Example (invented organisation): Kestrel Labs opens a PR with no changes to review. Octopus posts a coverage report saying there was nothing to review: publication observed yes, activation no.*
+- **Posting failed.** Doesn't count until a later try posts successfully, because the marker is set only after posting. *Example: posting Kestrel Labs's first review to GitHub fails at 10:01, and a retry posts it at 10:20. Publication observed at 10:20.*
 - **Created before 21 Sep.** Left out of the rate, because its early reviews weren't recorded. *Example (invented organisation): Fernhill Software is created 15 Sep and gets its first review on 18 Sep. That review left no marker, so whether it published is unknown, not "no".*
 - **Published in week 3.** Not within 14 days, but published overall. *Example: Kestrel Labs, created 1 Oct, gets its first review on 17 Oct: day 16.*
 
@@ -206,15 +206,15 @@ Which organisations pay, and whether payment comes before or after their first p
 | Time fields | `cash_events_v1.occurred_at`; `review_milestones_v1.first_publication_recorded_at` |
 | Exclusions | As in "Eligible organisation". Payment totals must also exclude internal organisations, which the data doesn't mark yet. |
 | Unknown and limits | A lower bound: only live payments delivered to Unified Ads, from 19 Sep 2026. Credits, coupons and admin grants aren't payments. USD and GBP are kept apart. An event with conflicting facts is dropped. |
-| Coverage | Payments from 19 Sep 2026 |
-| Reference | `scripts/analytics/posthog/paid_observed_weekly.sql`; `payments` step in `funnel.sql`. `funnel.sql` and the provisional dashboard also include older organisations, so their totals and payment order differ from this entry's rates and order. |
+| Coverage | Payments recorded from 19 Sep 2026; payment rates for cohorts from 21 Sep 2026 |
+| Reference | `scripts/analytics/posthog/paid_observed_weekly.sql`, `scripts/analytics/posthog/payment_order.sql`, `scripts/analytics/posthog/refunds_observed.sql`; `payments` step in `funnel.sql`. `funnel.sql` and the provisional dashboard also include older organisations, so their totals and payment order differ from this entry's rates and order. |
 
 **Awkward cases**
 
 - **Pays before the first review.** Counts as paid, and as "before" in payment order. *Example (invented organisation): Kestrel Labs buys credits on day 1 and gets its first review on day 3.*
 - **Created before 21 Sep.** Payment order is unknown, because earlier reviews weren't recorded. *Example (invented organisation): Fernhill Software, created in August, gets its first review on 1 Sep (not recorded), pays on 1 Oct and gets another review on 5 Oct. The data suggests it paid before its first review, but it paid after, so its order is reported as unknown.*
 - **Refunded.** Still counts as paid; the refund is reported separately. *Example: Kestrel Labs pays $50 on 2 Oct and is refunded on 5 Oct: paid yes, one refund.*
-- **Paid before 19 Sep.** Not in the data, so the data shows "not paid" when the truth is unknown. Rates on payment therefore use cohorts from 19 Sep on. *Example (invented organisation): Fernhill Software, created in August, paid in August. The data shows no payment for it.*
+- **Paid before 19 Sep.** Not in the data, so the data shows "not paid" when the truth is unknown. Rates on payment therefore use cohorts from 21 Sep on, the first Monday after payment data starts. *Example (invented organisation): Fernhill Software, created in August, paid in August. The data shows no payment for it.*
 - **Only free credits.** Not paid. *Example: Kestrel Labs uses its welcome credits and never buys any: not paid.*
 - **Two currencies.** Counted once as paid; amounts never added up. *Example: Kestrel Labs pays $50 and later £40: one paid organisation, two purchases in two currencies.*
 
@@ -324,7 +324,7 @@ Every event also carries `product` (octopus), `environment`, `schema_version`, `
 
 ## Reference queries
 
-One query per measurable entry, in PostHog's HogQL, kept as separate files in `scripts/analytics/posthog/`. Each file starts with its grain and check. PostHog prefixes the imported views, so `organizations_v1` appears as `octopus_analyticspostgres_organizations_v1`. Each query uses an automatic cutoff, the most recent Monday at 00:00 UTC; to reproduce a documented result, replace it with that date. All were checked on 9 Nov 2026 against earlier results. `scripts/analytics/funnel.sql` remains the PostgreSQL reconciliation reference.
+One query per measurable entry or measure, in PostHog's HogQL, kept as separate files in `scripts/analytics/posthog/`. Each file starts with its grain and check. PostHog prefixes the imported views, so `organizations_v1` appears as `octopus_analyticspostgres_organizations_v1`. Each query uses an automatic cutoff, the most recent Monday at 00:00 UTC; to reproduce a documented result, replace it with that date. The first eight were checked on 9 Nov 2026 against earlier results; payment order and refunds were added on 11 Nov 2026 and checked by their own sums and against "Paid observed per sign-up week". `scripts/analytics/funnel.sql` remains the PostgreSQL reconciliation reference.
 
 | Entry | File |
 | --- | --- |
@@ -335,6 +335,8 @@ One query per measurable entry, in PostHog's HogQL, kept as separate files in `s
 | Publication observed within 14 days | `scripts/analytics/posthog/publication_observed_14d.sql` |
 | Time to publication observed | `scripts/analytics/posthog/time_to_publication_observed.sql` |
 | Paid observed per sign-up week | `scripts/analytics/posthog/paid_observed_weekly.sql` |
+| Payment order | `scripts/analytics/posthog/payment_order.sql` |
+| Refunds observed | `scripts/analytics/posthog/refunds_observed.sql` |
 | First repository provider | `scripts/analytics/posthog/first_repo_provider.sql` |
 
 ## Open for agreement
@@ -344,6 +346,6 @@ Each needs the product owner's agreement before the entries it affects move from
 1. The Activation entry.
 2. The Exclusion Rules v0 proposals in "Eligible organisation".
 3. Whether a refunded organisation counts as paid.
-4. Payment rates from 19 Sep cohorts.
+4. Payment rates only from 21 Sep cohorts.
 5. Whether this dictionary replaces the eight-measure table in `docs/product-analytics.md` or sits beside it.
 6. How long PostHog keeps tracking-plan events.

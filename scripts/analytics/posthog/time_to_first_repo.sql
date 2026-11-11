@@ -4,13 +4,11 @@
 -- To reproduce a documented result, replace the cutoff expression with that date.
 --
 -- Grain: one row per organisation that connected within 7 days; one result
--- row. Check: with a fixed cutoff and cohort start it reproduces the earlier
--- result for the same cohort.
+-- row. All retained history. Check: with a fixed cutoff, and a cohort start
+-- added, it reproduces the earlier result for the same cohort.
 
 WITH params AS (
-  SELECT
-    toDateTime(toStartOfWeek(now(), 1), 'UTC') AS cutoff,
-    toDateTime('2026-01-01 00:00:00', 'UTC') AS cohort_start
+  SELECT toDateTime(toStartOfWeek(now(), 1), 'UTC') AS cutoff
 ),
 
 orgs AS (
@@ -18,7 +16,6 @@ orgs AS (
   FROM octopus_analyticspostgres_organizations_v1 o
   CROSS JOIN params p
   WHERE o.provisional_eligible
-    AND o.created_at >= p.cohort_start
     AND o.created_at <= subtractDays(p.cutoff, 7)
 ),
 

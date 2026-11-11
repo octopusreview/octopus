@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Reviews and indexing jobs that are running when a server shuts down for an update now finish first, instead of being cut off and retried later.
+- Server shutdowns now wait up to five minutes for running reviews and indexing jobs to finish before exiting.
 
 ## [1.4.5] - 2026-11-11
 

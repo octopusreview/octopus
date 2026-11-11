@@ -138,10 +138,6 @@ export async function register() {
         await boss.schedule("reconcile-auto-reloads", "* * * * *");
       }
     }
-
-    // Graceful shutdown: wait for active jobs (e.g. in-progress reviews) to finish.
-    const { installQueueShutdown } = await import("./lib/queue-shutdown");
-    installQueueShutdown(boss);
   }
 }
 

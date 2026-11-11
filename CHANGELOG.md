@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- GitHub indexing waits for a rate limit to reset before retrying, shares that wait across workers, and resumes paused background indexes afterwards.
+- GitHub indexing shares rate-limit waits across workers and automatically resumes eligible background indexes.
 - Scope community review reuse to the owning organization, repository identity and posting mode, and check identity when starting and polling jobs.
 - Keep clone credentials and upstream error text out of large-review failure comments, statuses and logs.
 - The indexing log viewer withholds message text that may contain paths or credentials, pages long histories, and warns when messages may be duplicated or missing.

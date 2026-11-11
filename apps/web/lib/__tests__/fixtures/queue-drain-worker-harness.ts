@@ -29,9 +29,10 @@ await boss.start();
 installQueueShutdown(boss, 20_000, retireQueueDrainWorker);
 await startQueueDrainWorker(boss, async () => {
   const { work, queues } = fenceWorkers(boss);
-  await work<{ ms: number }>(queue, { localConcurrency: 2, pollingIntervalSeconds: 0.5 }, async ([job]) => {
+  // `retryMs` lets a retry be quick after a first attempt that was slow.
+  await work<{ ms: number; retryMs?: number }>(queue, { localConcurrency: 2, pollingIntervalSeconds: 0.5, includeMetadata: true }, async ([job]) => {
     console.log(`start ${job.id}`);
-    await delay(job.data.ms);
+    await delay(job.retryCount ? job.data.retryMs ?? job.data.ms : job.data.ms);
     console.log(`done ${job.id}`);
   });
   console.log("registered");

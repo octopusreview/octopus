@@ -1,20 +1,11 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
 import { PgBoss } from "pg-boss";
+import { startWorkerProcess, until } from "./fixtures/queue-drain-worker-process";
 import { localQueueTestDatabaseUrl } from "./queue-test-database";
 
 const enabled = process.env.RUN_QUEUE_DB_TESTS === "1";
-const harness = fileURLToPath(new URL("./fixtures/queue-drain-worker-harness.ts", import.meta.url));
-
-async function until(check: () => unknown, label: string, timeout = 10_000): Promise<void> {
-  const deadline = Date.now() + timeout;
-  while (!(await check())) {
-    if (Date.now() > deadline) throw new Error(`Timed out: ${label}`);
-    await delay(25);
-  }
-}
 
 (enabled ? describe : describe.skip)("queue workers following the drain row, with PostgreSQL", () => {
   let databaseUrl: string;
@@ -52,28 +43,11 @@ async function until(check: () => unknown, label: string, timeout = 10_000): Pro
     await prisma.$disconnect();
   });
 
-  /** A worker process; resolves once it has read the drain row and, if allowed, registered its worker. */
   async function startWorker(serverId: string, mode = "") {
-    const child = Bun.spawn([process.execPath, harness, queue, mode], {
-      stdout: "pipe", stderr: "pipe",
-      env: { ...process.env, DATABASE_URL: databaseUrl, OCTOPUS_SERVER_ID: serverId, ENABLE_REVIEW_WORKERS: "true" },
-    });
-    children.push(child);
-    const output = { stdout: "", stderr: "" };
-    for (const stream of ["stdout", "stderr"] as const) {
-      void (async () => {
-        const decoder = new TextDecoder();
-        for await (const chunk of child[stream] as ReadableStream<Uint8Array>) output[stream] += decoder.decode(chunk);
-      })();
-    }
-    const count = (line: string) => output.stdout.split("\n").filter(item => item === line).length;
-    const saw = (line: string) => until(() => {
-      if (child.exitCode !== null && !count(line)) throw new Error(`worker ended before "${line}": ${output.stdout}\n${output.stderr}`);
-      return count(line);
-    }, line);
+    const worker = await startWorkerProcess({ queue, databaseUrl, serverId, mode });
+    children.push(worker.child);
     const instance = () => prisma.queueWorkerInstance.findFirstOrThrow({ where: { serverId } });
-    await saw("ready");
-    return { child, output, count, saw, instance, acked: (generation: number) => until(async () => (await instance()).ackedGeneration === generation, "acknowledgement") };
+    return { ...worker, instance, acked: (generation: number) => until(async () => (await instance()).ackedGeneration === generation, "acknowledgement") };
   }
   const send = async (ms: number) => (await boss.send(queue, { ms }))!;
   const state = async (id: string) => (await prisma.$queryRaw<Array<{ state: string }>>`

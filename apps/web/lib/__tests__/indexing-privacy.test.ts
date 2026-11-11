@@ -16,6 +16,10 @@ it("preserves fixed indexing status messages without exposing appended details",
     "Summary generation failed (indexing still succeeded)",
     "Go to GitHub Settings → Applications → Configure to grant access",
     "Indexing cancelled by user",
+    "Starting indexing",
+    "Indexing complete",
+    "Local indexing batch failed",
+    "Local indexing stopped: monthly spend limit reached",
     "GitHub indexing paused after repeated rate limits. Check GitHub limits before retrying.",
   ]) {
     expect(safeIndexLogMessage(message)).toBe(message);

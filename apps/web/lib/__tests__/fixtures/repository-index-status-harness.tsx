@@ -8,6 +8,7 @@ let states: unknown[] = [];
 mock.module("react", () => ({
   ...react,
   useEffect: (effect: () => void | (() => void)) => { effects.push(effect); },
+  useLayoutEffect: (effect: () => void | (() => void)) => { effects.push(effect); },
   useState: (initial: unknown) => {
     const index = states.length;
     states.push(typeof initial === "function" ? initial() : initial);

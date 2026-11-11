@@ -327,6 +327,7 @@ model Repository {
   indexedAt      DateTime?
   firstIndexedAt DateTime?
   indexAttemptId String?
+  syncLogAttemptId String?
   activeIndexGeneration String?
   localIndexUpload Json?
   indexedFiles   Int      @default(0)

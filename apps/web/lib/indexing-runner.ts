@@ -25,14 +25,14 @@ export async function runIndexingInBackground(
     const stats = await runRepositoryIndex(repoId, indexAttemptId, async () => {
       const { indexRepository: runIndexing } = await import("@/lib/indexer");
       void notifyRepositoryIndex(channel, repoId);
-      emitLog(`Starting indexing for ${fullName}...`);
+      emitLog("Starting indexing");
       return runIndexing(
         { repoId, indexAttemptId }, fullName, defaultBranch, installationId, emitLog,
         abortController.signal, provider, organizationId, undefined, allowPausedProbe,
       );
     }, abortController.signal);
 
-    emitLog(`Indexing completed for ${fullName}`, "success");
+    emitLog("Indexing complete", "success");
 
     // Generate summary with AI
     emitLog("Generating repository summary with AI...");

@@ -16,6 +16,10 @@ type LogAiUsageParams = {
   cacheWriteTokens?: number;
   cacheWriteTtl?: CacheTtl;
   organizationId: string;
+  /** Debit at most once per key: a second write with the same key records and charges nothing. */
+  chargeKey?: string;
+  /** A failed provider attempt: tokens are unknown (stored as 0) and the customer is never charged. */
+  usageUnknown?: boolean;
 };
 
 export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
@@ -66,7 +70,7 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
     // Compute the platform charge up front (needed for both the deduction and
     // the cost snapshot). Own-key usage is never charged.
     let cost = 0;
-    if (!hasOwnKey) {
+    if (!hasOwnKey && !params.usageUnknown) {
       const pricing = await getModelPricing();
       cost = calcCost(
         pricing,
@@ -88,6 +92,8 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
     // longer drifts when model prices change later.
     const usage = await prisma.aiUsage.create({
       data: {
+        ...(params.chargeKey ? { chargeKey: params.chargeKey } : {}),
+        ...(params.usageUnknown ? { usageUnknown: true } : {}),
         provider: params.provider,
         model: params.model,
         operation: params.operation,
@@ -98,7 +104,13 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
         usedOwnKey: hasOwnKey,
         organizationId: params.organizationId,
       },
+    }).catch((error: unknown) => {
+      // The unique key makes a redelivered or repeated charge a no-op, including under concurrency.
+      if (params.chargeKey && (error as { code?: string } | null)?.code === "P2002") return null;
+      throw error;
     });
+    if (!usage) { console.log(`[ai-usage] ${params.operation} already charged for this request; no second debit`); return; }
+    if (params.usageUnknown) return;
 
     // Only deduct credits for orgs without their own API key
     if (!hasOwnKey) {

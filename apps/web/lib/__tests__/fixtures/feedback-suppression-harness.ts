@@ -65,6 +65,7 @@ const outcomeTransaction = {
 };
 mock.module("@octopus/db", () => ({ prisma: {
   $transaction: async (run: (tx: typeof outcomeTransaction) => Promise<unknown>) => run(outcomeTransaction),
+  $queryRaw: async () => [{ generationAttempts: 1 }], // the durable generation budget always has room in this fixture
   repository: { findUnique: async () => repo, findMany: async () => [{ id: repo.id, activeIndexGeneration: null }] },
   systemConfig: { findUnique: async () => null },
   reviewIssue: { findMany: async () => [] },
@@ -83,7 +84,7 @@ mock.module("@/lib/reranker", () => ({ rerankDocuments: async () => [] }));
 mock.module("@/lib/knowledge-context", () => ({ getAlwaysIncludeKnowledge: async () => [], mergeKnowledgeChunks: () => [] }));
 mock.module("@/lib/review-routing", () => ({ resolveReviewModel: async () => "fixture-model" }));
 mock.module("@/lib/ai-usage", () => ({ logAiUsage: async () => {} }));
-mock.module("@/lib/ai-router", () => ({ getProviderForModel: async () => { throw new Error("Legacy fixture must not resolve adaptive capacity"); }, createAiMessage: async () => ({
+mock.module("@/lib/ai-router", () => ({ credentialRouteUnchanged: async () => true, getProviderForModel: async () => { throw new Error("Legacy fixture must not resolve adaptive capacity"); }, createAiMessage: async () => ({
   provider: "fixture", text: `Summary\n<!-- OCTOPUS_FINDINGS_START -->\n${JSON.stringify([finding])}\n<!-- OCTOPUS_FINDINGS_END -->`,
   usage: { inputTokens: 1, outputTokens: 1 },
 }) }));

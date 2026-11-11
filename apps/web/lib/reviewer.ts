@@ -1,6 +1,6 @@
 import "server-only";
 import { reportBackgroundFailure, type FailureStage } from "./background-failure";
-import { ReviewOutcomeRecorder, startReviewOutcome, deferReviewOutcome } from "@/lib/review-attempt-outcome";
+import { ReviewOutcomeRecorder, startReviewOutcome, deferReviewOutcome, claimGenerationAttempt } from "@/lib/review-attempt-outcome";
 import { runRepositoryIndex, SupersededIndexError } from "@/lib/repository-index-completion";
 import crypto from "node:crypto";
 import { prisma, type Prisma } from "@octopus/db";
@@ -60,7 +60,7 @@ import { buildGeneratedMatcher } from "@/lib/generated-files";
 import { MAX_DIFF_CHARS } from "@/lib/diff-truncate";
 import { completeReviewCandidate, reviewCandidateSha256, assertReviewProcessingActive, isReviewCancelled, CapacityAdmissionError, ReviewProcessingExpiredError, type CompleteReviewAdmission, type ReviewExecutionWindow } from "@/lib/review-capacity";
 import { AiProviderFailure, safeErrorDetails } from "@/lib/provider-failure";
-import { confirmCompleteReviewCurrent } from "@/lib/review-capacity-current";
+import { confirmCompleteReviewCurrent, confirmGenerationRetryCurrent } from "@/lib/review-capacity-current";
 import { prepareReviewInput, applyReviewCoverage, coverageSummary, reviewCheckResult, reviewAssessmentComplete, generationFailureCode, type ReviewInput, type ReviewCoverage } from "@/lib/review-coverage";
 import { prepareReviewComment } from "@/lib/review-comment-context";
 import { createCoveredReviewRequest } from "@/lib/review-request";
@@ -119,7 +119,7 @@ import { safeIndexLogMessage } from "@/lib/index-log-safety";
 import { writeSyncLog, deleteSyncLogs } from "@/lib/elasticsearch";
 import { logAiUsage } from "@/lib/ai-usage";
 import { resolveReviewModel } from "@/lib/review-routing";
-import { createAiMessage, getProviderForModel } from "@/lib/ai-router";
+import { createAiMessage, getProviderForModel, credentialRouteUnchanged } from "@/lib/ai-router";
 import { getOrgSpendLimitStatus, shouldGuardConcurrency } from "@/lib/cost";
 import fs from "node:fs";
 import path from "node:path";
@@ -1826,6 +1826,9 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       REVIEW_LANGUAGE_NAME: reviewLanguage.promptName,
     });
 
+    const fetchRevision = (signal: AbortSignal) => isGitHub ? ghGetPullRequestDetails(installationId!, owner, repoName, pr.number, signal)
+      : usesProjectApi ? projectProvider.getPullRequestDetails(org.id, projectPath, pr.number, signal)
+        : bitbucket.getPullRequestDetails(org.id, owner, repoName, pr.number, signal);
     const completeReviewAdmission: CompleteReviewAdmission | undefined = candidateSha256 && executionWindow ? {
       candidateSha256, headSha: coverage.headSha!, baseSha: coverage.baseSha!, reviewRequestVersion: pr.reviewRequestVersion,
       preparedSource: { chars: diff.length, files: coverage.files.filter(file => file.state === "supplied").length,
@@ -1833,9 +1836,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       window: executionWindow,
       beforeGeneration: signal => confirmCompleteReviewCurrent({ pullRequestId: pr.id, orgId: org.id, repoId: repo.id,
         model: reviewModel, headSha: coverage.headSha!, baseSha: coverage.baseSha!, reviewRequestVersion: pr.reviewRequestVersion,
-        fetchRevision: signal => isGitHub ? ghGetPullRequestDetails(installationId!, owner, repoName, pr.number, signal)
-          : usesProjectApi ? projectProvider.getPullRequestDetails(org.id, projectPath, pr.number, signal)
-            : bitbucket.getPullRequestDetails(org.id, owner, repoName, pr.number, signal),
+        fetchRevision,
       }, signal),
     } : undefined;
     const primaryRequest = createCoveredReviewRequest({
@@ -1845,8 +1846,20 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
     });
     adaptiveProcessingWindow = completeReviewAdmission?.window;
     failureStage = "generation";
-    const response = await executeCoveredReview({ ...primaryRequest, ...(completeReviewAdmission ? { completeReviewAdmission } : {}) },
-      coverage, getSystemPrompt(), request => createAiMessage(request, org.id));
+    // Every dispatch, including a redelivered or re-enqueued job, draws on one durable budget per request version.
+    if (!await claimGenerationAttempt(outcomeKey)) throw new Error("Review generation attempts for this request are used up");
+    const response = await executeCoveredReview({ ...primaryRequest, maxRetries: 0, ...(completeReviewAdmission ? { completeReviewAdmission } : {}) },
+      coverage, getSystemPrompt(), request => createAiMessage(request, org.id).catch(async (error: unknown) => {
+        // The provider may have billed a failed request; its usage is unknown and is never charged to the customer.
+        if (error instanceof AiProviderFailure) {
+          await logAiUsage({ provider: error.provider, usedOwnKey: error.keyOwner === "unknown" ? undefined : error.keyOwner === "organization",
+            model: reviewModel, operation: "review-failed-attempt", inputTokens: 0, outputTokens: 0, organizationId: org.id, usageUnknown: true });
+        }
+        throw error;
+      }), { window: executionWindow, confirm: async (failure, signal) => !!coverage.headSha && !!coverage.baseSha
+        && await confirmGenerationRetryCurrent({ pullRequestId: pr.id, orgId: org.id, repoId: repo.id, model: reviewModel, provider: failure.provider,
+          headSha: coverage.headSha, baseSha: coverage.baseSha, reviewRequestVersion: pr.reviewRequestVersion, fetchRevision }, signal) === null
+        && await credentialRouteUnchanged(failure, org.id) && await claimGenerationAttempt(outcomeKey) });
     const assertProcessingActive = () => { if (completeReviewAdmission) assertReviewProcessingActive(completeReviewAdmission.window); };
 
     let reviewBody = prepareReviewPresentation(response.text, coverage);
@@ -1873,6 +1886,8 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       usedOwnKey: response.usedOwnKey,
       model: reviewModel,
       operation: "review",
+      // A rerun for the same head and request version must not debit a second time.
+      chargeKey: `review-generation:${pr.id}:${pr.reviewRequestVersion}:${pr.headSha}`,
       inputTokens: response.usage.inputTokens,
       outputTokens: response.usage.outputTokens,
       cacheReadTokens: response.usage.cacheReadTokens,
@@ -2642,8 +2657,11 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
     if (attemptCoverage && !attemptSaved && attemptCoverage.assessment && attemptCoverage.assessment.state !== "incomplete") {
       markReviewAssessmentIncomplete(attemptCoverage, "Review processing failed or was interrupted before persistence");
     }
+    // Only after an admitted retry was dispatched and was interrupted as well.
+    const interruptedTwice = attemptCoverage?.assessment?.attempts?.length === 1 && attemptCoverage.assessment.failure?.retryability === "transient"
+      ? `Review generation was interrupted twice and was not completed. No score was produced. Comment \`${isForgejo ? "@octopus" : "@octopus-review"}\` to run it again.` : null;
     const failureBody = attemptCoverage?.assessment && !attemptSaved
-      ? applyReviewCoverage("## 🐙 Octopus Review\n\nAssessment failed or was interrupted. No complete assessment is available.", attemptCoverage, failureAttemptId) : null;
+      ? applyReviewCoverage(`## 🐙 Octopus Review\n\n${interruptedTwice ?? "Assessment failed or was interrupted. No complete assessment is available."}`, attemptCoverage, failureAttemptId) : null;
     if (failureBody && attemptCoverage) {
       await saveReviewAttempt(failureAttemptId, pr.id, attemptCoverage, failureBody).then(() => { outcomeArchiveId = failureAttemptId; }).catch(e => console.error("[reviewer] Failed to archive interrupted assessment:", safeErrorDetails(e)));
     }
@@ -2670,7 +2688,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         "failure",
         {
           title: attemptCoverage?.assessment?.failure?.stage === "generation" ? "Review generation failed" : "Review failed",
-          summary: `Octopus Review encountered an error: ${errorMessage}${failureCode ? `. Attempt: ${failureAttemptId}. Failure code: \`${failureCode}\`.` : ""}`,
+          summary: `${interruptedTwice ?? `Octopus Review encountered an error: ${errorMessage}${failureCode ? "." : ""}`}${failureCode ? ` Attempt: ${failureAttemptId}. Failure code: \`${failureCode}\`.` : ""}`,
         },
       ).catch((e) => console.error("[reviewer] Failed to update check run:", safeErrorDetails(e)));
     }

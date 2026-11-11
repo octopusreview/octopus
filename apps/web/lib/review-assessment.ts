@@ -3,7 +3,7 @@ import type { AiRequestReceipt } from "@/lib/providers/request-evidence";
 import { sha256, type ReviewCoverage } from "@/lib/review-coverage";
 import { parseRecoveryFindingsSet, recoveryFindingsBody } from "@/lib/review-evidence";
 import { parseFindingsFromJson, type InlineFinding } from "@/lib/review-dedup";
-import { CapacityAdmissionError, markCapacityNotDispatched, type CapacityAdmissionReceipt } from "./review-capacity";
+import { CapacityAdmissionError, markCapacityNotDispatched, admitGenerationRetry, withinReviewWindow, COMPLETE_REVIEW_POLICY, GENERATION_RETRY, type CapacityAdmissionReceipt, type ReviewExecutionWindow } from "./review-capacity";
 import { AiProviderFailure, classifyFailure, safeErrorDetails, type FailureClass, type KeyOwner } from "./provider-failure";
 
 export type FindingsRecoveryEvidence = {
@@ -22,6 +22,8 @@ export type FindingsRecoveryEvidence = {
 export type ReviewAssessment = {
   capacityAdmission?: CapacityAdmissionReceipt;
   failure?: { stage: "generation"; keyOwner: KeyOwner; status?: number } & FailureClass;
+  /** Earlier failed generation attempts, oldest first; the fields beside this describe the final attempt. */
+  attempts?: Array<{ failure: NonNullable<ReviewAssessment["failure"]>; requests: AiRequestReceipt[]; capacityAdmission?: CapacityAdmissionReceipt }>;
   state: "completed" | "incomplete" | "not-required";
   reason: string;
   model: string | null;
@@ -263,6 +265,8 @@ export function recordNoModelAssessment(coverage: ReviewCoverage): void {
 export async function executeCoveredReview(
   request: AiCreateParams, coverage: ReviewCoverage, template: string,
   call: (request: AiCreateParams) => Promise<AiResponse>,
+  /** Absent: never retry. `confirm` runs immediately before the second dispatch and must recheck everything. */
+  retry?: { window: ReviewExecutionWindow | undefined; confirm: (failure: AiProviderFailure, signal: AbortSignal) => Promise<boolean> },
 ): Promise<AiResponse> {
   const assessment: ReviewAssessment = {
     state: "incomplete", reason: "Provider did not return a completed assessment", model: request.model,
@@ -271,13 +275,24 @@ export async function executeCoveredReview(
   };
   coverage.assessment = assessment;
   let response: AiResponse;
-  try {
-    response = await call({ ...request, onRequest: receipt => assessment.requests.push(receipt),
-      ...(request.completeReviewAdmission ? { completeReviewAdmission: { ...request.completeReviewAdmission,
-        onDecision: receipt => { assessment.capacityAdmission = receipt; request.completeReviewAdmission?.onDecision?.(receipt); },
-      } } : {}),
-    });
+  const dispatch = () => call({ ...request, onRequest: receipt => assessment.requests.push(receipt),
+    ...(request.completeReviewAdmission ? { completeReviewAdmission: { ...request.completeReviewAdmission,
+      onDecision: receipt => { assessment.capacityAdmission = receipt; request.completeReviewAdmission?.onDecision?.(receipt); },
+    } } : {}),
+  });
+  let first: { error: unknown; reason: string; attempt: NonNullable<ReviewAssessment["attempts"]>[number] } | undefined;
+  for (;;) try {
+    // The admitted path bounds itself; any other retry is held to the original job window here.
+    response = first && retry?.window && !request.completeReviewAdmission
+      ? await withinReviewWindow(retry.window, retry.window.remainingMs() - COMPLETE_REVIEW_POLICY.publicationReserveMs, dispatch) : await dispatch();
+    break;
   } catch (error) {
+    if (first && error instanceof CapacityAdmissionError && error.receipt.primaryDispatch === "not-started" && assessment.requests.length === 0) {
+      // The retry was refused before dispatch: the original classified failure stands.
+      delete assessment.attempts; delete assessment.capacityAdmission;
+      Object.assign(assessment, first.attempt, { reason: first.reason });
+      throw first.error;
+    }
     if (error instanceof CapacityAdmissionError) {
       assessment.capacityAdmission = structuredClone(error.receipt);
       assessment.reason = error.message;
@@ -295,6 +310,17 @@ export async function executeCoveredReview(
           }
         } catch { /* Preserve the original failure if diagnostics are unavailable. */ }
       }
+    }
+    const failure = assessment.failure;
+    // One retry, only for a classified transient provider failure; unknown causes are never retried.
+    if (!first && retry && failure?.retryability === "transient" && error instanceof AiProviderFailure
+      && await admitGenerationRetry(retry.window, request.completeReviewAdmission ? COMPLETE_REVIEW_POLICY.minGenerationMs : GENERATION_RETRY.minGenerationMs,
+        failure.status === 429 && failure.keyOwner === "platform" ? error.retryAfterMs : undefined, signal => retry.confirm(error, signal))) {
+      first = { error, reason: assessment.reason, attempt: { failure, requests: assessment.requests, ...(assessment.capacityAdmission ? { capacityAdmission: assessment.capacityAdmission } : {}) } };
+      assessment.attempts = [first.attempt];
+      delete assessment.failure; delete assessment.capacityAdmission;
+      assessment.requests = []; assessment.reason = "Provider did not return a completed assessment";
+      continue;
     }
     throw error;
   }

@@ -1,6 +1,7 @@
 import { sha256, prepareReviewInput, type ReviewCoverage, type ReviewInput } from "./review-coverage";
 import { DIFF_CHAR_CAP, MAX_FETCH_DIFF_CHARS } from "./diff-truncate";
 import { AiProviderFailure, safeErrorDetails, type KeyOwner } from "./provider-failure";
+import { setTimeout as delay } from "node:timers/promises";
 
 /** Product admission limits, not a claim about a particular review's fit or invoice. */
 export const COMPLETE_REVIEW_POLICY = Object.freeze({
@@ -58,6 +59,23 @@ export async function withinReviewWindow<T>(window: ReviewExecutionWindow, maxMs
   } finally {
     signal.removeEventListener("abort", abort);
   }
+}
+
+/** One automatic retry of a transient generation failure; it must fit inside the original job. */
+export const GENERATION_RETRY = Object.freeze({ minGenerationMs: 180_000, backoffMs: 1_000 });
+
+/** Wait, then confirm the review is still current, only if the retry still fits the original window afterwards. */
+export async function admitGenerationRetry(
+  window: ReviewExecutionWindow | undefined, minGenerationMs: number, retryAfterMs: number | undefined,
+  confirm: (signal: AbortSignal) => Promise<boolean>,
+): Promise<boolean> {
+  const waitMs = retryAfterMs ?? GENERATION_RETRY.backoffMs;
+  const needed = minGenerationMs + COMPLETE_REVIEW_POLICY.publicationReserveMs;
+  if (!window || window.signal.aborted || window.remainingMs() - waitMs < needed) return false;
+  try {
+    await delay(waitMs, undefined, { signal: window.signal });
+    return await withinReviewWindow(window, window.remainingMs() - needed, confirm) && window.remainingMs() >= needed;
+  } catch { return false; }
 }
 
 export function generationTimeout(window: ReviewExecutionWindow, primary: boolean): number {

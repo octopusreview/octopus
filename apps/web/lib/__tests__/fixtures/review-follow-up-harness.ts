@@ -1,4 +1,4 @@
-import "./review-outcome-stub";
+import { generationBudget } from "./review-outcome-stub";
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
 import { inspect } from "node:util";
@@ -15,8 +15,20 @@ const preserveAutoReview = process.argv.includes("--preserve-auto-review");
 const firstCompletion = process.argv.includes("--first-review-completion");
 const refusalFlow = process.argv.includes("--provider-refusal");
 const providerErrorPrivacy = process.argv.includes("--provider-error-privacy");
-const generationDiagnostic = process.argv.includes("--generation-failure-diagnostic");
-let generationFailure: "terminated" | "organization-auth" = "terminated";
+const generationRetry = process.argv.includes("--generation-retry");
+const generationDiagnostic = process.argv.includes("--generation-failure-diagnostic") || generationRetry;
+type GenerationOutcome = "terminated" | "organization-auth" | "rate-limit" | "unknown" | "success";
+let generationFailure: GenerationOutcome = "terminated";
+// Scripted primary-generation outcomes; when empty every dispatch fails with `generationFailure`.
+const generationScript: GenerationOutcome[] = [];
+let retryAfterHeader = "1";
+// A change that takes effect after the first failed dispatch, i.e. between the two attempts.
+type RetryBlock = "" | "head" | "superseded" | "cancelled" | "key" | "access" | "spend" | "guard";
+let pendingRetryBlock: RetryBlock = "";
+let retryBlock: RetryBlock = "";
+let retryAbort = new AbortController();
+const unknownUsage: string[] = [];
+const chargeKeys: string[] = [];
 let generationDispatches = 0;
 const embeddingCancelPrivacy = process.argv.includes("--embedding-cancel-privacy");
 const embeddingErrorPrivacy = process.argv.includes("--embedding-error-privacy") || embeddingCancelPrivacy;
@@ -134,7 +146,7 @@ const db = {
     return prior ? { coverage: prior } : null;
   } },
   repository: {
-    findFirst: async () => ({ ...repo }),
+    findFirst: async () => retryBlock === "access" ? null : { ...repo },
     findUnique: async () => ({ ...repo }),
     findUniqueOrThrow: async () => ({ ...repo }),
     updateMany: async ({ where, data }: { where: { id: string; indexStatus?: string | { notIn: string[] }; indexAttemptId?: string }; data: Record<string, unknown> }) => {
@@ -150,7 +162,8 @@ const db = {
   organization: { findUnique: async () => org },
   localAgent: { count: async () => 0 },
   reviewIssue: { findMany: async () => bestEffortPrivacy && feedbackMode ? [feedbackIssue] : [], updateMany: async (query: unknown) => { feedbackUpdates.push(query); return { count: 1 }; } },
-  pullRequest: { findUnique: async () => pr, updateMany: async (query: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+  pullRequest: { findUnique: async () => pr, count: async () => 1,
+    findFirst: async () => retryBlock === "superseded" ? null : { id: pr.id, repository: { organization: { reviewsPaused: false } } }, updateMany: async (query: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
     reviewUpdates.push(query);
     if (firstCompletion) {
       const { where, data } = query;
@@ -184,8 +197,12 @@ mock.module("@/lib/qdrant", () => ({
 mock.module("@/lib/reranker", () => ({ rerankDocuments: async () => [] }));
 mock.module("@/lib/knowledge-context", () => ({ getAlwaysIncludeKnowledge: async () => [], mergeKnowledgeChunks: () => [] }));
 mock.module("@/lib/review-routing", () => ({ resolveReviewModel: async () => refusalFlow ? "claude-sonnet-4-6" : adaptiveStage ? "claude-fable-5-1" : "gpt-fixture" }));
-mock.module("@/lib/ai-usage", () => ({ logAiUsage: async (usage: { operation: string }) => { usageCount++; usageOperations.push(usage.operation); if (adaptiveStage === "before-validator") adaptiveAbort.abort(); } }));
-mock.module("@/lib/ai-router", () => ({ getProviderForModel: async () => {
+mock.module("@/lib/ai-usage", () => ({ logAiUsage: async (usage: { operation: string; usageUnknown?: boolean; chargeKey?: string }) => {
+  // A failed attempt is recorded with unknown usage and is never a customer debit.
+  if (usage.usageUnknown) { unknownUsage.push(usage.operation); return; }
+  if (usage.chargeKey) chargeKeys.push(usage.chargeKey);
+  usageCount++; usageOperations.push(usage.operation); if (adaptiveStage === "before-validator") adaptiveAbort.abort(); } }));
+mock.module("@/lib/ai-router", () => ({ credentialRouteUnchanged: async () => retryBlock !== "key", getProviderForModel: async () => {
   assert.ok(adaptiveStage, "Legacy fixture must not resolve adaptive capacity"); return "anthropic";
 }, createAiMessage: async (params: AiCreateParams) => {
   if (generationSetupErrorPrivacy) throw privateFailure();
@@ -203,12 +220,19 @@ mock.module("@/lib/ai-router", () => ({ getProviderForModel: async () => {
     throw new AiProviderFailure(Object.assign(new Error(localFailure.message), { status: localFailure.status, name: localFailure.name ?? "Error", cause: localFailure.code ? { code: localFailure.code } : undefined }), localFailure.provider, params.model, localFailure.keyOwner ?? "organization");
   }
   if (localClassification) return { model: params.model, provider: "openai", text: report, usage: { inputTokens: 1, outputTokens: 1 } };
-  if (generationDiagnostic) {
+  // Only the primary review request disables SDK retries; follow-up calls take the ordinary path below.
+  if (generationDiagnostic && params.maxRetries === 0) {
     const { AiProviderFailure } = await import("@/lib/provider-failure");
     generationDispatches++;
-    const raw = Object.assign(new Error("synthetic-generation-secret"), { status: generationFailure === "terminated" ? 503 : 401,
-      request_id: "req_syntheticgenerationsecret", cause: { message: generationFailure === "terminated" ? "terminated" : "synthetic private" } });
-    throw new AiProviderFailure(raw, "openai", params.model, generationFailure === "terminated" ? "platform" : "organization");
+    const outcome = generationScript.shift() ?? generationFailure;
+    if (outcome !== "success") {
+      retryBlock = pendingRetryBlock;
+      if (retryBlock === "cancelled") retryAbort.abort(new DOMException("fixture", "AbortError"));
+      const raw = Object.assign(new Error("synthetic-generation-secret"), { status: { terminated: 503, "organization-auth": 401, "rate-limit": 429, unknown: undefined }[outcome],
+        request_id: "req_syntheticgenerationsecret", cause: { message: outcome === "terminated" ? "terminated" : "synthetic private" },
+        ...(outcome === "rate-limit" ? { headers: new Headers({ "retry-after": retryAfterHeader }) } : {}) });
+      throw new AiProviderFailure(raw, "openai", params.model, outcome === "organization-auth" ? "organization" : "platform");
+    }
   }
   if (providerErrorPrivacy) {
     const { AiProviderFailure } = await import("@/lib/provider-failure");
@@ -312,7 +336,7 @@ mock.module("@/lib/github", () => ({
     expectedFiles: 1, limitations: [],
     files: [{ path: "src/check.ts", change: "modified", patch: `@@ -1 +1 @@\n-return value;\n+return value.name;${adaptiveStage ? " ".repeat(400000) : ""}\n`, additions: 1, deletions: 1 }],
   } }; },
-  getPullRequestDetails: async () => { if (bestEffortPrivacy && failureSite === "pr-body-fetch") throw privateFailure(); return { body: "Handle missing values" }; },
+  getPullRequestDetails: async () => { if (bestEffortPrivacy && failureSite === "pr-body-fetch") throw privateFailure(); return { body: "Handle missing values", headSha: retryBlock === "head" ? "c".repeat(40) : pr.headSha, baseSha: "b".repeat(40) }; },
   createPullRequestComment: async () => { directComments++; return 123; },
   updatePullRequestComment: async (_installation: number, _owner: string, _repo: string, _id: number, body: string) => { summaries.push(body); },
   createPullRequestReview: async (_installation: number, _owner: string, _repo: string, _number: number, body: string, _event: string, comments: unknown[]) => {
@@ -398,7 +422,7 @@ mock.module("@/lib/queue", () => ({
   computeStaleReclaimMs: () => 120000,
   enqueue: async (name: string) => { queuedJobs.push(name); }, enqueueAfter: async () => {},
 }));
-mock.module("@/lib/cost", () => ({ getOrgSpendLimitStatus: async () => ({ blocked: false }), shouldGuardConcurrency: async () => false, getModelPricing: async () => null, estimateCompleteReviewCost: () => 0 }));
+mock.module("@/lib/cost", () => ({ getOrgSpendLimitStatus: async () => retryBlock === "spend" ? { blocked: true, reason: "no_credits" } : { blocked: false }, shouldGuardConcurrency: async () => retryBlock === "guard", getModelPricing: async () => null, estimateCompleteReviewCost: () => 0 }));
 mock.module("@/lib/pubby", () => ({ pubby: { trigger: async (_channel: string, _name: string, data: { status?: string; message?: string }) => { if (bestEffortPrivacy && failureSite === "pubby") throw privateFailure(); events.push({ ...data, status: _name === "index-status" ? repo.indexStatus : data.status, eventName: _name }); } } }));
 mock.module("@/lib/events", () => ({ eventBus: { emit: (event: { type: string }) => { events.push(event); } } }));
 mock.module("@/lib/indexer", () => ({ indexRepository: async (_scope: unknown, _name: string, _branch: string, _installation: number, emit: (message: string) => void) => {
@@ -553,6 +577,87 @@ if (localClassification) {
   process.exit(0);
 }
 const { processReview } = await import("@/lib/reviewer");
+if (generationRetry) {
+  const errors: unknown[][] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => { errors.push(args); };
+  const interruptedTwice = "Review generation was interrupted twice and was not completed. No score was produced. Comment `@octopus-review` to run it again.";
+  const run = async (script: GenerationOutcome[], options: { block?: RetryBlock; remaining?: number; retryAfter?: string; budget?: number } = {}) => {
+    generationScript.length = 0; generationScript.push(...script);
+    pendingRetryBlock = options.block ?? ""; retryBlock = ""; retryAbort = new AbortController(); retryAfterHeader = options.retryAfter ?? "1";
+    generationBudget.claims = 0; generationBudget.limit = options.budget ?? Infinity;
+    pr.status = "pending";
+    summaries.length = 0; checkOutputs.length = 0; unknownUsage.length = 0; chargeKeys.length = 0; usageOperations.length = 0;
+    const dispatches = generationDispatches, attempts = archived.length, started = performance.now();
+    await processReview("pr", { jobId: "fixture", deadlineEpochMs: Date.now() + 900000, signal: retryAbort.signal, remainingMs: () => options.remaining ?? 900000 });
+    const assessment = (archived.at(-1)?.coverage as ReviewCoverage | undefined)?.assessment as { state: string; requests: unknown[];
+      failure?: { code: string; retryability: string }; attempts?: { failure: { code: string; retryability: string }; requests: unknown[] }[] } | undefined;
+    return { dispatches: generationDispatches - dispatches, archived: archived.length - attempts, elapsedMs: performance.now() - started, assessment,
+      debits: usageOperations.filter(operation => operation === "review").length, body: summaries.at(-1) ?? "", check: inspect(checkOutputs), attemptId: archived.at(-1)?.id ?? "" };
+  };
+  try {
+    let result = await run(["terminated", "success"]);
+    assert.equal(result.dispatches, 2, "one transient failure is retried once");
+    assert.equal(result.assessment?.state, "completed");
+    assert.equal(result.assessment?.failure, undefined);
+    assert.equal(result.assessment?.requests.length, 1, "completeness is evaluated on the final attempt");
+    assert.deepEqual(result.assessment?.attempts?.map(attempt => [attempt.failure.code, attempt.failure.retryability]), [["STREAM_TERMINATED", "transient"]]);
+    assert.equal(result.archived, 1);
+    assert.equal(summaries.filter(body => body.includes("**4/5**")).length, 1, "one final published review");
+    assert.equal(result.debits, 1, "the successful generation is charged exactly once");
+    assert.deepEqual(chargeKeys, [`review-generation:${pr.id}:${pr.reviewRequestVersion}:${pr.headSha}`]);
+    assert.deepEqual(unknownUsage, ["review-failed-attempt"], "the failed attempt is recorded with unknown usage");
+    assert.doesNotMatch(inspect({ summaries, checkOutputs }), /retrying|interrupted twice/i);
+
+    result = await run(["terminated", "terminated"]);
+    assert.equal(result.dispatches, 2, "the retry is not repeated");
+    assert.equal(result.assessment?.state, "incomplete");
+    assert.deepEqual([result.assessment?.attempts?.length, result.assessment?.attempts?.[0].failure.code, result.assessment?.failure?.code], [1, "STREAM_TERMINATED", "STREAM_TERMINATED"]);
+    assert.equal(result.archived, 1, "both attempts are kept in one immutable record");
+    for (const output of [result.body, result.check]) {
+      assert.ok(output.includes(interruptedTwice), "terminal text after an exhausted retry");
+      assert.ok(output.includes("Failure code: `STREAM_TERMINATED`.") && output.includes(result.attemptId));
+      assert.doesNotMatch(output, /retrying/i);
+    }
+    assert.ok(!/\|[^\n]*[1-5]\/5/.test(result.body), "no score from a failed generation");
+    assert.equal(result.debits, 0, "failed attempts are never a customer debit");
+    assert.deepEqual(unknownUsage, ["review-failed-attempt", "review-failed-attempt"]);
+
+    result = await run(["organization-auth"]);
+    assert.equal(result.dispatches, 1, "an organization-level rejection is never retried");
+    assert.ok(!result.body.includes("interrupted twice"));
+    result = await run(["unknown"]);
+    assert.equal(result.dispatches, 1, "an unknown cause is never retried");
+    assert.equal(result.assessment?.failure?.retryability, "unknown");
+
+    result = await run(["rate-limit", "success"], { retryAfter: "2" });
+    assert.equal(result.dispatches, 2, "a platform-key 429 is retried after its Retry-After");
+    assert.ok(result.elapsedMs >= 1900, `waited for Retry-After (${result.elapsedMs}ms)`);
+    assert.equal(result.debits, 1);
+    result = await run(["rate-limit", "success"], { retryAfter: "900" });
+    assert.equal(result.dispatches, 1, "a Retry-After that does not fit the job is not waited for");
+    assert.equal(result.assessment?.failure?.code, "http_429");
+
+    result = await run(["terminated", "success"], { remaining: 200_000 });
+    assert.equal(result.dispatches, 1, "too little of the job window is left");
+    for (const block of ["head", "superseded", "cancelled", "key", "access", "spend", "guard"] as const) {
+      result = await run(["terminated", "success"], { block });
+      assert.equal(result.dispatches, 1, `no second dispatch after: ${block}`);
+      assert.deepEqual([result.assessment?.failure?.code, result.assessment?.attempts], ["STREAM_TERMINATED", undefined], `the original failure stands: ${block}`);
+      assert.equal(result.debits, 0);
+      assert.ok(!result.body.includes("interrupted twice"), block);
+    }
+
+    result = await run(["terminated", "success"], { budget: 1 });
+    assert.equal(result.dispatches, 1, "a used-up durable budget refuses the retry");
+    result = await run(["success"], { budget: 0 });
+    assert.equal(result.dispatches, 0, "a used-up durable budget refuses a redelivered generation");
+    assert.ok(reviewUpdates.some(update => (update as { data: { errorMessage?: string } }).data.errorMessage === "Review failed during generation"));
+    assert.doesNotMatch(inspect({ errors, summaries, checkOutputs, reviewUpdates, events, archived, sentryEvents }, { depth: 20 }), /synthetic-generation-secret|req_syntheticgenerationsecret/);
+  } finally { console.error = originalError; }
+  console.log("PASS transient generation failures are retried once within review limits");
+  process.exit(0);
+}
 if (generationDiagnostic) {
   const originalError = console.error;
   const errors: unknown[][] = [];
@@ -566,10 +671,10 @@ if (generationDiagnostic) {
       pr.status = "pending";
       summaries.length = 0; checkOutputs.length = 0; reviewUpdates.length = 0; events.length = 0; errors.length = 0; sentryEvents.length = 0;
       const beforeCalls = generationDispatches, beforeUsage = usageCount;
-      await processReview("pr");
+      await processReview("pr", { jobId: "fixture", deadlineEpochMs: Date.now() + 900000, signal: new AbortController().signal, remainingMs: () => 900000 });
       const attempt = archived.at(-1)!;
       const coverage = attempt.coverage as ReviewCoverage;
-      const failure = coverage.assessment as { state: string; failure?: { stage: string; code: string; keyOwner: string; ownership: string; retryability: string; status?: number } };
+      const failure = coverage.assessment as { state: string; attempts?: unknown[]; failure?: { stage: string; code: string; keyOwner: string; ownership: string; retryability: string; status?: number } };
       assert.equal(coverage.complete, true);
       assert.equal(failure.state, "incomplete");
       assert.deepEqual(failure.failure, { stage: "generation", code, keyOwner, ownership: keyOwner, retryability, status });
@@ -581,8 +686,9 @@ if (generationDiagnostic) {
         assert.ok(output.includes(`Failure code: \`${code}\`.`) && output.includes(attempt.id), "the failure code is shown next to the attempt ID");
       }
       assert.ok(!/\|[^\n]*[1-5]\/5/.test(summaries.at(-1) ?? ""));
-      assert.equal(generationDispatches, beforeCalls + 1, "no automatic retry");
-      assert.equal(usageCount, beforeUsage, "preserves existing failed-call usage behavior");
+      assert.equal(generationDispatches, beforeCalls + (retryability === "transient" ? 2 : 1), "only a transient failure is retried, once");
+      assert.equal(failure.attempts?.length, retryability === "transient" ? 1 : undefined);
+      assert.equal(usageCount, beforeUsage, "a failed generation is never a customer debit");
       assert.doesNotMatch(inspect({ errors, summaries, checkOutputs, reviewUpdates, events, archived, sentryEvents }, { depth: 20 }), /synthetic-generation-secret|req_syntheticgenerationsecret/);
       if (scenario === "terminated") {
         assert.equal(sentryEvents.at(-1)?.tags?.failure_code, code);

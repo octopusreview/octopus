@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Failed reviews now say which kind of failure occurred, and no longer store the AI provider's request identifier.
+- A review interrupted by a temporary AI provider failure is now retried once automatically before it is reported as failed.
+
+### Upgrade notes
+
+- Apply the `20261111130000_review_generation_retry` migration before starting instances with this change. It adds two columns and a unique index to `ai_usages` and one column to `review_attempt_outcomes`; the index build briefly blocks writes to `ai_usages` on large tables.
 
 ## [1.4.5] - 2026-11-11
 

@@ -35,8 +35,20 @@ export function safeErrorDetails(error: unknown) {
   return details;
 }
 
+/** A provider Retry-After as a non-negative delay; only the number is kept, never header text. */
+function retryAfterMs(error: unknown): number | undefined {
+  try {
+    const headers = (error as { headers?: unknown } | null)?.headers;
+    const raw = headers instanceof Headers ? headers.get("retry-after") : (headers as Record<string, unknown> | null | undefined)?.["retry-after"];
+    if (typeof raw !== "string" || !raw.trim()) return undefined;
+    const ms = Number.isFinite(Number(raw)) ? Number(raw) * 1000 : Date.parse(raw) - Date.now();
+    return Number.isFinite(ms) ? Math.max(0, Math.ceil(ms)) : undefined;
+  } catch { return undefined; }
+}
+
 export class AiProviderFailure extends Error {
   readonly details: ReturnType<typeof safeErrorDetails>;
+  readonly retryAfterMs?: number;
   readonly reviewCategory?: "auth" | "local";
   constructor(error: unknown, readonly provider: AiProvider, readonly model: string, readonly keyOwner: KeyOwner) {
     const details = safeErrorDetails(error);
@@ -55,6 +67,7 @@ export class AiProviderFailure extends Error {
       : `AI provider ${provider} request failed${details.status ? ` (HTTP ${details.status})` : ""}${hint}`);
     this.name = "AiProviderFailure";
     this.details = details;
+    this.retryAfterMs = retryAfterMs(error);
     this.reviewCategory = reviewCategory;
   }
 }

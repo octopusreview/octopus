@@ -166,11 +166,23 @@ export async function createAiMessage(
     const response = await getProvider(provider).create(params, orgKey, orgId);
     return window ? { ...response, usedOwnKey: !!orgKey } : response;
   } catch (error) {
-    if (error instanceof CapacityAdmissionError || error instanceof AiProviderFailure) throw error;
+    if (error instanceof CapacityAdmissionError) throw error;
+    if (error instanceof AiProviderFailure) { failedRouteKeys.set(error, orgKey); throw error; }
     const failure = new AiProviderFailure(error, provider, params.model, providerKeyOwner(provider, !!orgKey));
+    failedRouteKeys.set(failure, orgKey);
     console.error(`[ai-router] ${provider} API error:`, failure.details);
     throw failure;
   }
+}
+
+// Held in memory only, so a retry can prove it would use the same credential. Never logged or persisted.
+const failedRouteKeys = new WeakMap<AiProviderFailure, string | null>();
+
+/** True only when a retry of this failed request would use the same provider and the same credential. */
+export async function credentialRouteUnchanged(failure: AiProviderFailure, orgId: string): Promise<boolean> {
+  if (!failedRouteKeys.has(failure)) return false;
+  const provider = await resolveProvider(failure.model);
+  return provider === failure.provider && await getOrgKeyForProvider(orgId, provider) === failedRouteKeys.get(failure);
 }
 
 /**

@@ -11,7 +11,7 @@ export class SupersededIndexError extends Error {
 
 /**
  * GitHub answers 451 on the tree request when the repository itself is
- * unavailable for legal reasons; retrying cannot help. Set only there: other
+ * unavailable for legal reasons. Set only there: other
  * dependencies (embeddings) also raise errors with an HTTP status.
  */
 export function isProviderBlock(error: unknown): boolean {

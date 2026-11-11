@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Upgrade notes
 
-- No database migrations. Self-hosted instances only need the new image.
+- No database migrations in this release. Self-hosted instances upgrading from 1.4.4 only need the new image; those upgrading from older versions should follow the intervening upgrade notes first.
 
 ## [1.4.4] - 2026-11-11
 

@@ -290,10 +290,10 @@ export async function indexRepository(
       signal?.throwIfAborted();
       throw new GitHubIndexUnavailableError();
     }
-    const indexFetch = (url: string, init?: RequestInit) => {
+    const indexFetch = (url: string, init?: RequestInit, returnTree451 = false) => {
       const mayProbe = allowPausedProbe;
       allowPausedProbe = false;
-      return githubIndexFetch(rateScope, url, init, mayProbe);
+      return githubIndexFetch(rateScope, url, init, mayProbe, returnTree451);
     };
     const headers = {
       Authorization: `Bearer ${token}`,
@@ -309,7 +309,7 @@ export async function indexRepository(
     onLog(`Fetching repository tree for ${fullName}@${activeBranch}...`);
     let treeRes = await indexFetch(
       `${GITHUB_API}/repos/${fullName}/git/trees/${encodeURIComponent(activeBranch)}?recursive=1`,
-      { headers, signal },
+      { headers, signal }, true,
     );
 
     let branchExists = false;
@@ -327,7 +327,7 @@ export async function indexRepository(
         resolvedDefaultBranch = details.default_branch;
         treeRes = await indexFetch(
           `${GITHUB_API}/repos/${fullName}/git/trees/${encodeURIComponent(activeBranch)}?recursive=1`,
-          { headers, signal },
+          { headers, signal }, true,
         );
       }
     }

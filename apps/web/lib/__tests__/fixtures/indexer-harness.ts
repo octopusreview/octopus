@@ -1,5 +1,5 @@
 import { mock } from "bun:test";
-import "./index-github-rate-mocks";
+import { rateAdmission } from "./index-github-rate-mocks";
 import assert from "node:assert/strict";
 
 mock.module("server-only", () => ({}));
@@ -59,12 +59,13 @@ const { indexRepository } = await import("@/lib/indexer");
 const emptySha = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 const responses = new Map<string, [number, unknown]>();
 const requests: string[] = [];
+let responseHeaders: HeadersInit = {};
 globalThis.fetch = mock(async (input: string | URL | Request) => {
   const url = String(input);
   requests.push(url);
   const suffix = url.replace("https://api.github.com/repos/acme/new", "");
   const [status, body] = responses.get(suffix) ?? [500, { message: `Unexpected URL: ${url}` }];
-  return Response.json(body, { status });
+  return Response.json(body, { status, headers: responseHeaders });
 }) as typeof fetch;
 
 async function run(branch = "main") {
@@ -72,6 +73,7 @@ async function run(branch = "main") {
 }
 function reset() {
   responses.clear(); requests.length = 0; writes = 0; embedded.length = 0;
+  responseHeaders = {}; rateAdmission.kind = "open";
   details = { default_branch: "main" };
   responses.set("/contributors?per_page=30", [200, []]);
 }
@@ -124,6 +126,26 @@ for (const status of [403, 429, 451, 500, 409]) {
   });
   assert.equal(writes, 0);
 }
+
+for (const variant of ["probe", "remaining", "corrected"] as const) {
+  reset();
+  if (variant === "probe") rateAdmission.kind = "probe";
+  if (variant === "remaining") responseHeaders = { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 3600), date: new Date().toUTCString() };
+  if (variant === "corrected") {
+    details = { default_branch: "other" };
+    responses.set("/git/trees/main?recursive=1", [404, {}]);
+    responses.set("/git/trees/other?recursive=1", [451, {}]);
+  } else responses.set("/git/trees/main?recursive=1", [451, {}]);
+  const logs: string[] = [];
+  await assert.rejects(() => indexRepository({ repoId: "repo-1", indexAttemptId: "attempt-1" }, "acme/new", "main", 123, message => logs.push(message)),
+    (error: unknown) => (error as { providerBlock?: boolean }).providerBlock === true);
+  assert.ok(logs.includes("GitHub has blocked access to this repository, so it cannot be indexed."));
+}
+
+reset(); rateAdmission.kind = "probe";
+const { githubIndexFetch, GitHubIndexDeferredError } = await import("@/lib/github-index-fetch");
+responses.set("/commits/main", [451, {}]);
+await assert.rejects(() => githubIndexFetch("scope", "https://api.github.com/repos/acme/new/commits/main"), GitHubIndexDeferredError);
 
 reset();
 responses.set("/git/trees/main?recursive=1", [404, {}]);

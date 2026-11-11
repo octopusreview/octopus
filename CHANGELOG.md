@@ -7,13 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.4] - 2026-11-11
+
 ### Fixed
 
 - Stop re-indexing a repository every hour when GitHub has blocked access to it (HTTP 451). It stays marked as failed and can still be retried by hand.
 
 ### Upgrade notes
 
-- Apply the `20261111120000_repository_index_blocked_at` migration before starting instances with this change. It adds one nullable column.
+- Apply the `20261111120000_repository_index_blocked_at` migration before starting 1.4.4 instances. It adds one nullable column.
 
 ## [1.4.3] - 2026-11-11
 

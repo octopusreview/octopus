@@ -23,6 +23,7 @@ import { processRepositoryIndex, type RepositoryIndexJob } from "./repository-in
 import { dispatchDeferredIndexes } from "./github-deferred-index";
 import { pruneExpiredIndexRateWindows } from "./github-index-rate-state";
 import type { QueueConfig } from "./queue";
+import { fenceWorkers } from "./queue-drain-worker";
 
 export interface WelcomeEmailJob {
   userId: string;
@@ -34,7 +35,10 @@ export interface ProcessReviewJob {
   pullRequestId: string;
 }
 
-export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promise<void> {
+/** Returns the queue names registered. Call it again only after offWork() on each of them. */
+export async function registerWorkers(pgBoss: PgBoss, config: QueueConfig): Promise<string[]> {
+  const { work, queues } = fenceWorkers(pgBoss);
+  const boss = { work };
   await boss.work("discover-models", { localConcurrency: 1 }, async (jobs) => {
     const { refreshModelDiscovery } = await import("./providers/model-discovery");
     for (const job of jobs) await refreshModelDiscovery(job.signal);
@@ -234,7 +238,7 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
         console.error(`[queue] reap-stuck-reviews failed (job ${job.id}):`, err);
         throw err;
       }
-      try { await dispatchDeferredIndexes(boss); await pruneExpiredIndexRateWindows(); }
+      try { await dispatchDeferredIndexes(pgBoss); await pruneExpiredIndexRateWindows(); }
       catch { console.error("[queue] GitHub indexing recovery sweep failed; the next sweep will retry"); }
     }
   });
@@ -286,4 +290,5 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
   });
 
   console.log("[queue] Workers registered: welcome-email, process-review, post-large-review-result, community-review, enforce-audit-retention, enforce-activity-retention, refresh-release-cache, reap-stuck-reviews, discover-repositories, subscription-renewals, reconcile-auto-reloads, pull-ollama-model");
+  return queues;
 }

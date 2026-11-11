@@ -98,7 +98,7 @@ export type CapacityAdmissionReceipt = {
   canonicalModel: string | null;
   provider: "anthropic";
   capability: { sha256: string; fetchedAt: number; maxInputTokens: number | null; maxOutputTokens: number | null } | null;
-  count: { requestSha256: string; inputTokens: number; requestId: string | null; fetchedAt: number } | null;
+  count: { requestSha256: string; inputTokens: number; fetchedAt: number } | null;
   generationPayloadSha256: string | null;
   generationRequestBytes: number | null;
   countRequestBytes: number | null;

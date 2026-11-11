@@ -65,7 +65,7 @@ export async function admitAnthropicReview(
     || !positiveInteger(body.max_tokens) || body.max_tokens > Math.min(metadata.max_tokens, policy.maxOutputTokens)) return reject("unsupported-capability");
   checkTime();
 
-  let counted: { input_tokens: number; _request_id?: string | null };
+  let counted: { input_tokens: number };
   try {
     counted = await preflight(policy.countTimeoutMs, signal => client.messages.countTokens(countBody, { signal, timeout: policy.countTimeoutMs, maxRetries: 0 }));
   } catch (error) {
@@ -74,8 +74,7 @@ export async function admitAnthropicReview(
   }
   const countMonotonic = performance.now();
   if (!counted || !Number.isSafeInteger(counted.input_tokens) || counted.input_tokens < 0) return reject("invalid-count");
-  receipt.count = { requestSha256: sha256(JSON.stringify(countBody)), inputTokens: counted.input_tokens,
-    requestId: typeof counted._request_id === "string" && counted._request_id.length <= 256 ? counted._request_id : null, fetchedAt: Date.now() };
+  receipt.count = { requestSha256: sha256(JSON.stringify(countBody)), inputTokens: counted.input_tokens, fetchedAt: Date.now() };
   checkTime();
   receipt.tokenMargin = Math.max(policy.tokenReserve, Math.ceil(counted.input_tokens * policy.tokenReserveFraction));
   const admittedInput = counted.input_tokens + receipt.tokenMargin;

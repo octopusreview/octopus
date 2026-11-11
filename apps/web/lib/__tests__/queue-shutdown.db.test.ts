@@ -18,7 +18,7 @@ async function terminateMidJob(mode: "next" | "manual" | "unfixed") {
     let output = "";
     const reader = child.stdout.getReader();
     const decoder = new TextDecoder();
-    while (!output.includes("job-started")) {
+    while (!output.includes("job-started") || !/job-id (\S+)\r?\n/.test(output)) {
       const { done, value } = await reader.read();
       if (done) throw new Error(`child ended early: ${output}\n${await new Response(child.stderr).text()}`);
       output += decoder.decode(value);

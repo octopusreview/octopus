@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.5] - 2026-11-11
+
 ### Security
 
 - Update Next.js to 16.4.6 and sharp to 0.35.5 to pick up upstream security fixes, including advisories in image optimization and Server Actions.

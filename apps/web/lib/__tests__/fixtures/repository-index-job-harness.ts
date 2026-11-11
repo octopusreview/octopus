@@ -223,7 +223,7 @@ const firstDate = currentRow?.firstIndexedAt;
 
 // A provider block settles the job without a queue retry and keeps automatic indexing away.
 Object.assign(currentRow!, { indexStatus: "pending", indexBlockedAt: null });
-indexFailure = Object.assign(new Error("Failed to fetch tree: 451"), { status: 451 });
+indexFailure = Object.assign(new Error("Failed to fetch tree: 451"), { status: 451, providerBlock: true });
 await processRepositoryIndex(job, { retryCount: 0, retryLimit: 2 }, "00000000-0000-4000-8000-000000000002");
 assert.equal(currentRow?.indexStatus, "failed", "a blocked repository stays failed so it can be retried by hand");
 assert.ok(currentRow?.indexBlockedAt instanceof Date);
@@ -233,11 +233,13 @@ assert.equal(queued.length, 0, "the sweep must leave a blocked repository alone"
 const callsWhileBlocked = indexCalls.length;
 await processRepositoryIndex(job, { retryCount: 0, retryLimit: 2 }, "00000000-0000-4000-8000-000000000003");
 assert.equal(indexCalls.length, callsWhileBlocked, "an already queued job must not index a blocked repository");
-// Other failures keep their queue retry and are not marked.
-Object.assign(currentRow!, { indexStatus: "pending", indexBlockedAt: null });
-indexFailure = Object.assign(new Error("Failed to fetch tree: 500"), { status: 500 });
-await assert.rejects(() => processRepositoryIndex(job, { retryCount: 0, retryLimit: 2 }, "00000000-0000-4000-8000-000000000004"), /500/);
-assert.equal(currentRow?.indexBlockedAt, null);
+// Other failures keep their queue retry and are not marked, including a 451 from another dependency.
+for (const [id, failure] of [["4", { status: 500 }], ["5", { status: 451 }]] as const) {
+  Object.assign(currentRow!, { indexStatus: "pending", indexBlockedAt: null });
+  indexFailure = Object.assign(new Error(`Dependency answered ${failure.status}`), failure);
+  await assert.rejects(() => processRepositoryIndex(job, { retryCount: 0, retryLimit: 2 }, `00000000-0000-4000-8000-00000000000${id}`), /Dependency answered/);
+  assert.equal(currentRow?.indexBlockedAt, null);
+}
 // A manual retry claims the row itself; a successful index lifts the block.
 indexFailure = null;
 const { runRepositoryIndex } = await import("@/lib/repository-index-completion");

@@ -358,7 +358,7 @@ export async function indexRepository(
         throw new Error(`Branch '${activeBranch}' not found on ${fullName}`);
       }
       onLog(treeRes.status === 451 ? PROVIDER_BLOCK_INDEX_LOG : `Failed to fetch tree: HTTP ${treeRes.status}`, "error");
-      throw Object.assign(new Error(`Failed to fetch tree: ${treeRes.status}`), { status: treeRes.status });
+      throw Object.assign(new Error(`Failed to fetch tree: ${treeRes.status}`), { status: treeRes.status, providerBlock: treeRes.status === 451 });
     }
 
     const treeData = emptyRepository ? { tree: [] } : await treeRes.json();

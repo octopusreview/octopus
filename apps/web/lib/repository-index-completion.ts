@@ -9,9 +9,13 @@ export class SupersededIndexError extends Error {
   constructor() { super("Indexing attempt is no longer current"); }
 }
 
-/** GitHub answers 451 when the repository itself is unavailable for legal reasons; retrying cannot help. */
+/**
+ * GitHub answers 451 on the tree request when the repository itself is
+ * unavailable for legal reasons; retrying cannot help. Set only there: other
+ * dependencies (embeddings) also raise errors with an HTTP status.
+ */
 export function isProviderBlock(error: unknown): boolean {
-  return (error as { status?: unknown } | null)?.status === 451;
+  return (error as { providerBlock?: unknown } | null)?.providerBlock === true;
 }
 
 export function isIndexingCancelled(signal?: AbortSignal): boolean {

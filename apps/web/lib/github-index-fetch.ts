@@ -54,7 +54,7 @@ async function indexRateWindow(response: Response, now: number): Promise<GitHubR
 }
 
 /** Each request consults the shared window; an expired window permits one bounded probe. */
-export async function githubIndexFetch(scope: string, url: string, init: RequestInit = {}, allowPausedProbe = false): Promise<Response> {
+export async function githubIndexFetch(scope: string, url: string, init: RequestInit = {}, allowPausedProbe = false, returnTree451 = false): Promise<Response> {
   const signal = init.signal;
   signal?.throwIfAborted();
   const admission = await stateOperation(() => admitIndexRequest(scope, allowPausedProbe), signal);
@@ -119,7 +119,7 @@ export async function githubIndexFetch(scope: string, url: string, init: Request
     }
     await stateOperation(() => completeIndexRateProbe(scope, admission), signal);
     signal?.throwIfAborted();
-    return githubIndexFetch(scope, url, init);
+    return githubIndexFetch(scope, url, init, false, returnTree451);
   }
   let response: Response;
   try {
@@ -138,13 +138,13 @@ export async function githubIndexFetch(scope: string, url: string, init: Request
     const state = await stateOperation(() => recordIndexRateLimit(scope, duration, window.kind !== "primary" || duration === null,
       window.verifyPrimary ? { resetMs: window.primaryReset ?? null } : undefined, window.untrustedRetryDate), signal);
     signal?.throwIfAborted();
-    if (!response.ok) throw new GitHubIndexDeferredError(response.status, undefined, state.paused, window.untrustedRetryDate);
+    if (!response.ok && !(returnTree451 && response.status === 451)) throw new GitHubIndexDeferredError(response.status, undefined, state.paused, window.untrustedRetryDate);
   } else if (admission.kind === "probe") {
     if (response.ok) await stateOperation(() => completeIndexRateProbe(scope, admission), signal);
     else {
       const state = await stateOperation(() => recordIndexRateLimit(scope, null), signal);
       signal?.throwIfAborted();
-      throw new GitHubIndexDeferredError(response.status, undefined, state.paused);
+      if (!(returnTree451 && response.status === 451)) throw new GitHubIndexDeferredError(response.status, undefined, state.paused);
     }
   }
   signal?.throwIfAborted();

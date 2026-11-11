@@ -13,6 +13,7 @@ import * as gitlabLib from "@/lib/gitlab";
 import * as forgejoLib from "@/lib/forgejo";
 import { ForgejoResponseTooLargeError } from "@/lib/forgejo-http";
 import { ensureCollection, upsertChunks, deleteRepoFileChunks } from "@/lib/qdrant";
+import { PROVIDER_BLOCK_INDEX_LOG } from "@/lib/index-log-safety";
 import { generateSparseVectors } from "@/lib/sparse-vector";
 import { parseOctopusIgnore, type Ignore } from "@/lib/octopus-ignore";
 import { shouldIndex, chunkText, treeBlobs, MAX_FILE_SIZE, exceedsMaxFileSize } from "@/lib/index-chunking";
@@ -289,10 +290,10 @@ export async function indexRepository(
       signal?.throwIfAborted();
       throw new GitHubIndexUnavailableError();
     }
-    const indexFetch = (url: string, init?: RequestInit) => {
+    const indexFetch = (url: string, init?: RequestInit, returnTree451 = false) => {
       const mayProbe = allowPausedProbe;
       allowPausedProbe = false;
-      return githubIndexFetch(rateScope, url, init, mayProbe);
+      return githubIndexFetch(rateScope, url, init, mayProbe, returnTree451);
     };
     const headers = {
       Authorization: `Bearer ${token}`,
@@ -308,7 +309,7 @@ export async function indexRepository(
     onLog(`Fetching repository tree for ${fullName}@${activeBranch}...`);
     let treeRes = await indexFetch(
       `${GITHUB_API}/repos/${fullName}/git/trees/${encodeURIComponent(activeBranch)}?recursive=1`,
-      { headers, signal },
+      { headers, signal }, true,
     );
 
     let branchExists = false;
@@ -326,7 +327,7 @@ export async function indexRepository(
         resolvedDefaultBranch = details.default_branch;
         treeRes = await indexFetch(
           `${GITHUB_API}/repos/${fullName}/git/trees/${encodeURIComponent(activeBranch)}?recursive=1`,
-          { headers, signal },
+          { headers, signal }, true,
         );
       }
     }
@@ -356,8 +357,8 @@ export async function indexRepository(
         onLog(`Branch '${activeBranch}' not found on ${fullName}`, "error");
         throw new Error(`Branch '${activeBranch}' not found on ${fullName}`);
       }
-      onLog(`Failed to fetch tree: HTTP ${treeRes.status}`, "error");
-      throw Object.assign(new Error(`Failed to fetch tree: ${treeRes.status}`), { status: treeRes.status });
+      onLog(treeRes.status === 451 ? PROVIDER_BLOCK_INDEX_LOG : `Failed to fetch tree: HTTP ${treeRes.status}`, "error");
+      throw Object.assign(new Error(`Failed to fetch tree: ${treeRes.status}`), { status: treeRes.status, providerBlock: treeRes.status === 451 });
     }
 
     const treeData = emptyRepository ? { tree: [] } : await treeRes.json();

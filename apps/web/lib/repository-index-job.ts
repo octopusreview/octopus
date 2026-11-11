@@ -2,7 +2,7 @@ import "server-only";
 import { reportBackgroundFailure, type RetryState } from "./background-failure";
 import { indexingMilestone, type IndexingMilestone } from "./indexing-milestone";
 import { createHash, randomUUID } from "node:crypto";
-import { runRepositoryIndex, SupersededIndexError, isIndexingCancelled } from "@/lib/repository-index-completion";
+import { runRepositoryIndex, SupersededIndexError, isIndexingCancelled, isProviderBlock } from "@/lib/repository-index-completion";
 import { prisma } from "@octopus/db";
 import { enqueue } from "@/lib/queue";
 import type { LogLevel } from "@/lib/indexer";
@@ -45,6 +45,8 @@ export async function enqueuePendingRepositoryIndexes(organizationId: string, re
       provider: { in: eligibleProviders },
       isActive: true,
       dismissedAt: null,
+      // A blocked repository stays "failed" for manual retries; the sweep leaves it alone.
+      indexBlockedAt: null,
       organization: { deletedAt: null, bannedAt: null, autoDiscoverRepos: true },
       ...needsIndex,
     },
@@ -107,7 +109,7 @@ export async function processRepositoryIndex(job: RepositoryIndexJob, retry?: Re
       installationId: repo.installationId, isActive: true, dismissedAt: null,
       organization: { deletedAt: null, bannedAt: null, autoDiscoverRepos: true,
         ...(repo.provider === "github" ? { githubInstallationId: installationId } : {}) },
-      ...(deferred ? deferredClaim : initialClaim) },
+      ...(deferred ? deferredClaim : { ...initialClaim, indexBlockedAt: null }) },
     data: { indexStatus: "indexing", indexAttemptId },
   });
   if (!claim.count) return;
@@ -148,6 +150,8 @@ export async function processRepositoryIndex(job: RepositoryIndexJob, retry?: Re
     if (!isCancelled) {
       reportBackgroundFailure(error, { stage: "indexing", attemptId: indexAttemptId, repositoryId: repo.id, retry,
         indexingDeadline: error === deadlineError && controller.signal.reason === deadlineError, indexingLastMilestone: lastMilestone });
+      // Settle the job: a queue retry would meet the same refusal.
+      if (isProviderBlock(error)) return;
       throw error;
     }
   } finally {

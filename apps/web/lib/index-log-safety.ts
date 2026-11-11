@@ -1,4 +1,6 @@
+export const PROVIDER_BLOCK_INDEX_LOG = "GitHub has blocked access to this repository, so it cannot be indexed.";
 const safeMessages = new Set([
+  PROVIDER_BLOCK_INDEX_LOG,
   "Repository cloned successfully", "Scanning repository files...", "Processing file contents...",
   "Authenticating with GitHub...", "GitHub authentication successful", "Authenticating with GitLab...",
   "GitLab authentication successful", "Authenticating with Bitbucket...", "Bitbucket authentication successful",

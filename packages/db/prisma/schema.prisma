@@ -326,6 +326,7 @@ model Repository {
   indexStatus    String   @default("pending") // pending | indexing | indexed | failed
   indexedAt      DateTime?
   firstIndexedAt DateTime?
+  indexBlockedAt DateTime? // GitHub tree request returned HTTP 451; discovery and ordinary queue claims skip it until an index succeeds
   indexAttemptId String?
   syncLogAttemptId String?
   activeIndexGeneration String?

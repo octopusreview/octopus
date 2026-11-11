@@ -9,6 +9,15 @@ export class SupersededIndexError extends Error {
   constructor() { super("Indexing attempt is no longer current"); }
 }
 
+/**
+ * GitHub answers 451 on the tree request when the repository itself is
+ * unavailable for legal reasons. Set only there: other
+ * dependencies (embeddings) also raise errors with an HTTP status.
+ */
+export function isProviderBlock(error: unknown): boolean {
+  return (error as { providerBlock?: unknown } | null)?.providerBlock === true;
+}
+
 export function isIndexingCancelled(signal?: AbortSignal): boolean {
   return !!signal?.aborted && signal.reason?.name !== "TimeoutError";
 }
@@ -40,6 +49,7 @@ export async function runRepositoryIndex(
       signal?.throwIfAborted();
       const saved = await tx.repository.updateMany({ where, data: {
         indexStatus: "indexed",
+        indexBlockedAt: null,
         activeIndexGeneration: indexAttemptId,
         totalFiles: stats.totalFiles, indexedFiles: stats.indexedFiles,
         totalChunks: stats.totalChunks, totalVectors: stats.totalVectors,
@@ -59,7 +69,8 @@ export async function runRepositoryIndex(
     return stats;
   } catch (error) {
     // Never let an expired worker overwrite its replacement's state.
-    const data = { indexStatus: isIndexingCancelled(signal) ? "pending" : "failed" };
+    const data = { indexStatus: isIndexingCancelled(signal) ? "pending" : "failed",
+      ...(isProviderBlock(error) ? { indexBlockedAt: new Date() } : {}) };
     const released = onFailure && !signal?.aborted
       ? await prisma.$transaction(async tx => {
         const result = await tx.repository.updateMany({ where, data });

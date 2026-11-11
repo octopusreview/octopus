@@ -1,6 +1,6 @@
 import { expect, it } from "bun:test";
 import { fileURLToPath } from "node:url";
-import { safeIndexLogMessage } from "../index-log-safety";
+import { PROVIDER_BLOCK_INDEX_LOG, safeIndexLogMessage } from "../index-log-safety";
 for (const fixture of ["indexing-admin-privacy.ts", "indexing-failure-event-privacy.ts"]) {
   it(`keeps synthetic indexing errors private: ${fixture}`, async () => {
     const child = Bun.spawn([process.execPath, fileURLToPath(new URL(`./fixtures/${fixture}`, import.meta.url))], { cwd: process.cwd(), stdout: "pipe", stderr: "pipe" });
@@ -21,6 +21,7 @@ it("preserves fixed indexing status messages without exposing appended details",
     "Local indexing batch failed",
     "Local indexing stopped: monthly spend limit reached",
     "GitHub indexing paused after repeated rate limits. Check GitHub limits before retrying.",
+    PROVIDER_BLOCK_INDEX_LOG,
   ]) {
     expect(safeIndexLogMessage(message)).toBe(message);
     expect(safeIndexLogMessage(`${message} synthetic-secret`)).toBe("Indexing message withheld for privacy.");

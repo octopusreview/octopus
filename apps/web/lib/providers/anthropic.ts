@@ -1,5 +1,5 @@
 import "server-only";
-import { observeAiRequest, completionEvidence } from "./request-evidence";
+import { observeAiRequest, completionEvidence, sdkRequestOptions } from "./request-evidence";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Provider, AiCreateParams, AiResponse } from "./index";
 import { prepareAnthropicRequest, freezeRequest, usesNativeJsonOutput, type AnthropicRequest } from "./anthropic-request";
@@ -71,6 +71,7 @@ export const anthropicProvider: Provider = {
     // SDK 0.91.1 serializes between_tools correctly but does not yet type it.
     const stream = client.messages.stream(observeAiRequest(params, "anthropic", body) as Anthropic.MessageCreateParamsStreaming, {
       signal,
+      ...sdkRequestOptions(params),
       ...(window ? { maxRetries: 0, timeout: timeoutMs } : {}),
     });
 

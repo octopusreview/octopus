@@ -25,7 +25,7 @@ export async function admitAnthropicReview(
     withinReviewWindow(admission.window, Math.min(ms, admission.window.remainingMs() - policy.minGenerationMs - policy.publicationReserveMs), work);
   checkTime();
   if (params.model !== policy.model || typeof client.baseURL !== "string" || client.baseURL.replace(/\/$/, "") !== "https://api.anthropic.com") reject("unsupported-route");
-  const knownParams = new Set(["model", "maxTokens", "system", "messages", "cacheSystem", "effort", "thinking", "onRequest", "completeReviewAdmission", "executionWindow"]);
+  const knownParams = new Set(["model", "maxTokens", "system", "messages", "cacheSystem", "effort", "thinking", "onRequest", "completeReviewAdmission", "executionWindow", "maxRetries"]);
   if (params.responseSchema !== undefined || Object.keys(params).some(key => !knownParams.has(key))) reject("unsupported-payload");
   const countBody = anthropicCountProjection(body);
   if (!countBody || body.thinking?.type !== "adaptive" || !body.output_config?.effort) return reject("unsupported-payload");

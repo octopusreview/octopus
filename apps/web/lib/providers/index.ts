@@ -54,6 +54,8 @@ export type AiCreateParams = {
   executionWindow?: import("../review-capacity").ReviewExecutionWindow;
   /** Digest-only observation of the final adapter request; never sent to the model. */
   onRequest?: (receipt: import("./request-evidence").AiRequestReceipt) => void;
+  /** Review generation sets 0 so one application attempt is exactly one provider request. */
+  maxRetries?: 0;
   maxTokens: number;
   system?: string;
   messages: AiMessage[];

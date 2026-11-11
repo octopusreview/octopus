@@ -1,6 +1,6 @@
 import "server-only";
 import { AiProviderFailure, type KeyOwner } from "../provider-failure";
-import { observeAiRequest, completionEvidence } from "./request-evidence";
+import { observeAiRequest, completionEvidence, sdkRequestOptions } from "./request-evidence";
 import Anthropic from "@anthropic-ai/sdk";
 import { spawn } from "node:child_process";
 import { prisma } from "@octopus/db";
@@ -183,7 +183,7 @@ async function runAnthropicApi(params: AiCreateParams, apiKey: string | null): P
           }
         : {}),
     }),
-    { signal: AbortSignal.timeout(ANTHROPIC_CALL_TIMEOUT_MS) },
+    { signal: AbortSignal.timeout(ANTHROPIC_CALL_TIMEOUT_MS), ...sdkRequestOptions(params) },
   );
 
   let response: Anthropic.Message;

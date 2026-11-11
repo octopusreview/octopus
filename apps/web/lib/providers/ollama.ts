@@ -1,5 +1,5 @@
 import "server-only";
-import { observeAiRequest, completionEvidence } from "./request-evidence";
+import { observeAiRequest, completionEvidence, sdkRequestOptions } from "./request-evidence";
 import OpenAI, { type ClientOptions } from "openai";
 import { prisma } from "@octopus/db";
 import type { Provider, AiCreateParams, AiResponse } from "./index";
@@ -126,7 +126,7 @@ export const ollamaProvider: Provider = {
       model,
       max_completion_tokens: params.maxTokens,
       messages,
-    }));
+    }), sdkRequestOptions(params));
 
     const text = response.choices[0]?.message?.content ?? "";
 

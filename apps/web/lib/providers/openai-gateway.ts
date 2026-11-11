@@ -1,5 +1,5 @@
 import "server-only";
-import { observeAiRequest, completionEvidence } from "./request-evidence";
+import { observeAiRequest, completionEvidence, sdkRequestOptions } from "./request-evidence";
 import OpenAI from "openai";
 import type { AiCreateParams, AiResponse, AiProvider } from "./index";
 import { stripLoneSurrogates } from "./sanitize";
@@ -58,7 +58,7 @@ export async function callOpenAiGateway(
           },
         }
       : {}),
-  }));
+  }), sdkRequestOptions(params));
 
   const text = response.choices[0]?.message?.content ?? "";
   // Surface an empty completion as an error instead of returning a blank review

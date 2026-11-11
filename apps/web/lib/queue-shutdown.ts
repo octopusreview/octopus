@@ -20,16 +20,18 @@ export function installQueueShutdown(boss: Pick<PgBoss, "stop">, timeout = DRAIN
     const exit = process.exit.bind(process);
     let held: { code?: number | string | null } | undefined;
     process.exit = ((code?: number | string | null) => { held = { code }; }) as typeof process.exit;
+    let failed = false;
     try {
       await boss.stop({ graceful: true, timeout });
     } catch (error) {
+      failed = true;
       console.error("[queue] Graceful shutdown failed:", error instanceof Error ? error.name : "unknown error");
     }
     process.exit = exit;
     // Next exits by itself once HTTP has closed. Where this is the only handler
     // (NEXT_MANUAL_SIG_HANDLE, or a process that is not a Next server) nothing else will.
     if (held) exit(held.code);
-    else if (process.listenerCount(signal) <= 1) exit(0);
+    else if (process.listenerCount(signal) <= 1) exit(failed ? 1 : 0);
   };
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);

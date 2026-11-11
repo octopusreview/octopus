@@ -3,6 +3,7 @@ import { authenticateApiToken } from "@/lib/api-auth";
 import { prisma } from "@octopus/db";
 import { analyzeRepository } from "@/lib/analyzer";
 import { eventBus } from "@/lib/events/bus";
+import { trackInline } from "@/lib/queue-drain-worker";
 import { NextRequest } from "next/server";
 
 export async function POST(
@@ -48,7 +49,7 @@ export async function POST(
     return Response.json({ error: "Repository state changed or work is already in progress" }, { status: 409 });
   }
 
-  analyzeRepository(repo.id, repo.fullName, result.org.id)
+  trackInline(() => analyzeRepository(repo.id, repo.fullName, result.org.id))
     .then(async (analysis) => {
       await prisma.repository.update({
         where: { id: repo.id },

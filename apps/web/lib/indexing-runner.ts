@@ -7,8 +7,12 @@ import { clearAbortController } from "@/lib/indexing-abort";
 import { eventBus } from "@/lib/events";
 import type { LogLevel } from "@/lib/indexer";
 import { GitHubIndexDeferredError } from "@/lib/github-index-fetch";
+import { trackInline } from "@/lib/queue-drain-worker";
 
-export async function runIndexingInBackground(
+/** Detached from the request that started it, so it is counted until it settles. */
+export const runIndexingInBackground: typeof indexInBackground = (...args) => trackInline(() => indexInBackground(...args));
+
+async function indexInBackground(
   repoId: string,
   fullName: string,
   defaultBranch: string,

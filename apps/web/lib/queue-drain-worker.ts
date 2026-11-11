@@ -19,6 +19,7 @@ let acked: number | undefined;
 let polledAt = 0;
 let polling = false;
 let retiring = false;
+let inlineActive = 0;
 
 const logFailure = (what: string, error: unknown) =>
   console.error(`[queue] ${what} failed:`, error instanceof Error ? error.name : "unknown error");
@@ -29,7 +30,7 @@ async function poll(): Promise<void> {
   try {
     const { acknowledgeDrain, expireDrainLease, heartbeat, registerInstance } = await lib();
     instanceId ??= await registerInstance();
-    let drain = await heartbeat(instanceId, { inlineActive: 0 });
+    let drain = await heartbeat(instanceId, { inlineActive });
     // If whoever requested the drain stopped renewing it, resume without them.
     if (drain.state === "draining" && await expireDrainLease()) drain = { ...drain, state: "claiming" };
     draining = drain.state === "draining";
@@ -78,13 +79,31 @@ export async function startQueueDrainWorker(
   timer.unref?.();
 }
 
-/** Shutdown: a later resume must not reopen a worker that is being removed. */
-export async function retireQueueDrainWorker(): Promise<void> {
+/**
+ * Work done inside a web request rather than a queue job: CLI and Action reviews,
+ * and detached indexing or analysis. It is never refused; a drain and a shutdown wait for it.
+ */
+export async function trackInline<T>(work: () => Promise<T>): Promise<T> {
+  // Report the first one at once rather than on the next tick, so status does not miss it.
+  if (inlineActive++ === 0 && instanceId) void poll();
+  try {
+    return await work();
+  } finally {
+    inlineActive--;
+  }
+}
+
+/**
+ * Shutdown: a later resume must not reopen a worker that is being removed.
+ * Next waits for open requests itself; the wait here covers detached inline work.
+ */
+export async function retireQueueDrainWorker(timeoutMs: number): Promise<void> {
   retiring = true;
   clearInterval(timer);
-  if (!instanceId) return;
   const id = instanceId;
-  await lib().then(({ markRetiring }) => markRetiring(id)).catch(error => logFailure("Marking the instance as retiring", error));
+  if (id) await lib().then(({ markRetiring }) => markRetiring(id)).catch(error => logFailure("Marking the instance as retiring", error));
+  const deadline = Date.now() + timeoutMs;
+  while (inlineActive > 0 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
 }
 
 // Refusing a job means throwing, which fails it. This queue has no retries
@@ -102,7 +121,7 @@ async function refuseWhileDraining(name: string): Promise<void> {
   // A read this old no longer proves anything: the drain may have completed without this process.
   if (Date.now() - polledAt > 3 * pollMs) {
     try {
-      draining = (await (await lib()).heartbeat(instanceId, { inlineActive: 0 })).state === "draining";
+      draining = (await (await lib()).heartbeat(instanceId, { inlineActive })).state === "draining";
       polledAt = Date.now();
     } catch (error) {
       logFailure("Drain read", error);

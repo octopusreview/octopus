@@ -11,7 +11,7 @@ const DRAIN_TIMEOUT_MS = 300_000;
  * until the queue has stopped, so Next still closes HTTP gracefully and its
  * exit code is kept.
  */
-export function installQueueShutdown(boss: Pick<PgBoss, "stop">, timeout = DRAIN_TIMEOUT_MS, onShutdown?: () => Promise<void>): void {
+export function installQueueShutdown(boss: Pick<PgBoss, "stop">, timeout = DRAIN_TIMEOUT_MS, onShutdown?: (timeout: number) => Promise<void>): void {
   let shuttingDown = false;
   const shutdown = async (signal: NodeJS.Signals) => {
     if (shuttingDown) return;
@@ -22,7 +22,7 @@ export function installQueueShutdown(boss: Pick<PgBoss, "stop">, timeout = DRAIN
     process.exit = ((code?: number | string | null) => { held = { code }; }) as typeof process.exit;
     let failed = false;
     try {
-      await Promise.all([boss.stop({ graceful: true, timeout }), onShutdown?.()]);
+      await Promise.all([boss.stop({ graceful: true, timeout }), onShutdown?.(timeout)]);
     } catch (error) {
       failed = true;
       console.error("[queue] Graceful shutdown failed:", error instanceof Error ? error.name : "unknown error");

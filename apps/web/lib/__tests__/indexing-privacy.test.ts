@@ -21,6 +21,7 @@ it("preserves fixed indexing status messages without exposing appended details",
     "Local indexing batch failed",
     "Local indexing stopped: monthly spend limit reached",
     "GitHub indexing paused after repeated rate limits. Check GitHub limits before retrying.",
+    "GitHub has blocked access to this repository, so it cannot be indexed.",
   ]) {
     expect(safeIndexLogMessage(message)).toBe(message);
     expect(safeIndexLogMessage(`${message} synthetic-secret`)).toBe("Indexing message withheld for privacy.");

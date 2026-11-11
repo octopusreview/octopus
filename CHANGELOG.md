@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Server shutdowns now wait up to five minutes for running reviews and indexing jobs to finish before exiting.
 
+## [1.4.6] - 2026-11-11
+
+### Changed
+
+- Update the OpenAI SDK to version 7.
+
 ## [1.4.5] - 2026-11-11
 
 ### Security

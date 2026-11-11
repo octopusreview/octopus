@@ -42,6 +42,8 @@ docker exec "$task_container" psql -v ON_ERROR_STOP=1 -U postgres -d octopus_ind
 docker exec "$task_container" psql -v ON_ERROR_STOP=1 -U postgres -d octopus_index_migration_test -c 'CREATE TABLE "repositories" ("id" TEXT PRIMARY KEY, "organizationId" TEXT, "fullName" TEXT, "defaultBranch" TEXT, "provider" TEXT, "installationId" INTEGER, "isActive" BOOLEAN NOT NULL DEFAULT true, "dismissedAt" TIMESTAMP(3), "indexStatus" TEXT NOT NULL, "indexAttemptId" TEXT, "totalFiles" INTEGER NOT NULL DEFAULT 0, "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP)' >/dev/null
 docker exec -i "$task_container" psql -v ON_ERROR_STOP=1 -U postgres -d octopus_index_migration_test \
   < packages/db/prisma/migrations/20261109010000_github_index_rate_secret/migration.sql >/dev/null
+docker exec -i "$task_container" psql -v ON_ERROR_STOP=1 -U postgres -d octopus_index_migration_test \
+  < packages/db/prisma/migrations/20261111120000_repository_index_blocked_at/migration.sql >/dev/null
 
 export DATABASE_URL="postgresql://postgres:$POSTGRES_PASSWORD@127.0.0.1:$port/octopus_index_migration_test"
 bun run db:generate

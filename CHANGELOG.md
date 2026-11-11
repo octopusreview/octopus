@@ -7,14 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-11-11
+
 ### Fixed
 
+- GitHub indexing waits for a rate limit to reset before retrying, shares that wait across workers, and resumes paused background indexes afterwards.
 - Scope community review reuse to the owning organization, repository identity and posting mode, and check identity when starting and polling jobs.
+- Keep clone credentials and upstream error text out of large-review failure comments, statuses and logs.
+- The indexing log viewer withholds message text that may contain paths or credentials, pages long histories, and warns when messages may be duplicated or missing.
 
 ### Upgrade notes
 
-- Before deploying 1.4.3, apply the `20261108123000_community_job_repository_external_id` migration. Existing jobs have no external-ID snapshot. In-flight work and mixed-version workers are not fully fenced by this change.
-- Conflicting community review requests return HTTP 409 without a job ID. Existing GitHub Action clients may fail on this response; monitor the 409 rate after deployment.
+- Apply these migrations before starting 1.4.3 instances: `20261106120000_sync_log_attempt_marker`, `20261108123000_community_job_repository_external_id`, `20261108235500_large_review_failure_fingerprint` and `20261109010000_github_index_rate_secret`. All four only add tables or nullable columns.
+- Let in-flight indexing and large-review jobs finish, then stop workers on earlier versions before starting 1.4.3 workers. Older workers ignore the shared GitHub cooldown and can still send unsanitized log and failure text.
+- Conflicting community review requests now return HTTP 409 without a job ID. Existing GitHub Action clients may fail on this response.
 
 ## [1.4.2] - 2026-11-10
 

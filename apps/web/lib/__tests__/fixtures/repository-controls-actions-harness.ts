@@ -130,16 +130,15 @@ row.indexStatus = "indexed";
 assert.match((await cancelIndexing("repo")).error!, /not currently indexing/);
 // A repository GitHub has blocked stays "failed": a manual retry must still run,
 // and the customer must see the reason rather than a withheld line.
-const { PROVIDER_BLOCK_INDEX_LOG } = await import("@/lib/index-log-safety");
-Object.assign(row, { indexStatus: "failed", indexedAt: null, indexBlockedAt: new Date() });
+const blockMessage = "GitHub has blocked access to this repository, so it cannot be indexed.";
+Object.assign(row, { provider: "github", installationId: 1, indexStatus: "failed", indexedAt: null, indexBlockedAt: new Date() });
 replaceBeforeCancel = false;
 notifications.length = 0;
-extraLogs = [PROVIDER_BLOCK_INDEX_LOG, `${PROVIDER_BLOCK_INDEX_LOG} team/project synthetic-secret`];
+extraLogs = [blockMessage, `${blockMessage} team/project synthetic-secret`];
 const startsBeforeBlockedRetry = starts;
 assert.deepEqual(await indexRepository("repo"), {}, "a blocked repository can be retried by hand");
 assert.equal(starts, startsBeforeBlockedRetry + 1);
 assert.equal(row.indexStatus, "indexing");
 const blockedRetryLogs = notifications.filter(item => item.event === "index-log").map(item => item.data.message);
-assert.ok(blockedRetryLogs.includes(PROVIDER_BLOCK_INDEX_LOG), "the block reason reaches the customer unchanged");
-assert.doesNotMatch(JSON.stringify(notifications), /synthetic-secret/, "appended details are still withheld");
+assert.deepEqual(blockedRetryLogs.slice(-2), [blockMessage, "Indexing message withheld for privacy."]);
 console.log("Repository action permission, readiness, cooldown, toggle and indexing checks passed");

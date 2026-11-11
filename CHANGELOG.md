@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Releases can now pause job processing cluster-wide, wait for running reviews and indexing to finish, and resume, instead of interrupting work in progress. See [draining the job queue for a release](docs/rollout-drain.md).
+
 ## [1.4.8] - 2026-11-12
 
 ### Security
@@ -24,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Update the OpenAI SDK to version 7.
+
+### Upgrade notes
+
+- Apply the `20261111130000_queue_drain_state` migration before starting instances on this version. It adds two tables. A review worker that cannot read them does not start processing jobs.
+- Workers on earlier versions do not take part in a drain: they keep processing jobs and are not listed in its status. Use a drain only once every running worker is on this version or later. See [draining the job queue for a release](docs/rollout-drain.md).
 
 ## [1.4.5] - 2026-11-11
 

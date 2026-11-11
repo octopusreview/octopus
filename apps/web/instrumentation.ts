@@ -140,18 +140,8 @@ export async function register() {
     }
 
     // Graceful shutdown: wait for active jobs (e.g. in-progress reviews) to finish.
-    // Re-entry guard so a SIGTERM+SIGINT pair (or repeated signals) can't call
-    // boss.stop()/process.exit() concurrently and interrupt the drain.
-    let shuttingDown = false;
-    const shutdown = async () => {
-      if (shuttingDown) return;
-      shuttingDown = true;
-      console.log("[queue] Graceful shutdown, waiting for active jobs...");
-      await boss.stop({ graceful: true, timeout: 300_000 }); // 5 min
-      process.exit(0);
-    };
-    process.on("SIGTERM", shutdown);
-    process.on("SIGINT", shutdown);
+    const { installQueueShutdown } = await import("./lib/queue-shutdown");
+    installQueueShutdown(boss);
   }
 }
 

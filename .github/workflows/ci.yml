@@ -139,6 +139,12 @@ jobs:
         env:
           RUN_QUEUE_DB_TESTS: "1"
 
+      - name: Test graceful queue shutdown against PostgreSQL
+        run: bun test lib/__tests__/queue-shutdown.db.test.ts
+        working-directory: apps/web
+        env:
+          RUN_QUEUE_DB_TESTS: "1"
+
       - name: Test billing auto-reload invariants against PostgreSQL
         run: bun test lib/__tests__/billing.db.test.ts
         working-directory: apps/web

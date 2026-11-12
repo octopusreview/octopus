@@ -244,8 +244,9 @@ schema, reader role or `organizations_v1` view. It is safe to repeat and preserv
 the view identity, owner, reader grant and security barrier. Fresh installs get
 the same definition and grant from `access.sql`.
 
-Needs the same operator step as #939; if analytics view changes move into regular
-migrations, both can be converted together.
+The provenance (#1017) and signup-method (#948) updates need the same operator
+step as #939; if analytics view changes move into regular migrations, all three
+can be converted together.
 
 For the first-index column on an existing installation, run
 `scripts/analytics/update-repositories-first-index.sql` once through the existing

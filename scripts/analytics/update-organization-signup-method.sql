@@ -22,7 +22,7 @@ END $$;
 CREATE OR REPLACE VIEW octopus_analytics.organization_signup_method_v1
 WITH (security_barrier = true) AS
 WITH creators AS (
-  -- Both birth timestamps use the same transaction's now(); retain removed owners.
+  -- See docs/product-analytics.md for timestamp matching; retain removed owners.
   SELECT o.id AS organization_id,
     CASE WHEN count(m.id) = 1 THEN min(m."userId") END AS creator_id
   FROM public.organizations o

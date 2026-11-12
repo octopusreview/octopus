@@ -954,32 +954,28 @@ export async function listPullRequestReviews(
   prNumber: number,
 ): Promise<{ id: number; body: string; user: string; submittedAt: string }[]> {
   const token = await getInstallationToken(installationId);
-  const allReviews: { id: number; body: string; user: string; submittedAt: string }[] = [];
-  for (let page = 1; ; page++) {
-    const res = await fetchWithRetry(
-      `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/reviews?per_page=100&page=${page}`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/vnd.github+json",
-        },
+  const res = await fetchWithRetry(
+    `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/reviews?per_page=100`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
       },
-    );
+    },
+  );
 
-    if (!res.ok) {
-      console.error(`[github] Failed to list PR reviews: ${res.status}`);
-      return [];
-    }
-
-    const reviews = (await res.json()) as { id: number; body: string; user: { login: string }; submitted_at: string }[];
-    allReviews.push(...reviews.map((r) => ({
-      id: r.id,
-      body: r.body,
-      user: r.user.login,
-      submittedAt: r.submitted_at,
-    })));
-    if (reviews.length < 100) return allReviews;
+  if (!res.ok) {
+    console.error(`[github] Failed to list PR reviews: ${res.status}`);
+    return [];
   }
+
+  const reviews = (await res.json()) as { id: number; body: string; user: { login: string }; submitted_at: string }[];
+  return reviews.map((r) => ({
+    id: r.id,
+    body: r.body,
+    user: r.user.login,
+    submittedAt: r.submitted_at,
+  }));
 }
 
 export async function listReviewComments(

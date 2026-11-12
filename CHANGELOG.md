@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- A review whose worker stops mid-run (for example during a release) no longer leaves a second check run, a repeated inline review or an unfinished comment on GitHub; the retried job continues where it stopped.
+- A review whose worker stops mid-run (for example during a release) no longer leaves a second check run or an unfinished comment on GitHub; the retried job continues where it stopped.
 - The interrupted attempt is kept in the review history under its own ID, noting when the AI provider's result for it is unknown.
 
 ### Upgrade notes

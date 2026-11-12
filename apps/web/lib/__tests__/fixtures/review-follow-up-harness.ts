@@ -1105,18 +1105,12 @@ if (crashRecovery) {
   deliveries.get(attempt.id)!.completedAt = new Date();
 
   // The worker stopped after posting the inline review and before archiving. The redelivered job reviews
-  // again but finds the review of its own request and does not post a second one.
-  assert.ok(published[0].body.split("\n").includes(`<!-- Octopus review reference: pr:${pr.reviewRequestVersion} -->`));
+  // again and posts the review that its own check and report describe, so the two always agree.
   priorBotReviews = [{ id: 456, user: "fixture[bot]", body: published[0].body }];
   pr.status = "pending";
   await processReview("pr");
-  assert.deepEqual([archived.length, published.length, reviewAttempts.length], [2, 1, 1], "the review of this request is posted once");
+  assert.deepEqual([archived.length, published.length], [2, 2]);
   assert.equal(pr.status, "completed");
-  // A review of another request does not suppress this one.
-  priorBotReviews = [{ id: 456, user: "fixture[bot]", body: published[0].body.replace(`pr:${pr.reviewRequestVersion}`, "pr:1") }];
-  pr.status = "pending";
-  await processReview("pr");
-  assert.equal(published.length, 2);
 
   // A claim that replaces a review which stopped without finishing records that attempt under its own ID.
   assert.deepEqual(interruptedAttempts, []);
@@ -1126,7 +1120,7 @@ if (crashRecovery) {
   assert.deepEqual(interruptedAttempts, [stoppedAttempt]);
   assert.notEqual((pr as { reviewAttemptId?: string }).reviewAttemptId, stoppedAttempt);
   assert.equal(archived.at(-1)?.id, (pr as { reviewAttemptId?: string }).reviewAttemptId);
-  console.log("PASS interrupted publication resumes from the archive and a redelivered job posts no second review");
+  console.log("PASS interrupted publication resumes from the archive");
   process.exit(0);
 }
 if (firstCompletion) {

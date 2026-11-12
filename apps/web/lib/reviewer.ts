@@ -1642,10 +1642,6 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
     const appSlug = (await getGithubAppConfig())?.slug ?? "octopus-review";
     const botLogin = `${appSlug}[bot]`;
     let allPriorReviewComments: import("@/lib/github").PRReviewComment[] = [];
-    // A redelivered job must not post the review of its own request a second time.
-    // An HTML comment: readable through the API, not shown in the rendered review.
-    const reviewReference = `<!-- Octopus review reference: ${pr.id}:${pr.reviewRequestVersion} -->`;
-    let postedReviewId: number | undefined;
     const priorSummaryTableFindings: PriorFinding[] = [];
     if (isGitHub && installationId) {
       try {
@@ -1660,7 +1656,6 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       try {
         const priorReviews = await ghListPullRequestReviews(installationId, owner, repoName, pr.number);
         const botReviews = priorReviews.filter((r) => r.user === botLogin && r.body);
-        postedReviewId = botReviews.find((r) => r.body.split("\n").includes(reviewReference))?.id;
         for (const review of botReviews) {
           const tableFindings = parseFindingsFromSummaryTable(review.body);
           priorSummaryTableFindings.push(...tableFindings);
@@ -2298,7 +2293,6 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       }
       const parts = [header];
       if (findingsBlock) parts.push(findingsBlock);
-      parts.push(reviewReference);
       parts.push(`<sub>Reviewed by [Octopus Review](https://octopus-review.ai), an AI-powered PR review tool.</sub>`);
       return parts.join("\n\n");
     };
@@ -2342,7 +2336,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
 
         try {
           assertProcessingActive();
-          const reviewId = postedReviewId ?? await ghCreatePullRequestReview(
+          const reviewId = await ghCreatePullRequestReview(
             installationId, owner, repoName, pr.number,
             summaryLine, reviewEvent as "COMMENT" | "REQUEST_CHANGES", dedupedComments, undefined, coverage.headSha ?? undefined,
           );
@@ -2392,7 +2386,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         const summaryBody = buildReviewSummary(findingsBlock, allSummaryFindings.length);
         try {
           assertProcessingActive();
-          if (postedReviewId === undefined) await ghCreatePullRequestReview(
+          await ghCreatePullRequestReview(
             installationId, owner, repoName, pr.number,
             summaryBody, reviewEvent as "COMMENT" | "REQUEST_CHANGES", [], undefined, coverage.headSha ?? undefined,
           );

@@ -6,6 +6,7 @@ CREATE TABLE "queue_drain" (
     "requestedBy" TEXT,
     "deadlineAt" TIMESTAMPTZ(3),
     "leaseUntil" TIMESTAMPTZ(3),
+    "quiescentAt" TIMESTAMPTZ(3),
     "resumedAt" TIMESTAMPTZ(3),
     "resumeReason" TEXT,
     CONSTRAINT "queue_drain_pkey" PRIMARY KEY ("id"),

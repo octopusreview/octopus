@@ -103,6 +103,7 @@ type Worker = Awaited<ReturnType<typeof startWorkerProcess>>;
 
     const quiescent = await statusWhere(current => current.quiescent, "quiescent");
     expect(quiescent).toMatchObject({ outcome: "quiescent", activeClaims: [], inlineActive: 0, pendingDeliveries: 0, orphanedClaims: 0 });
+    expect((await prisma.queueDrain.findUniqueOrThrow({ where: { id: 1 } })).quiescentAt).not.toBeNull();
     expect(quiescent.instances).toMatchObject([
       { serverId: "old-1", version: "1.0.0", live: true, acked: true },
       { serverId: "old-2", version: "1.0.0", live: true, acked: true },
@@ -168,13 +169,14 @@ type Worker = Awaited<ReturnType<typeof startWorkerProcess>>;
     // The endpoint's shortest deadline is a minute; bring this one forward.
     await prisma.queueDrain.update({ where: { id: 1 }, data: { deadlineAt: new Date(Date.now() + 500) } });
 
-    expect(await statusWhere(current => current.outcome === "timed_out", "timed out")).toMatchObject({ state: "draining", generation, quiescent: false });
+    // Reading the status past the deadline ends the drain; nothing is cancelled.
+    expect(await statusWhere(current => current.outcome === "timed_out", "timed out")).toMatchObject({ state: "claiming", generation, quiescent: false });
     expect((await job(long)).state).toBe("active");
     expect(runs([long])).toEqual([{ started: 1, finished: 0 }]);
     expect((await instance(worker)).ackedGeneration).toBeNull();
-    expect(await states(arrivals)).toEqual(["created", "created"]);
 
-    expect(await resume(generation)).toMatchObject({ resumed: true, status: { state: "claiming", outcome: null } });
+    // The release's own resume is then a no-op.
+    expect(await resume(generation)).toMatchObject({ resumed: false, status: { state: "claiming", outcome: "timed_out" } });
     await completed([long, ...arrivals]);
     expect(runs([long, ...arrivals], [worker])).toEqual([once, once, once]);
     expect((await Promise.all([long, ...arrivals].map(job))).map(item => item.retries)).toEqual([0, 0, 0]);

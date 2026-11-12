@@ -25,6 +25,9 @@ let inlineActive = 0;
 const logFailure = (what: string, error: unknown) =>
   console.error(`[queue] ${what} failed:`, error instanceof Error ? error.name : "unknown error");
 
+const report = () => lib().then(({ heartbeat }) => heartbeat(instanceId!, { inlineActive }))
+  .then(() => undefined, error => logFailure("Reporting inline work", error));
+
 async function poll(): Promise<void> {
   if (polling) return;
   polling = true;
@@ -90,9 +93,12 @@ export async function startQueueDrainWorker(
  * and detached indexing or analysis. It is never refused; a drain and a shutdown wait for it.
  */
 export async function trackInline<T>(work: () => Promise<T>): Promise<T> {
-  // Report the first one at once rather than on the next tick, so status does not miss it.
-  if (inlineActive++ === 0 && instanceId) void poll();
+  inlineActive++;
   try {
+    // During a drain the count is written before the work starts, so status cannot miss it.
+    // Otherwise report the first one at once rather than on the next tick.
+    if (instanceId && draining) await report();
+    else if (instanceId && inlineActive === 1) void poll();
     return await work();
   } finally {
     inlineActive--;
@@ -109,7 +115,12 @@ export async function retireQueueDrainWorker(timeoutMs: number): Promise<void> {
   const id = instanceId;
   if (id) await lib().then(({ markRetiring }) => markRetiring(id)).catch(error => logFailure("Marking the instance as retiring", error));
   const deadline = Date.now() + timeoutMs;
-  while (inlineActive > 0 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
+  // Keep reporting: a drain still counts the inline work of an instance that is on its way out.
+  for (let tick = 0; inlineActive > 0 && Date.now() < deadline; tick++) {
+    if (id && tick % 10 === 0) await report();
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  if (id) await report();
 }
 
 // Refusing a job means throwing, which fails it. This queue has no retries
@@ -121,11 +132,16 @@ const NO_BACKSTOP = new Set(["pull-ollama-model"]);
  * before its next poll. Throwing hands the job back through pg-boss's own
  * fenced failure path, at the cost of one retry. restore() would keep the retry
  * but leaves this handler's settlement able to hit the next claim.
+ * shortcut: a refused job on its last attempt fails without running (a scheduled job waits for
+ * its next run, a review for the stuck-review reaper); upgrade to a non-consuming deferral if
+ * refusals show up in the logs.
  */
 async function refuseWhileDraining(name: string): Promise<void> {
   if (!instanceId || NO_BACKSTOP.has(name)) return;
-  // A read this old no longer proves anything: the drain may have completed without this process.
-  if (Date.now() - polledAt > 3 * pollMs) {
+  // Status stops counting this process after three missed heartbeats, so a read older than two
+  // no longer proves anything: the drain may have completed without it. If the read fails the last
+  // known state stands: refusing would fail customer jobs whenever the database is briefly slow.
+  if (Date.now() - polledAt > 2 * pollMs) {
     try {
       draining = (await (await lib()).heartbeat(instanceId, { inlineActive })).state === "draining";
       polledAt = Date.now();

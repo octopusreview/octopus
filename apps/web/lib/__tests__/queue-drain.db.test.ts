@@ -118,26 +118,42 @@ const minutes = (count: number) => new Date(Date.now() + count * 60_000);
 
     await prisma.queueDrain.update({ where: { id: 1 }, data: { leaseUntil: minutes(-1) } });
     expect((await drain.drainStatus()).outcome).toBe("lease_expired");
-    expect(await drain.renewDrainLease(generation, 60)).toBe(true);
-    expect(await drain.expireDrainLease()).toBe(false);
-
-    await prisma.queueDrain.update({ where: { id: 1 }, data: { leaseUntil: minutes(-1) } });
+    expect(await drain.renewDrainLease(generation, 60)).toBe(false);
+    expect(await drain.markQuiescent(generation)).toBe(false);
     expect(await drain.expireDrainLease()).toBe(true);
     expect(await row()).toMatchObject({ state: "claiming", generation, resumeReason: "lease_expired" });
     expect(await drain.drainStatus()).toMatchObject({ state: "claiming", outcome: "lease_expired", quiescent: false });
     expect(await drain.expireDrainLease()).toBe(false);
   });
 
-  it("reports a passed deadline without changing anything", async () => {
+  it("ends a drain that is not quiescent by its deadline and leaves the running job alone", async () => {
     const { generation } = await drain.requestDrain({ requestedBy: "test" });
     await activeJob();
     await prisma.queueDrain.update({ where: { id: 1 }, data: { deadlineAt: minutes(-1) } });
     expect(await drain.drainStatus()).toMatchObject({ state: "draining", generation, outcome: "timed_out", quiescent: false });
-    expect(await drain.expireDrainLease()).toBe(false);
-    expect(await row()).toMatchObject({ state: "draining", generation, resumedAt: null });
-    expect((await drain.drainStatus()).activeClaims).toEqual([{ queue, count: 1 }]);
+    expect(await drain.markQuiescent(generation)).toBe(false);
+    expect(await drain.expireDrainLease()).toBe(true);
+    expect(await row()).toMatchObject({ state: "claiming", generation, resumeReason: "timed_out" });
+    expect(await drain.drainStatus()).toMatchObject({ state: "claiming", outcome: "timed_out", quiescent: false, activeClaims: [{ queue, count: 1 }] });
+    // A later quiet moment does not bring the ended drain back.
     await finishJobs();
-    expect((await drain.drainStatus()).outcome).toBe("quiescent");
+    expect(await drain.drainStatus()).toMatchObject({ state: "claiming", outcome: "timed_out", quiescent: false });
+  });
+
+  it("keeps a drain that went quiescent in time running past its deadline", async () => {
+    const { generation } = await drain.requestDrain({ requestedBy: "test" });
+    expect(await drain.markQuiescent(generation)).toBe(true);
+    await prisma.queueDrain.update({ where: { id: 1 }, data: { deadlineAt: minutes(-1) } });
+    expect(await drain.expireDrainLease()).toBe(false);
+    expect(await drain.drainStatus()).toMatchObject({ state: "draining", generation, outcome: "quiescent", quiescent: true });
+    // Work that shows up during the release is reported, but the deadline no longer applies.
+    await activeJob();
+    expect(await drain.expireDrainLease()).toBe(false);
+    expect(await drain.drainStatus()).toMatchObject({ state: "draining", outcome: "draining", quiescent: false });
+    // The next drain starts with the deadline in force again.
+    await drain.resumeClaiming({ generation, reason: "done" });
+    await drain.requestDrain({ requestedBy: "test" });
+    expect((await row()).quiescentAt).toBeNull();
   });
 
   it("is quiescent only once acknowledgements, jobs, inline reviews and deliveries all clear", async () => {
@@ -196,13 +212,15 @@ const minutes = (count: number) => new Date(Date.now() + count * 60_000);
     expect(await drain.drainStatus()).toMatchObject({ orphanedClaims: 0, quiescent: true });
   });
 
-  it("ignores a retired instance", async () => {
+  it("does not wait for a retiring instance to acknowledge, only for its inline work", async () => {
     const { generation } = await drain.requestDrain({ requestedBy: "test" });
     await drain.acknowledgeDrain(await instance("engine-1", true), generation);
     const retired = await instance("engine-2", true, { inlineActive: 4 });
     expect(await drain.drainStatus()).toMatchObject({ inlineActive: 4, quiescent: false });
 
     await drain.markRetiring(retired);
+    expect(await drain.drainStatus()).toMatchObject({ inlineActive: 4, quiescent: false });
+    await drain.heartbeat(retired, { inlineActive: 0 });
     const status = await drain.drainStatus();
     expect(status).toMatchObject({ inlineActive: 0, quiescent: true });
     expect(status.instances.find(item => item.serverId === "engine-2")).toMatchObject({ live: false, retiring: true, acked: false });

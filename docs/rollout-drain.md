@@ -8,11 +8,12 @@ The drain state lives in PostgreSQL. Every process that starts the queue, web an
 
 - No worker that has acknowledged the drain holds or claims a job until claiming is resumed. A worker started during a drain claims nothing.
 - Jobs enqueued during a drain stay queued until claiming resumes.
-- A job still running at the deadline is **not** cancelled. The deadline only changes the reported outcome to `timed_out`. Stopping the worker anyway interrupts that job, exactly as it did before this feature.
+- A job still running at the deadline is **not** cancelled. A drain that has not gone quiescent by its deadline ends as `timed_out` and workers go back to claiming. Stopping the worker anyway interrupts that job, exactly as it did before this feature.
+- The deadline bounds only the wait. Once a `GET` has reported `quiescent`, the drain runs until it is resumed or its lease passes, however long the release takes.
 - A job whose worker dies stays `active` until its queue timeout passes. pg-boss can then retry it, subject to its retry limit. The drain does not shorten that wait.
 - Reviews that run inside a web request (CLI and GitHub Action reviews) and detached indexing or analysis started from a request keep being served during a drain. They are counted, and a drain is not quiescent while any is running. A process that receives SIGTERM waits up to five minutes for its own to finish.
 - If the caller that requested the drain disappears, the drain ends by itself when its lease passes, and workers go back to claiming.
-- A worker that was frozen through a drain request and wakes up later refuses the next job it fetches. That failure consumes a retry. The `pull-ollama-model` queue is exempt from this backstop because it has no retries.
+- A worker that was frozen through a drain request and wakes up later refuses the next job it fetches. That failure consumes a retry; a job on its last attempt fails without running. The `pull-ollama-model` queue is exempt from this backstop because it has no retries.
 
 ## Requirements
 
@@ -30,7 +31,7 @@ Self-hosted single-container installs need the migration and nothing else. With 
 
 Returns the status object described below.
 
-`GET` is not free of side effects: while a drain is running and its lease has not passed, each `GET` renews the lease for another 120 seconds. Poll every few seconds to keep a drain alive; stop polling to let it expire. A `GET` does not revive a lease that has already passed, and writes nothing when no drain is running.
+`GET` is not free of side effects: while a drain is running and its lease has not passed, each `GET` renews the lease for another 120 seconds. Poll every few seconds to keep a drain alive; stop polling to let it expire. A `GET` also records the first time the drain is quiescent, and ends a drain whose lease or deadline has passed. It does not revive a lease that has already passed, and writes nothing when no drain is running.
 
 ### `POST {"action":"drain"}`: request a drain
 
@@ -47,7 +48,7 @@ Returns `{"generation": <number>, "status": {...}}`. Requesting a drain while on
 | Field | Required | Values |
 |---|---|---|
 | `generation` | yes | the generation returned by the drain request |
-| `reason` | no | 1 to 100 printable ASCII characters, not `lease_expired`. Default `requested`. |
+| `reason` | no | 1 to 100 printable ASCII characters, not `lease_expired` or `timed_out`. Default `requested`. |
 
 Returns `{"resumed": <boolean>, "status": {...}}`. `resumed` is `false`, with HTTP 200, when the generation is not the running drain's: it is stale, or claiming has already resumed. Nothing changes in that case.
 
@@ -62,14 +63,14 @@ Returns `{"resumed": <boolean>, "status": {...}}`. `resumed` is `false`, with HT
 |---|---|
 | `state` | `claiming` (normal) or `draining`. |
 | `generation` | Counts drains. Increases by one each time a drain starts. |
-| `deadlineAt` | When the running or last drain is reported as `timed_out` if not quiescent. |
+| `deadlineAt` | When the running drain ends as `timed_out` if it has not gone quiescent. |
 | `leaseUntil` | When the running drain ends by itself unless renewed. |
 | `instances` | Processes that have reported in the last hour: `serverId`, `version`, `workersEnabled`, `live`, `acked`, `inlineActive`, `retiring`. |
 | `instances[].live` | Reported within the last 9 seconds and not shutting down. |
 | `instances[].acked` | Has acknowledged the current generation, which a worker does only after its running jobs have finished. |
-| `instances[].retiring` | Has received a shutdown signal. It is no longer counted as live and will not claim again. |
+| `instances[].retiring` | Has received a shutdown signal. It is no longer counted as live and will not claim again; its in-request work is still counted until it finishes. |
 | `activeClaims` | Jobs a worker currently holds, as `{queue, count}` per queue. |
-| `inlineActive` | In-request work in flight, summed over live instances. |
+| `inlineActive` | In-request work in flight, summed over instances that reported within the last 9 seconds. |
 | `pendingDeliveries` | Review results currently being posted to a provider. |
 | `orphanedClaims` | During a drain, the number of held jobs when no live worker is left that has not acknowledged. These jobs may belong to a worker that died or is not reporting, or to an acknowledged worker still finishing. They block quiescence until they finish or expire. |
 | `quiescent` | `true` only while draining, when every live instance has acknowledged and `activeClaims`, `inlineActive` and `pendingDeliveries` are all empty or zero. |
@@ -82,10 +83,10 @@ Returns `{"resumed": <boolean>, "status": {...}}`. `resumed` is `false`, with HT
 | `null` | No drain is running. | Nothing. |
 | `draining` | A drain is running and work is still in flight, or an instance has not acknowledged yet. | Keep polling. |
 | `quiescent` | The drain is running, its lease is valid, and nothing is in flight. | Proceed with the release. Keep polling until you resume. |
-| `timed_out` | The deadline passed before the drain went quiescent. Nothing was cancelled. | Resume and stop the release. Look at `activeClaims`, `orphanedClaims` and the instances that have not acknowledged to see what was still running. |
+| `timed_out` | The deadline passed before the drain went quiescent. Nothing was cancelled. Workers have resumed claiming, or are about to. | Stop the release. Look at `activeClaims`, `orphanedClaims` and the instances that have not acknowledged to see what was still running. |
 | `lease_expired` | The lease passed. Workers have resumed claiming, or are about to. | Treat the drain as over. Do not continue the release on it; request a new drain. |
 
-Decide on `outcome`, not on `quiescent` alone: `quiescent` does not look at the lease.
+Decide on `outcome`. In-request work is never refused, so some can start after a drain is quiescent; the process that runs it waits for it on shutdown.
 
 ## Release sequence
 

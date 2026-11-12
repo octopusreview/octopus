@@ -93,20 +93,22 @@ const enabled = process.env.RUN_QUEUE_DB_TESTS === "1";
     expect(worker.count("registered")).toBe(2);
   }, 30_000);
 
-  it("reports timed_out past the deadline while a slow job keeps running untouched", async () => {
+  it("resumes at the deadline while a slow job keeps running untouched", async () => {
     const worker = await startWorker("engine-1");
     const job = await send(2500);
     await worker.saw(`start ${job}`);
     const { generation } = await drain.requestDrain({ requestedBy: "test", deadlineSeconds: 1 });
-    await delay(1300);
-    expect(await drain.drainStatus()).toMatchObject({ state: "draining", generation, quiescent: false, outcome: "timed_out" });
+    await until(async () => (await drain.drainStatus()).outcome === "timed_out" && (await drain.drainStatus()).state === "claiming", "timed out");
     expect(await state(job)).toBe("active");
     expect((await worker.instance()).ackedGeneration).toBeNull();
 
     await completed(job);
     expect(worker.count(`done ${job}`)).toBe(1);
-    await until(async () => (await drain.drainStatus()).quiescent, "quiescent");
-    expect(await prisma.queueDrain.findUniqueOrThrow({ where: { id: 1 } })).toMatchObject({ state: "draining", generation });
+    expect(await prisma.queueDrain.findUniqueOrThrow({ where: { id: 1 } })).toMatchObject({ state: "claiming", generation, resumeReason: "timed_out" });
+    // The worker is claiming again: a job sent after the deadline runs.
+    const next = await send(0);
+    await completed(next);
+    expect(worker.count(`done ${next}`)).toBe(1);
   }, 30_000);
 
   it("shows the job of a worker killed without acknowledging as an orphaned claim", async () => {

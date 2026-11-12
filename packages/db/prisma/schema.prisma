@@ -1107,6 +1107,8 @@ model QueueDrain {
   requestedBy  String?
   deadlineAt   DateTime? @db.Timestamptz(3)
   leaseUntil   DateTime? @db.Timestamptz(3)
+  // Set once the drain was seen quiescent; the deadline bounds only the wait before that.
+  quiescentAt  DateTime? @db.Timestamptz(3)
   resumedAt    DateTime? @db.Timestamptz(3)
   resumeReason String?
 

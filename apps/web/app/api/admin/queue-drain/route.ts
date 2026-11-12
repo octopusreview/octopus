@@ -1,7 +1,7 @@
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { isAdminApiAuthorized } from "@/lib/admin-auth";
-import { drainStatus, renewDrainLease, requestDrain, resumeClaiming } from "@/lib/queue-drain";
+import { drainStatus, expireDrainLease, markQuiescent, renewDrainLease, requestDrain, resumeClaiming } from "@/lib/queue-drain";
 
 // Vendor admin machine endpoint: stop queue workers claiming before a rollout,
 // watch the in-flight work finish, and resume. Guarded by the shared
@@ -27,11 +27,15 @@ const label = (value: unknown): value is string => typeof value === "string" && 
 export async function GET(request: NextRequest) {
   if (!isAdminApiAuthorized(request)) return respond({ error: "Unauthorized" }, 401);
   try {
-    let status = await drainStatus();
     // Not side-effect free: reading the status of a running drain renews its lease, so a caller
-    // that keeps polling keeps the drain alive and one that disappears lets it expire.
-    if (status.state === "draining" && status.outcome !== "lease_expired") {
+    // that keeps polling keeps the drain alive and one that disappears lets it expire. It also
+    // ends a drain that is past its lease or deadline, so that does not depend on a worker being up.
+    await expireDrainLease();
+    let status = await drainStatus();
+    if (status.state === "draining") {
       await renewDrainLease(status.generation);
+      // Recorded so the deadline, which bounds only the wait, cannot end the drain during the release.
+      if (status.outcome === "quiescent") await markQuiescent(status.generation);
       status = await drainStatus();
     }
     return respond(status);
@@ -60,8 +64,8 @@ export async function POST(request: NextRequest) {
     }
     if (input.action === "resume") {
       const { generation, reason = "requested" } = input;
-      // "lease_expired" is the reason workers record themselves; status reports it as an outcome.
-      if (!integer(generation, [0, 2_147_483_647]) || !label(reason) || reason === "lease_expired") return invalid();
+      // These are the reasons recorded when a drain ends by itself; status reports them as outcomes.
+      if (!integer(generation, [0, 2_147_483_647]) || !label(reason) || reason === "lease_expired" || reason === "timed_out") return invalid();
       // A stale generation is not an error: the drain it named is already over.
       const resumed = await resumeClaiming({ generation, reason });
       return respond({ resumed, status: await drainStatus() });

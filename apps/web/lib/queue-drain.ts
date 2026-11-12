@@ -6,7 +6,7 @@ import { prisma } from "@octopus/db";
 export const HEARTBEAT_INTERVAL_SECONDS = 3;
 /** An instance is live while its last heartbeat is within three intervals. */
 export const INSTANCE_LIVE_SECONDS = 3 * HEARTBEAT_INTERVAL_SECONDS;
-/** A drain that has not gone quiescent by then is reported as timed_out. */
+/** A drain that has not gone quiescent by then ends as timed_out and workers resume. */
 export const DEFAULT_DRAIN_DEADLINE_SECONDS = 20 * 60;
 /** A caller polling every few seconds may miss many polls before workers resume by themselves. */
 export const DEFAULT_DRAIN_LEASE_SECONDS = 120;
@@ -26,12 +26,13 @@ export async function requestDrain({ deadlineSeconds = DEFAULT_DRAIN_DEADLINE_SE
     INSERT INTO "queue_drain" ("id", "generation", "state", "requestedAt", "requestedBy", "deadlineAt", "leaseUntil")
     VALUES (1, 1, 'draining', now(), ${requestedBy}, now() + ${deadlineSeconds}::int * interval '1 second', now() + ${leaseSeconds}::int * interval '1 second')
     ON CONFLICT ("id") DO UPDATE SET
-      "generation" = "queue_drain"."generation" + CASE WHEN "queue_drain"."state" = 'claiming' OR "queue_drain"."leaseUntil" <= clock_timestamp() THEN 1 ELSE 0 END,
+      "generation" = "queue_drain"."generation" + CASE WHEN "queue_drain"."state" = 'claiming' OR "queue_drain"."leaseUntil" <= now() THEN 1 ELSE 0 END,
       "state" = 'draining',
-      "requestedAt" = CASE WHEN "queue_drain"."state" = 'claiming' OR "queue_drain"."leaseUntil" <= clock_timestamp() THEN clock_timestamp() ELSE "queue_drain"."requestedAt" END,
-      "requestedBy" = CASE WHEN "queue_drain"."state" = 'claiming' OR "queue_drain"."leaseUntil" <= clock_timestamp() THEN EXCLUDED."requestedBy" ELSE "queue_drain"."requestedBy" END,
-      "deadlineAt" = CASE WHEN "queue_drain"."state" = 'claiming' OR "queue_drain"."leaseUntil" <= clock_timestamp() THEN clock_timestamp() + ${deadlineSeconds}::int * interval '1 second' ELSE "queue_drain"."deadlineAt" END,
-      "leaseUntil" = clock_timestamp() + ${leaseSeconds}::int * interval '1 second',
+      "requestedAt" = CASE WHEN "queue_drain"."state" = 'claiming' OR "queue_drain"."leaseUntil" <= now() THEN now() ELSE "queue_drain"."requestedAt" END,
+      "requestedBy" = CASE WHEN "queue_drain"."state" = 'claiming' OR "queue_drain"."leaseUntil" <= now() THEN EXCLUDED."requestedBy" ELSE "queue_drain"."requestedBy" END,
+      "deadlineAt" = CASE WHEN "queue_drain"."state" = 'claiming' OR "queue_drain"."leaseUntil" <= now() THEN now() + ${deadlineSeconds}::int * interval '1 second' ELSE "queue_drain"."deadlineAt" END,
+      "leaseUntil" = now() + ${leaseSeconds}::int * interval '1 second',
+      "quiescentAt" = CASE WHEN "queue_drain"."state" = 'claiming' OR "queue_drain"."leaseUntil" <= now() THEN NULL ELSE "queue_drain"."quiescentAt" END,
       "resumedAt" = NULL,
       "resumeReason" = NULL
     RETURNING "generation"`;
@@ -47,15 +48,28 @@ export async function resumeClaiming({ generation, reason }: { generation: numbe
 
 export async function renewDrainLease(generation: number, leaseSeconds = DEFAULT_DRAIN_LEASE_SECONDS): Promise<boolean> {
   return await prisma.$executeRaw`
-    UPDATE "queue_drain" SET "leaseUntil" = clock_timestamp() + ${leaseSeconds}::int * interval '1 second'
-    WHERE "id" = 1 AND "generation" = ${generation} AND "state" = 'draining' AND "leaseUntil" > clock_timestamp()` > 0;
+    UPDATE "queue_drain" SET "leaseUntil" = now() + ${leaseSeconds}::int * interval '1 second'
+    WHERE "id" = 1 AND "generation" = ${generation} AND "state" = 'draining' AND "leaseUntil" > now()` > 0;
 }
 
-/** If whoever requested the drain stopped renewing it, workers resume by themselves. */
+/**
+ * Workers resume by themselves if whoever requested the drain stopped renewing it, or if the
+ * drain did not go quiescent by its deadline. The deadline no longer applies once it has.
+ */
 export async function expireDrainLease(): Promise<boolean> {
   return await prisma.$executeRaw`
-    UPDATE "queue_drain" SET "state" = 'claiming', "resumedAt" = now(), "resumeReason" = 'lease_expired'
-    WHERE "id" = 1 AND "state" = 'draining' AND "leaseUntil" <= now()` > 0;
+    UPDATE "queue_drain" SET "state" = 'claiming', "resumedAt" = now(),
+      "resumeReason" = CASE WHEN "leaseUntil" <= now() THEN 'lease_expired' ELSE 'timed_out' END
+    WHERE "id" = 1 AND "state" = 'draining'
+      AND ("leaseUntil" <= now() OR ("quiescentAt" IS NULL AND "deadlineAt" <= now()))` > 0;
+}
+
+/** Record that this drain went quiescent in time; false when it ended first. */
+export async function markQuiescent(generation: number): Promise<boolean> {
+  return await prisma.$executeRaw`
+    UPDATE "queue_drain" SET "quiescentAt" = COALESCE("quiescentAt", now())
+    WHERE "id" = 1 AND "generation" = ${generation} AND "state" = 'draining'
+      AND "leaseUntil" > now() AND ("quiescentAt" IS NOT NULL OR "deadlineAt" > now())` > 0;
 }
 
 export async function registerInstance(): Promise<string> {
@@ -92,18 +106,19 @@ export async function drainStatus() {
   // Read acknowledgements before work counts: once every live instance has acknowledged, no new work starts.
   const [drain] = await prisma.$queryRaw<Array<DrainRow & { resumeReason: string | null; deadlinePassed: boolean | null; leaseExpired: boolean | null }>>`
     SELECT "state", "generation", "deadlineAt", "leaseUntil", "resumeReason",
-      "deadlineAt" <= now() AS "deadlinePassed", "leaseUntil" <= now() AS "leaseExpired"
+      "quiescentAt" IS NULL AND "deadlineAt" <= now() AS "deadlinePassed", "leaseUntil" <= now() AS "leaseExpired"
     FROM "queue_drain" WHERE "id" = 1`;
   const state = drain?.state ?? "claiming";
   const generation = drain?.generation ?? 0;
-  const rows = await prisma.$queryRaw<Array<{ serverId: string; version: string; workersEnabled: boolean; ackedGeneration: number | null; inlineActive: number; retiring: boolean; live: boolean }>>`
+  const rows = await prisma.$queryRaw<Array<{ serverId: string; version: string; workersEnabled: boolean; ackedGeneration: number | null; inlineActive: number; retiring: boolean; live: boolean; fresh: boolean }>>`
     SELECT "serverId", "version", "workersEnabled", "ackedGeneration", "inlineActive",
       "retiringAt" IS NOT NULL AS "retiring",
-      "retiringAt" IS NULL AND "heartbeatAt" > now() - ${INSTANCE_LIVE_SECONDS}::int * interval '1 second' AS "live"
+      "retiringAt" IS NULL AND "heartbeatAt" > now() - ${INSTANCE_LIVE_SECONDS}::int * interval '1 second' AS "live",
+      "heartbeatAt" > now() - ${INSTANCE_LIVE_SECONDS}::int * interval '1 second' AS "fresh"
     FROM "queue_worker_instances"
     WHERE "heartbeatAt" > now() - ${INSTANCE_REPORT_SECONDS}::int * interval '1 second'
     ORDER BY "serverId", "startedAt"`;
-  const instances = rows.map(({ ackedGeneration, ...row }) => ({ ...row, acked: ackedGeneration === generation }));
+  const instances = rows.map(({ ackedGeneration, fresh: _fresh, ...row }) => ({ ...row, acked: ackedGeneration === generation }));
   const activeClaims = await prisma.$queryRaw<Array<{ queue: string; count: number }>>`
     SELECT "name" AS "queue", count(*)::int AS "count" FROM pgboss.job
     WHERE "state" = ${"active"}::pgboss.job_state GROUP BY "name" ORDER BY "name"`;
@@ -111,18 +126,20 @@ export async function drainStatus() {
 
   const live = instances.filter(instance => instance.live);
   const active = activeClaims.reduce((sum, claim) => sum + claim.count, 0);
-  const inlineActive = live.reduce((sum, instance) => sum + instance.inlineActive, 0);
+  // A retiring instance claims nothing, but it keeps reporting until its inline work has finished.
+  const inlineActive = rows.reduce((sum, row) => sum + (row.fresh ? row.inlineActive : 0), 0);
   const draining = state === "draining";
   const quiescent = draining && live.every(instance => instance.acked) && active === 0 && inlineActive === 0 && pendingDeliveries === 0;
   // pg-boss does not record which process holds a job, so this cannot tell a job an acknowledged worker
   // is still finishing from one whose worker died. Either way the job blocks until it ends or pg-boss expires it.
   const orphanedClaims = draining && !live.some(instance => instance.workersEnabled && !instance.acked) ? active : 0;
-  const outcome: DrainOutcome | null = !draining ? (drain?.resumeReason === "lease_expired" ? "lease_expired" : null)
+  const ended = drain?.resumeReason;
+  const outcome: DrainOutcome | null = !draining ? (ended === "lease_expired" || ended === "timed_out" ? ended : null)
     : drain.leaseExpired ? "lease_expired"
-    : quiescent ? "quiescent"
-    : drain.deadlinePassed ? "timed_out" : "draining";
+    : drain.deadlinePassed ? "timed_out"
+    : quiescent ? "quiescent" : "draining";
   return {
     state, generation, deadlineAt: drain?.deadlineAt ?? null, leaseUntil: drain?.leaseUntil ?? null,
-    instances, activeClaims, inlineActive, pendingDeliveries, orphanedClaims, quiescent, outcome,
+    instances, activeClaims, inlineActive, pendingDeliveries, orphanedClaims, quiescent: quiescent && outcome === "quiescent", outcome,
   };
 }

@@ -353,7 +353,8 @@ export async function createCheckRun(
   externalId?: string,
 ): Promise<number> {
   const token = await getInstallationToken(installationId);
-  if (externalId) {
+  // A lookup that fails in any way creates a check run, as before.
+  if (externalId) try {
     for (let page = 1; ; page++) {
       const existing = await fetchWithRetry(
         `${GITHUB_API}/repos/${owner}/${repo}/commits/${headSha}/check-runs?check_name=${encodeURIComponent(name)}&filter=all&per_page=100&page=${page}`,
@@ -365,7 +366,7 @@ export async function createCheckRun(
       if (unfinished) return unfinished.id;
       if (runs.length < 100) break;
     }
-  }
+  } catch { /* create below */ }
   const res = await fetchWithRetry(
     `${GITHUB_API}/repos/${owner}/${repo}/check-runs`,
     {

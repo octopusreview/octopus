@@ -7,6 +7,7 @@ const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048, private
 mock.module("@/lib/github-app-config", () => ({ getGithubAppConfig: async () => ({ appId: "123", privateKey }) }));
 const { createCheckRun, updateCheckRun, listPullRequestReviews } = await import("../../github");
 const checkRuns: { id: number; status: string; external_id?: string }[] = [];
+let lookupBroken = false;
 const checkCalls: string[] = [];
 let controller = new AbortController();
 let remaining = 10000;
@@ -21,6 +22,7 @@ globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
   }
   if (String(url).includes("/commits/")) {
     checkCalls.push("GET");
+    if (lookupBroken) return new Response("not json", { status: 200 });
     assert.ok(String(url).includes(`/commits/${"a".repeat(40)}/check-runs?check_name=Octopus%20Review`));
     const page = Number(new URL(String(url)).searchParams.get("page"));
     return Response.json({ check_runs: checkRuns.slice((page - 1) * 100, page * 100) });
@@ -84,6 +86,11 @@ checkRuns.length = 0;
 checkRuns.push(...Array.from({ length: 100 }, (_, id) => ({ id, status: "completed" })));
 checkRuns.push({ id: 100, status: "in_progress", external_id: "pr:later" });
 assert.equal(await createCheckRun(1, "owner", "repo", head, "Octopus Review", undefined, "pr:later"), 100);
+// A lookup that cannot be read still creates the check run.
+lookupBroken = true; checkCalls.length = 0;
+await createCheckRun(1, "owner", "repo", head, "Octopus Review", undefined, "pr:unreadable");
+assert.ok(checkCalls.some(call => call.startsWith("POST")));
+lookupBroken = false;
 const reviews = await listPullRequestReviews(1, "owner", "repo", 1);
 assert.equal(reviews.length, 101);
 assert.equal(reviews[100].body, "target");

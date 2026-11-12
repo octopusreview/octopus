@@ -1075,6 +1075,17 @@ if (crashRecovery) {
   assert.ok(deliveries.get(attempt.id)?.completedAt);
   assert.ok(pr.firstReviewCompletedAt);
   assert.deepEqual([archived.length, published.length, usageCount], [1, 1, dispatched], "nothing is generated, archived or reviewed again");
+  // The check is finished with the decision kept in the archive, not recomputed from saved findings.
+  const decision = (attempt.coverage as { nativeCheckDecision?: { fail: boolean; findings: number } }).nativeCheckDecision;
+  assert.ok(decision, "the attempt keeps its check decision");
+  (attempt.coverage as { nativeCheckDecision: object }).nativeCheckDecision = { ...decision, fail: !decision.fail };
+  stopped();
+  await processReview("pr");
+  assert.notDeepEqual(checkConclusions, [finalCheck]);
+  (attempt.coverage as { nativeCheckDecision: object }).nativeCheckDecision = decision;
+  stopped();
+  await processReview("pr");
+  assert.deepEqual(checkConclusions, [finalCheck]);
   // A delivered review is left alone.
   await processReview("pr");
   assert.deepEqual([summaries.length, checkConclusions.length], [1, 1]);

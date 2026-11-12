@@ -7,7 +7,7 @@ let updateCount = 1;
 const findMany = mock(async () => orphans);
 const updateMany = mock(async () => ({ count: updateCount }));
 mock.module("@octopus/db", () => ({
-  prisma: { pullRequest: { findMany, updateMany } },
+  prisma: { pullRequest: { findMany, updateMany }, $transaction: (run: (tx: unknown) => unknown) => run({ pullRequest: { updateMany } }) },
 }));
 
 const enqueue = mock(async () => "job-id");

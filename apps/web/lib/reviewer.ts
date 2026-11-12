@@ -676,11 +676,12 @@ async function resumeReviewPublication(pr: Prisma.PullRequestGetPayload<{ includ
     if (await outcomeRecord.publish(() => publishReviewSummary({ pullRequestId: pr.id, headSha: pr.headSha, reviewRequestVersion: pr.reviewRequestVersion,
       installationId, owner, repo: repoName, prNumber: pr.number, body, expectedReviewBody: attempt.reviewBody })) === null) return;
     if (coverage.nativeCheckId) {
-      const severities = (await prisma.reviewIssue.findMany({ where: { pullRequestId: pr.id }, select: { severity: true } })).map(issue => issue.severity);
-      const result = reviewCheckResult(coverage, shouldFailReviewCheck(
+      // Attempts archived before the decision was kept fall back to the saved findings.
+      const severities = coverage.nativeCheckDecision ? [] : (await prisma.reviewIssue.findMany({ where: { pullRequestId: pr.id }, select: { severity: true } })).map(issue => issue.severity);
+      const result = reviewCheckResult(coverage, coverage.nativeCheckDecision?.fail ?? shouldFailReviewCheck(
         { hasCritical: severities.includes("critical"), hasHigh: severities.includes("high"), hasMedium: severities.includes("medium") },
         repo.organization.checkFailureThreshold || "critical",
-      ), severities.length);
+      ), coverage.nativeCheckDecision?.findings ?? severities.length);
       await ghUpdateCheckRun(installationId, owner, repoName, Number(coverage.nativeCheckId), result.conclusion, { title: result.title, summary: result.summary });
     }
     await recordFirstReviewCompletion(pr.id, pr.headSha, pr.reviewRequestVersion, attempt.reviewBody);
@@ -2518,6 +2519,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       response.text, effectiveReviewBody, mainCommentBody, coverage, attemptId, { hasCritical, hasHigh, hasMedium },
     ));
     assertProcessingActive();
+    coverage.nativeCheckDecision = { fail: shouldFailReviewCheck({ hasCritical, hasHigh, hasMedium }, threshold), findings: effectiveFindingsCount };
     const promoted = await saveReviewAttempt(attemptId, pr.id, coverage, effectiveReviewBody, mergedIssues);
     attemptSaved = true;
 

@@ -24,6 +24,16 @@ const integer = (value: unknown, [min, max]: number[]): value is number =>
 // Stored and shown to operators: printable ASCII only, at most 100 characters.
 const label = (value: unknown): value is string => typeof value === "string" && /^[\x20-\x7e]{1,100}$/.test(value);
 
+/**
+ * "quiescent" is only answered once it is recorded, so the deadline, which bounds only the wait,
+ * cannot end the drain during the release. If recording fails the drain has ended; read that.
+ */
+async function recordedStatus() {
+  const status = await drainStatus();
+  if (status.outcome !== "quiescent" || await markQuiescent(status.generation)) return status;
+  return drainStatus();
+}
+
 export async function GET(request: NextRequest) {
   if (!isAdminApiAuthorized(request)) return respond({ error: "Unauthorized" }, 401);
   try {
@@ -31,14 +41,9 @@ export async function GET(request: NextRequest) {
     // that keeps polling keeps the drain alive and one that disappears lets it expire. It also
     // ends a drain that is past its lease or deadline, so that does not depend on a worker being up.
     await expireDrainLease();
-    let status = await drainStatus();
-    if (status.state === "draining") {
-      await renewDrainLease(status.generation);
-      // Recorded so the deadline, which bounds only the wait, cannot end the drain during the release.
-      if (status.outcome === "quiescent") await markQuiescent(status.generation);
-      status = await drainStatus();
-    }
-    return respond(status);
+    const status = await drainStatus();
+    if (status.state === "draining") await renewDrainLease(status.generation);
+    return respond(await recordedStatus());
   } catch (error) {
     return unavailable(error);
   }
@@ -60,7 +65,7 @@ export async function POST(request: NextRequest) {
       if ((deadlineSeconds !== undefined && !integer(deadlineSeconds, DEADLINE_SECONDS)) ||
           (leaseSeconds !== undefined && !integer(leaseSeconds, LEASE_SECONDS)) || !label(requestedBy)) return invalid();
       const { generation } = await requestDrain({ deadlineSeconds, leaseSeconds, requestedBy });
-      return respond({ generation, status: await drainStatus() });
+      return respond({ generation, status: await recordedStatus() });
     }
     if (input.action === "resume") {
       const { generation, reason = "requested" } = input;
@@ -68,7 +73,7 @@ export async function POST(request: NextRequest) {
       if (!integer(generation, [0, 2_147_483_647]) || !label(reason) || reason === "lease_expired" || reason === "timed_out") return invalid();
       // A stale generation is not an error: the drain it named is already over.
       const resumed = await resumeClaiming({ generation, reason });
-      return respond({ resumed, status: await drainStatus() });
+      return respond({ resumed, status: await recordedStatus() });
     }
     return invalid();
   } catch (error) {

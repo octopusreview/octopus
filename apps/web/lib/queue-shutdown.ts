@@ -21,11 +21,11 @@ export function installQueueShutdown(boss: Pick<PgBoss, "stop">, timeout = DRAIN
     let held: { code?: number | string | null } | undefined;
     process.exit = ((code?: number | string | null) => { held = { code }; }) as typeof process.exit;
     let failed = false;
-    try {
-      await Promise.all([boss.stop({ graceful: true, timeout }), onShutdown?.(timeout)]);
-    } catch (error) {
+    // Both are waited for: a failed queue stop must not cut the wait for detached inline work short.
+    for (const result of await Promise.allSettled([boss.stop({ graceful: true, timeout }), onShutdown?.(timeout)])) {
+      if (result.status === "fulfilled") continue;
       failed = true;
-      console.error("[queue] Graceful shutdown failed:", error instanceof Error ? error.name : "unknown error");
+      console.error("[queue] Graceful shutdown failed:", result.reason instanceof Error ? result.reason.name : "unknown error");
     }
     process.exit = exit;
     // Next exits by itself once HTTP has closed. Where this is the only handler

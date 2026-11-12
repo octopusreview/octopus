@@ -86,6 +86,17 @@ async function until(check: () => unknown, label: string): Promise<void> {
       expect(await drain.drainStatus()).toMatchObject({ inlineActive: 0, quiescent: true });
     });
 
+    it("counts work tracked through a second copy of the module, as Next loads it for route handlers", async () => {
+      const copy: typeof worker = await import(`../queue-drain-worker.ts?copy=${Date.now()}`);
+      expect(copy.trackInline).not.toBe(worker.trackInline);
+      let finish!: () => void;
+      const running = copy.trackInline(() => new Promise<void>(resolve => { finish = resolve; }));
+      await reported(1);
+      finish();
+      await running;
+      await reported(0);
+    });
+
     it("stops counting work that throws", async () => {
       let fail!: () => void;
       const running = worker.trackInline(() => new Promise<never>((_, reject) => { fail = () => reject(new Error("synthetic")); }));

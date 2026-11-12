@@ -7,67 +7,71 @@ const lib = () => import("./queue-drain");
 // Fencing rule: this process may hold queue worker registrations only while
 // its last read of the drain row said "claiming".
 
-let boss: Pick<PgBoss, "offWork"> | undefined;
-let register: ((queues: string[]) => Promise<void>) | undefined;
-let pollMs = 0; // set by startQueueDrainWorker
-let timer: ReturnType<typeof setInterval> | undefined;
-let instanceId: string | undefined;
-let held: string[] | undefined; // queue names while this process holds registrations
-let registrationFailed = false;
-let stopping: Promise<void> | undefined; // in-flight handlers finishing after a drain was seen
-let draining = false; // the last read of the drain row
-let acked: number | undefined;
-let polledAt = 0;
-let polling = false;
-let retiring = false;
-let inlineActive = 0;
+// Kept on globalThis like the pg-boss instance: Next can load this module more than once
+// (instrumentation and route handlers), and inline work must be counted by the copy that polls.
+const s = ((globalThis as unknown as { queueDrainWorker?: {
+  boss?: Pick<PgBoss, "offWork">;
+  register?: (queues: string[]) => Promise<void>;
+  pollMs: number; // set by startQueueDrainWorker
+  timer?: ReturnType<typeof setInterval>;
+  instanceId?: string;
+  held?: string[]; // queue names while this process holds registrations
+  registrationFailed: boolean;
+  stopping?: Promise<void>; // in-flight handlers finishing after a drain was seen
+  draining: boolean; // the last read of the drain row
+  acked?: number;
+  polledAt: number;
+  polling: boolean;
+  retiring: boolean;
+  inlineActive: number;
+} }).queueDrainWorker ??= { pollMs: 0, registrationFailed: false, draining: false, polledAt: 0, polling: false, retiring: false, inlineActive: 0 });
 
 const logFailure = (what: string, error: unknown) =>
   console.error(`[queue] ${what} failed:`, error instanceof Error ? error.name : "unknown error");
 
-const report = () => lib().then(({ heartbeat }) => heartbeat(instanceId!, { inlineActive }))
+const report = () => lib().then(({ heartbeat }) => heartbeat(s.instanceId!, { inlineActive: s.inlineActive }))
   .then(() => undefined, error => logFailure("Reporting inline work", error));
 
 async function poll(): Promise<void> {
-  if (polling) return;
-  polling = true;
+  if (s.polling) return;
+  s.polling = true;
   try {
     const { acknowledgeDrain, expireDrainLease, heartbeat, registerInstance } = await lib();
-    instanceId ??= await registerInstance();
-    let drain = await heartbeat(instanceId, { inlineActive });
+    s.instanceId ??= await registerInstance();
+    let drain = await heartbeat(s.instanceId, { inlineActive: s.inlineActive });
     // If whoever requested the drain stopped renewing it, resume without them.
     if (drain.state === "draining" && await expireDrainLease()) drain = { ...drain, state: "claiming" };
-    draining = drain.state === "draining";
-    polledAt = Date.now();
-    if (held && (draining || registrationFailed) && !stopping) {
-      const queues = held;
+    s.draining = drain.state === "draining";
+    s.polledAt = Date.now();
+    if (s.held && (s.draining || s.registrationFailed) && !s.stopping) {
+      const queues = s.held;
       console.log(`[queue] Stopping workers, waiting for active jobs...`);
-      stopping = Promise.allSettled(queues.map(name => Promise.resolve().then(() => boss!.offWork(name, { wait: true }))))
+      s.stopping = Promise.allSettled(queues.map(name => Promise.resolve().then(() => s.boss!.offWork(name, { wait: true }))))
         .then(results => {
-          held = queues.filter((_, index) => results[index].status === "rejected");
+          s.held = queues.filter((_, index) => results[index].status === "rejected");
           for (const result of results) if (result.status === "rejected") logFailure("Stopping workers", result.reason);
-          if (held.length === 0) { held = undefined; registrationFailed = false; }
-          stopping = undefined;
-          if (!held) void poll();
+          if (s.held.length === 0) { s.held = undefined; s.registrationFailed = false; }
+          s.stopping = undefined;
+          if (!s.held) void poll();
         });
     }
-    if (draining) {
+    if (s.draining) {
       // Only once every in-flight handler has finished.
-      if (!held && !stopping && acked !== drain.generation) {
-        await acknowledgeDrain(instanceId, drain.generation);
-        acked = drain.generation;
+      if (!s.held && !s.stopping && s.acked !== drain.generation) {
+        await acknowledgeDrain(s.instanceId, drain.generation);
+        s.acked = drain.generation;
         console.log(`[queue] Drain ${drain.generation} acknowledged`);
       }
-    } else if (register && !held && !stopping && !retiring) {
-      held = [];
-      try { await register(held); } catch (error) { registrationFailed = true; throw error; }
-      if (acked !== undefined) console.log("[queue] Drain ended, claiming again");
+    } else if (s.register && !s.held && !s.stopping && !s.retiring) {
+      s.held = [];
+      try { await s.register(s.held); } catch (error) { s.registrationFailed = true; throw error; }
+      if (s.acked !== undefined) console.log("[queue] Drain ended, claiming again");
     }
   } catch (error) {
     // Keep the last known state; the next tick tries again.
     logFailure("Drain poll", error);
   } finally {
-    polling = false;
+    s.polling = false;
   }
 }
 
@@ -80,12 +84,12 @@ async function poll(): Promise<void> {
 export async function startQueueDrainWorker(
   queue: Pick<PgBoss, "offWork">, registerWorkers?: (queues: string[]) => Promise<void>, intervalMs?: number,
 ): Promise<void> {
-  boss = queue;
-  register = registerWorkers;
-  pollMs = intervalMs ?? (await lib()).HEARTBEAT_INTERVAL_SECONDS * 1000;
+  s.boss = queue;
+  s.register = registerWorkers;
+  s.pollMs = intervalMs ?? (await lib()).HEARTBEAT_INTERVAL_SECONDS * 1000;
   await poll();
-  timer = setInterval(() => void poll(), pollMs);
-  timer.unref?.();
+  s.timer = setInterval(() => void poll(), s.pollMs);
+  s.timer.unref?.();
 }
 
 /**
@@ -93,15 +97,15 @@ export async function startQueueDrainWorker(
  * and detached indexing or analysis. It is never refused; a drain and a shutdown wait for it.
  */
 export async function trackInline<T>(work: () => Promise<T>): Promise<T> {
-  inlineActive++;
+  s.inlineActive++;
   try {
     // During a drain the count is written before the work starts, so status cannot miss it.
     // Otherwise report the first one at once rather than on the next tick.
-    if (instanceId && draining) await report();
-    else if (instanceId && inlineActive === 1) void poll();
+    if (s.instanceId && s.draining) await report();
+    else if (s.instanceId && s.inlineActive === 1) void poll();
     return await work();
   } finally {
-    inlineActive--;
+    s.inlineActive--;
   }
 }
 
@@ -110,13 +114,13 @@ export async function trackInline<T>(work: () => Promise<T>): Promise<T> {
  * Next waits for open requests itself; the wait here covers detached inline work.
  */
 export async function retireQueueDrainWorker(timeoutMs: number): Promise<void> {
-  retiring = true;
-  clearInterval(timer);
-  const id = instanceId;
+  s.retiring = true;
+  clearInterval(s.timer);
+  const id = s.instanceId;
   if (id) await lib().then(({ markRetiring }) => markRetiring(id)).catch(error => logFailure("Marking the instance as retiring", error));
   const deadline = Date.now() + timeoutMs;
   // Keep reporting: a drain still counts the inline work of an instance that is on its way out.
-  for (let tick = 0; inlineActive > 0 && Date.now() < deadline; tick++) {
+  for (let tick = 0; s.inlineActive > 0 && Date.now() < deadline; tick++) {
     if (id && tick % 10 === 0) await report();
     await new Promise(resolve => setTimeout(resolve, 100));
   }
@@ -137,19 +141,19 @@ const NO_BACKSTOP = new Set(["pull-ollama-model"]);
  * refusals show up in the logs.
  */
 async function refuseWhileDraining(name: string): Promise<void> {
-  if (!instanceId || NO_BACKSTOP.has(name)) return;
+  if (!s.instanceId || NO_BACKSTOP.has(name)) return;
   // Status stops counting this process after three missed heartbeats, so a read older than two
   // no longer proves anything: the drain may have completed without it. If the read fails the last
   // known state stands: refusing would fail customer jobs whenever the database is briefly slow.
-  if (Date.now() - polledAt > 2 * pollMs) {
+  if (Date.now() - s.polledAt > 2 * s.pollMs) {
     try {
-      draining = (await (await lib()).heartbeat(instanceId, { inlineActive })).state === "draining";
-      polledAt = Date.now();
+      s.draining = (await (await lib()).heartbeat(s.instanceId, { inlineActive: s.inlineActive })).state === "draining";
+      s.polledAt = Date.now();
     } catch (error) {
       logFailure("Drain read", error);
     }
   }
-  if (draining) throw new Error("Queue is draining; the job was not started");
+  if (s.draining) throw new Error("Queue is draining; the job was not started");
 }
 
 /** `boss.work` with the backstop in front of every handler; `queues` collects the names registered. */

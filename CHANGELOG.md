@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Upgrade notes
 
-- Apply the `20261111130000_review_generation_retry` migration before starting instances with this change. It adds two columns and a unique index to `ai_usages` and one column to `review_attempt_outcomes`; the index build briefly blocks writes to `ai_usages` on large tables.
+- Apply the `20261112090000_review_generation_retry` migration before starting instances with this change. It adds two columns and a unique index to `ai_usages` and one column to `review_attempt_outcomes`; the index build briefly blocks writes to `ai_usages` on large tables.
 
 ## [1.4.5] - 2026-11-11
 

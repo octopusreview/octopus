@@ -103,6 +103,8 @@ try {
   const originalFetch = globalThis.fetch;
   const sdkAbort = new AbortController();
   let sdkSignal: AbortSignal | null | undefined;
+  // The platform client caches its fetch implementation; use a fresh BYOK client.
+  storedKey = "synthetic-organization-key";
   globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
     sdkSignal = init?.signal;
     sdkAbort.abort();
@@ -111,7 +113,7 @@ try {
   try {
     await assert.rejects(() => createAiMessage({ model: "gpt-fixture", maxTokens: 16, maxRetries: 0, signal: sdkAbort.signal, messages: [{ role: "user", content: "fixture" }] }, "org"));
     assert.equal(sdkSignal?.aborted, true, "the OpenAI SDK receives and honors the request signal");
-  } finally { globalThis.fetch = originalFetch; }
+  } finally { globalThis.fetch = originalFetch; storedKey = null; }
 
   // A retry refused before dispatch leaves the original classified failure, and the supplied input, standing.
   const { CapacityAdmissionError, capacityReceipt } = await import("../../review-capacity");

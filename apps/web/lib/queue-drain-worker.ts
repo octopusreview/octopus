@@ -117,14 +117,23 @@ export async function retireQueueDrainWorker(timeoutMs: number): Promise<void> {
   s.retiring = true;
   clearInterval(s.timer);
   const id = s.instanceId;
-  if (id) await lib().then(({ markRetiring }) => markRetiring(id)).catch(error => logFailure("Marking the instance as retiring", error));
   const deadline = Date.now() + timeoutMs;
-  // Keep reporting: a drain still counts the inline work of an instance that is on its way out.
-  for (let tick = 0; s.inlineActive > 0 && Date.now() < deadline; tick++) {
-    if (id && tick % 10 === 0) await report();
-    await new Promise(resolve => setTimeout(resolve, 100));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      (async () => {
+        if (id) await lib().then(({ markRetiring }) => markRetiring(id)).catch(error => logFailure("Marking the instance as retiring", error));
+        for (let tick = 0; s.inlineActive > 0 && Date.now() < deadline; tick++) {
+          if (id && tick % 10 === 0) await report();
+          if (Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, Math.min(100, deadline - Date.now())));
+        }
+        if (id && Date.now() < deadline) await report();
+      })(),
+      new Promise<void>(resolve => { timer = setTimeout(resolve, Math.max(0, deadline - Date.now())); }),
+    ]);
+  } finally {
+    clearTimeout(timer);
   }
-  if (id) await report();
 }
 
 // Refusing a job means throwing, which fails it. This queue has no retries

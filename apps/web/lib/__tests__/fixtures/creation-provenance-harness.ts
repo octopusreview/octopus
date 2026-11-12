@@ -185,7 +185,7 @@ try {
         })), { timeout: 10_000 })) as typeof prisma.$transaction;
       let pair;
       try {
-        pair = await Promise.all([createOrgForUser(person.id, "FixtureOne"), createOrgForUser(person.id, "FixtureTwo")]);
+        pair = await Promise.all([createOrgForUser(person.id, "Fixture"), createOrgForUser(person.id, "Fixture")]);
       } finally {
         clearTimeout(timeout);
         transactionOverride = undefined;

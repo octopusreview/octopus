@@ -84,6 +84,16 @@ const minutes = (count: number) => new Date(Date.now() + count * 60_000);
     expect(before.deadlineAt!.getTime() - before.requestedAt!.getTime()).toBe(drain.DEFAULT_DRAIN_DEADLINE_SECONDS * 1000);
   });
 
+  it("does not revive an expired lease and starts a new generation", async () => {
+    const first = await drain.requestDrain({ requestedBy: "first" });
+    await prisma.$executeRaw`UPDATE "queue_drain" SET "leaseUntil" = now() - interval '1 second' WHERE "id" = 1`;
+    expect(await drain.renewDrainLease(first.generation)).toBe(false);
+    const second = await drain.requestDrain({ requestedBy: "second" });
+    expect(second.generation).toBe(first.generation + 1);
+    expect(await row()).toMatchObject({ generation: second.generation, requestedBy: "second", state: "draining" });
+    expect(await drain.renewDrainLease(first.generation)).toBe(false);
+  });
+
   it("resumes only for the current generation and only once", async () => {
     await drain.requestDrain({ requestedBy: "test" });
     expect(await drain.resumeClaiming({ generation: 1, reason: "done" })).toBe(true);

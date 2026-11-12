@@ -26,17 +26,27 @@ const { fenceWorkers, retireQueueDrainWorker, startQueueDrainWorker } = await im
 const boss = new PgBoss({ connectionString: process.env.DATABASE_URL, supervise: false, schedule: false });
 boss.on("error", () => {});
 await boss.start();
+let blockStop = mode === "stop-failure" || mode === "registration-failure";
+let failRegistration = mode === "registration-failure";
+if (blockStop) {
+  const offWork = boss.offWork.bind(boss);
+  boss.offWork = async (...args) => {
+    if (blockStop) throw new Error("stop failed");
+    return offWork(...args);
+  };
+  process.on("SIGUSR2", () => { blockStop = false; console.log("stop unblocked"); });
+}
 installQueueShutdown(boss, 20_000, retireQueueDrainWorker);
-await startQueueDrainWorker(boss, async () => {
-  const { work, queues } = fenceWorkers(boss);
+await startQueueDrainWorker(boss, async queues => {
+  const { work } = fenceWorkers(boss, queues);
   // `retryMs` lets a retry be quick after a first attempt that was slow.
   await work<{ ms: number; retryMs?: number }>(queue, { localConcurrency: 2, pollingIntervalSeconds: 0.5, includeMetadata: true }, async ([job]) => {
     console.log(`start ${job.id}`);
     await delay(job.retryCount ? job.data.retryMs ?? job.data.ms : job.data.ms);
     console.log(`done ${job.id}`);
   });
+  if (failRegistration) { failRegistration = false; console.log("registration failed"); throw new Error("registration failed"); }
   console.log("registered");
-  return queues;
 }, 100);
 console.log("ready");
 await delay(120_000);

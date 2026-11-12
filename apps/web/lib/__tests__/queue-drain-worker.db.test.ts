@@ -142,6 +142,21 @@ const enabled = process.env.RUN_QUEUE_DB_TESTS === "1";
     expect(worker.count("registered")).toBe(1);
   }, 30_000);
 
+  for (const mode of ["stop-failure", "registration-failure"]) {
+    it(`withholds acknowledgement until ${mode} registrations stop`, async () => {
+      const worker = await startWorker(`engine-${mode}`, mode);
+      if (mode === "registration-failure") await worker.saw("registration failed");
+      const { generation } = await drain.requestDrain({ requestedBy: "test" });
+      await delay(500);
+      expect((await worker.instance()).ackedGeneration).toBeNull();
+      expect((await drain.drainStatus()).quiescent).toBe(false);
+      process.kill(worker.child.pid, "SIGUSR2");
+      await worker.saw("stop unblocked");
+      await worker.acked(generation);
+      expect((await drain.drainStatus()).quiescent).toBe(true);
+    }, 30_000);
+  }
+
   it("follows repeated drain and resume cycles and ignores a stale resume", async () => {
     const worker = await startWorker("engine-1");
     for (const cycle of [1, 2]) {

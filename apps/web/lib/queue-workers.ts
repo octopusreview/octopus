@@ -36,8 +36,8 @@ export interface ProcessReviewJob {
 }
 
 /** Returns the queue names registered. Call it again only after offWork() on each of them. */
-export async function registerWorkers(pgBoss: PgBoss, config: QueueConfig): Promise<string[]> {
-  const { work, queues } = fenceWorkers(pgBoss);
+export async function registerWorkers(pgBoss: PgBoss, config: QueueConfig, registrations?: string[]): Promise<string[]> {
+  const { work, queues } = fenceWorkers(pgBoss, registrations);
   const boss = { work };
   await boss.work("discover-models", { localConcurrency: 1 }, async (jobs) => {
     const { refreshModelDiscovery } = await import("./providers/model-discovery");

@@ -30,7 +30,8 @@ export async function GET(request: NextRequest) {
     let status = await drainStatus();
     // Not side-effect free: reading the status of a running drain renews its lease, so a caller
     // that keeps polling keeps the drain alive and one that disappears lets it expire.
-    if (status.state === "draining" && status.outcome !== "lease_expired" && await renewDrainLease(status.generation)) {
+    if (status.state === "draining" && status.outcome !== "lease_expired") {
+      await renewDrainLease(status.generation);
       status = await drainStatus();
     }
     return respond(status);

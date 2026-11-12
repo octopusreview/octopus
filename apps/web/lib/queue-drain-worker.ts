@@ -8,11 +8,12 @@ const lib = () => import("./queue-drain");
 // its last read of the drain row said "claiming".
 
 let boss: Pick<PgBoss, "offWork"> | undefined;
-let register: (() => Promise<string[]>) | undefined;
+let register: ((queues: string[]) => Promise<void>) | undefined;
 let pollMs = 0; // set by startQueueDrainWorker
 let timer: ReturnType<typeof setInterval> | undefined;
 let instanceId: string | undefined;
 let held: string[] | undefined; // queue names while this process holds registrations
+let registrationFailed = false;
 let stopping: Promise<void> | undefined; // in-flight handlers finishing after a drain was seen
 let draining = false; // the last read of the drain row
 let acked: number | undefined;
@@ -35,23 +36,28 @@ async function poll(): Promise<void> {
     if (drain.state === "draining" && await expireDrainLease()) drain = { ...drain, state: "claiming" };
     draining = drain.state === "draining";
     polledAt = Date.now();
+    if (held && (draining || registrationFailed) && !stopping) {
+      const queues = held;
+      console.log(`[queue] Stopping workers, waiting for active jobs...`);
+      stopping = Promise.allSettled(queues.map(name => Promise.resolve().then(() => boss!.offWork(name, { wait: true }))))
+        .then(results => {
+          held = queues.filter((_, index) => results[index].status === "rejected");
+          for (const result of results) if (result.status === "rejected") logFailure("Stopping workers", result.reason);
+          if (held.length === 0) { held = undefined; registrationFailed = false; }
+          stopping = undefined;
+          if (!held) void poll();
+        });
+    }
     if (draining) {
-      if (held) {
-        const queues = held;
-        held = undefined;
-        console.log(`[queue] Drain ${drain.generation} requested, waiting for active jobs...`);
-        stopping = Promise.all(queues.map(name => boss!.offWork(name, { wait: true })))
-          .catch(error => logFailure("Stopping workers", error))
-          .then(() => { stopping = undefined; void poll(); });
-      }
       // Only once every in-flight handler has finished.
-      if (!stopping && acked !== drain.generation) {
+      if (!held && !stopping && acked !== drain.generation) {
         await acknowledgeDrain(instanceId, drain.generation);
         acked = drain.generation;
         console.log(`[queue] Drain ${drain.generation} acknowledged`);
       }
     } else if (register && !held && !stopping && !retiring) {
-      held = await register();
+      held = [];
+      try { await register(held); } catch (error) { registrationFailed = true; throw error; }
       if (acked !== undefined) console.log("[queue] Drain ended, claiming again");
     }
   } catch (error) {
@@ -69,7 +75,7 @@ async function poll(): Promise<void> {
  * mid-drain does not claim.
  */
 export async function startQueueDrainWorker(
-  queue: Pick<PgBoss, "offWork">, registerWorkers?: () => Promise<string[]>, intervalMs?: number,
+  queue: Pick<PgBoss, "offWork">, registerWorkers?: (queues: string[]) => Promise<void>, intervalMs?: number,
 ): Promise<void> {
   boss = queue;
   register = registerWorkers;
@@ -131,8 +137,7 @@ async function refuseWhileDraining(name: string): Promise<void> {
 }
 
 /** `boss.work` with the backstop in front of every handler; `queues` collects the names registered. */
-export function fenceWorkers(queue: Pick<PgBoss, "work">): { work: PgBoss["work"]; queues: string[] } {
-  const queues: string[] = [];
+export function fenceWorkers(queue: Pick<PgBoss, "work">, queues: string[] = []): { work: PgBoss["work"]; queues: string[] } {
   const work = ((name: string, ...args: unknown[]) => {
     const handler = args.pop() as (jobs: unknown) => Promise<unknown>;
     queues.push(name);

@@ -26,12 +26,12 @@ export async function requestDrain({ deadlineSeconds = DEFAULT_DRAIN_DEADLINE_SE
     INSERT INTO "queue_drain" ("id", "generation", "state", "requestedAt", "requestedBy", "deadlineAt", "leaseUntil")
     VALUES (1, 1, 'draining', now(), ${requestedBy}, now() + ${deadlineSeconds}::int * interval '1 second', now() + ${leaseSeconds}::int * interval '1 second')
     ON CONFLICT ("id") DO UPDATE SET
-      "generation" = "queue_drain"."generation" + CASE WHEN "queue_drain"."state" = 'claiming' THEN 1 ELSE 0 END,
+      "generation" = "queue_drain"."generation" + CASE WHEN "queue_drain"."state" = 'claiming' OR "queue_drain"."leaseUntil" <= clock_timestamp() THEN 1 ELSE 0 END,
       "state" = 'draining',
-      "requestedAt" = CASE WHEN "queue_drain"."state" = 'claiming' THEN EXCLUDED."requestedAt" ELSE "queue_drain"."requestedAt" END,
-      "requestedBy" = CASE WHEN "queue_drain"."state" = 'claiming' THEN EXCLUDED."requestedBy" ELSE "queue_drain"."requestedBy" END,
-      "deadlineAt" = CASE WHEN "queue_drain"."state" = 'claiming' THEN EXCLUDED."deadlineAt" ELSE "queue_drain"."deadlineAt" END,
-      "leaseUntil" = EXCLUDED."leaseUntil",
+      "requestedAt" = CASE WHEN "queue_drain"."state" = 'claiming' OR "queue_drain"."leaseUntil" <= clock_timestamp() THEN clock_timestamp() ELSE "queue_drain"."requestedAt" END,
+      "requestedBy" = CASE WHEN "queue_drain"."state" = 'claiming' OR "queue_drain"."leaseUntil" <= clock_timestamp() THEN EXCLUDED."requestedBy" ELSE "queue_drain"."requestedBy" END,
+      "deadlineAt" = CASE WHEN "queue_drain"."state" = 'claiming' OR "queue_drain"."leaseUntil" <= clock_timestamp() THEN clock_timestamp() + ${deadlineSeconds}::int * interval '1 second' ELSE "queue_drain"."deadlineAt" END,
+      "leaseUntil" = clock_timestamp() + ${leaseSeconds}::int * interval '1 second',
       "resumedAt" = NULL,
       "resumeReason" = NULL
     RETURNING "generation"`;
@@ -47,8 +47,8 @@ export async function resumeClaiming({ generation, reason }: { generation: numbe
 
 export async function renewDrainLease(generation: number, leaseSeconds = DEFAULT_DRAIN_LEASE_SECONDS): Promise<boolean> {
   return await prisma.$executeRaw`
-    UPDATE "queue_drain" SET "leaseUntil" = now() + ${leaseSeconds}::int * interval '1 second'
-    WHERE "id" = 1 AND "generation" = ${generation} AND "state" = 'draining'` > 0;
+    UPDATE "queue_drain" SET "leaseUntil" = clock_timestamp() + ${leaseSeconds}::int * interval '1 second'
+    WHERE "id" = 1 AND "generation" = ${generation} AND "state" = 'draining' AND "leaseUntil" > clock_timestamp()` > 0;
 }
 
 /** If whoever requested the drain stopped renewing it, workers resume by themselves. */

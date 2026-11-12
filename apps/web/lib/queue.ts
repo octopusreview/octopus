@@ -210,7 +210,7 @@ export async function startQueue(): Promise<PgBoss> {
   if (flag === "true") {
     const { registerWorkers } = await import("./queue-workers");
     // Workers are registered only while no rollout drain is in progress, and again after one ends.
-    await startQueueDrainWorker(boss, () => registerWorkers(boss, config));
+    await startQueueDrainWorker(boss, async queues => { await registerWorkers(boss, config, queues); });
   } else {
     console.log("[queue] ENABLE_REVIEW_WORKERS=false — enqueue-only mode, skipping worker registration");
     await startQueueDrainWorker(boss);

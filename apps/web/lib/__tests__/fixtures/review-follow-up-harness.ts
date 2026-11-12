@@ -25,7 +25,7 @@ let retryAfterHeader = "1";
 // Adapters such as a CLI send no request receipt.
 let recordRequests = true;
 // A change that takes effect after the first failed dispatch, i.e. between the two attempts.
-type RetryBlock = "" | "head" | "superseded" | "cancelled" | "key" | "access" | "spend" | "guard";
+type RetryBlock = "" | "head" | "superseded" | "cancelled" | "key" | "key-cancelled" | "access" | "spend" | "guard";
 let pendingRetryBlock: RetryBlock = "";
 let retryBlock: RetryBlock = "";
 let retryAbort = new AbortController();
@@ -204,7 +204,7 @@ mock.module("@/lib/ai-usage", () => ({ logAiUsage: async (usage: { operation: st
   if (usage.usageUnknown) { unknownUsage.push(usage.operation); return; }
   if (usage.chargeKey) chargeKeys.push(usage.chargeKey);
   usageCount++; usageOperations.push(usage.operation); if (adaptiveStage === "before-validator") adaptiveAbort.abort(); } }));
-mock.module("@/lib/ai-router", () => ({ credentialRouteUnchanged: async () => retryBlock !== "key", getProviderForModel: async () => {
+mock.module("@/lib/ai-router", () => ({ credentialRouteUnchanged: async () => { if (retryBlock === "key-cancelled") retryAbort.abort(); return retryBlock !== "key"; }, getProviderForModel: async () => {
   assert.ok(adaptiveStage, "Legacy fixture must not resolve adaptive capacity"); return "anthropic";
 }, createAiMessage: async (params: AiCreateParams) => {
   if (generationSetupErrorPrivacy) throw privateFailure();
@@ -688,6 +688,11 @@ if (generationRetry) {
       assert.equal(result.debits, 0);
       assert.ok(!result.body.includes("interrupted twice"), block);
     }
+
+    result = await run(["terminated", "success"], { block: "key-cancelled" });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(result.dispatches, 1);
+    assert.equal(generationBudget.claims, 1, "cancellation during credential lookup leaves the retry unit available");
 
     result = await run(["terminated", "success"], { budget: 1 });
     assert.equal(result.dispatches, 1, "a used-up durable budget refuses the retry");

@@ -1859,7 +1859,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       }), { window: executionWindow, confirm: async (failure, signal) => !!coverage.headSha && !!coverage.baseSha
         && await confirmGenerationRetryCurrent({ pullRequestId: pr.id, orgId: org.id, repoId: repo.id, model: reviewModel, provider: failure.provider,
           headSha: coverage.headSha, baseSha: coverage.baseSha, reviewRequestVersion: pr.reviewRequestVersion, fetchRevision }, signal) === null
-        && await credentialRouteUnchanged(failure, org.id) && await claimGenerationAttempt(outcomeKey) });
+        && await credentialRouteUnchanged(failure, org.id) && !signal.aborted && await claimGenerationAttempt(outcomeKey) });
     const assertProcessingActive = () => { if (completeReviewAdmission) assertReviewProcessingActive(completeReviewAdmission.window); };
 
     let reviewBody = prepareReviewPresentation(response.text, coverage);

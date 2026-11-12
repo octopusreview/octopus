@@ -3,6 +3,7 @@ import { PgBoss } from "pg-boss";
 import type { SendOptions } from "pg-boss";
 import { prisma } from "@octopus/db";
 import { installQueueShutdown } from "./queue-shutdown";
+import { retireQueueDrainWorker, startQueueDrainWorker } from "./queue-drain-worker";
 
 export interface QueueConfig {
   reviewTimeoutSeconds: number;
@@ -40,7 +41,7 @@ function getBoss(): PgBoss {
   }
 
   const instance = new PgBoss(databaseUrl);
-  installQueueShutdown(instance);
+  installQueueShutdown(instance, undefined, retireQueueDrainWorker);
   globalForQueue.pgBoss = instance;
   return instance;
 }
@@ -208,9 +209,11 @@ export async function startQueue(): Promise<PgBoss> {
   }
   if (flag === "true") {
     const { registerWorkers } = await import("./queue-workers");
-    await registerWorkers(boss, config);
+    // Workers are registered only while no rollout drain is in progress, and again after one ends.
+    await startQueueDrainWorker(boss, async queues => { await registerWorkers(boss, config, queues); });
   } else {
     console.log("[queue] ENABLE_REVIEW_WORKERS=false — enqueue-only mode, skipping worker registration");
+    await startQueueDrainWorker(boss);
   }
 
   console.log("[queue] pg-boss started");

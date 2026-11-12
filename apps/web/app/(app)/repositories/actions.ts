@@ -13,6 +13,7 @@ import { pubby } from "@/lib/pubby";
 import { createAnalysisAbortController, abortAnalysis, clearAnalysisAbortController } from "@/lib/analysis-abort";
 import { abortIndexing } from "@/lib/indexing-abort";
 import { eventBus } from "@/lib/events/bus";
+import { trackInline } from "@/lib/queue-drain-worker";
 import { syncForgejoRepos } from "@/lib/repo-sync";
 
 export type RepoDetailData = {
@@ -181,7 +182,7 @@ export async function analyzeRepository(
 
   // Fire-and-forget: don't await so navigation isn't blocked.
   // Results are pushed via Pubby real-time events.
-  (async () => {
+  void trackInline(async () => {
     try {
       emitLog(`Starting analysis for ${repo.fullName}...`);
       const { analyzeRepository: runAnalysis } = await import("@/lib/analyzer");
@@ -238,7 +239,7 @@ export async function analyzeRepository(
         });
       }
     }
-  })();
+  });
 
   revalidatePath("/repositories");
   return {};

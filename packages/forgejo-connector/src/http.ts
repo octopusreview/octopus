@@ -105,8 +105,11 @@ export async function forgejoRequest(host: string, token: string, path: string, 
     return await new Promise((resolve, reject) => {
       const req = request(url, {
         method: options.method ?? "GET", signal, agent: false, family: pinned.family, rejectUnauthorized: true,
-        lookup: (_hostname, lookupOptions, callback) => lookupOptions.all
-          ? callback(null, [pinned]) : callback(null, pinned.address, pinned.family),
+        // Match DNS callback timing so Node attaches socket error handlers before connecting.
+        lookup: (_hostname, lookupOptions, callback) => queueMicrotask(() => {
+          if (lookupOptions.all) callback(null, [pinned]);
+          else callback(null, pinned.address, pinned.family);
+        }),
         headers: { Authorization: `token ${token}`, Accept: "application/json", "Accept-Encoding": "identity",
           ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}) },
       }, response => {

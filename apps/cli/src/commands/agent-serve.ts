@@ -368,14 +368,18 @@ async function runOneTask(
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), OLLAMA_TIMEOUT_MS);
-    let response: Response;
+    let body: OllamaResponse;
     try {
-      response = await fetch(`${ollamaBaseUrl}/v1/chat/completions`, {
+      const response = await fetch(`${ollamaBaseUrl}/v1/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: "Bearer ollama" },
         body: JSON.stringify({ model, max_tokens: task.maxTokens, messages, stream: false }),
         signal: controller.signal,
       });
+      if (!response.ok) {
+        throw new Error(`Ollama returned ${response.status}: ${(await response.text()).slice(0, 200)}`);
+      }
+      body = (await response.json()) as OllamaResponse;
     } catch (e) {
       if (controller.signal.aborted) {
         throw new Error(`Ollama timed out after ${Math.round(OLLAMA_TIMEOUT_MS / 1000)}s`);
@@ -384,10 +388,6 @@ async function runOneTask(
     } finally {
       clearTimeout(timer);
     }
-    if (!response.ok) {
-      throw new Error(`Ollama returned ${response.status}: ${(await response.text()).slice(0, 200)}`);
-    }
-    const body = (await response.json()) as OllamaResponse;
     const text = body.choices?.[0]?.message?.content ?? "";
 
     // agentId is REQUIRED by the server's /complete endpoint: it verifies

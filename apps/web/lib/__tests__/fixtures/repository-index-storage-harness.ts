@@ -1,4 +1,5 @@
 import { mock } from "bun:test";
+import "./index-github-rate-mocks";
 import assert from "node:assert/strict";
 import { randomUUID, createHmac } from "node:crypto";
 import { prisma, type Repository } from "@octopus/db";
@@ -180,13 +181,13 @@ export async function exerciseStorageRace(scenario: string, repo: Repository) {
     assert.equal(baselineGeneration, repo.indexAttemptId);
     const prepare = (count = 101, batches = 1) => prepareRepoForLocalIndex(repo.organizationId, "github", repo.fullName, "main", { totalBatches: batches, totalFiles: count });
     const localBatch = async (uploadId: string | undefined, batchIndex = 0, totalBatches = 1, batch = files()) => {
-      const owned = await claimLocalIndexBatch(repo.id, batchIndex, totalBatches, batch, uploadId);
+      const owned = await claimLocalIndexBatch(repo.id, repo.organizationId, batchIndex, totalBatches, batch, uploadId);
       try {
         const delta = await indexLocalBatch(repo.id, repo.fullName, repo.organizationId, batch, owned);
         await recordLocalIndexProgress(repo.id, null, {
           indexedFiles: delta.indexedInBatch, totalChunks: delta.chunksInBatch, totalVectors: delta.chunksInBatch,
         }, batchIndex === totalBatches - 1, owned);
-      } catch (error) { await markLocalIndexFailed(repo.id, owned.attemptId); throw error; }
+      } catch (error) { await markLocalIndexFailed(repo.id, owned); throw error; }
     };
     if (scenario === "storage-local-verified" || scenario === "storage-local-legacy") {
       await prisma.repository.update({ where: { id: repo.id }, data: { externalId: `cli:github:${repo.fullName}`, indexedAt: null, firstIndexedAt: null } });

@@ -25,7 +25,7 @@ export function mainCommentFailure(error: unknown): "failed" | "uncertain" {
 
 // Keep telemetry contention and outages out of the review's critical path.
 // Never include the exception: provider/SQL messages may contain private data.
-async function bestEffort(write: (tx: Prisma.TransactionClient) => Promise<unknown>, client?: Prisma.TransactionClient): Promise<void> {
+export async function bestEffort(write: (tx: Prisma.TransactionClient) => Promise<unknown>, client?: Prisma.TransactionClient): Promise<void> {
   if (client) {
     // A missing table or timeout must not poison the caller's admission/claim.
     try {

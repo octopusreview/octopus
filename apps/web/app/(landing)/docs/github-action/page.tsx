@@ -157,6 +157,12 @@ export default function GitHubActionPage() {
           on the first run, then post inline review comments with severity
           levels and suggested fixes.
         </Paragraph>
+        <Paragraph>
+          A conflicting active review or a repository identity change can
+          cause a community review request to return HTTP 409. Existing action
+          clients may fail on this response; retry later after the conflict is
+          resolved.
+        </Paragraph>
       </Section>
 
       {/* Private repos / API key */}

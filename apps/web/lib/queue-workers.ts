@@ -1,6 +1,7 @@
 import { reportBackgroundFailure } from "./background-failure";
+import { AiProviderFailure, safeErrorDetails } from "./provider-failure";
 import { cleanupForgejoConnectorRequests } from "./forgejo-connector";
-import type { PgBoss } from "pg-boss";
+import type { JobWithMetadata, PgBoss } from "pg-boss";
 import { sendWelcomeEmail } from "./emails/welcome";
 import { processReview } from "./reviewer";
 import { createReviewExecutionWindow, isReviewCancelled } from "./review-capacity";
@@ -19,7 +20,10 @@ import { runOllamaPull } from "./ollama-admin";
 import { reapStuckReviews } from "./reap-stuck-reviews";
 import { discoverRepositories } from "./discover-repositories";
 import { processRepositoryIndex, type RepositoryIndexJob } from "./repository-index-job";
+import { dispatchDeferredIndexes } from "./github-deferred-index";
+import { pruneExpiredIndexRateWindows } from "./github-index-rate-state";
 import type { QueueConfig } from "./queue";
+import { fenceWorkers } from "./queue-drain-worker";
 
 export interface WelcomeEmailJob {
   userId: string;
@@ -31,7 +35,10 @@ export interface ProcessReviewJob {
   pullRequestId: string;
 }
 
-export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promise<void> {
+/** Returns the queue names registered. Call it again only after offWork() on each of them. */
+export async function registerWorkers(pgBoss: PgBoss, config: QueueConfig, registrations?: string[]): Promise<string[]> {
+  const { work, queues } = fenceWorkers(pgBoss, registrations);
+  const boss = { work };
   await boss.work("discover-models", { localConcurrency: 1 }, async (jobs) => {
     const { refreshModelDiscovery } = await import("./providers/model-discovery");
     for (const job of jobs) await refreshModelDiscovery(job.signal);
@@ -57,10 +64,10 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
     }
   });
 
-  await boss.work<RepositoryIndexJob>("index-repository", { localConcurrency: 1, includeMetadata: true }, async (jobs) => {
+  await boss.work("index-repository", { localConcurrency: 1, includeMetadata: true }, async (jobs: JobWithMetadata<RepositoryIndexJob>[]) => {
     for (const job of jobs) {
       const retry = { retryCount: job.retryCount, retryLimit: job.retryLimit };
-      try { await processRepositoryIndex(job.data, retry); }
+      try { await processRepositoryIndex(job.data, retry, job.id); }
       catch (error) {
         reportBackgroundFailure(error, { stage: "indexing", attemptId: job.id, repositoryId: job.data?.repositoryId, retry });
         throw error;
@@ -75,10 +82,10 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
     }
   });
 
-  await boss.work<ProcessReviewJob>(
+  await boss.work(
     "process-review",
     { localConcurrency: config.reviewConcurrency, includeMetadata: true },
-    async (jobs) => {
+    async (jobs: JobWithMetadata<ProcessReviewJob>[]) => {
       for (const job of jobs) {
         console.log(`[queue] Processing review for PR ${job.data.pullRequestId}`);
         const executionWindow = createReviewExecutionWindow(job);
@@ -104,8 +111,9 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
         try {
           await handleLargeReviewResult(job.data);
         } catch (err) {
-          console.error(`[queue] Large review post failed for PR ${job.data.pullRequestId} (job ${job.id}):`, err);
-          throw err;
+          const details = safeErrorDetails(err);
+          console.error(`[queue] Large review post failed for PR ${job.data.pullRequestId} (job ${job.id}):`, details);
+          throw Object.assign(new Error("Large review result delivery failed"), details);
         }
       }
     },
@@ -120,7 +128,7 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
         try {
           await processCommunityReview(job.data.jobId);
         } catch (err) {
-          console.error(`[queue] community-review failed for jobId=${job.data.jobId} (job ${job.id}):`, err);
+          console.error(`[queue] community-review failed for jobId=${job.data.jobId} (job ${job.id}):`, safeErrorDetails(err instanceof AiProviderFailure ? err.details : err));
           throw err;
         }
       }
@@ -230,6 +238,8 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
         console.error(`[queue] reap-stuck-reviews failed (job ${job.id}):`, err);
         throw err;
       }
+      try { await dispatchDeferredIndexes(pgBoss); await pruneExpiredIndexRateWindows(); }
+      catch { console.error("[queue] GitHub indexing recovery sweep failed; the next sweep will retry"); }
     }
   });
 
@@ -280,4 +290,5 @@ export async function registerWorkers(boss: PgBoss, config: QueueConfig): Promis
   });
 
   console.log("[queue] Workers registered: welcome-email, process-review, post-large-review-result, community-review, enforce-audit-retention, enforce-activity-retention, refresh-release-cache, reap-stuck-reviews, discover-repositories, subscription-renewals, reconcile-auto-reloads, pull-ollama-model");
+  return queues;
 }

@@ -1,11 +1,16 @@
 import * as Sentry from "@sentry/nextjs";
+import { isIndexingMilestone, type IndexingMilestone } from "./indexing-milestone";
 import { AiProviderFailure, safeErrorDetails } from "./provider-failure";
 import { CapacityAdmissionError } from "./review-capacity";
 
 export type FailureStage = "review" | "indexing" | "preparation" | "generation" | "publication";
+export type PreparationOperation = "review_input" | "repository_tree";
 export type RetryState = { retryCount: number; retryLimit: number };
 export type FailureContext = {
   stage: FailureStage;
+  preparationOperation?: PreparationOperation;
+  indexingDeadline?: boolean;
+  indexingLastMilestone?: IndexingMilestone;
   attemptId?: string;
   repositoryId?: string;
   pullRequestId?: string;
@@ -31,26 +36,26 @@ export function reportBackgroundFailure(error: unknown, context: FailureContext)
     const details = providerFailure?.details ?? capacityFailure?.details ?? safeErrorDetails(error);
     const keyOwner = providerFailure?.keyOwner ?? capacityFailure?.keyOwner ?? "unknown";
     const status = details.status;
-    const orgKeyFailure = keyOwner === "organization" && [401, 402, 403, 429].includes(status ?? 0);
     // These are known application control-flow messages, not substring matches on provider payloads.
     const expected = !providerFailure && error instanceof Error && [
       "Out of credits", "Monthly spend limit reached",
       "Indexing attempt is no longer current",
     ].includes(error.message);
-    if (orgKeyFailure || expected) return;
+    if (expected) return;
     const permissionFailure = !providerFailure && context.stage === "indexing" && error instanceof Error &&
       error.message.startsWith("GitHub App does not have access to ");
     if (permissionFailure) return;
-    const ownership = keyOwner === "platform" && status && ([401, 402, 403, 429].includes(status) || status >= 500)
-      ? "platform" : "unknown";
+    const ownership = "unknown";
     const code = capacityFailure ? `capacity_${capacityFailure.receipt.reason ?? "final-check-failed"}` : details.code ?? (status ? `http_${status}` : "unclassified");
     const provider = providerFailure?.provider ?? capacityFailure?.provider ?? "unknown";
     const stage = capacityFailure ? "preparation" : providerFailure && context.stage === "review" ? "generation" : context.stage;
+    const operation = stage === "preparation" && (context.preparationOperation === "review_input" || context.preparationOperation === "repository_tree")
+      ? context.preparationOperation : undefined;
     const eventId = Sentry.captureEvent({
       level: "error",
       message: `Background ${stage} failed: ${provider} / ${code}`,
       fingerprint: [context.synthetic ? "background-failure-synthetic" : "background-failure", stage, provider, code],
-      tags: { error_boundary: "background", failure_stage: stage, failure_owner: ownership, failure_code: code, provider, outcome: "failed", synthetic: context.synthetic ? "true" : "false" },
+      tags: { error_boundary: "background", failure_stage: stage, failure_owner: ownership, failure_code: code, provider, outcome: "failed", synthetic: context.synthetic ? "true" : "false", ...(operation ? { preparation_operation: operation } : {}), ...(stage === "indexing" && context.indexingDeadline === true ? { indexing_deadline: "worker_25m", ...(isIndexingMilestone(context.indexingLastMilestone) ? { indexing_last_milestone: context.indexingLastMilestone } : {}) } : {}) },
       contexts: { background_failure: {
         ...details,
         stage, ownership, keyOwner,

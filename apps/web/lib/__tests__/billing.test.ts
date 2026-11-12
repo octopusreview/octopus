@@ -3001,9 +3001,10 @@ describe("AiUsage cost snapshot", () => {
   });
 
   it("stores null chargedCostUsd for own-key usage and never deducts", async () => {
+    const syntheticKey = "sk-ant-synthetic-private-value";
     mockOrganizationFindUnique = mock(() =>
       Promise.resolve({
-        anthropicApiKey: "sk-ant-user",
+        anthropicApiKey: syntheticKey,
         openaiApiKey: null,
         cohereApiKey: null,
         googleApiKey: null,
@@ -3015,7 +3016,7 @@ describe("AiUsage cost snapshot", () => {
       } as never),
     );
 
-    await logAiUsage({
+    const result = await logAiUsage({
       provider: "anthropic",
       model: "m",
       operation: "review",
@@ -3027,6 +3028,8 @@ describe("AiUsage cost snapshot", () => {
     expect(createdAiUsage[0].usedOwnKey).toBe(true);
     expect(createdAiUsage[0].chargedCostUsd).toBeNull();
     expect(orgState).toEqual({ creditBalance: 20, freeCreditBalance: 8 });
+    expect(result).toBeUndefined();
+    expect(JSON.stringify(createdAiUsage)).not.toContain(syntheticKey);
   });
 
   it("stores null chargedCostUsd for own-Alibaba-key usage and never deducts", async () => {

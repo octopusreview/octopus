@@ -6,7 +6,8 @@ mock.module("next/headers", () => ({ headers: async () => new Headers(), cookies
 mock.module("next/navigation", () => ({ redirect: () => { throw new Error("Unexpected redirect"); } }));
 mock.module("next/cache", () => ({ revalidatePath() {} }));
 mock.module("@/lib/auth", () => ({ auth: { api: { getSession: async () => ({ user: { id: "user" } }) } } }));
-mock.module("@/lib/pubby", () => ({ pubby: { trigger: async () => {} } }));
+const notifications: Array<{ event: string; data: { message?: string } }> = [];
+mock.module("@/lib/pubby", () => ({ pubby: { trigger: async (_channel: string, event: string, data: { message?: string }) => { notifications.push({ event, data }); } } }));
 mock.module("@/lib/elasticsearch", () => ({ writeSyncLog() {}, deleteSyncLogs: async () => {} }));
 mock.module("@/lib/github", () => ({ GithubRateLimitError: class extends Error {} }));
 mock.module("@/lib/repo-sync", () => ({ syncOrgRepos: async () => ({}), syncForgejoRepos: async () => ({}) }));
@@ -22,11 +23,13 @@ mock.module("@/lib/request-ip", () => ({ getClientIp() {} }));
 mock.module("@/lib/presence", () => ({ clearPresence() {} }));
 mock.module("@/lib/events/bus", () => ({ eventBus: { emit() {} } }));
 let starts = 0;
+let extraLogs: string[] = [];
+let pausedProbeFlag: unknown;
 let aborts = 0;
 let replaceBeforeCancel = false;
 let abortedAttempt: string | undefined;
 mock.module("@/lib/indexing-abort", () => ({ createAbortController: () => new AbortController(), abortIndexing: (attempt: string) => { aborts++; abortedAttempt = attempt; return true; } }));
-mock.module("@/lib/indexing-runner", () => ({ runIndexingInBackground: async () => { starts++; } }));
+mock.module("@/lib/indexing-runner", () => ({ runIndexingInBackground: async (...args: unknown[]) => { starts++; pausedProbeFlag = args[10]; const emit = args[6] as (value: string) => void; emit("Processed 5 files, skipped 0"); emit("Error /private/path synthetic-token"); emit("synthetic-private-path synthetic-secret"); emit("Processing local batch 1/2"); for (const message of extraLogs) emit(message); } }));
 
 const row = {
   id: "repo", fullName: "team/project", provider: "github", isActive: true, dismissedAt: null as Date | null,
@@ -106,6 +109,9 @@ row.indexStatus = "pending";
 row.autoReview = false;
 assert.deepEqual(await indexRepository("repo"), {});
 assert.equal(starts, 1);
+assert.equal(pausedProbeFlag, true, "an authorized repository manager may request one paused-limit probe");
+assert.deepEqual(notifications.filter(item => item.event === "index-log").map(item => item.data.message), ["Processed 5 files, skipped 0", "Indexing message withheld for privacy.", "Indexing message withheld for privacy.", "Processing local batch 1/2"]);
+assert.doesNotMatch(JSON.stringify(notifications), /synthetic-private-path|synthetic-secret|synthetic-token|private\/path/);
 assert.equal(row.autoReview, false, "manual indexing must preserve disabled automatic reviews");
 assert.equal(row.indexStatus, "indexing");
 const attempt = row.indexAttemptId;
@@ -122,4 +128,17 @@ assert.equal(row.indexStatus, "indexing");
 assert.equal(row.indexAttemptId, "replacement");
 row.indexStatus = "indexed";
 assert.match((await cancelIndexing("repo")).error!, /not currently indexing/);
+// A repository GitHub has blocked stays "failed": a manual retry must still run,
+// and the customer must see the reason rather than a withheld line.
+const blockMessage = "GitHub has blocked access to this repository, so it cannot be indexed.";
+Object.assign(row, { provider: "github", installationId: 1, indexStatus: "failed", indexedAt: null, indexBlockedAt: new Date() });
+replaceBeforeCancel = false;
+notifications.length = 0;
+extraLogs = [blockMessage, `${blockMessage} team/project synthetic-secret`];
+const startsBeforeBlockedRetry = starts;
+assert.deepEqual(await indexRepository("repo"), {}, "a blocked repository can be retried by hand");
+assert.equal(starts, startsBeforeBlockedRetry + 1);
+assert.equal(row.indexStatus, "indexing");
+const blockedRetryLogs = notifications.filter(item => item.event === "index-log").map(item => item.data.message);
+assert.deepEqual(blockedRetryLogs.slice(-2), [blockMessage, "Indexing message withheld for privacy."]);
 console.log("Repository action permission, readiness, cooldown, toggle and indexing checks passed");

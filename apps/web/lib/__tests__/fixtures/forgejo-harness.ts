@@ -16,14 +16,23 @@ spyOn(dns, "lookup").mockImplementation((async () => { dnsCalls++; return addres
 
 type Reply = { status?: number; headers?: Record<string, string>; body: unknown };
 let replies: Reply[] = [];
+let failConnection = false;
+let lookupAll = true;
 const requests: { url: URL; options: RequestOptions; body?: string; pins?: unknown }[] = [];
 spyOn(https, "request").mockImplementation(((url: URL, options: RequestOptions, callback: (response: EventEmitter & Record<string, unknown>) => void) => {
   const recorded: typeof requests[number] = { url, options };
   requests.push(recorded);
-  options.lookup!(url.hostname, { all: true }, (_error, pins) => { recorded.pins = pins; });
   const req = new EventEmitter() as EventEmitter & { end: (body?: string) => void };
+  let constructing = true;
+  options.lookup!(url.hostname, { all: lookupAll }, (_error, pins) => {
+    assert.equal(constructing, false, "DNS must complete after Node attaches socket listeners");
+    recorded.pins = pins;
+    if (failConnection) req.emit("error", Object.assign(new Error("fixture-token unreachable"), { code: "ENETUNREACH" }));
+  });
+  constructing = false;
   req.end = body => {
     recorded.body = body;
+    if (failConnection) return;
     queueMicrotask(() => {
       const reply = replies.shift();
       assert.ok(reply, `Unexpected request ${url.pathname}`);
@@ -59,6 +68,20 @@ assert.deepEqual(requests.at(-1)!.pins, addresses);
 assert.equal(dnsCalls, 2);
 assert.equal(requests.at(-1)!.options.agent, false);
 assert.equal((requests.at(-1)!.options.headers as Record<string, string>).Authorization, "token fixture-token");
+// Immediate IPv4/IPv6 failures reject safely for both Node lookup callback forms.
+failConnection = true;
+for (const address of [{ address: "8.8.8.8", family: 4 }, { address: "2000::1", family: 6 }]) {
+  addresses = [address];
+  for (lookupAll of [true, false]) {
+    await assert.rejects(http.forgejoRequest("https://forge.example", "fixture-token", "/api/v1/user"),
+      error => error instanceof Error && error.message === "Forgejo request failed or timed out");
+    assert.deepEqual(requests.at(-1)!.pins, lookupAll ? addresses : address.address);
+    assert.equal(requests.at(-1)!.options.rejectUnauthorized, true);
+  }
+}
+failConnection = false;
+lookupAll = true;
+addresses = [{ address: "8.8.8.8", family: 4 }];
 const count = requests.length;
 replies = [{ status: 302, headers: { location: "https://127.0.0.1/secret" }, body: "fixture-token" }];
 await assert.rejects(http.forgejoRequest("https://forge.example", "fixture-token", "/api/v1/user"), error => error instanceof http.ForgejoHttpError && !error.message.includes("fixture-token"));

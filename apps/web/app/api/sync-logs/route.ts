@@ -1,8 +1,10 @@
+import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { getSyncLogs } from "@/lib/elasticsearch";
+import { getSyncLogAttempt, safeSyncLogs } from "@/lib/repository-index-completion";
 
 export async function GET(request: NextRequest) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -32,7 +34,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const logs = await getSyncLogs(orgId, repoId);
+  const repo = await prisma.repository.findFirst({
+    where: { id: repoId, organizationId: orgId },
+    select: { indexAttemptId: true, syncLogAttemptId: true, localIndexUpload: true },
+  });
+  if (!repo) return NextResponse.json({ logs: [] });
+  const attempt = getSyncLogAttempt(repo);
+  const logs = await getSyncLogs(orgId, repoId, 500, attempt);
 
-  return NextResponse.json({ logs });
+  return NextResponse.json({ logs: safeSyncLogs(logs, orgId, repoId, attempt), attempt: attempt ?? null, indexAttemptId: repo.indexAttemptId });
 }

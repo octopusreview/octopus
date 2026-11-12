@@ -1,10 +1,21 @@
 import "server-only";
 import { prisma, type Prisma } from "@octopus/db";
 import type { IndexStats } from "@/lib/indexer";
+import type { SyncLogEntry } from "@/lib/elasticsearch";
+import { safeIndexLogMessage } from "@/lib/index-log-safety";
 
 /** A replacement attempt or cancellation owns the row now. */
 export class SupersededIndexError extends Error {
   constructor() { super("Indexing attempt is no longer current"); }
+}
+
+/**
+ * GitHub answers 451 on the tree request when the repository itself is
+ * unavailable for legal reasons. Set only there: other
+ * dependencies (embeddings) also raise errors with an HTTP status.
+ */
+export function isProviderBlock(error: unknown): boolean {
+  return (error as { providerBlock?: unknown } | null)?.providerBlock === true;
 }
 
 export function isIndexingCancelled(signal?: AbortSignal): boolean {
@@ -17,6 +28,7 @@ export async function runRepositoryIndex(
   indexAttemptId: string,
   work: () => Promise<IndexStats>,
   signal?: AbortSignal,
+  onFailure?: (tx: Prisma.TransactionClient, error: unknown) => Promise<void>,
 ): Promise<IndexStats> {
   const where = { id: repositoryId, indexStatus: "indexing", indexAttemptId };
   try {
@@ -37,6 +49,7 @@ export async function runRepositoryIndex(
       signal?.throwIfAborted();
       const saved = await tx.repository.updateMany({ where, data: {
         indexStatus: "indexed",
+        indexBlockedAt: null,
         activeIndexGeneration: indexAttemptId,
         totalFiles: stats.totalFiles, indexedFiles: stats.indexedFiles,
         totalChunks: stats.totalChunks, totalVectors: stats.totalVectors,
@@ -56,9 +69,15 @@ export async function runRepositoryIndex(
     return stats;
   } catch (error) {
     // Never let an expired worker overwrite its replacement's state.
-    const released = await prisma.repository.updateMany({ where, data: {
-      indexStatus: isIndexingCancelled(signal) ? "pending" : "failed",
-    } });
+    const data = { indexStatus: isIndexingCancelled(signal) ? "pending" : "failed",
+      ...(isProviderBlock(error) ? { indexBlockedAt: new Date() } : {}) };
+    const released = onFailure && !signal?.aborted
+      ? await prisma.$transaction(async tx => {
+        const result = await tx.repository.updateMany({ where, data });
+        if (result.count) await onFailure(tx, error);
+        return result;
+      })
+      : await prisma.repository.updateMany({ where, data });
     if (!released.count) throw new SupersededIndexError();
     signal?.throwIfAborted();
     throw error;
@@ -83,4 +102,25 @@ export async function recordRepositoryIndexCompletion(
         "updatedAt" = ${completedAt}::timestamp
     WHERE "id" = ${repositoryId}
   `;
+}
+
+export function getSyncLogAttempt(repo: { indexAttemptId: string | null; syncLogAttemptId: string | null; localIndexUpload: unknown }): string | undefined {
+  const marker = repo.syncLogAttemptId;
+  if (!marker) return undefined;
+  if (repo.indexAttemptId === marker) return marker;
+  const upload = repo.localIndexUpload;
+  if (!upload || typeof upload !== "object" || Array.isArray(upload)) return undefined;
+  const state = upload as { id?: unknown; batchAttemptId?: unknown };
+  if (state.id === marker && (repo.indexAttemptId === null || state.batchAttemptId === repo.indexAttemptId)) return marker;
+  return undefined;
+}
+
+export function safeSyncLogs(logs: SyncLogEntry[], orgId: string, repoId: string, attempt?: string): SyncLogEntry[] {
+  return logs.map(log => ({
+    orgId, repoId,
+    ...(attempt && log.indexAttemptId === attempt ? { indexAttemptId: attempt } : {}),
+    message: safeIndexLogMessage(log.message),
+    level: ["info", "success", "warning", "error"].includes(log.level) ? log.level : "info",
+    timestamp: typeof log.timestamp === "number" && Number.isFinite(log.timestamp) ? log.timestamp : 0,
+  }));
 }

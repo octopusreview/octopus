@@ -1,15 +1,18 @@
 import "server-only";
+import { withExternalReviewActivity } from "@/lib/external-review-activity";
 import { randomUUID } from "node:crypto";
 import { runRepositoryIndex } from "@/lib/repository-index-completion";
 import { authenticateApiToken } from "@/lib/api-auth";
 import { prisma } from "@octopus/db";
 import { generateLocalReview } from "@/lib/review-core";
 import { isOrgOverSpendLimit } from "@/lib/cost";
+import { AiProviderFailure, safeErrorDetails } from "@/lib/provider-failure";
 import { ORG_TYPE } from "@/lib/org-types";
 import { getRepositoryTree } from "@/lib/github";
 import { eventBus } from "@/lib/events/bus";
 import { enqueue } from "@/lib/queue";
-import { persistCommunityReviewToPR } from "@/lib/community-pr-persist";
+import { prepareCommunityReviewJob } from "@/lib/community-review-enqueue";
+import { persistCommunityReviewToPR, CommunityRepositoryChangedError } from "@/lib/community-pr-persist";
 import { encryptString } from "@/lib/crypto";
 import { NextRequest } from "next/server";
 
@@ -213,149 +216,156 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Monthly spend limit reached" }, { status: 402 });
   }
 
-  // ── Decide flow: queued (community + not indexed) vs sync ────────────────
+  return withExternalReviewActivity(isCommunityMode ? null : {
+    source: "github_action", organizationId: orgId, repositoryId: repo.id, reportedPrNumber: prNumber,
+  }, async () => {
+    // ── Decide flow: queued (community + not indexed) vs sync ────────────────
 
-  const thresholdHours = reindexThresholdHours ?? 24;
-  const stale =
-    repo.indexedAt != null &&
-    Date.now() - repo.indexedAt.getTime() > thresholdHours * 60 * 60 * 1000;
-  const needsIndex = repo.indexStatus !== "indexed" || forceReindex === true || stale;
+    const thresholdHours = reindexThresholdHours ?? 24;
+    const stale =
+      repo.indexedAt != null &&
+      Date.now() - repo.indexedAt.getTime() > thresholdHours * 60 * 60 * 1000;
+    const needsIndex = repo.indexStatus !== "indexed" || forceReindex === true || stale;
 
-  // For community mode without an existing index → enqueue + poll.
-  // Authenticated orgs keep the legacy sync flow (they can have higher CF
-  // timeouts or the action runs internally), and indexed community repos are
-  // fast enough to stay sync.
-  if (isCommunityMode && needsIndex) {
-    return await enqueueCommunityReview({
-      repo,
-      orgId,
-      fullName,
-      prNumber,
-      prTitle,
-      prAuthor,
-      headSha,
-      baseBranch,
-      diff,
-      githubToken,
-    });
-  }
-
-  // ── Sync flow (indexed already, or paid org) ─────────────────────────────
-
-  let indexed = false;
-  if (needsIndex) {
-    LOG(`[sync] indexing ${fullName} inline (paid org)`);
-    // Paid org sync indexing — keep legacy behavior since they're not on the
-    // public Cloudflare 100s timeout path.
-    try {
-      const { indexRepository } = await import("@/lib/indexer");
-      const { summarizeRepository } = await import("@/lib/summarizer");
-      const { analyzeRepository } = await import("@/lib/analyzer");
-
-      const indexAttemptId = randomUUID();
-      const claim = await prisma.repository.updateMany({
-        where: { id: repo.id, indexStatus: { not: "indexing" } },
-        data: { indexStatus: "indexing", indexAttemptId },
-      });
-      if (!claim.count) throw new Error("Repository indexing is already in progress");
-      await runRepositoryIndex(repo.id, indexAttemptId, () => indexRepository(
-        { repoId: repo.id, indexAttemptId }, fullName, ghRepoInfo.defaultBranch, 0, () => {},
-        undefined, "github", orgId, githubToken,
-      ));
-
-      try {
-        const { summary, purpose } = await summarizeRepository(repo.id, fullName, orgId);
-        await prisma.repository.update({ where: { id: repo.id }, data: { summary, purpose } });
-      } catch (err) {
-        ERR("summarize failed:", err);
-      }
-      try {
-        const analysis = await analyzeRepository(repo.id, fullName, orgId);
-        await prisma.repository.update({
-          where: { id: repo.id },
-          data: { analysis, analysisStatus: "analyzed", analyzedAt: new Date() },
-        });
-        eventBus.emit({ type: "repo-analyzed", orgId, repoFullName: fullName });
-      } catch (err) {
-        ERR("analyze failed:", err);
-      }
-      indexed = true;
-    } catch (err) {
-      ERR("inline indexing failed:", err);
-    }
-  }
-
-  let fileTree: string[] | undefined;
-  try {
-    const [ownerPart, repoPart] = fullName.split("/");
-    fileTree = await getRepositoryTree(0, ownerPart, repoPart, ghRepoInfo.defaultBranch, githubToken);
-  } catch {
-    // ignore
-  }
-
-  try {
-    const reviewResult = await generateLocalReview({
-      diff,
-      repoId: repo.id,
-      orgId,
-      title: typeof prTitle === "string" ? prTitle : undefined,
-      author: typeof prAuthor === "string" ? prAuthor : undefined,
-      fileTree,
-      operation: isCommunityMode ? "community-review" : "local-review",
-      prNumber: typeof prNumber === "number" ? prNumber : undefined,
-    });
-
-    let firstCommunityReview = false;
-    if (isCommunityMode) {
-      const existingPRCount = await prisma.pullRequest.count({ where: { repositoryId: repo.id } });
-      firstCommunityReview = existingPRCount === 0;
-
-      if (typeof prNumber === "number") {
-        try {
-          await persistCommunityReviewToPR({
-            repositoryId: repo.id,
-            fullName,
-            prNumber,
-            prTitle: typeof prTitle === "string" ? prTitle : null,
-            prAuthor: typeof prAuthor === "string" ? prAuthor : null,
-            headSha: typeof headSha === "string" ? headSha : null,
-            summary: reviewResult.summary,
-            findings: reviewResult.findings,
-          });
-        } catch (persistErr) {
-          ERR("persist community PR failed (non-fatal):", persistErr);
-        }
-      }
-
-      eventBus.emit({
-        type: "community-review",
+    // For community mode without an existing index → enqueue + poll.
+    // Authenticated orgs keep the legacy sync flow (they can have higher CF
+    // timeouts or the action runs internally), and indexed community repos are
+    // fast enough to stay sync.
+    if (isCommunityMode && needsIndex) {
+      return await enqueueCommunityReview({
+        repo,
         orgId,
-        repoFullName: fullName,
-        prNumber: typeof prNumber === "number" ? prNumber : undefined,
-        findingsCount: reviewResult.findings.length,
+        fullName,
+        prNumber,
+        prTitle,
+        prAuthor,
+        headSha,
+        baseBranch,
+        diff,
+        githubToken,
       });
     }
 
-    return Response.json({
-      status: "completed",
-      findings: reviewResult.findings,
-      summary: reviewResult.summary,
-      model: reviewResult.model,
-      indexed,
-      community: isCommunityMode,
-      firstCommunityReview,
-      usage: reviewResult.usage,
-    });
-  } catch (err) {
-    ERR("review generation failed:", err);
-    return Response.json({ error: "Review generation failed" }, { status: 500 });
-  }
+    // ── Sync flow (indexed already, or paid org) ─────────────────────────────
+
+    let indexed = false;
+    if (needsIndex) {
+      LOG(`[sync] indexing ${fullName} inline (paid org)`);
+      // Paid org sync indexing — keep legacy behavior since they're not on the
+      // public Cloudflare 100s timeout path.
+      try {
+        const { indexRepository } = await import("@/lib/indexer");
+        const { summarizeRepository } = await import("@/lib/summarizer");
+        const { analyzeRepository } = await import("@/lib/analyzer");
+
+        const indexAttemptId = randomUUID();
+        const claim = await prisma.repository.updateMany({
+          where: { id: repo.id, indexStatus: { not: "indexing" } },
+          data: { indexStatus: "indexing", indexAttemptId },
+        });
+        if (!claim.count) throw new Error("Repository indexing is already in progress");
+        await runRepositoryIndex(repo.id, indexAttemptId, () => indexRepository(
+          { repoId: repo.id, indexAttemptId }, fullName, ghRepoInfo.defaultBranch, 0, () => {},
+          undefined, "github", orgId, githubToken,
+        ));
+
+        try {
+          const { summary, purpose } = await summarizeRepository(repo.id, fullName, orgId);
+          await prisma.repository.update({ where: { id: repo.id }, data: { summary, purpose } });
+        } catch {
+          ERR("summarize failed");
+        }
+        try {
+          const analysis = await analyzeRepository(repo.id, fullName, orgId);
+          await prisma.repository.update({
+            where: { id: repo.id },
+            data: { analysis, analysisStatus: "analyzed", analyzedAt: new Date() },
+          });
+          eventBus.emit({ type: "repo-analyzed", orgId, repoFullName: fullName });
+        } catch {
+          ERR("analyze failed");
+        }
+        indexed = true;
+      } catch {
+        ERR("inline indexing failed");
+      }
+    }
+
+    let fileTree: string[] | undefined;
+    try {
+      const [ownerPart, repoPart] = fullName.split("/");
+      fileTree = await getRepositoryTree(0, ownerPart, repoPart, ghRepoInfo.defaultBranch, githubToken);
+    } catch {
+      // ignore
+    }
+
+    try {
+      const reviewResult = await generateLocalReview({
+        diff,
+        repoId: repo.id,
+        orgId,
+        title: typeof prTitle === "string" ? prTitle : undefined,
+        author: typeof prAuthor === "string" ? prAuthor : undefined,
+        fileTree,
+        operation: isCommunityMode ? "community-review" : "local-review",
+        prNumber: typeof prNumber === "number" ? prNumber : undefined,
+      });
+
+      let firstCommunityReview = false;
+      if (isCommunityMode) {
+        const existingPRCount = await prisma.pullRequest.count({ where: { repositoryId: repo.id } });
+        firstCommunityReview = existingPRCount === 0;
+
+        if (typeof prNumber === "number") {
+          try {
+            await persistCommunityReviewToPR({
+              repositoryId: repo.id,
+              organizationId: orgId,
+              externalId: repo.externalId,
+              fullName,
+              prNumber,
+              prTitle: typeof prTitle === "string" ? prTitle : null,
+              prAuthor: typeof prAuthor === "string" ? prAuthor : null,
+              headSha: typeof headSha === "string" ? headSha : null,
+              summary: reviewResult.summary,
+              findings: reviewResult.findings,
+            });
+          } catch (persistErr) {
+            if (persistErr instanceof CommunityRepositoryChangedError) throw persistErr;
+            ERR("persist community PR failed (non-fatal):", safeErrorDetails(persistErr));
+          }
+        }
+
+        eventBus.emit({
+          type: "community-review",
+          orgId,
+          repoFullName: fullName,
+          prNumber: typeof prNumber === "number" ? prNumber : undefined,
+          findingsCount: reviewResult.findings.length,
+        });
+      }
+
+      return Response.json({
+        status: "completed",
+        findings: reviewResult.findings,
+        summary: reviewResult.summary,
+        model: reviewResult.model,
+        indexed,
+        community: isCommunityMode,
+        firstCommunityReview,
+        usage: reviewResult.usage,
+      });
+    } catch (err) {
+      ERR("review generation failed:", safeErrorDetails(err instanceof AiProviderFailure ? err.details : err));
+      return Response.json({ error: "Review generation failed" }, { status: 500 });
+    }
+  });
 }
 
 // ─── Queued path helpers ────────────────────────────────────────────────────
 
 async function enqueueCommunityReview(params: {
-  repo: { id: string; defaultBranch: string };
+  repo: { id: string; defaultBranch: string; externalId: string };
   orgId: string;
   fullName: string;
   prNumber?: number;
@@ -379,42 +389,14 @@ async function enqueueCommunityReview(params: {
     githubToken,
   } = params;
 
-  // De-dupe: same repo + PR + headSha already in flight → return existing job.
-  if (typeof prNumber === "number" && headSha) {
-    const existing = await prisma.communityReviewJob.findFirst({
-      where: {
-        repositoryId: repo.id,
-        prNumber,
-        headSha,
-        status: { in: ["indexing", "reviewing"] },
-        expiresAt: { gt: new Date() },
-      },
-      orderBy: { createdAt: "desc" },
-    });
-    if (existing) {
-      LOG(`[queue] dedup hit jobId=${existing.id} repo=${fullName} PR=${prNumber}`);
-      return Response.json({
-        status: "queued",
-        jobId: existing.id,
-        existing: true,
-        community: true,
-        message: "Review is already queued for this PR + commit. Poll the job to get the result.",
-      });
-    }
-  }
-
   const expiresAt = new Date(Date.now() + COMMUNITY_JOB_TTL_HOURS * 60 * 60 * 1000);
-
-  const job = await prisma.communityReviewJob.create({
-    data: {
+  const prepared = await prepareCommunityReviewJob({
+    repositoryId: repo.id, organizationId: orgId, externalId: repo.externalId, fullName,
+    prNumber, headSha, postMode: "action_client", deduplicate: typeof prNumber === "number" && Boolean(headSha), reuseCompleted: false,
+    data: () => ({
       status: "indexing",
-      repoFullName: fullName,
-      repositoryId: repo.id,
-      organizationId: orgId,
-      prNumber: prNumber ?? null,
       prTitle: prTitle ?? null,
       prAuthor: prAuthor ?? null,
-      headSha: headSha ?? null,
       baseBranch: baseBranch ?? null,
       diff,
       // Token is short-lived (1h GitHub Actions token) but still encrypted
@@ -422,8 +404,17 @@ async function enqueueCommunityReview(params: {
       // Decrypted in lib/community-review.ts when the worker runs.
       githubToken: encryptString(githubToken),
       expiresAt,
-    },
+    }),
   });
+  if (prepared.kind === "conflict") {
+    return Response.json({ error: "Review cannot be queued right now. Please try again later." }, { status: 409 });
+  }
+  if (prepared.kind === "existing") {
+    LOG(`[queue] dedup hit jobId=${prepared.job.id} repo=${fullName} PR=${prNumber}`);
+    return Response.json({ status: "queued", jobId: prepared.job.id, existing: true, community: true,
+      message: "Review is already queued for this PR + commit. Poll the job to get the result." });
+  }
+  const job = prepared.job;
 
   LOG(`[queue] created jobId=${job.id} repo=${fullName} PR=${prNumber ?? "?"} sha=${headSha ?? "?"}`);
 
@@ -441,7 +432,7 @@ async function enqueueCommunityReview(params: {
         diffSize: diff.length,
       },
     },
-  }).catch((err) => ERR("audit log create failed (non-fatal):", err));
+  }).catch((err) => ERR("audit log create failed (non-fatal):", safeErrorDetails(err)));
 
   await enqueue("community-review", { jobId: job.id });
 

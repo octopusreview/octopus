@@ -3,6 +3,7 @@ import { pubby, PUBBY_ENABLED } from "@/lib/pubby";
 import { liveTelemetryActive } from "@/lib/entitlements";
 import { projectActivity } from "@/lib/activity";
 import { eventBus } from "../bus";
+import { safeErrorDetails } from "@/lib/provider-failure";
 import type {
   AppEvent,
   RepoIndexedEvent,
@@ -65,7 +66,7 @@ async function handle(event: AppEvent): Promise<void> {
           at: now,
         })
         .catch((err) =>
-          console.error("[activity-observer] pubby trigger failed:", err instanceof Error ? err.message : err),
+          console.error("[activity-observer] pubby trigger failed:", safeErrorDetails(err)),
         );
     }
   }

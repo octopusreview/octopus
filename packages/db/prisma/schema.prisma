@@ -234,6 +234,7 @@ model Organization {
 
   @@map("organizations")
   reviewAttemptOutcomes ReviewAttemptOutcome[]
+  externalReviewActivities ExternalReviewActivity[]
 
 }
 
@@ -325,7 +326,9 @@ model Repository {
   indexStatus    String   @default("pending") // pending | indexing | indexed | failed
   indexedAt      DateTime?
   firstIndexedAt DateTime?
+  indexBlockedAt DateTime? // GitHub tree request returned HTTP 451; discovery and ordinary queue claims skip it until an index succeeds
   indexAttemptId String?
+  syncLogAttemptId String?
   activeIndexGeneration String?
   localIndexUpload Json?
   indexedFiles   Int      @default(0)
@@ -361,6 +364,7 @@ model Repository {
   jiraProjectMappings   JiraProjectMapping[]
   packageAnalyses       PackageAnalysis[]
   repoConfigExtractions RepoConfigExtraction[]
+  githubDeferredIndex   GitHubDeferredIndex?
 
   @@unique([provider, externalId, organizationId])
   @@index([organizationId, isActive])
@@ -460,6 +464,7 @@ model ReviewAttempt {
   baseSha       String?
   coverage      Json
   reviewBody    String
+  failureFingerprint String?
   createdAt     DateTime @default(now())
 
   delivery ReviewAttemptDelivery?
@@ -1085,6 +1090,79 @@ model OllamaModelPull {
   @@map("ollama_model_pulls")
 }
 
+model GitHubIndexRateSecret {
+  id        Int    @id @default(1)
+  secretEnc String
+
+  @@map("github_index_rate_secret")
+}
+
+// Cluster-wide switch that stops queue workers claiming during a rollout (#832).
+// A missing row means "claiming" at generation 0.
+model QueueDrain {
+  id           Int       @id @default(1)
+  generation   Int       @default(0)
+  state        String    @default("claiming") // claiming | draining
+  requestedAt  DateTime? @db.Timestamptz(3)
+  requestedBy  String?
+  deadlineAt   DateTime? @db.Timestamptz(3)
+  leaseUntil   DateTime? @db.Timestamptz(3)
+  // Set once the drain was seen quiescent; the deadline bounds only the wait before that.
+  quiescentAt  DateTime? @db.Timestamptz(3)
+  resumedAt    DateTime? @db.Timestamptz(3)
+  resumeReason String?
+
+  @@map("queue_drain")
+}
+
+// One row per process boot (web and review-engine alike).
+model QueueWorkerInstance {
+  id              String    @id
+  serverId        String
+  version         String
+  workersEnabled  Boolean
+  startedAt       DateTime  @default(now()) @db.Timestamptz(3)
+  heartbeatAt     DateTime  @default(now()) @db.Timestamptz(3)
+  ackedGeneration Int?
+  ackedAt         DateTime? @db.Timestamptz(3)
+  inlineActive    Int       @default(0) // in-request reviews in flight
+  retiringAt      DateTime? @db.Timestamptz(3)
+
+  @@index([heartbeatAt])
+  @@map("queue_worker_instances")
+}
+
+model GitHubDeferredIndex {
+  repositoryId   String @id
+  repository     Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  organizationId String
+  installationId Int
+  indexAttemptId String
+  jobId          String @db.Uuid
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([createdAt, repositoryId])
+  @@map("github_deferred_indexes")
+}
+
+model GitHubIndexRateWindow {
+  scope       String   @id
+  notBefore   DateTime @db.Timestamptz(3)
+  version     BigInt   @default(1)
+  leaseToken  String?
+  leaseUntil  DateTime? @db.Timestamptz(3)
+  strikes     Int      @default(0)
+  paused      Boolean  @default(false)
+  untrustedRetryDate Boolean @default(false)
+  verifyPrimary Boolean @default(false)
+  primaryResetMs BigInt?
+  primaryBaseline Boolean @default(false)
+  updatedAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([updatedAt])
+  @@map("github_index_rate_windows")
+}
+
 model SystemConfig {
   id        String   @id @default("singleton")
   defaultReviewConfig Json @default("{}")
@@ -1652,6 +1730,7 @@ model CommunityReviewJob {
   repoFullName         String
   repositoryId         String
   organizationId       String
+  repositoryExternalId String? // Null for jobs queued before identity snapshots were introduced.
 
   // Request payload (so the worker can replay the review without the action retransmitting)
   prNumber             Int?
@@ -1742,4 +1821,20 @@ model ReviewAttemptOutcome {
   @@id([pullRequestId, requestVersion])
   @@index([organizationId, publishedAt])
   @@map("review_attempt_outcomes")
+}
+
+// Retained activity keeps the repository ID even after repository deletion.
+model ExternalReviewActivity {
+  id String @id
+  source String
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  repositoryId String?
+  reportedPrNumber Int?
+  acceptedAt DateTime
+  outcome String?
+  finishedAt DateTime?
+
+  @@index([organizationId, acceptedAt])
+  @@map("external_review_activity")
 }

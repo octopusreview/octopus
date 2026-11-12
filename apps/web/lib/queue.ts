@@ -2,6 +2,7 @@ import "server-only";
 import { PgBoss } from "pg-boss";
 import type { SendOptions } from "pg-boss";
 import { prisma } from "@octopus/db";
+import { installQueueShutdown } from "./queue-shutdown";
 
 export interface QueueConfig {
   reviewTimeoutSeconds: number;
@@ -39,6 +40,7 @@ function getBoss(): PgBoss {
   }
 
   const instance = new PgBoss(databaseUrl);
+  installQueueShutdown(instance);
   globalForQueue.pgBoss = instance;
   return instance;
 }

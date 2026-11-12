@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.10] - 2026-11-12
+
 ### Fixed
 
 - A failed review now shows a failure code, and the AI provider's request identifier is no longer stored.

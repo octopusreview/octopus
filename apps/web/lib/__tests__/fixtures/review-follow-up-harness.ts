@@ -1055,6 +1055,13 @@ if (crashRecovery) {
   const finalCheck = checkConclusions[0];
   const dispatched = usageCount;
 
+  deliveries.delete(attempt.id);
+  summaries.length = 0; checkConclusions.length = 0;
+  await processReview("pr");
+  assert.equal(summaries.length, 1);
+  assert.deepEqual(checkConclusions, [finalCheck]);
+  assert.ok(deliveries.get(attempt.id)?.completedAt);
+
   // The worker stopped after archiving the result and before publishing it. A redelivered job finishes
   // the publication from the archive: same comment, completed check, completed delivery, no second review.
   const stopped = () => { deliveries.set(attempt.id, { attemptId: attempt.id, mainCommentId: null, completedAt: null, leaseToken: "stopped-worker", leaseUntil: new Date(Date.now() - 1) }); summaries.length = 0; checkConclusions.length = 0; pr.firstReviewCompletedAt = null; };

@@ -661,8 +661,8 @@ async function resumeReviewPublication(pr: Prisma.PullRequestGetPayload<{ includ
   const attempt = await prisma.reviewAttempt.findUnique({ where: { id: pr.reviewAttemptId }, include: { delivery: true } });
   const coverage = attempt?.coverage as ReviewCoverage | undefined;
   // Large-PR results carry no assessment and are delivered by their own job.
-  if (!attempt?.delivery || attempt.delivery.completedAt || attempt.reviewBody !== pr.reviewBody || !coverage?.assessment) return;
-  if (attempt.delivery.leaseUntil && attempt.delivery.leaseUntil > new Date()) {
+  if (!attempt || attempt.delivery?.completedAt || attempt.reviewBody !== pr.reviewBody || !coverage?.assessment) return;
+  if (attempt.delivery?.leaseUntil && attempt.delivery.leaseUntil > new Date()) {
     // Its publisher may still be running; look again once that lease has passed.
     await enqueueAfter("process-review", { pullRequestId: pr.id }, 330);
     return;
@@ -735,6 +735,8 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         id: pullRequestId,
         headSha: pr.headSha,
         reviewRequestVersion: pr.reviewRequestVersion,
+        status: pr.status,
+        updatedAt: pr.updatedAt,
         OR: [
           // Fresh-claim: never seen / explicitly retryable
           { status: "pending" },
@@ -748,7 +750,10 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       },
       data: { status: "reviewing", updatedAt: new Date(), reviewAttemptId: attemptId },
     });
-    if (claimed.count) await startReviewOutcome(outcomeKey, new Date(), tx);
+    if (claimed.count) {
+      if (pr.status === "reviewing" && pr.updatedAt < reviewingStale) await recordInterruptedAttempt(pr, tx);
+      await startReviewOutcome(outcomeKey, new Date(), tx);
+    }
     return claimed;
   });
   if (claimed.count === 0) {
@@ -756,10 +761,6 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
     return;
   }
   console.log(`[reviewer] PR ${pullRequestId} claimed by server '${serverId}'`);
-  // This claim replaced a review that had stopped without finishing: keep a record of that attempt.
-  if (pr.status === "reviewing" && pr.updatedAt < reviewingStale) {
-    await recordInterruptedAttempt(pr).catch(() => console.error("[reviewer] Failed to record the interrupted review attempt"));
-  }
 
   const repo = pr.repository;
   const org = repo.organization;

@@ -51,19 +51,19 @@ export function withForgejoReviewPublication(
  * Record an attempt whose worker stopped before it archived anything, under the attempt's own ID.
  * It is inserted directly: saveReviewAttempt would promote it to the current report. Repeating it changes nothing.
  */
-export async function recordInterruptedAttempt(pr: { id: string; reviewAttemptId: string | null; headSha: string | null; reviewRequestVersion: number; repository: { provider: string } }): Promise<void> {
+export async function recordInterruptedAttempt(pr: { id: string; reviewAttemptId: string | null; headSha: string | null; reviewRequestVersion: number; repository: { provider: string } }, client: Pick<Prisma.TransactionClient, "reviewAttemptOutcome" | "aiUsage" | "reviewAttempt"> = prisma): Promise<void> {
   if (!pr.reviewAttemptId) return;
   const coverage = unknownReviewCoverage(pr.repository.provider, "Worker stopped before this attempt was recorded");
   coverage.headSha = pr.headSha;
   coverage.reviewRequestVersion = pr.reviewRequestVersion;
-  const budget = await prisma.reviewAttemptOutcome.findUnique({
+  const budget = await client.reviewAttemptOutcome.findUnique({
     where: { pullRequestId_requestVersion: { pullRequestId: pr.id, requestVersion: pr.reviewRequestVersion } }, select: { generationAttempts: true },
   });
   // A generation was dispatched and no charge for this request exists: the provider may or may not have completed it.
-  if (budget?.generationAttempts && !await prisma.aiUsage.count({ where: { chargeKey: `review-generation:${pr.id}:${pr.reviewRequestVersion}:${pr.headSha}` } })) {
+  if (budget?.generationAttempts && !await client.aiUsage.count({ where: { chargeKey: `review-generation:${pr.id}:${pr.reviewRequestVersion}:${pr.headSha}` } })) {
     coverage.limitations.push("provider dispatch outcome unknown");
   }
-  await prisma.reviewAttempt.createMany({ skipDuplicates: true, data: [{
+  await client.reviewAttempt.createMany({ skipDuplicates: true, data: [{
     id: pr.reviewAttemptId, pullRequestId: pr.id, headSha: pr.headSha, baseSha: null,
     coverage: JSON.parse(JSON.stringify(coverage)) as Prisma.InputJsonValue,
     reviewBody: applyReviewCoverage("## 🐙 Octopus Review\n\nWorker stopped before this attempt was recorded.", coverage, pr.reviewAttemptId),

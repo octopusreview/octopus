@@ -5,7 +5,7 @@ import { generateKeyPairSync } from "node:crypto";
 mock.module("server-only", () => ({}));
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
 mock.module("@/lib/github-app-config", () => ({ getGithubAppConfig: async () => ({ appId: "123", privateKey }) }));
-const { createCheckRun, updateCheckRun } = await import("../../github");
+const { createCheckRun, updateCheckRun, listPullRequestReviews } = await import("../../github");
 const checkRuns: { id: number; status: string; external_id?: string }[] = [];
 const checkCalls: string[] = [];
 let controller = new AbortController();
@@ -22,7 +22,13 @@ globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
   if (String(url).includes("/commits/")) {
     checkCalls.push("GET");
     assert.ok(String(url).includes(`/commits/${"a".repeat(40)}/check-runs?check_name=Octopus%20Review`));
-    return Response.json({ check_runs: checkRuns });
+    const page = Number(new URL(String(url)).searchParams.get("page"));
+    return Response.json({ check_runs: checkRuns.slice((page - 1) * 100, page * 100) });
+  }
+  if (String(url).includes("/pulls/1/reviews")) {
+    const page = Number(new URL(String(url)).searchParams.get("page"));
+    const reviews = Array.from({ length: page === 1 ? 100 : 1 }, (_, i) => ({ id: (page - 1) * 100 + i, body: page === 2 ? "target" : "old", user: { login: "bot" }, submitted_at: "today" }));
+    return Response.json(reviews);
   }
   if (String(url).endsWith("/check-runs")) {
     const run = { id: 50 + checkRuns.length, status: "in_progress", external_id: JSON.parse(String(init?.body)).external_id };
@@ -74,3 +80,10 @@ checkCalls.length = 0;
 await createCheckRun(1, "owner", "repo", head, "Octopus Review");
 assert.equal(checkCalls.length, 1);
 assert.ok(checkCalls[0].startsWith("POST"));
+checkRuns.length = 0;
+checkRuns.push(...Array.from({ length: 100 }, (_, id) => ({ id, status: "completed" })));
+checkRuns.push({ id: 100, status: "in_progress", external_id: "pr:later" });
+assert.equal(await createCheckRun(1, "owner", "repo", head, "Octopus Review", undefined, "pr:later"), 100);
+const reviews = await listPullRequestReviews(1, "owner", "repo", 1);
+assert.equal(reviews.length, 101);
+assert.equal(reviews[100].body, "target");

@@ -46,6 +46,21 @@ try {
   }));
   const { reapStuckReviews } = await import("@/lib/reap-stuck-reviews");
   const { recordInterruptedAttempt } = await import("@/lib/review-attempt");
+  const transaction = prisma.$transaction.bind(prisma);
+  prisma.$transaction = ((work: (tx: unknown) => Promise<unknown>) => transaction(async tx => work(new Proxy(tx, {
+    get(target, key) {
+      if (key === "reviewAttempt") return { createMany: async () => { throw new Error("receipt insert failed"); } };
+      return Reflect.get(target, key);
+    },
+  })))) as typeof prisma.$transaction;
+  try {
+    await assert.rejects(reapStuckReviews(now), /receipt insert failed/);
+  } finally {
+    prisma.$transaction = transaction as typeof prisma.$transaction;
+  }
+  for (const pr of [dispatched, undispatched, charged]) {
+    assert.equal((await prisma.pullRequest.findUniqueOrThrow({ where: { id: pr.id } })).status, "reviewing");
+  }
   // Two reapers at once: each orphan is failed, requeued and recorded exactly once.
   await Promise.all([reapStuckReviews(now), reapStuckReviews(now)]);
   const mine = [dispatched.id, undispatched.id, charged.id, queued.id, earlier.id];

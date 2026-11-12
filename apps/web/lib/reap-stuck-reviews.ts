@@ -52,15 +52,15 @@ export async function reapStuckReviews(
 
   for (const pr of orphans) {
     // A new claim or request may have replaced the stale row since selection.
-    const updated = await prisma.pullRequest.updateMany({
-      where: { id: pr.id, status: pr.status, updatedAt: pr.updatedAt, reviewRequestVersion: pr.reviewRequestVersion },
-      data: { status: "failed", errorMessage: REAP_FAILED_MESSAGE },
+    const updated = await prisma.$transaction(async tx => {
+      const updated = await tx.pullRequest.updateMany({
+        where: { id: pr.id, status: pr.status, updatedAt: pr.updatedAt, reviewRequestVersion: pr.reviewRequestVersion },
+        data: { status: "failed", errorMessage: REAP_FAILED_MESSAGE },
+      });
+      if (updated.count && pr.status === "reviewing") await recordInterruptedAttempt(pr, tx);
+      return updated;
     });
     if (updated.count === 0) continue;
-    // A queued large review keeps its attempt ID for the worker's late result, so only a review that stopped in this engine is recorded.
-    if (pr.status === "reviewing") {
-      await recordInterruptedAttempt(pr).catch(() => console.error("[reaper] Failed to record the interrupted review attempt"));
-    }
 
     if (pr.createdAt > requeueCutoff) {
       await enqueue(

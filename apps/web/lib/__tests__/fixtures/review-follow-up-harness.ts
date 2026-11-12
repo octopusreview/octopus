@@ -1088,7 +1088,7 @@ if (crashRecovery) {
 
   // The worker stopped after posting the inline review and before archiving. The redelivered job reviews
   // again but finds the review of its own request and does not post a second one.
-  assert.ok(published[0].body.split("\n").includes(`Octopus review reference: pr:${pr.reviewRequestVersion}`));
+  assert.ok(published[0].body.split("\n").includes(`<!-- Octopus review reference: pr:${pr.reviewRequestVersion} -->`));
   priorBotReviews = [{ id: 456, user: "fixture[bot]", body: published[0].body }];
   pr.status = "pending";
   await processReview("pr");

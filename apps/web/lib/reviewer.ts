@@ -1641,7 +1641,8 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
     const botLogin = `${appSlug}[bot]`;
     let allPriorReviewComments: import("@/lib/github").PRReviewComment[] = [];
     // A redelivered job must not post the review of its own request a second time.
-    const reviewReference = `Octopus review reference: ${pr.id}:${pr.reviewRequestVersion}`;
+    // An HTML comment: readable through the API, not shown in the rendered review.
+    const reviewReference = `<!-- Octopus review reference: ${pr.id}:${pr.reviewRequestVersion} -->`;
     let postedReviewId: number | undefined;
     const priorSummaryTableFindings: PriorFinding[] = [];
     if (isGitHub && installationId) {

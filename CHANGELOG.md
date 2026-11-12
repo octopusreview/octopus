@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.8] - 2026-11-12
+
 ### Security
 
 - Update the Sentry SDK to 10.75.2 and nodemailer to 10.5.0 to pick up upstream security fixes.

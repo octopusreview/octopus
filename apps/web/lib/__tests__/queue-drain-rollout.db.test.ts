@@ -170,7 +170,7 @@ type Worker = Awaited<ReturnType<typeof startWorkerProcess>>;
     await prisma.queueDrain.update({ where: { id: 1 }, data: { deadlineAt: new Date(Date.now() + 500) } });
 
     // Reading the status past the deadline ends the drain; nothing is cancelled.
-    expect(await statusWhere(current => current.outcome === "timed_out", "timed out")).toMatchObject({ state: "claiming", generation, quiescent: false });
+    expect(await statusWhere(current => current.outcome === "timed_out" && current.state === "claiming", "timed out and resumed")).toMatchObject({ state: "claiming", generation, quiescent: false });
     expect((await job(long)).state).toBe("active");
     expect(runs([long])).toEqual([{ started: 1, finished: 0 }]);
     expect((await instance(worker)).ackedGeneration).toBeNull();

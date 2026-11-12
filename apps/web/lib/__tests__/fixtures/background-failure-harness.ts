@@ -151,6 +151,9 @@ for (const [cause, raw, keyOwner, stage, cancelled, code, ownership, retryabilit
   ["invalid request", { status: 400 }, "platform", "generation", false, "http_400", "unknown", "permanent", true],
   ["stream terminated", { message: "terminated" }, "platform", "generation", false, "STREAM_TERMINATED", "unknown", "transient", true],
   ["socket reset", { code: "UND_ERR_SOCKET" }, "organization", "generation", false, "UND_ERR_SOCKET", "unknown", "transient", true],
+  ["stream stalled", { code: "UND_ERR_BODY_TIMEOUT" }, "platform", "generation", false, "UND_ERR_BODY_TIMEOUT", "unknown", "transient", true],
+  // No response headers for five minutes: the same request would wait as long again, so it is not retried.
+  ["no response headers", { code: "UND_ERR_HEADERS_TIMEOUT" }, "platform", "generation", false, "UND_ERR_HEADERS_TIMEOUT", "unknown", "unknown", true],
   ["provider refusal", { code: "PROVIDER_REFUSAL" }, "platform", "generation", false, "PROVIDER_REFUSAL", "unknown", "permanent", true],
   ["malformed response", { message: "Anthropic returned empty structured output" }, "platform", "generation", false, "unclassified", "unknown", "unknown", true],
   ["connection refused", { code: "ECONNREFUSED" }, "platform", "generation", false, "ECONNREFUSED", "unknown", "unknown", true],

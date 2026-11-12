@@ -288,8 +288,12 @@ export async function executeCoveredReview(
       ? await withinReviewWindow(retry.window, retry.window.remainingMs() - COMPLETE_REVIEW_POLICY.publicationReserveMs, signal => dispatch(retryDeadline = signal)) : await dispatch();
     break;
   } catch (error) {
-    if (first && error instanceof CapacityAdmissionError && error.receipt.primaryDispatch === "not-started" && assessment.requests.length === 0) {
-      // The retry was refused before dispatch: the original classified failure stands.
+    // A provider failure or the retry deadline means the retry reached the provider; anything else (a refused
+    // admission, a setup error such as a credential lookup) with no request recorded did not.
+    const notDispatched = error instanceof CapacityAdmissionError ? error.receipt.primaryDispatch === "not-started"
+      : !(error instanceof AiProviderFailure) && !retryDeadline?.aborted;
+    if (first && notDispatched && assessment.requests.length === 0) {
+      // The retry never started: the original classified failure stands.
       delete assessment.attempts; delete assessment.capacityAdmission;
       Object.assign(assessment, first.attempt, { reason: first.reason });
       throw first.error;

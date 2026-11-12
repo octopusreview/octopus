@@ -17,7 +17,7 @@ const refusalFlow = process.argv.includes("--provider-refusal");
 const providerErrorPrivacy = process.argv.includes("--provider-error-privacy");
 const generationRetry = process.argv.includes("--generation-retry");
 const generationDiagnostic = process.argv.includes("--generation-failure-diagnostic") || generationRetry;
-type GenerationOutcome = "terminated" | "unavailable" | "organization-auth" | "rate-limit" | "unknown" | "deadline" | "success";
+type GenerationOutcome = "terminated" | "unavailable" | "organization-auth" | "rate-limit" | "unknown" | "deadline" | "setup" | "success";
 let generationFailure: GenerationOutcome = "terminated";
 // Scripted primary-generation outcomes; when empty every dispatch fails with `generationFailure`.
 const generationScript: GenerationOutcome[] = [];
@@ -225,8 +225,10 @@ mock.module("@/lib/ai-router", () => ({ credentialRouteUnchanged: async () => { 
   // Only the primary review request disables SDK retries; follow-up calls take the ordinary path below.
   if (generationDiagnostic && params.maxRetries === 0) {
     const { AiProviderFailure } = await import("@/lib/provider-failure");
-    generationDispatches++;
     const outcome = generationScript.shift() ?? generationFailure;
+    // Provider setup fails before any request is sent.
+    if (outcome === "setup") throw new Error("synthetic-setup-secret");
+    generationDispatches++;
     if (outcome !== "success") {
       if (recordRequests) params.onRequest?.({ provider: "openai", model: params.model, sha256: "fixture", inputPreserved: true });
       // The job deadline passes while the provider is still generating.
@@ -656,6 +658,14 @@ if (generationRetry) {
     for (const output of [result.body, result.check]) {
       assert.ok(output.includes(interruptedTwice));
       assert.ok(output.includes("Failure code: `ETIMEDOUT`.") && output.includes(result.attemptId));
+    }
+
+    result = await run(["terminated", "setup"]);
+    assert.equal(result.dispatches, 1, "the retry never reached the provider");
+    for (const output of [result.body, result.check]) {
+      assert.ok(!output.includes("interrupted twice"), "a retry that never started is not a second failure");
+      assert.ok(output.includes("Failure code: `STREAM_TERMINATED`."), "the original failure code stands");
+      assert.doesNotMatch(output, /synthetic-setup-secret/);
     }
 
     result = await run(["organization-auth"]);

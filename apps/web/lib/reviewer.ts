@@ -1859,6 +1859,8 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       }), { window: executionWindow, confirm: async (failure, signal) => !!coverage.headSha && !!coverage.baseSha
         && await confirmGenerationRetryCurrent({ pullRequestId: pr.id, orgId: org.id, repoId: repo.id, model: reviewModel, provider: failure.provider,
           headSha: coverage.headSha, baseSha: coverage.baseSha, reviewRequestVersion: pr.reviewRequestVersion, fetchRevision }, signal) === null
+        // shortcut: a claim that lands just after the admission deadline uses the unit without a dispatch, so a
+        // redelivery is refused; release the unit on a failed admission if that ever shows up in production.
         && await credentialRouteUnchanged(failure, org.id) && !signal.aborted && await claimGenerationAttempt(outcomeKey) });
     const assertProcessingActive = () => { if (completeReviewAdmission) assertReviewProcessingActive(completeReviewAdmission.window); };
 

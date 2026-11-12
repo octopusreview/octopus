@@ -7,12 +7,12 @@ The drain state lives in PostgreSQL. Every process that starts the queue, web an
 ## What a drain guarantees, and what it does not
 
 - No worker that has acknowledged the drain holds or claims a job until claiming is resumed. A worker started during a drain claims nothing.
-- Jobs enqueued during a drain are kept and are processed once after claiming resumes.
+- Jobs enqueued during a drain stay queued until claiming resumes.
 - A job still running at the deadline is **not** cancelled. The deadline only changes the reported outcome to `timed_out`. Stopping the worker anyway interrupts that job, exactly as it did before this feature.
-- A job whose worker dies stays `active` until its queue timeout passes. pg-boss then retries it, on whichever worker claims it after the drain ends. The drain does not shorten that wait.
+- A job whose worker dies stays `active` until its queue timeout passes. pg-boss can then retry it, subject to its retry limit. The drain does not shorten that wait.
 - Reviews that run inside a web request (CLI and GitHub Action reviews) and detached indexing or analysis started from a request keep being served during a drain. They are counted, and a drain is not quiescent while any is running. A process that receives SIGTERM waits up to five minutes for its own to finish.
 - If the caller that requested the drain disappears, the drain ends by itself when its lease passes, and workers go back to claiming.
-- A worker that was frozen through a drain request and wakes up later refuses the next job it fetches. That job is retried and has used one of its retries.
+- A worker that was frozen through a drain request and wakes up later refuses the next job it fetches. That failure consumes a retry. The `pull-ollama-model` queue is exempt from this backstop because it has no retries.
 
 ## Requirements
 
@@ -71,7 +71,7 @@ Returns `{"resumed": <boolean>, "status": {...}}`. `resumed` is `false`, with HT
 | `activeClaims` | Jobs a worker currently holds, as `{queue, count}` per queue. |
 | `inlineActive` | In-request work in flight, summed over live instances. |
 | `pendingDeliveries` | Review results currently being posted to a provider. |
-| `orphanedClaims` | During a drain, the number of held jobs when no live worker is left that has not acknowledged. Those jobs belong to a worker that died or is not reporting. They do not make the drain quiescent. |
+| `orphanedClaims` | During a drain, the number of held jobs when no live worker is left that has not acknowledged. These jobs may belong to a worker that died or is not reporting, or to an acknowledged worker still finishing. They block quiescence until they finish or expire. |
 | `quiescent` | `true` only while draining, when every live instance has acknowledged and `activeClaims`, `inlineActive` and `pendingDeliveries` are all empty or zero. |
 | `outcome` | See below. |
 
@@ -193,4 +193,4 @@ Workers that stay idle with `state` still `draining` mean a drain was requested 
 2. `POST {"action":"resume","generation":<that generation>}`. `resumed: true` means workers start claiming within a few seconds.
 3. If you cannot reach the endpoint, stop whatever is polling it. The drain ends by itself when `leaseUntil` passes: 120 seconds after the last `GET`, or at most 10 minutes after the last drain request.
 
-A job listed under `orphanedClaims` needs no action: it is retried after its queue timeout (15 minutes for an ordinary review, 30 minutes for large reviews, indexing and community reviews by default).
+A job listed under `orphanedClaims` may still be finishing. If its worker died, pg-boss handles it after its queue timeout (15 minutes for an ordinary review, 30 minutes for large reviews, indexing and community reviews by default), subject to its retry limit.

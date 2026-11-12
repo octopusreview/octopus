@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- On SIGTERM or SIGINT, server shutdown waits up to five minutes for active queue jobs, including reviews and indexing, to finish before exiting.
+
 ## [1.4.6] - 2026-11-11
 
 ### Changed

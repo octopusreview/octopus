@@ -72,6 +72,18 @@ export class AiProviderFailure extends Error {
   }
 }
 
+const providerRoutes = new WeakMap<AiProviderFailure, { orgId: string | null | undefined; unchanged: () => Promise<boolean> }>();
+
+export function rememberProviderRoute(failure: AiProviderFailure, orgId: string | null | undefined, unchanged: () => Promise<boolean>): AiProviderFailure {
+  providerRoutes.set(failure, { orgId, unchanged });
+  return failure;
+}
+
+export function providerRouteUnchanged(failure: AiProviderFailure, orgId: string): Promise<boolean> {
+  const route = providerRoutes.get(failure);
+  return route?.orgId === orgId ? route.unchanged() : Promise.resolve(false);
+}
+
 const TRANSIENT_CODES = new Set(["STREAM_TERMINATED", "ECONNRESET", "UND_ERR_SOCKET", "UND_ERR_BODY_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "ETIMEDOUT"]);
 export type FailureClass = { code: string; ownership: KeyOwner; retryability: "transient" | "permanent" | "unknown" };
 

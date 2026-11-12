@@ -5,9 +5,11 @@ import type { ReviewCoverage } from "../../review-coverage";
 mock.module("server-only", () => ({}));
 // Real router, adapters and SDKs over loopback HTTP: one application attempt must be exactly one provider request.
 let storedKey: string | null = null;
+let claudeKey = "synthetic-claude-key";
+let claudeMode = "api-key";
 mock.module("@octopus/db", () => ({ prisma: {
   availableModel: { findMany: async () => [] },
-  organization: { findUnique: async () => ({ openaiApiKey: storedKey, anthropicApiKey: null }) },
+  organization: { findUnique: async () => ({ openaiApiKey: storedKey, anthropicApiKey: null, claudeCodeApiKey: claudeKey, claudeCodeAuthMode: claudeMode }) },
 } }));
 mock.module("@/lib/crypto", () => ({ decryptStringMaybeLegacy: (value: string) => value }));
 let requests = 0;
@@ -56,6 +58,15 @@ try {
   assert.equal(await credentialRouteUnchanged(owned.error, "org"), false, "a replaced key changes the route");
   assert.equal(await credentialRouteUnchanged(new AiProviderFailure(new Error("fixture"), "openai", "gpt-fixture", "organization"), "org"), false, "an unobserved failure proves nothing");
   storedKey = null;
+
+  const claudeFailure = await failed("claude-code:fixture", { maxRetries: 0 });
+  assert.equal(await credentialRouteUnchanged(claudeFailure.error, "org"), true);
+  claudeKey = "synthetic-replacement-key";
+  assert.equal(await credentialRouteUnchanged(claudeFailure.error, "org"), false, "rotating the Claude Code key changes the route");
+  claudeKey = "synthetic-claude-key";
+  claudeMode = "subscription";
+  assert.equal(await credentialRouteUnchanged(claudeFailure.error, "org"), false, "changing the Claude Code mode changes the route");
+  claudeMode = "api-key";
 
   // Two application attempts are exactly two provider requests.
   const coverage: ReviewCoverage = { version: 1, provider: "github", headSha: "a".repeat(40), baseSha: "b".repeat(40),

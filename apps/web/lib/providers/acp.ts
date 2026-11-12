@@ -1,5 +1,5 @@
 import "server-only";
-import { AiProviderFailure, type KeyOwner } from "../provider-failure";
+import { AiProviderFailure, rememberProviderRoute, type KeyOwner } from "../provider-failure";
 import { prisma } from "@octopus/db";
 import { decryptStringMaybeLegacy } from "@/lib/crypto";
 import type { Provider, AiCreateParams, AiResponse } from "./index";
@@ -60,7 +60,8 @@ export const acpProvider: Provider = {
         apiKey: config.apiKey,
       });
     } catch (error) {
-      throw new AiProviderFailure(error, "acp", params.model, config.keyOwner);
+      throw rememberProviderRoute(new AiProviderFailure(error, "acp", params.model, config.keyOwner), orgId,
+        async () => JSON.stringify(await resolveConfig(orgId)) === JSON.stringify(config));
     }
   },
 };

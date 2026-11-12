@@ -374,6 +374,7 @@ export async function deductCredits(
   // the whole transaction rolls back instead of debiting twice. Left undefined
   // for ordinary usage deductions (which are intentionally non-unique).
   stripeRefundId?: string,
+  beforeDeduction?: (tx: Prisma.TransactionClient) => Promise<void>,
 ): Promise<void> {
   if (amount <= 0) return;
 
@@ -387,6 +388,7 @@ export async function deductCredits(
     >`SELECT "creditBalance"::float, "freeCreditBalance"::float FROM organizations WHERE id = ${orgId} FOR UPDATE`;
 
     if (rows.length === 0) return { totalAfter: 0, durableClaim: null };
+    await beforeDeduction?.(tx);
 
     const free = rows[0].freeCreditBalance;
     const purchased = rows[0].creditBalance;

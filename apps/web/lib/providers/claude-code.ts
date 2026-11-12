@@ -1,5 +1,5 @@
 import "server-only";
-import { AiProviderFailure, type KeyOwner } from "../provider-failure";
+import { AiProviderFailure, rememberProviderRoute, type KeyOwner } from "../provider-failure";
 import { observeAiRequest, completionEvidence, sdkRequestOptions } from "./request-evidence";
 import Anthropic from "@anthropic-ai/sdk";
 import { spawn } from "node:child_process";
@@ -110,7 +110,8 @@ export const claudeCodeProvider: Provider = {
       }
       return await runAnthropicApi(params, config.apiKey);
     } catch (error) {
-      throw new AiProviderFailure(error, "claude-code", params.model, config.keyOwner);
+      throw rememberProviderRoute(new AiProviderFailure(error, "claude-code", params.model, config.keyOwner), orgId,
+        async () => JSON.stringify(await loadOrgConfig(orgId)) === JSON.stringify(config));
     }
   },
 };

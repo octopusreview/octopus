@@ -289,7 +289,7 @@ const published: { body: string; comments: unknown[] }[] = [];
 const checkConclusions: string[] = [];
 const checkOutputs: unknown[] = [];
 mock.module("@/lib/review-summary-comment", () => ({ publishReviewSummary: async (target: { body: string; headSha: string; reviewRequestVersion: number; expectedReviewBody?: string; executionWindow?: ReviewExecutionWindow }) => {
-  if (publicationErrorPrivacy && target.expectedReviewBody !== undefined) throw privateFailure();
+  if ((publicationErrorPrivacy || (generationRetry && failureSite === "retry-publication")) && target.expectedReviewBody !== undefined) throw privateFailure();
   if (peerAlreadyIndexed && target.body.includes("Repository already indexed")) throw new Error("synthetic-secret peer comment");
   if (target.body.includes("Indexing in progress")) {
     assert.ok(repo.indexAttemptId, "Preparation must already own the claim");
@@ -609,6 +609,12 @@ if (generationRetry) {
     assert.deepEqual(chargeKeys, [`review-generation:${pr.id}:${pr.reviewRequestVersion}:${pr.headSha}`]);
     assert.deepEqual(unknownUsage, ["review-failed-attempt"], "the failed attempt is recorded with unknown usage");
     assert.doesNotMatch(inspect({ summaries, checkOutputs }), /retrying|interrupted twice/i);
+
+    failureSite = "retry-publication";
+    result = await run(["terminated", "success"]);
+    assert.equal(result.dispatches, 2);
+    assert.doesNotMatch(inspect({ summaries, checkOutputs }), /interrupted twice/i, "publication failure after a successful retry is not a second generation failure");
+    failureSite = "";
 
     result = await run(["terminated", "terminated"]);
     assert.equal(result.dispatches, 2, "the retry is not repeated");

@@ -1,5 +1,5 @@
 import "server-only";
-import { AiProviderFailure, providerKeyOwner } from "./provider-failure";
+import { AiProviderFailure, providerKeyOwner, providerRouteUnchanged } from "./provider-failure";
 import { CapacityAdmissionError, capacityReceipt, refuseCapacity, withinReviewWindow, COMPLETE_REVIEW_POLICY } from "./review-capacity";
 import { prisma } from "@octopus/db";
 import { decryptStringMaybeLegacy } from "@/lib/crypto";
@@ -183,6 +183,7 @@ const failedRouteKeys = new WeakMap<AiProviderFailure, string | null>();
 export async function credentialRouteUnchanged(failure: AiProviderFailure, orgId: string): Promise<boolean> {
   if (!failedRouteKeys.has(failure)) return false;
   const provider = await resolveProvider(failure.model);
+  if (["claude-code", "acp", "opencode"].includes(provider)) return provider === failure.provider && await providerRouteUnchanged(failure, orgId);
   return provider === failure.provider && await getOrgKeyForProvider(orgId, provider) === failedRouteKeys.get(failure);
 }
 

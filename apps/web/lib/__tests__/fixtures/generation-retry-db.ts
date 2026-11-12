@@ -60,21 +60,34 @@ try {
   const balance = async () => { const row = await prisma.organization.findUniqueOrThrow({ where: { id: org.id } }); return Number(row.creditBalance) + Number(row.freeCreditBalance); };
   const usage = { provider: "openai" as const, model: "gpt-fixture", operation: "review", inputTokens: 1, outputTokens: 1, organizationId: org.id };
   const start = await balance();
+  const originalTransaction = prisma.$transaction.bind(prisma);
+  prisma.$transaction = ((work: (tx: unknown) => Promise<unknown>) => originalTransaction(async tx => work(new Proxy(tx, {
+    get(target, property, receiver) {
+      if (property === "creditTransaction") return { ...target.creditTransaction, create: async () => { throw new Error("synthetic debit failure"); } };
+      return Reflect.get(target, property, receiver);
+    },
+  })))) as typeof prisma.$transaction;
+  try { await logAiUsage({ ...usage, chargeKey: `fixture:${id}:rollback` }); }
+  finally { prisma.$transaction = originalTransaction as typeof prisma.$transaction; }
+  assert.equal(await prisma.aiUsage.count({ where: { organizationId: org.id, chargeKey: `fixture:${id}:rollback` } }), 0, "a failed debit rolls back the key");
+  assert.equal(await balance(), start);
+  await logAiUsage({ ...usage, chargeKey: `fixture:${id}:rollback` });
+  assert.equal(await balance(), start - 1, "a later delivery can charge after a failed debit");
   await logAiUsage({ ...usage, chargeKey: `fixture:${id}:sequential` });
   await logAiUsage({ ...usage, chargeKey: `fixture:${id}:sequential` });
-  assert.equal(await balance(), start - 1, "the same charge key debits once");
+  assert.equal(await balance(), start - 2, "the same charge key debits once");
   await Promise.all(Array.from({ length: 6 }, () => logAiUsage({ ...usage, chargeKey: `fixture:${id}:concurrent` })));
-  assert.equal(await balance(), start - 2, "concurrent writes with one charge key debit once");
+  assert.equal(await balance(), start - 3, "concurrent writes with one charge key debit once");
   const keyed = await prisma.aiUsage.findMany({ where: { organizationId: org.id, chargeKey: { not: null } } });
-  assert.deepEqual(keyed.map(row => row.chargedCostUsd), [1, 1]);
+  assert.deepEqual(keyed.map(row => row.chargedCostUsd), [1, 1, 1]);
   await logAiUsage(usage);
   await logAiUsage(usage);
-  assert.equal(await balance(), start - 4, "writes without a key debit every time, as before");
+  assert.equal(await balance(), start - 5, "writes without a key debit every time, as before");
   await logAiUsage({ ...usage, operation: "review-failed-attempt", inputTokens: 0, outputTokens: 0, usageUnknown: true });
-  assert.equal(await balance(), start - 4, "a failed attempt is never charged");
+  assert.equal(await balance(), start - 5, "a failed attempt is never charged");
   const unknown = await prisma.aiUsage.findMany({ where: { organizationId: org.id, usageUnknown: true } });
   assert.deepEqual(unknown.map(row => [row.operation, row.chargedCostUsd, row.usedOwnKey]), [["review-failed-attempt", null, false]]);
-  assert.equal(await prisma.aiUsage.count({ where: { organizationId: org.id } }), 5);
-  assert.equal(await prisma.creditTransaction.count({ where: { organizationId: org.id, type: "usage" } }), 4);
+  assert.equal(await prisma.aiUsage.count({ where: { organizationId: org.id } }), 6);
+  assert.equal(await prisma.creditTransaction.count({ where: { organizationId: org.id, type: "usage" } }), 5);
 } finally { console.log = log; console.error = error; await prisma.organization.delete({ where: { id: org.id } }); await prisma.$disconnect(); }
 console.log("PASS durable generation budget and idempotent review charge");

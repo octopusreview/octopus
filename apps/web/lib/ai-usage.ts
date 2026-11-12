@@ -84,14 +84,7 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
       );
     }
 
-    // Record the usage row FIRST (usage happened regardless of billing), with
-    // chargedCostUsd left null. We stamp the snapshot only AFTER a successful
-    // deduction, so the field always reflects what we actually charged — a
-    // failed deduction leaves it null ("usage served, charged nothing"), never
-    // a phantom charge. Recording the snapshot means historical margin no
-    // longer drifts when model prices change later.
-    const usage = await prisma.aiUsage.create({
-      data: {
+    const data = {
         ...(params.chargeKey ? { chargeKey: params.chargeKey } : {}),
         ...(params.usageUnknown ? { usageUnknown: true } : {}),
         provider: params.provider,
@@ -103,8 +96,13 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
         cacheWriteTokens: params.cacheWriteTokens ?? 0,
         usedOwnKey: hasOwnKey,
         organizationId: params.organizationId,
-      },
-    }).catch((error: unknown) => {
+    };
+    if (params.chargeKey && !hasOwnKey && !params.usageUnknown && cost > 0) {
+      await deductCredits(params.organizationId, cost, `${params.operation} — ${params.model}`, undefined,
+        async tx => { await tx.aiUsage.create({ data: { ...data, chargedCostUsd: cost } }); });
+      return;
+    }
+    const usage = await prisma.aiUsage.create({ data }).catch((error: unknown) => {
       // The unique key makes a redelivered or repeated charge a no-op, including under concurrency.
       if (params.chargeKey && (error as { code?: string } | null)?.code === "P2002") return null;
       throw error;
@@ -133,6 +131,7 @@ export async function logAiUsage(params: LogAiUsageParams): Promise<void> {
       });
     }
   } catch (err) {
+    if (params.chargeKey && (err as { code?: string } | null)?.code === "P2002") return;
     console.error("[ai-usage] Failed to log:", safeErrorDetails(err instanceof AiProviderFailure ? err.details : err));
   }
 }

@@ -219,6 +219,12 @@ jobs:
         env:
           RUN_REAPER_DB_TESTS: "1"
 
+      - name: Test review generation retry budget and charge idempotency against PostgreSQL
+        run: bun test lib/__tests__/generation-retry.db.test.ts
+        working-directory: apps/web
+        env:
+          RUN_GENERATION_RETRY_DB_TESTS: "1"
+
       - name: Test external review activity against PostgreSQL
         run: bun test lib/__tests__/external-review-activity.test.ts
         working-directory: apps/web

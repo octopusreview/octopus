@@ -191,7 +191,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
   const [byModelOperation, dailyByModel, pricing, balance] = await Promise.all([
     prisma.aiUsage.groupBy({
       by: ["provider", "model", "operation"],
-      where: { organizationId: orgId, createdAt: { gte: periodStart, lt: periodEnd } },
+      where: { organizationId: orgId, createdAt: { gte: periodStart, lt: periodEnd }, usageUnknown: false },
       _sum: { inputTokens: true, outputTokens: true, cacheReadTokens: true, cacheWriteTokens: true },
       _count: true,
     }),
@@ -219,6 +219,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
       WHERE "organizationId" = ${orgId}
         AND "createdAt" >= ${periodStart}
         AND "createdAt" < ${periodEnd}
+        AND NOT "usageUnknown"
       GROUP BY day, model, provider
       ORDER BY day ASC
     `,

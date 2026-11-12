@@ -68,6 +68,31 @@ export async function startReviewOutcome(key: ReviewOutcomeKey, at: Date, client
   `, client);
 }
 
+export const GENERATION_ATTEMPT_BUDGET = 2;
+
+/**
+ * Durable, unlike the telemetry above: every generation dispatch for one PR request version claims a unit first,
+ * so a redelivered or re-enqueued job cannot start another generation once the budget is used.
+ */
+export async function claimGenerationAttempt(key: ReviewOutcomeKey, at: Date = new Date()): Promise<boolean> {
+  const claimed = await prisma.$queryRaw<unknown[]>`
+    INSERT INTO review_attempt_outcomes
+      ("organizationId", "repositoryId", "pullRequestId", "requestVersion", kind, tries, "firstTriedAt", "generationAttempts")
+    VALUES (${key.organizationId}, ${key.repositoryId}, ${key.pullRequestId}, ${key.requestVersion}, 'not_assessed', 1, ${at}::timestamp, 1)
+    ON CONFLICT ("pullRequestId", "requestVersion") DO UPDATE
+      SET "generationAttempts" = review_attempt_outcomes."generationAttempts" + 1
+      WHERE review_attempt_outcomes."generationAttempts" < ${GENERATION_ATTEMPT_BUDGET}
+    RETURNING "generationAttempts"
+  `;
+  return claimed.length === 1;
+}
+
+/** Only a transient failure may be retried: any other generation failure uses up the budget for its request version. */
+export async function exhaustGenerationAttempts(key: ReviewOutcomeKey): Promise<void> {
+  await prisma.$executeRaw`UPDATE review_attempt_outcomes SET "generationAttempts" = ${GENERATION_ATTEMPT_BUDGET}
+    WHERE "pullRequestId" = ${key.pullRequestId} AND "requestVersion" = ${key.requestVersion}`;
+}
+
 export async function finishReviewOutcome(key: ReviewOutcomeKey, kind: ReviewKind, outcome: ReviewOutcome, archiveId: string | null, at: Date): Promise<void> {
   await bestEffort(tx => tx.$executeRaw`
     UPDATE review_attempt_outcomes SET kind = ${kind}, outcome = ${outcome},
@@ -101,7 +126,8 @@ export async function deferReviewOutcome(key: ReviewOutcomeKey): Promise<void> {
       WHERE "pullRequestId" = ${key.pullRequestId} AND "requestVersion" = ${key.requestVersion}
         AND outcome IS DISTINCT FROM 'published' AND tries > 0`;
     await tx.$executeRaw`DELETE FROM review_attempt_outcomes
-      WHERE "pullRequestId" = ${key.pullRequestId} AND "requestVersion" = ${key.requestVersion} AND tries = 0 AND outcome IS NULL`;
+      WHERE "pullRequestId" = ${key.pullRequestId} AND "requestVersion" = ${key.requestVersion} AND tries = 0 AND outcome IS NULL
+        AND "generationAttempts" = 0`;
   });
 }
 

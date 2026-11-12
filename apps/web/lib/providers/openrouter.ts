@@ -1,5 +1,5 @@
 import "server-only";
-import { observeAiRequest, completionEvidence } from "./request-evidence";
+import { observeAiRequest, completionEvidence, sdkRequestOptions } from "./request-evidence";
 import OpenAI from "openai";
 import type { Provider, AiCreateParams, AiResponse } from "./index";
 import { stripLoneSurrogates } from "./sanitize";
@@ -59,7 +59,7 @@ export const openrouterProvider: Provider = {
             },
           }
         : {}),
-    }));
+    }), sdkRequestOptions(params));
 
     const text = response.choices[0]?.message?.content ?? "";
 

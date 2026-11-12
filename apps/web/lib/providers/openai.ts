@@ -1,5 +1,5 @@
 import "server-only";
-import { observeAiRequest, completionEvidence } from "./request-evidence";
+import { observeAiRequest, completionEvidence, sdkRequestOptions } from "./request-evidence";
 import OpenAI from "openai";
 import { createHmac } from "node:crypto";
 import { CACHE_BREAKPOINT } from "./system-cache";
@@ -61,7 +61,7 @@ async function callOpenAIResponses(
           },
         }
       : {}),
-  }));
+  }), sdkRequestOptions(params));
 
   const text = response.output_text ?? "";
   // Surface non-text or truncated responses as errors instead of silently
@@ -124,7 +124,7 @@ export const openaiProvider: Provider = {
             },
           }
         : {}),
-    }));
+    }), sdkRequestOptions(params));
 
     const text = response.choices[0]?.message?.content ?? "";
 

@@ -1,5 +1,5 @@
 import "server-only";
-import { observeAiRequest, completionEvidence } from "./request-evidence";
+import { observeAiRequest, completionEvidence, sdkRequestOptions } from "./request-evidence";
 import OpenAI from "openai";
 import type { Provider, AiCreateParams, AiResponse } from "./index";
 import { alibabaBaseUrl, alibabaRequestShape } from "./alibaba-request";
@@ -65,6 +65,7 @@ export const alibabaProvider: Provider = {
 
     const response = await client.chat.completions.create(
       observeAiRequest(params, "alibaba", body) as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+      sdkRequestOptions(params),
     );
 
     const choice = response.choices[0];

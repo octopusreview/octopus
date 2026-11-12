@@ -3,8 +3,8 @@ import type { AiRequestReceipt } from "@/lib/providers/request-evidence";
 import { sha256, type ReviewCoverage } from "@/lib/review-coverage";
 import { parseRecoveryFindingsSet, recoveryFindingsBody } from "@/lib/review-evidence";
 import { parseFindingsFromJson, type InlineFinding } from "@/lib/review-dedup";
-import { CapacityAdmissionError, markCapacityNotDispatched, type CapacityAdmissionReceipt } from "./review-capacity";
-import { AiProviderFailure, safeErrorDetails, type KeyOwner } from "./provider-failure";
+import { CapacityAdmissionError, markCapacityNotDispatched, admitGenerationRetry, withinReviewWindow, isReviewCancelled, COMPLETE_REVIEW_POLICY, GENERATION_RETRY, type CapacityAdmissionReceipt, type ReviewExecutionWindow } from "./review-capacity";
+import { AiProviderFailure, classifyFailure, safeErrorDetails, type FailureClass, type KeyOwner } from "./provider-failure";
 
 export type FindingsRecoveryEvidence = {
   state: "completed" | "incomplete" | "failed";
@@ -21,7 +21,9 @@ export type FindingsRecoveryEvidence = {
 
 export type ReviewAssessment = {
   capacityAdmission?: CapacityAdmissionReceipt;
-  failure?: { stage: "generation"; code: string; keyOwner: KeyOwner; ownership: "unknown"; retryability: "unknown"; status?: number };
+  failure?: { stage: "generation"; keyOwner: KeyOwner; status?: number } & FailureClass;
+  /** Earlier failed generation attempts, oldest first; the fields beside this describe the final attempt. */
+  attempts?: Array<{ failure: NonNullable<ReviewAssessment["failure"]>; requests: AiRequestReceipt[]; capacityAdmission?: CapacityAdmissionReceipt }>;
   state: "completed" | "incomplete" | "not-required";
   reason: string;
   model: string | null;
@@ -263,6 +265,8 @@ export function recordNoModelAssessment(coverage: ReviewCoverage): void {
 export async function executeCoveredReview(
   request: AiCreateParams, coverage: ReviewCoverage, template: string,
   call: (request: AiCreateParams) => Promise<AiResponse>,
+  /** Absent: never retry. `confirm` runs immediately before the second dispatch and must recheck everything. */
+  retry?: { window: ReviewExecutionWindow | undefined; confirm: (failure: AiProviderFailure, signal: AbortSignal) => Promise<boolean> },
 ): Promise<AiResponse> {
   const assessment: ReviewAssessment = {
     state: "incomplete", reason: "Provider did not return a completed assessment", model: request.model,
@@ -271,13 +275,29 @@ export async function executeCoveredReview(
   };
   coverage.assessment = assessment;
   let response: AiResponse;
-  try {
-    response = await call({ ...request, onRequest: receipt => assessment.requests.push(receipt),
-      ...(request.completeReviewAdmission ? { completeReviewAdmission: { ...request.completeReviewAdmission,
-        onDecision: receipt => { assessment.capacityAdmission = receipt; request.completeReviewAdmission?.onDecision?.(receipt); },
-      } } : {}),
-    });
+  const dispatch = (signal?: AbortSignal) => call({ ...request, ...(signal ? { signal } : {}), onRequest: receipt => assessment.requests.push(receipt),
+    ...(request.completeReviewAdmission ? { completeReviewAdmission: { ...request.completeReviewAdmission,
+      onDecision: receipt => { assessment.capacityAdmission = receipt; request.completeReviewAdmission?.onDecision?.(receipt); },
+    } } : {}),
+  });
+  let first: { error: unknown; reason: string; attempt: NonNullable<ReviewAssessment["attempts"]>[number] } | undefined;
+  let retryDeadline: AbortSignal | undefined;
+  for (;;) try {
+    // The admitted path bounds itself; any other retry is held to the original job window here.
+    response = first && retry?.window && !request.completeReviewAdmission
+      ? await withinReviewWindow(retry.window, retry.window.remainingMs() - COMPLETE_REVIEW_POLICY.publicationReserveMs, signal => dispatch(retryDeadline = signal)) : await dispatch();
+    break;
   } catch (error) {
+    // A provider failure or the retry deadline means the retry reached the provider; anything else (a refused
+    // admission, a setup error such as a credential lookup) with no request recorded did not.
+    const notDispatched = error instanceof CapacityAdmissionError ? error.receipt.primaryDispatch === "not-started"
+      : !(error instanceof AiProviderFailure) && !retryDeadline?.aborted;
+    if (first && notDispatched && assessment.requests.length === 0) {
+      // The retry never started: the original classified failure stands.
+      delete assessment.attempts; delete assessment.capacityAdmission;
+      Object.assign(assessment, first.attempt, { reason: first.reason });
+      throw first.error;
+    }
     if (error instanceof CapacityAdmissionError) {
       assessment.capacityAdmission = structuredClone(error.receipt);
       assessment.reason = error.message;
@@ -289,13 +309,29 @@ export async function executeCoveredReview(
         try {
           const details = safeErrorDetails(error.details);
           if (details.name !== "AbortError") {
-            assessment.failure = { stage: "generation", code: details.code ?? (details.status ? `http_${details.status}` : "unclassified"),
-              keyOwner: error.keyOwner === "platform" || error.keyOwner === "organization" ? error.keyOwner : "unknown",
-              ownership: "unknown", retryability: "unknown", ...(details.status ? { status: details.status } : {}) };
+            const keyOwner = error.keyOwner === "platform" || error.keyOwner === "organization" ? error.keyOwner : "unknown";
+            assessment.failure = { stage: "generation", ...classifyFailure(details, keyOwner, "generation"), keyOwner, ...(details.status ? { status: details.status } : {}) };
             assessment.reason = "Provider request failed during review generation";
           }
         } catch { /* Preserve the original failure if diagnostics are unavailable. */ }
       }
+      // The deadline wrapper's error carries no provider detail; a retry it cut off still gets a safe code.
+      if (first && !assessment.failure && retryDeadline?.aborted && !isReviewCancelled(retry?.window)) {
+        const { keyOwner } = first.attempt.failure;
+        assessment.failure = { stage: "generation", ...classifyFailure({ code: "ETIMEDOUT" }, keyOwner, "generation"), keyOwner };
+        assessment.reason = "Provider request failed during review generation";
+      }
+    }
+    const failure = assessment.failure;
+    // One retry, only for a classified transient provider failure; unknown causes are never retried.
+    if (!first && retry && failure?.retryability === "transient" && error instanceof AiProviderFailure
+      && await admitGenerationRetry(retry.window, request.completeReviewAdmission ? COMPLETE_REVIEW_POLICY.minGenerationMs : GENERATION_RETRY.minGenerationMs,
+        error.retryAfterMs, signal => retry.confirm(error, signal))) {
+      first = { error, reason: assessment.reason, attempt: { failure, requests: assessment.requests, ...(assessment.capacityAdmission ? { capacityAdmission: assessment.capacityAdmission } : {}) } };
+      assessment.attempts = [first.attempt];
+      delete assessment.failure; delete assessment.capacityAdmission;
+      assessment.requests = []; assessment.reason = "Provider did not return a completed assessment";
+      continue;
     }
     throw error;
   }

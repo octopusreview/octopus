@@ -787,6 +787,10 @@ model AiUsage {
   // margin no longer drifts when AvailableModel prices change; the recompute
   // path (lib/cost.ts) stays as the fallback for null rows.
   chargedCostUsd Float?
+  // Set for charges that must happen at most once (a review generation per PR request version).
+  chargeKey      String?  @unique
+  // A failed provider attempt: token counts are unknown (stored as 0) and nothing was charged.
+  usageUnknown   Boolean  @default(false)
   createdAt      DateTime @default(now())
 
   organizationId String
@@ -1813,6 +1817,8 @@ model ReviewAttemptOutcome {
   kind String
   outcome String?
   tries Int
+  // Generation dispatches claimed for this request version (budget enforced in review-attempt-outcome.ts).
+  generationAttempts Int @default(0)
   firstTriedAt DateTime
   finishedAt DateTime?
   publishedAt DateTime?

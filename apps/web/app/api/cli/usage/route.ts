@@ -23,6 +23,7 @@ export async function GET(request: Request) {
       where: {
         organizationId: result.org.id,
         createdAt: { gte: start, lt: end },
+        usageUnknown: false,
       },
       _sum: {
         inputTokens: true,

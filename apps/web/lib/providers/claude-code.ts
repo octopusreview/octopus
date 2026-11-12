@@ -1,6 +1,6 @@
 import "server-only";
-import { AiProviderFailure, type KeyOwner } from "../provider-failure";
-import { observeAiRequest, completionEvidence } from "./request-evidence";
+import { AiProviderFailure, rememberProviderRoute, type KeyOwner } from "../provider-failure";
+import { observeAiRequest, completionEvidence, sdkRequestOptions } from "./request-evidence";
 import Anthropic from "@anthropic-ai/sdk";
 import { spawn } from "node:child_process";
 import { prisma } from "@octopus/db";
@@ -110,7 +110,8 @@ export const claudeCodeProvider: Provider = {
       }
       return await runAnthropicApi(params, config.apiKey);
     } catch (error) {
-      throw new AiProviderFailure(error, "claude-code", params.model, config.keyOwner);
+      throw rememberProviderRoute(new AiProviderFailure(error, "claude-code", params.model, config.keyOwner), orgId,
+        async () => JSON.stringify(await loadOrgConfig(orgId)) === JSON.stringify(config));
     }
   },
 };
@@ -183,7 +184,7 @@ async function runAnthropicApi(params: AiCreateParams, apiKey: string | null): P
           }
         : {}),
     }),
-    { signal: AbortSignal.timeout(ANTHROPIC_CALL_TIMEOUT_MS) },
+    { ...sdkRequestOptions(params), signal: params.signal ? AbortSignal.any([params.signal, AbortSignal.timeout(ANTHROPIC_CALL_TIMEOUT_MS)]) : AbortSignal.timeout(ANTHROPIC_CALL_TIMEOUT_MS) },
   );
 
   let response: Anthropic.Message;

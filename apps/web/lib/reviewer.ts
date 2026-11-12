@@ -2658,7 +2658,9 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       markReviewAssessmentIncomplete(attemptCoverage, "Review processing failed or was interrupted before persistence");
     }
     // A redelivered or re-enqueued job must not dispatch again after a permanent or unknown generation failure.
-    if (failureStage === "generation" && reportingError instanceof AiProviderFailure && attemptCoverage?.assessment?.failure?.retryability !== "transient") {
+    // A generation cut off without a classified failure (the job window ended) keeps its remaining unit.
+    const generationFailure = attemptCoverage?.assessment?.failure;
+    if (failureStage === "generation" && reportingError instanceof AiProviderFailure && generationFailure && generationFailure.retryability !== "transient") {
       await exhaustGenerationAttempts(outcomeKey).catch(e => console.error("[reviewer] Failed to close the generation budget:", safeErrorDetails(e)));
     }
     // Only after an admitted retry was dispatched and failed as well; a retry refused before dispatch leaves no earlier attempt.

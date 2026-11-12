@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.9] - 2026-11-12
+
 ### Added
 
 - Releases can now pause job processing cluster-wide, wait for running reviews and indexing to finish, and resume, instead of interrupting work in progress. See [draining the job queue for a release](docs/rollout-drain.md).

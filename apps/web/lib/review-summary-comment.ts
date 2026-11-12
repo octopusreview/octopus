@@ -71,7 +71,7 @@ export async function publishReviewSummary(target: SummaryTarget): Promise<numbe
         const marker = id < 0 ? `Octopus publication reference: ${target.pullRequestId}:${-id}` : undefined;
         if (id < 0 && id !== reservation) {
           id = await findPullRequestSummaryComment(target.owner, target.repo, target.prNumber, marker!, token, signal);
-          if (id === null) return { pendingCreation: true };
+          if (id === null) return { pendingCreation: Number(current.reviewCommentId) };
         }
         if (target.executionWindow) assertReviewProcessingActive(target.executionWindow);
         signal.throwIfAborted();
@@ -117,10 +117,10 @@ export async function publishReviewSummary(target: SummaryTarget): Promise<numbe
         // Release the row lock before waiting so the reservation's owner can
         // enter its POST transaction. Every recheck repeats the stale guards.
         reconciliationDeadline ??= performance.now() + 10_000;
-        if (performance.now() >= reconciliationDeadline) {
-          throw new Error("PR summary creation is unresolved; awaiting reconciliation");
-        }
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // The wait outlasts the owner's provider timeout. A reservation still without a comment
+        // belongs to a publisher that stopped before posting, so adopt it and post under its marker.
+        if (performance.now() >= reconciliationDeadline) reservation = result.pendingCreation;
+        else await new Promise(resolve => setTimeout(resolve, 100));
         continue;
       }
       reservation = result.reserved;

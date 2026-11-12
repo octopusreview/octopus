@@ -103,7 +103,10 @@ mock.module("@/lib/review-summary-comment", () => ({ publishReviewSummary: async
   summaries.push(target.body);
   return 123;
 } }));
+// This fixture keeps no delivery table; publication runs without checkpoints.
+mock.module("@/lib/review-attempt-delivery", () => ({ deliverReviewAttempt: async (_id: string, deliver: (progress: unknown, checkpoint: () => Promise<void>) => Promise<void>) => deliver({}, async () => {}) }));
 mock.module("@/lib/review-attempt", () => ({
+  recordInterruptedAttempt: async () => { throw new Error("Unexpected interrupted attempt"); },
   recordFirstReviewCompletion: async () => { throw new Error("Fixture must stop before completion"); },
   withForgejoReviewPublication: async () => { throw new Error("Unexpected Forgejo publication"); },
   createReviewAttemptComment: async (_id: string, _head: string, _version: number, create: () => Promise<number>) => create(),

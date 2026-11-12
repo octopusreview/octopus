@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@octopus/db";
 import { enqueue, loadQueueConfig, computeStaleReclaimMs } from "./queue";
+import { recordInterruptedAttempt } from "./review-attempt";
 
 // Reviews that die mid-flight (engine restart on deploy, crash, OOM, or a hang
 // past the job timeout) are left in "reviewing"/"queued" forever: the finalize
@@ -42,7 +43,7 @@ export async function reapStuckReviews(
         { status: "queued", updatedAt: { lt: queuedStale } },
       ],
     },
-    select: { id: true, createdAt: true, status: true, updatedAt: true, reviewRequestVersion: true },
+    select: { id: true, createdAt: true, status: true, updatedAt: true, reviewRequestVersion: true, reviewAttemptId: true, headSha: true, repository: { select: { provider: true } } },
   });
 
   const requeueCutoff = new Date(now.getTime() - REQUEUE_MAX_AGE_MS);
@@ -56,6 +57,10 @@ export async function reapStuckReviews(
       data: { status: "failed", errorMessage: REAP_FAILED_MESSAGE },
     });
     if (updated.count === 0) continue;
+    // A queued large review keeps its attempt ID for the worker's late result, so only a review that stopped in this engine is recorded.
+    if (pr.status === "reviewing") {
+      await recordInterruptedAttempt(pr).catch(() => console.error("[reaper] Failed to record the interrupted review attempt"));
+    }
 
     if (pr.createdAt > requeueCutoff) {
       await enqueue(

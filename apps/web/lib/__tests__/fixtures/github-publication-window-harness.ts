@@ -5,7 +5,9 @@ import { generateKeyPairSync } from "node:crypto";
 mock.module("server-only", () => ({}));
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
 mock.module("@/lib/github-app-config", () => ({ getGithubAppConfig: async () => ({ appId: "123", privateKey }) }));
-const { updateCheckRun } = await import("../../github");
+const { createCheckRun, updateCheckRun } = await import("../../github");
+const checkRuns: { id: number; status: string; external_id?: string }[] = [];
+const checkCalls: string[] = [];
 let controller = new AbortController();
 let remaining = 10000;
 let mode = "cancel-auth";
@@ -16,6 +18,24 @@ globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     if (mode === "cancel-auth") controller.abort();
     if (mode === "expire-auth") remaining = 0;
     return Response.json({ token: "synthetic" });
+  }
+  if (String(url).includes("/commits/")) {
+    checkCalls.push("GET");
+    assert.ok(String(url).includes(`/commits/${"a".repeat(40)}/check-runs?check_name=Octopus%20Review`));
+    return Response.json({ check_runs: checkRuns });
+  }
+  if (String(url).endsWith("/check-runs")) {
+    const run = { id: 50 + checkRuns.length, status: "in_progress", external_id: JSON.parse(String(init?.body)).external_id };
+    checkRuns.push(run);
+    checkCalls.push(`POST ${run.id}`);
+    return Response.json(run);
+  }
+  if (mode === "reuse") {
+    const run = checkRuns.find(run => String(url).endsWith(`/check-runs/${run.id}`));
+    assert.ok(run);
+    run.status = JSON.parse(String(init?.body)).status;
+    checkCalls.push(`PATCH ${run.id}`);
+    return Response.json({});
   }
   assert.ok(String(url).includes("/check-runs/"));
   sends++;
@@ -36,3 +56,21 @@ for (mode of ["cancel-auth", "expire-auth", "cancel-send"]) {
 mode = "cancel-auth"; sends = 0;
 await updateCheckRun(1, "owner", "repo", 1, "failure", { title: "Failed", summary: "Unscored" });
 assert.equal(sends, 1);
+
+// A redelivered review continues the unfinished check run of its own request instead of adding a second one.
+mode = "reuse";
+const head = "a".repeat(40);
+const firstRun = await createCheckRun(1, "owner", "repo", head, "Octopus Review", undefined, "pr:1");
+assert.equal(await createCheckRun(1, "owner", "repo", head, "Octopus Review", undefined, "pr:1"), firstRun);
+await updateCheckRun(1, "owner", "repo", firstRun, "success", { title: "Passed", summary: "5/5" });
+assert.deepEqual(checkCalls, ["GET", `POST ${firstRun}`, "GET", `PATCH ${firstRun}`]);
+// A completed check run is left alone, and another request never takes over this one's.
+const afterCompletion = await createCheckRun(1, "owner", "repo", head, "Octopus Review", undefined, "pr:1");
+assert.notEqual(afterCompletion, firstRun);
+assert.notEqual(await createCheckRun(1, "owner", "repo", head, "Octopus Review", undefined, "pr:2"), afterCompletion);
+assert.equal(checkRuns.find(run => run.id === firstRun)?.status, "completed");
+// Callers that pass no request identity create a check run without a lookup, as before.
+checkCalls.length = 0;
+await createCheckRun(1, "owner", "repo", head, "Octopus Review");
+assert.equal(checkCalls.length, 1);
+assert.ok(checkCalls[0].startsWith("POST"));

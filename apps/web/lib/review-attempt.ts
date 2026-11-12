@@ -3,7 +3,7 @@ import { isReviewRequestVersion } from "@/lib/review-status-state";
 import { isDeepStrictEqual } from "node:util";
 import { prisma, type Prisma } from "@octopus/db";
 import { withForgejoPublication } from "@/lib/forgejo-connector";
-import type { ReviewCoverage } from "@/lib/review-coverage";
+import { applyReviewCoverage, unknownReviewCoverage, type ReviewCoverage } from "@/lib/review-coverage";
 
 export async function updateCurrentReview(pullRequestId: string, headSha: string | null, reviewRequestVersion: number | undefined, data: Prisma.PullRequestUpdateManyMutationInput, expectedReviewBody?: string) {
   if (!headSha || !isReviewRequestVersion(reviewRequestVersion)) return { count: 0 };
@@ -45,6 +45,29 @@ export function withForgejoReviewPublication(
       id: pullRequestId, headSha, reviewRequestVersion, status: { in: ["completed", "failed"] },
     } })) === 1,
   });
+}
+
+/**
+ * Record an attempt whose worker stopped before it archived anything, under the attempt's own ID.
+ * It is inserted directly: saveReviewAttempt would promote it to the current report. Repeating it changes nothing.
+ */
+export async function recordInterruptedAttempt(pr: { id: string; reviewAttemptId: string | null; headSha: string | null; reviewRequestVersion: number; repository: { provider: string } }): Promise<void> {
+  if (!pr.reviewAttemptId) return;
+  const coverage = unknownReviewCoverage(pr.repository.provider, "Worker stopped before this attempt was recorded");
+  coverage.headSha = pr.headSha;
+  coverage.reviewRequestVersion = pr.reviewRequestVersion;
+  const budget = await prisma.reviewAttemptOutcome.findUnique({
+    where: { pullRequestId_requestVersion: { pullRequestId: pr.id, requestVersion: pr.reviewRequestVersion } }, select: { generationAttempts: true },
+  });
+  // A generation was dispatched and no charge for this request exists: the provider may or may not have completed it.
+  if (budget?.generationAttempts && !await prisma.aiUsage.count({ where: { chargeKey: `review-generation:${pr.id}:${pr.reviewRequestVersion}:${pr.headSha}` } })) {
+    coverage.limitations.push("provider dispatch outcome unknown");
+  }
+  await prisma.reviewAttempt.createMany({ skipDuplicates: true, data: [{
+    id: pr.reviewAttemptId, pullRequestId: pr.id, headSha: pr.headSha, baseSha: null,
+    coverage: JSON.parse(JSON.stringify(coverage)) as Prisma.InputJsonValue,
+    reviewBody: applyReviewCoverage("## 🐙 Octopus Review\n\nWorker stopped before this attempt was recorded.", coverage, pr.reviewAttemptId),
+  }] });
 }
 
 export async function hasReviewAttempt(attemptId: string, pullRequestId: string, coverage: ReviewCoverage, reviewBody: string, client: Pick<Prisma.TransactionClient, "reviewAttempt"> = prisma, failureFingerprint: string | null = null) {

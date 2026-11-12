@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A review whose worker stops mid-run (for example during a release) no longer leaves a second check run, a repeated inline review or an unfinished comment on GitHub; the retried job continues where it stopped.
+- The interrupted attempt is kept in the review history under its own ID, noting when the AI provider's result for it is unknown.
+
+### Upgrade notes
+
+- Apply the `20261112150000_review_attempt_id` migration before starting instances with this change. It adds one nullable column to `pull_requests`.
+
 ## [1.4.10] - 2026-11-12
 
 ### Fixed

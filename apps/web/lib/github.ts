@@ -349,8 +349,20 @@ export async function createCheckRun(
   headSha: string,
   name: string,
   detailsUrl?: string,
+  /** Identifies one review request, so a redelivered job continues its unfinished check run instead of adding another. */
+  externalId?: string,
 ): Promise<number> {
   const token = await getInstallationToken(installationId);
+  if (externalId) {
+    const existing = await fetchWithRetry(
+      `${GITHUB_API}/repos/${owner}/${repo}/commits/${headSha}/check-runs?check_name=${encodeURIComponent(name)}&filter=all&per_page=100`,
+      { headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" } },
+    );
+    // A failed lookup creates a check run, as before.
+    const runs = existing.ok ? ((await existing.json()) as { check_runs?: { id: number; status: string; external_id?: string | null }[] }).check_runs ?? [] : [];
+    const unfinished = runs.find(run => run.external_id === externalId && run.status !== "completed");
+    if (unfinished) return unfinished.id;
+  }
   const res = await fetchWithRetry(
     `${GITHUB_API}/repos/${owner}/${repo}/check-runs`,
     {
@@ -365,6 +377,7 @@ export async function createCheckRun(
         status: "in_progress",
         started_at: new Date().toISOString(),
         ...(detailsUrl ? { details_url: detailsUrl } : {}),
+        ...(externalId ? { external_id: externalId } : {}),
       }),
     },
   );

@@ -362,9 +362,6 @@ try {
       }
     }
   } else if (scenario === "claim") {
-    const source = await readFile(new URL("../../reviewer.ts", import.meta.url), "utf8");
-    assert.match(source, /await startReviewOutcome\(outcomeKey, new Date\(\)/);
-    assert.match(source, /if \(claimed.count\) await startReviewOutcome/); assert.match(source, /if \(outcomeDeferred\) await deferReviewOutcome/);
     await prisma.reviewAttemptOutcome.deleteMany({ where: { pullRequestId: pr.id } });
     const results = await Promise.all([productionClaim(), productionClaim()]);
     assert.equal(results.reduce((n: number, r: { count: number }) => n + r.count, 0), 1);

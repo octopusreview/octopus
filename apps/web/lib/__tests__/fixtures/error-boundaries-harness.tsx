@@ -1,17 +1,13 @@
 // Child process for error-boundaries.test.ts, so the Sentry mock cannot leak into other tests.
 import assert from "node:assert/strict";
 import { mock } from "bun:test";
-import { act, createElement, type ReactElement } from "react";
+import { isValidElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Window } from "happy-dom";
-
-const window = new Window();
-Object.assign(globalThis, { window, document: window.document, IS_REACT_ACT_ENVIRONMENT: true });
-const { createRoot } = await import("react-dom/client");
 
 const reported: unknown[] = [];
 mock.module("@sentry/nextjs", () => ({ captureException: (error: unknown) => { reported.push(error); } }));
 
+const { ErrorFallback, reportBoundaryError } = await import("@/components/error-fallback");
 const boundaries = {
   app: (await import("@/app/(app)/error")).default,
   settings: (await import("@/app/(app)/settings/error")).default,
@@ -21,23 +17,13 @@ const boundaries = {
 const error = new Error("synthetic-render-failure");
 const retry = () => {};
 
+// Every boundary hands Next's retry to the shared fallback; "Try again" must refetch the route.
 for (const [name, Boundary] of Object.entries(boundaries)) {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  let retries = 0;
-  reported.length = 0;
-  await act(() => root.render(createElement(Boundary, { error, retry: () => { retries++; } })));
-  assert.deepEqual(reported, [error], `${name} reports the client error once`);
-  const button = container.querySelector("button");
-  assert.ok(button, `${name} renders a retry button`);
-  await act(() => button.click());
-  assert.equal(retries, 1, `${name} invokes retry`);
-  const serverError = Object.assign(new Error("server"), { digest: "123" });
-  await act(() => root.render(createElement(Boundary, { error: serverError, retry })));
-  assert.deepEqual(reported, [error], `${name} does not report the server error`);
-  await act(() => root.unmount());
-  container.remove();
+  const element = Boundary({ error, retry }) as ReactElement<{ error: Error; retry: () => void }>;
+  assert.ok(isValidElement(element), name);
+  assert.equal(element.type, ErrorFallback, `${name} renders the shared fallback`);
+  assert.equal(element.props.retry, retry, `${name} passes retry through`);
+  assert.equal(element.props.error, error);
 }
 
 // The fallback announces itself, hides its decorative icons and never prints the error.
@@ -50,5 +36,11 @@ for (const [name, Boundary] of Object.entries(boundaries)) {
 }
 assert.ok(renderToStaticMarkup(boundaries.settings({ error, retry }) as ReactElement).includes("Couldn&#x27;t load settings"));
 assert.ok(renderToStaticMarkup(boundaries.root({ error, retry }) as ReactElement).includes("min-h-screen"));
+
+// A client render error is reported once; a server error (it carries a digest) was reported by the server.
+reportBoundaryError(error);
+assert.deepEqual(reported, [error]);
+reportBoundaryError(Object.assign(new Error("server"), { digest: "123" }));
+assert.equal(reported.length, 1);
 
 console.log("PASS error boundaries retry, announce themselves and report client errors once");

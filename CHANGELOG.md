@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Update the Sentry SDK to 10.75.2 and nodemailer to 10.5.0 to pick up upstream security fixes.
 
+## [1.4.7] - 2026-11-12
+
+### Fixed
+
+- On SIGTERM or SIGINT, server shutdown waits up to five minutes for active queue jobs, including reviews and indexing, to finish before exiting.
+
 ## [1.4.6] - 2026-11-11
 
 ### Changed

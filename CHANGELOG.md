@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Highlight badges on the repository graph are readable in light mode.
+- Settings pages and the app shell show an error page with a "Try again" button when they fail to load, instead of a blank page.
+- "Try again" on error pages now loads the page again; before, it could show the same error.
+
 ## [1.4.11] - 2026-11-12
 
 ### Fixed

@@ -1097,6 +1097,41 @@ model GitHubIndexRateSecret {
   @@map("github_index_rate_secret")
 }
 
+// Cluster-wide switch that stops queue workers claiming during a rollout (#832).
+// A missing row means "claiming" at generation 0.
+model QueueDrain {
+  id           Int       @id @default(1)
+  generation   Int       @default(0)
+  state        String    @default("claiming") // claiming | draining
+  requestedAt  DateTime? @db.Timestamptz(3)
+  requestedBy  String?
+  deadlineAt   DateTime? @db.Timestamptz(3)
+  leaseUntil   DateTime? @db.Timestamptz(3)
+  // Set once the drain was seen quiescent; the deadline bounds only the wait before that.
+  quiescentAt  DateTime? @db.Timestamptz(3)
+  resumedAt    DateTime? @db.Timestamptz(3)
+  resumeReason String?
+
+  @@map("queue_drain")
+}
+
+// One row per process boot (web and review-engine alike).
+model QueueWorkerInstance {
+  id              String    @id
+  serverId        String
+  version         String
+  workersEnabled  Boolean
+  startedAt       DateTime  @default(now()) @db.Timestamptz(3)
+  heartbeatAt     DateTime  @default(now()) @db.Timestamptz(3)
+  ackedGeneration Int?
+  ackedAt         DateTime? @db.Timestamptz(3)
+  inlineActive    Int       @default(0) // in-request reviews in flight
+  retiringAt      DateTime? @db.Timestamptz(3)
+
+  @@index([heartbeatAt])
+  @@map("queue_worker_instances")
+}
+
 model GitHubDeferredIndex {
   repositoryId   String @id
   repository     Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)

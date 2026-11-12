@@ -9,7 +9,8 @@ const databaseUrl = enabled ? localQueueTestDatabaseUrl(process.env.DATABASE_URL
 const harness = fileURLToPath(new URL("./fixtures/queue-shutdown-harness.ts", import.meta.url));
 
 // Start the child, send SIGTERM once its job is running, and report how the job ended.
-async function terminateMidJob(mode: "next" | "manual" | "unfixed") {
+let childOutput = "";
+async function terminateMidJob(mode: "next" | "manual" | "unfixed" | "inline" | "inline-bound") {
   const schema = `pgboss_test_${randomUUID().replaceAll("-", "")}`;
   const observer = new PgBoss({ connectionString: databaseUrl!, schema });
   observer.on("error", () => {});
@@ -26,6 +27,8 @@ async function terminateMidJob(mode: "next" | "manual" | "unfixed") {
     const id = /job-id (\S+)/.exec(output)![1];
     child.kill("SIGTERM");
     const code = await child.exited;
+    for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) output += decoder.decode(chunk.value);
+    childOutput = output;
     await observer.start();
     return { code, state: (await observer.getJobById("slow", id))?.state };
   } finally {
@@ -47,4 +50,16 @@ it.skipIf(!enabled)("without the shutdown hook the same signal abandons the job"
   const result = await terminateMidJob("unfixed");
   expect(result.code).toBe(143);
   expect(result.state).toBe("active");
+}, 40_000);
+
+it.skipIf(!enabled)("waits for detached inline work as well as the job", async () => {
+  expect(await terminateMidJob("inline")).toEqual({ code: 143, state: "completed" });
+  expect(childOutput).toContain("inline-finished");
+}, 40_000);
+
+it.skipIf(!enabled)("stops waiting for inline work when the bound passes", async () => {
+  const started = Date.now();
+  expect(await terminateMidJob("inline-bound")).toEqual({ code: 143, state: "completed" });
+  expect(childOutput).not.toContain("inline-finished");
+  expect(Date.now() - started).toBeLessThan(15_000);
 }, 40_000);

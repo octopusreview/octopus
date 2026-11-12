@@ -12,7 +12,14 @@ const indexingPrivacy = process.argv.includes("--indexing-review-privacy");
 const preparationDiagnostic = process.argv.includes("--preparation-diagnostic");
 const directCommentFailure = process.argv.includes("--direct-forgejo-comment-failure");
 const preserveAutoReview = process.argv.includes("--preserve-auto-review");
-const firstCompletion = process.argv.includes("--first-review-completion");
+const crashRecovery = process.argv.includes("--crash-recovery");
+const firstCompletion = process.argv.includes("--first-review-completion") || crashRecovery;
+type Delivery = { attemptId: string; mainCommentId: unknown; completedAt: Date | null; leaseToken: string | null; leaseUntil: Date | null };
+const deliveries = new Map<string, Delivery>();
+let leaseHeldWhilePublishing = false;
+let priorBotReviews: { id: number; user: string; body: string }[] = [];
+const delayedJobs: unknown[][] = [];
+const interruptedAttempts: unknown[] = [];
 const refusalFlow = process.argv.includes("--provider-refusal");
 const providerErrorPrivacy = process.argv.includes("--provider-error-privacy");
 const generationRetry = process.argv.includes("--generation-retry");
@@ -146,7 +153,24 @@ const db = {
     assert.deepEqual(query, { where: { pullRequestId: "pr" }, orderBy: { createdAt: "desc" }, select: { coverage: true } });
     if (lookupFailure) throw new Error("fixture lookup failure");
     return prior ? { coverage: prior } : null;
+  }, findUnique: async ({ where }: { where: { id: string } }) => {
+    const row = archived.find(attempt => attempt.id === where.id);
+    return row ? { id: row.id, reviewBody: row.body, coverage: row.coverage, delivery: deliveries.get(row.id) ?? null } : null;
   } },
+  // Delivery checkpoints as the real table keeps them: one row per attempt, claimed by an unexpired lease.
+  reviewAttemptDelivery: {
+    createMany: async ({ data }: { data: { attemptId: string }[] }) => {
+      for (const row of data) if (!deliveries.has(row.attemptId)) deliveries.set(row.attemptId, { ...row, mainCommentId: null, completedAt: null, leaseToken: null, leaseUntil: null });
+    },
+    findUniqueOrThrow: async ({ where }: { where: { attemptId: string } }) => ({ ...deliveries.get(where.attemptId)! }),
+    updateMany: async ({ where, data }: { where: { attemptId: string; completedAt?: null; leaseToken?: string; leaseUntil?: { gt: Date }; OR?: unknown[] }; data: Partial<Delivery> }) => {
+      const row = deliveries.get(where.attemptId);
+      if (!row || (where.completedAt === null && row.completedAt) || (where.leaseToken !== undefined && where.leaseToken !== row.leaseToken)
+        || (where.leaseUntil && (!row.leaseUntil || row.leaseUntil <= where.leaseUntil.gt)) || (where.OR && row.leaseUntil && row.leaseUntil > new Date())) return { count: 0 };
+      Object.assign(row, data);
+      return { count: 1 };
+    },
+  },
   repository: {
     findFirst: async () => retryBlock === "access" ? null : { ...repo },
     findUnique: async () => ({ ...repo }),
@@ -164,7 +188,8 @@ const db = {
   organization: { findUnique: async () => org },
   localAgent: { count: async () => 0 },
   reviewIssue: { findMany: async () => bestEffortPrivacy && feedbackMode ? [feedbackIssue] : [], updateMany: async (query: unknown) => { feedbackUpdates.push(query); return { count: 1 }; } },
-  pullRequest: { findUnique: async () => pr, count: async () => 1,
+  // A real read is a snapshot: the claim that follows must not change what the reviewer loaded.
+  pullRequest: { findUnique: async () => crashRecovery ? { ...pr } : pr, count: async () => 1,
     findFirst: async () => retryBlock === "superseded" ? null : { id: pr.id, repository: { organization: { reviewsPaused: false } } }, updateMany: async (query: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
     reviewUpdates.push(query);
     if (firstCompletion) {
@@ -312,6 +337,7 @@ mock.module("@/lib/review-summary-comment", () => ({ publishReviewSummary: async
     throw new Error("Fixture final summary publication failed");
   }
   if (target.expectedReviewBody !== undefined) {
+    leaseHeldWhilePublishing = (deliveries.get(archived.at(-1)!.id)?.leaseUntil ?? new Date(0)) > new Date();
     assert.equal(target.expectedReviewBody, archived.at(-1)?.body);
     assert.equal(target.headSha, pr.headSha);
     assert.equal(target.reviewRequestVersion, pr.reviewRequestVersion);
@@ -325,6 +351,7 @@ mock.module("@/lib/review-summary-comment", () => ({ publishReviewSummary: async
 const realReviewAttempt = await import("@/lib/review-attempt");
 mock.module("@/lib/review-attempt", () => ({
   recordFirstReviewCompletion: realReviewAttempt.recordFirstReviewCompletion,
+  recordInterruptedAttempt: async (stopped: { reviewAttemptId: string | null }) => { interruptedAttempts.push(stopped.reviewAttemptId); },
   withForgejoReviewPublication: directCommentFailure ? realReviewAttempt.withForgejoReviewPublication : async (_id: string, _head: string, _version: number, publish: () => Promise<void>) => publish(),
   createReviewAttemptComment: directCommentFailure ? realReviewAttempt.createReviewAttemptComment : async (_id: string, _head: string, _version: number, create: () => Promise<number>) => create(),
   updateCurrentReview: indexingPrivacy || preparationDiagnostic || generationDiagnostic || directCommentFailure || firstCompletion || refusalFlow || providerErrorPrivacy || embeddingErrorPrivacy || publicationErrorPrivacy || generationSetupErrorPrivacy ? realReviewAttempt.updateCurrentReview : async () => ({ count: 1 }),
@@ -366,7 +393,7 @@ mock.module("@/lib/github", () => ({
   listReviewComments: async () => { if (bestEffortPrivacy && failureSite === "match-ids") throw privateFailure(); return []; },
   listPullRequestReviewComments: async () => (feedbackMode === "reply" || feedbackMode === "classifier-reply") ? [{ id: 6, user: "fixture", body: feedbackMode === "reply" ? "👎" : "Please reconsider this finding", inReplyToId: 5 }] : [{ id: 5, user: "fixture[bot]", path: "src/check.ts", line: 1, body: "🟠 Previous unrelated partial-review issue", inReplyToId: null }],
   listPullRequestIssueComments: async () => feedbackMode === "per-finding" ? [{ user: "fixture", createdAt: new Date().toISOString(), body: "**Missing null check** — 👎" }] : (feedbackMode === "bulk" || feedbackMode === "classifier-bulk") ? [{ user: "fixture", createdAt: new Date().toISOString(), body: feedbackMode === "bulk" ? "👎" : "Please reconsider these findings" }] : [],
-  listPullRequestReviews: async () => { if (bestEffortPrivacy && failureSite === "prior-reviews") throw privateFailure(); return []; },
+  listPullRequestReviews: async () => { if (bestEffortPrivacy && failureSite === "prior-reviews") throw privateFailure(); return priorBotReviews; },
   getCommentReactions: async () => ({ thumbsUp: feedbackMode === "reaction" ? 1 : 0, thumbsDown: 0 }),
 }));
 mock.module("@/lib/forgejo", () => ({
@@ -427,7 +454,7 @@ mock.module("@/lib/github-app-config", () => ({ getGithubAppConfig: async () => 
 mock.module("@/lib/queue", () => ({
   loadQueueConfig: async () => ({ reviewTimeoutSeconds: 60, largeReviewTimeoutSeconds: 60 }),
   computeStaleReclaimMs: () => 120000,
-  enqueue: async (name: string) => { queuedJobs.push(name); }, enqueueAfter: async () => {},
+  enqueue: async (name: string) => { queuedJobs.push(name); }, enqueueAfter: async (...job: unknown[]) => { delayedJobs.push(job); },
 }));
 mock.module("@/lib/cost", () => ({ getOrgSpendLimitStatus: async () => retryBlock === "spend" ? { blocked: true, reason: "no_credits" } : { blocked: false }, shouldGuardConcurrency: async () => retryBlock === "guard", getModelPricing: async () => null, estimateCompleteReviewCost: () => 0 }));
 mock.module("@/lib/pubby", () => ({ pubby: { trigger: async (_channel: string, _name: string, data: { status?: string; message?: string }) => { if (bestEffortPrivacy && failureSite === "pubby") throw privateFailure(); events.push({ ...data, status: _name === "index-status" ? repo.indexStatus : data.status, eventName: _name }); } } }));
@@ -1011,6 +1038,89 @@ if (preparationDiagnostic) {
     assert.equal(sentryEvents.length, before, "handled large review emits no incident");
   } finally { console.error = originalError; }
   console.log("PASS preparation fetch diagnostics");
+  process.exit(0);
+}
+if (crashRecovery) {
+  // A complete review: the archive, one summary comment, one inline review and a finished check.
+  await processReview("pr");
+  const attempt = archived[0];
+  assert.equal((pr as { reviewAttemptId?: string }).reviewAttemptId, attempt.id, "the claim stores the attempt ID that is archived later");
+  assert.equal(pr.status, "completed");
+  assert.equal(leaseHeldWhilePublishing, true, "an unfinished publication holds a delivery lease, which a drain counts");
+  assert.ok(deliveries.get(attempt.id)?.completedAt);
+  assert.equal(deliveries.get(attempt.id)?.leaseUntil, null);
+  assert.equal(deliveries.get(attempt.id)?.mainCommentId, 123);
+  assert.deepEqual([published.length, checkConclusions.length], [1, 1]);
+  const finalSummary = summaries.at(-1)!;
+  const finalCheck = checkConclusions[0];
+  const dispatched = usageCount;
+
+  deliveries.delete(attempt.id);
+  summaries.length = 0; checkConclusions.length = 0;
+  await processReview("pr");
+  assert.equal(summaries.length, 1);
+  assert.deepEqual(checkConclusions, [finalCheck]);
+  assert.ok(deliveries.get(attempt.id)?.completedAt);
+
+  // The worker stopped after archiving the result and before publishing it. A redelivered job finishes
+  // the publication from the archive: same comment, completed check, completed delivery, no second review.
+  const stopped = () => { deliveries.set(attempt.id, { attemptId: attempt.id, mainCommentId: null, completedAt: null, leaseToken: "stopped-worker", leaseUntil: new Date(Date.now() - 1) }); summaries.length = 0; checkConclusions.length = 0; pr.firstReviewCompletedAt = null; };
+  stopped();
+  await processReview("pr");
+  assert.equal(summaries.length, 1);
+  assert.ok(summaries[0].startsWith(`Review attempt: ${attempt.id}. Head: ${pr.headSha}.`));
+  assert.ok(summaries[0].includes("### Score") && !summaries[0].includes("OCTOPUS_FINDINGS_START"), "the comment is derived from the archived report");
+  assert.equal(summaries[0].includes("### Summary"), finalSummary.includes("### Summary"));
+  assert.deepEqual(checkConclusions, [finalCheck]);
+  assert.ok(deliveries.get(attempt.id)?.completedAt);
+  assert.ok(pr.firstReviewCompletedAt);
+  assert.deepEqual([archived.length, published.length, usageCount], [1, 1, dispatched], "nothing is generated, archived or reviewed again");
+  // The check is finished with the decision kept in the archive, not recomputed from saved findings.
+  const decision = (attempt.coverage as { nativeCheckDecision?: { fail: boolean; findings: number } }).nativeCheckDecision;
+  assert.ok(decision, "the attempt keeps its check decision");
+  (attempt.coverage as { nativeCheckDecision: object }).nativeCheckDecision = { ...decision, fail: !decision.fail };
+  stopped();
+  await processReview("pr");
+  assert.notDeepEqual(checkConclusions, [finalCheck]);
+  (attempt.coverage as { nativeCheckDecision: object }).nativeCheckDecision = decision;
+  stopped();
+  await processReview("pr");
+  assert.deepEqual(checkConclusions, [finalCheck]);
+  // A delivered review is left alone.
+  await processReview("pr");
+  assert.deepEqual([summaries.length, checkConclusions.length], [1, 1]);
+  // While the publisher's lease is live it may still be running: publish nothing and look again later.
+  stopped();
+  deliveries.get(attempt.id)!.leaseUntil = new Date(Date.now() + 60_000);
+  await processReview("pr");
+  assert.deepEqual([summaries.length, checkConclusions.length, delayedJobs.length], [0, 0, 1]);
+  assert.deepEqual(delayedJobs[0].slice(0, 2), ["process-review", { pullRequestId: "pr" }]);
+  // A large-PR result (no assessment) is delivered by its own job, never from here.
+  stopped();
+  const assessed = attempt.coverage;
+  attempt.coverage = { ...(assessed as object), assessment: undefined };
+  await processReview("pr");
+  assert.equal(summaries.length, 0);
+  attempt.coverage = assessed;
+  deliveries.get(attempt.id)!.completedAt = new Date();
+
+  // The worker stopped after posting the inline review and before archiving. The redelivered job reviews
+  // again and posts the review that its own check and report describe, so the two always agree.
+  priorBotReviews = [{ id: 456, user: "fixture[bot]", body: published[0].body }];
+  pr.status = "pending";
+  await processReview("pr");
+  assert.deepEqual([archived.length, published.length], [2, 2]);
+  assert.equal(pr.status, "completed");
+
+  // A claim that replaces a review which stopped without finishing records that attempt under its own ID.
+  assert.deepEqual(interruptedAttempts, []);
+  const stoppedAttempt = (pr as { reviewAttemptId?: string }).reviewAttemptId;
+  Object.assign(pr, { status: "reviewing", updatedAt: new Date(Date.now() - 600_000) });
+  await processReview("pr");
+  assert.deepEqual(interruptedAttempts, [stoppedAttempt]);
+  assert.notEqual((pr as { reviewAttemptId?: string }).reviewAttemptId, stoppedAttempt);
+  assert.equal(archived.at(-1)?.id, (pr as { reviewAttemptId?: string }).reviewAttemptId);
+  console.log("PASS interrupted publication resumes from the archive");
   process.exit(0);
 }
 if (firstCompletion) {

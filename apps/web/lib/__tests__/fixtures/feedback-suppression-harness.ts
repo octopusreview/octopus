@@ -103,7 +103,10 @@ mock.module("@/lib/review-summary-comment", () => ({ publishReviewSummary: async
   summaries.push(target.body);
   return 123;
 } }));
+// This fixture keeps no delivery table; publication runs without checkpoints.
+mock.module("@/lib/review-attempt-delivery", () => ({ deliverReviewAttempt: async (_id: string, deliver: (progress: unknown, checkpoint: () => Promise<void>) => Promise<void>) => deliver({}, async () => {}) }));
 mock.module("@/lib/review-attempt", () => ({
+  recordInterruptedAttempt: async () => { throw new Error("Unexpected interrupted attempt"); },
   recordFirstReviewCompletion: async () => { throw new Error("Fixture must stop before completion"); },
   withForgejoReviewPublication: async () => { throw new Error("Unexpected Forgejo publication"); },
   createReviewAttemptComment: async (_id: string, _head: string, _version: number, create: () => Promise<number>) => create(),
@@ -266,7 +269,9 @@ try {
       "hosted persistence and local output apply the same semantic suppression decision");
     assert.equal(published.at(-1)?.comments.length, retained, "hosted inline publication uses the suppressed union");
     assert.equal(parseFindingsFromJson(archived.at(-1)!.body)?.length, 1, "the archived raw model response preserves its findings markers");
-    assert.deepEqual(archived.at(-1)!.coverage, archived[0].coverage, "suppression does not change review coverage");
+    // The check decision follows the findings, so it is the one part that suppression may change.
+    const inputCoverage = ({ nativeCheckDecision: _decision, ...rest }: { nativeCheckDecision?: unknown }) => rest;
+    assert.deepEqual(inputCoverage(archived.at(-1)!.coverage), inputCoverage(archived[0].coverage), "suppression does not change review coverage");
     assert.equal(local.model, "fixture-model", "model routing is preserved");
     assert.equal(local.summary, "Summary", "local summary excludes the findings protocol block");
     assert.match(published.at(-1)!.body, new RegExp(`${retained} finding`), "summary count agrees with inline findings");

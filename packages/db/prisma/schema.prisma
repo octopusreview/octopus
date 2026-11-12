@@ -435,6 +435,8 @@ model PullRequest {
   headSha            String?
   reviewRequestVersion Int     @default(0)
   reviewCommentId    BigInt?
+  // Attempt that last claimed this PR; names the attempt to record if its worker stops. Null for earlier claims.
+  reviewAttemptId    String?
   reviewBody         String?
   reviewCoverage     Json?
   errorMessage       String?

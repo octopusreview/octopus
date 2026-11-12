@@ -58,6 +58,8 @@ export type ReviewCoverage = {
   files: FileCoverage[];
   limitations: string[];
   nativeCheckId?: string;
+  /** The merge-gating decision of this attempt, kept so an interrupted publication finishes its check with the same result. */
+  nativeCheckDecision?: { fail: boolean; findings: number };
   reviewRequestVersion?: number;
   comment?: { receivedChars: number; suppliedChars: number; truncated: boolean; verifiedAsChangedSource: false };
 };

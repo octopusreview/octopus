@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Retried GitHub reviews can reuse an unfinished check and resume an interrupted publication.
+- Interrupted attempts can be recorded in review history, including an unknown AI provider outcome.
+
+### Upgrade notes
+
+- Apply the `20261112150000_review_attempt_id` migration before starting instances with this change. It adds one nullable column to `pull_requests`.
+
 ## [1.4.10] - 2026-11-12
 
 ### Fixed

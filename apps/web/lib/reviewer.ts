@@ -67,7 +67,8 @@ import { createCoveredReviewRequest } from "@/lib/review-request";
 import { canRestrictReviewToFollowUp } from "@/lib/review-follow-up";
 import { prepareRecoveredReviewPresentation, prepareReviewPresentation, mapReviewPresentation, enforceReviewFindingsIntegrity, finalizeReviewPresentation } from "@/lib/review-presentation";
 import { executeCoveredReview, executeFindingsRecovery, recordNoModelAssessment, markReviewAssessmentIncomplete } from "@/lib/review-assessment";
-import { saveReviewAttempt, createReviewAttemptComment, updateCurrentReview, withForgejoReviewPublication, recordFirstReviewCompletion } from "@/lib/review-attempt";
+import { saveReviewAttempt, createReviewAttemptComment, updateCurrentReview, withForgejoReviewPublication, recordFirstReviewCompletion, recordInterruptedAttempt } from "@/lib/review-attempt";
+import { deliverReviewAttempt } from "@/lib/review-attempt-delivery";
 import { publishReviewSummary } from "@/lib/review-summary-comment";
 import type { ReviewComment } from "@/lib/github";
 import { eventBus } from "@/lib/events";
@@ -649,6 +650,45 @@ export async function processReview(pullRequestId: string, executionWindow?: Rev
   return processReviewInternal(pullRequestId, executionWindow, undefined, retryCount);
 }
 
+/**
+ * A worker can stop after archiving its result and before publishing it, which leaves a completed PR with a
+ * placeholder comment and an unfinished check. A redelivered job finishes that publication from the archive.
+ */
+async function resumeReviewPublication(pr: Prisma.PullRequestGetPayload<{ include: { repository: { include: { organization: true } } } }>): Promise<void> {
+  const repo = pr.repository;
+  const installationId = repo.installationId ?? repo.organization.githubInstallationId;
+  if (repo.provider !== "github" || !installationId || !pr.reviewAttemptId || !pr.reviewBody) return;
+  const attempt = await prisma.reviewAttempt.findUnique({ where: { id: pr.reviewAttemptId }, include: { delivery: true } });
+  const coverage = attempt?.coverage as ReviewCoverage | undefined;
+  // Large-PR results carry no assessment and are delivered by their own job.
+  if (!attempt || attempt.delivery?.completedAt || attempt.reviewBody !== pr.reviewBody || !coverage?.assessment) return;
+  if (attempt.delivery?.leaseUntil && attempt.delivery.leaseUntil > new Date()) {
+    // Its publisher may still be running; look again once that lease has passed.
+    await enqueueAfter("process-review", { pullRequestId: pr.id }, 330);
+    return;
+  }
+  const [owner, repoName] = repo.fullName.split("/");
+  const outcomeRecord = new ReviewOutcomeRecorder({ organizationId: repo.organization.id, repositoryId: repo.id, pullRequestId: pr.id, requestVersion: pr.reviewRequestVersion });
+  outcomeRecord.assessment(coverage, attempt.id);
+  await deliverReviewAttempt(attempt.id, async () => {
+    // The comment is derived from the archived report; the check uses the findings saved with it.
+    const body = `Review attempt: ${attempt.id}. Head: ${pr.headSha ?? "unknown"}.\n\n${stripDetailedFindings(attempt.reviewBody)}`;
+    if (await outcomeRecord.publish(() => publishReviewSummary({ pullRequestId: pr.id, headSha: pr.headSha, reviewRequestVersion: pr.reviewRequestVersion,
+      installationId, owner, repo: repoName, prNumber: pr.number, body, expectedReviewBody: attempt.reviewBody })) === null) return;
+    if (coverage.nativeCheckId) {
+      // Attempts archived before the decision was kept fall back to the saved findings.
+      const severities = coverage.nativeCheckDecision ? [] : (await prisma.reviewIssue.findMany({ where: { pullRequestId: pr.id }, select: { severity: true } })).map(issue => issue.severity);
+      const result = reviewCheckResult(coverage, coverage.nativeCheckDecision?.fail ?? shouldFailReviewCheck(
+        { hasCritical: severities.includes("critical"), hasHigh: severities.includes("high"), hasMedium: severities.includes("medium") },
+        repo.organization.checkFailureThreshold || "critical",
+      ), coverage.nativeCheckDecision?.findings ?? severities.length);
+      await ghUpdateCheckRun(installationId, owner, repoName, Number(coverage.nativeCheckId), result.conclusion, { title: result.title, summary: result.summary });
+    }
+    await recordFirstReviewCompletion(pr.id, pr.headSha, pr.reviewRequestVersion, attempt.reviewBody);
+    console.log(`[reviewer] Finished the interrupted publication of review attempt ${attempt.id}`);
+  });
+}
+
 async function processReviewInternal(pullRequestId: string, executionWindow?: ReviewExecutionWindow, expected?: { headSha: string | null; reviewRequestVersion: number }, retryCount = 0): Promise<void> {
   // Load PR with repo and org info
   const pr = await prisma.pullRequest.findUnique({
@@ -674,6 +714,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
   // reviews are recovered via a separate stale-claim path keyed on updatedAt.
   const serverId = process.env.OCTOPUS_SERVER_ID || "unknown";
   if (pr.status === "completed") {
+    await resumeReviewPublication(pr);
     console.log(`[reviewer] PR ${pullRequestId} already completed, skipping`);
     return;
   }
@@ -687,12 +728,16 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
   const queuedStale = new Date(Date.now() - computeStaleReclaimMs(queueConfig.largeReviewTimeoutSeconds));
   const outcomeKey = { organizationId: pr.repository.organization.id, repositoryId: pr.repository.id,
     pullRequestId: pr.id, requestVersion: pr.reviewRequestVersion };
+  // One ID per execution, stored with the claim so that it can still be recorded if this worker stops.
+  const attemptId = crypto.randomUUID();
   const claimed = await prisma.$transaction(async tx => {
     const claimed = await tx.pullRequest.updateMany({
       where: {
         id: pullRequestId,
         headSha: pr.headSha,
         reviewRequestVersion: pr.reviewRequestVersion,
+        status: pr.status,
+        updatedAt: pr.updatedAt,
         OR: [
           // Fresh-claim: never seen / explicitly retryable
           { status: "pending" },
@@ -704,9 +749,12 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           { status: "queued", updatedAt: { lt: queuedStale } },
         ],
       },
-      data: { status: "reviewing", updatedAt: new Date() },
+      data: { status: "reviewing", updatedAt: new Date(), reviewAttemptId: attemptId },
     });
-    if (claimed.count) await startReviewOutcome(outcomeKey, new Date(), tx);
+    if (claimed.count) {
+      if (pr.status === "reviewing" && pr.updatedAt < reviewingStale) await recordInterruptedAttempt(pr, tx);
+      await startReviewOutcome(outcomeKey, new Date(), tx);
+    }
     return claimed;
   });
   if (claimed.count === 0) {
@@ -717,7 +765,6 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
 
   const repo = pr.repository;
   const org = repo.organization;
-  const attemptId = crypto.randomUUID();
   let adaptiveProcessingWindow: ReviewExecutionWindow | undefined;
   let attemptCoverage: ReviewCoverage | undefined;
   let failureStage: FailureStage = "review";
@@ -909,6 +956,8 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         repoName,
         pr.headSha,
         "Octopus Review",
+        undefined,
+        `${pr.id}:${pr.reviewRequestVersion}`,
       );
       console.log(`[reviewer] Check run created — id: ${checkRunId}`);
 
@@ -2464,11 +2513,14 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       response.text, effectiveReviewBody, mainCommentBody, coverage, attemptId, { hasCritical, hasHigh, hasMedium },
     ));
     assertProcessingActive();
+    coverage.nativeCheckDecision = { fail: shouldFailReviewCheck({ hasCritical, hasHigh, hasMedium }, threshold), findings: effectiveFindingsCount };
     const promoted = await saveReviewAttempt(attemptId, pr.id, coverage, effectiveReviewBody, mergedIssues);
     attemptSaved = true;
 
     // The final scored comment becomes visible only after its immutable outcome is durable.
     assertProcessingActive();
+    // Publication is checkpointed, so a redelivered job can finish it if this worker stops (see resumeReviewPublication).
+    await deliverReviewAttempt(attemptId, async (_progress, checkpoint) => {
     outcomeArchiveId = attemptId;
     outcomeRecord.assessment(coverage, attemptId);
     recordReviewMain = true;
@@ -2494,6 +2546,8 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           (inheritedCount > 0 ? ` (${inheritedCount} inherited prior triage state)` : ""),
       );
     }
+
+    if (reviewCommentId) await checkpoint({ mainCommentId: reviewCommentId });
 
     // Merge-gating result, computed once and applied to whichever provider
     // supports a status check (GitHub check-run, GitLab commit status).
@@ -2522,6 +2576,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         });
       console.log(`[reviewer] ${repo.provider} commit status set — state: ${state} (threshold: ${threshold})`);
     }
+    });
 
     if (!promoted) return;
 

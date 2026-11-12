@@ -133,10 +133,13 @@ createFailure = false;
 await publishReviewSummary(recoveryTarget);
 assert.equal(current.reviewCommentId, BigInt(nextId - 1));
 assert.equal(calls.filter(call => call.method === "POST").length, posts);
+// A publisher that stopped after reserving, before any comment existed, no longer blocks the PR.
 current.reviewCommentId = -42n;
-await assert.rejects(publishReviewSummary(recoveryTarget), /creation is unresolved/);
-assert.equal(calls.filter(call => call.method === "POST").length, posts);
-current.reviewCommentId = BigInt(nextId - 1);
+const adopted = await publishReviewSummary(recoveryTarget);
+assert.equal(calls.filter(call => call.method === "POST").length, posts + 1);
+assert.equal(adopted, nextId - 1);
+assert.equal(remote.get("Octopus publication reference: pr:42"), adopted);
+assert.equal(current.reviewCommentId, BigInt(adopted!));
 current.status = "completed";
 current.reviewBody = "Archived failure";
 await publishReviewSummary({ ...recoveryTarget, body: "Archived failure", expectedReviewBody: "Archived failure" });
@@ -152,8 +155,13 @@ rejection = "Failed to create PR comment: 503";
 await assert.rejects(publishReviewSummary(recoveryTarget), /503/);
 const uncertainReservation = current.reviewCommentId;
 assert.ok(uncertainReservation! < 0n);
-await assert.rejects(publishReviewSummary(recoveryTarget), /creation is unresolved/);
-assert.equal(current.reviewCommentId, uncertainReservation);
+// The uncertain creation left no comment: the retry posts exactly once under the same reservation.
+rejection = "";
+const postsBeforeRetry = calls.filter(call => call.method === "POST").length;
+assert.ok((await publishReviewSummary(recoveryTarget))! > 0);
+assert.equal(calls.filter(call => call.method === "POST").length, postsBeforeRetry + 1);
+assert.equal(remote.get(`Octopus publication reference: pr:${-uncertainReservation!}`), Number(current.reviewCommentId));
+assert.ok(current.reviewCommentId! > 0n);
 // A fresh PR can create normally after confirmed rejections.
 current.reviewCommentId = null;
 rejection = "";

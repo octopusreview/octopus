@@ -84,7 +84,8 @@ export function providerRouteUnchanged(failure: AiProviderFailure, orgId: string
   return route?.orgId === orgId ? route.unchanged() : Promise.resolve(false);
 }
 
-const TRANSIENT_CODES = new Set(["STREAM_TERMINATED", "ECONNRESET", "UND_ERR_SOCKET", "UND_ERR_BODY_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "ETIMEDOUT"]);
+// UND_ERR_HEADERS_TIMEOUT is not here: the provider sent nothing for five minutes, and the same request would wait as long again.
+const TRANSIENT_CODES = new Set(["STREAM_TERMINATED", "ECONNRESET", "UND_ERR_SOCKET", "UND_ERR_BODY_TIMEOUT", "ETIMEDOUT"]);
 export type FailureClass = { code: string; ownership: KeyOwner; retryability: "transient" | "permanent" | "unknown" };
 
 /** Classify by cause and credential route, not HTTP status alone. Only "transient" may ever be retried; unknown stays unknown. */

@@ -61,12 +61,17 @@ export const alibabaProvider: Provider = {
       // Vendor extension (not in the OpenAI SDK types); serialized as-is.
       // Omitted for models not known to accept it.
       ...(enableThinking === undefined ? {} : { enable_thinking: enableThinking }),
+      // Token usage arrives in the last chunk of a stream only when asked for.
+      stream_options: { include_usage: true },
     };
 
-    const response = await client.chat.completions.create(
-      observeAiRequest(params, "alibaba", body) as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
-      sdkRequestOptions(params),
-    );
+    // Streamed: a non-streamed request sends its response headers only once the whole answer is
+    // ready, and the runtime stops waiting for headers after five minutes. Qwen with thinking
+    // can take longer than that, so such a review could never finish.
+    const response = await client.chat.completions
+      .stream(observeAiRequest(params, "alibaba", body) as Parameters<OpenAI["chat"]["completions"]["stream"]>[0], sdkRequestOptions(params))
+      .finalChatCompletion();
+    if (!response.usage) console.warn("[alibaba] Streamed completion carried no token usage");
 
     const choice = response.choices[0];
     const text = choice?.message?.content ?? "";

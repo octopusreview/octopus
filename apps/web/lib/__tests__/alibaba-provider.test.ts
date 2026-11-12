@@ -10,9 +10,10 @@ mock.module("openai", () => {
   class StubOpenAI {
     chat = {
       completions: {
-        create: (body: Record<string, unknown>) => {
+        // The adapter streams and asks the SDK for the assembled completion.
+        stream: (body: Record<string, unknown>) => {
           captured = body;
-          return Promise.resolve(canned);
+          return { finalChatCompletion: () => Promise.resolve(canned) };
         },
       },
     };

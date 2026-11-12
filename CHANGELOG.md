@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Reviews on Qwen models through Alibaba Cloud no longer fail when the model takes longer than five minutes to answer.
+- A review whose AI provider sends nothing for five minutes now fails once with its failure code, instead of waiting a second five minutes on a retry.
+
 ## [1.4.12] - 2026-11-12
 
 ### Fixed

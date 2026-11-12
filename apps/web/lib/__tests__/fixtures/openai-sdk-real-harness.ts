@@ -22,7 +22,7 @@ process.env.OCTOPUS_EMBED_MODEL = "text-embedding-3-large";
 process.env.OCTOPUS_EMBED_DIM = "3";
 for (const key of ["OPENAI_BASE_URL", "DASHSCOPE_BASE_URL", "XAI_API_KEY"]) delete process.env[key];
 
-type Body = { input?: string[]; encoding_format?: string; dimensions?: number };
+type Body = { input?: string[]; encoding_format?: string; dimensions?: number; stream?: boolean; stream_options?: unknown };
 type Hit = { path: string; authorization: string | null; body: Body };
 let hits: Hit[] = [];
 let urls: string[] = [];
@@ -51,7 +51,25 @@ const { createEmbeddings } = await import("@/lib/embeddings");
 type Provider = ConstructorParameters<typeof AiProviderFailure>[1];
 
 const params = { model: "synthetic-model", maxTokens: 16, system: "system", messages: [{ role: "user" as const, content: "hello" }] };
-const success = (hit: Hit) => hit.path.endsWith("/responses")
+// A streamed answer: the first chunk leaves at once and the rest later, so the response
+// headers reach the client long before the answer is complete.
+const chunk = (fields: object) => ({ id: "synthetic", object: "chat.completion.chunk", created: 0, model: params.model, ...fields });
+const delta = (content: object, finish_reason: string | null = null) => chunk({ choices: [{ index: 0, delta: content, finish_reason }] });
+let streamTimes: { headers: number; done: number } | undefined;
+const streamed = () => {
+  const [first, ...rest] = [delta({ role: "assistant", content: "o" }), delta({ content: "k" }), delta({}, "stop"),
+    chunk({ choices: [], usage: { prompt_tokens: 7, completion_tokens: 3, prompt_tokens_details: { cached_tokens: 5 } } })];
+  const encode = (event: unknown) => new TextEncoder().encode(`data: ${typeof event === "string" ? event : JSON.stringify(event)}\n\n`);
+  const times = streamTimes = { headers: performance.now(), done: 0 };
+  return new Response(new ReadableStream({ async start(controller) {
+    controller.enqueue(encode(first));
+    await Bun.sleep(200);
+    for (const event of [...rest, "[DONE]"]) controller.enqueue(encode(event));
+    times.done = performance.now();
+    controller.close();
+  } }), { headers: { "content-type": "text/event-stream" } });
+};
+const success = (hit: Hit) => hit.body.stream ? streamed() : hit.path.endsWith("/responses")
   ? Response.json({ object: "response", status: "completed", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "ok", annotations: [] }] }],
       usage: { input_tokens: 7, output_tokens: 3, input_tokens_details: { cached_tokens: 5 } } })
   : Response.json({ choices: [{ index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop" }],
@@ -84,6 +102,12 @@ try {
     assert.equal(hits[0].authorization, `Bearer ${key}`);
     assert.equal(result.text, "ok");
     assert.deepEqual(result.usage, { inputTokens: 7, outputTokens: 3, cacheReadTokens: 5, cacheWriteTokens: 0 });
+    if (provider === "alibaba") {
+      // Qwen can think for longer than the runtime waits for response headers, so this adapter streams.
+      assert.equal(hits[0].body.stream, true);
+      assert.deepEqual(hits[0].body.stream_options, { include_usage: true });
+      assert.ok(streamTimes && streamTimes.done - streamTimes.headers >= 150, "the answer finished well after the headers were sent");
+    }
     for (const [status, attempts] of [[401, 1], [403, 1], [429, 3], [500, 3]]) {
       reset(failure(status));
       let error: unknown;

@@ -7,6 +7,7 @@ import { truncateDiff, MAX_FETCH_DIFF_CHARS } from "@/lib/diff-truncate";
 import { decryptString, encryptString, decryptStringMaybeLegacy } from "@/lib/crypto";
 import { withWebhookSetupLock } from "@/lib/integration-setup-lock";
 import { WebhookSetupError } from "@/lib/integration-setup";
+import { safeErrorDetails } from "@/lib/provider-failure";
 
 // ── Token Management ──
 
@@ -506,7 +507,7 @@ export async function getRepositoryTree(
         return res;
       } catch (err) {
         if (attempt === MAX_RETRIES - 1) {
-          console.warn(`[gitlab] Failed after ${MAX_RETRIES} attempts: ${url}`, err);
+          console.warn(`[gitlab] Failed to fetch tree after ${MAX_RETRIES} attempts:`, safeErrorDetails(err));
           return null;
         }
         await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
@@ -524,7 +525,7 @@ export async function getRepositoryTree(
   while (url) {
     const res = await fetchWithRetry(url);
     if (!res || !res.ok) {
-      if (res) console.warn(`[gitlab] Failed to fetch tree ${url}: ${res.status}`);
+      if (res) console.warn(`[gitlab] Failed to fetch tree: ${res.status}`);
       break;
     }
 

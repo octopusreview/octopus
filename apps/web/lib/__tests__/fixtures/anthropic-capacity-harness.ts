@@ -142,7 +142,7 @@ async function refusal(reason: CapacityRefusalReason, edit?: (params: AiCreatePa
   const incidentCount = sentryEvents.length;
   reportBackgroundFailure(caught, { stage: "generation", cancelled: isReviewCancelled(params.completeReviewAdmission?.window) });
   const actionable = ["metadata-unavailable", "count-unavailable", "invalid-count", "pricing-unavailable", "final-check-failed", "execution-window"].includes(reason);
-  const expected = controller.signal.aborted || (!!org.anthropicApiKey && [401, 402, 403, 429].includes(providerStatus ?? 0));
+  const expected = controller.signal.aborted;
   assert.equal(sentryEvents.length - incidentCount, actionable && !expected ? 1 : 0, reason);
   if (actionable && !expected) {
     assert.equal(sentryEvents.at(-1)?.tags?.failure_code, `capacity_${reason}`);
@@ -207,7 +207,7 @@ assert.equal(receipt.effort, "max"); assert.equal(receipt.tokenMargin, 30000);
 assert.equal(receipt.pricing?.input, 10); assert.equal(receipt.pricing?.output, 50);
 assert.equal(receipt.pricing?.cacheWriteMultiplier, 2);
 assert.equal(receipt.estimatedPrimaryUsd, 11.76);
-assert.equal(receipt.count?.requestId, "req_synthetic_count");
+assert.doesNotMatch(JSON.stringify({ receipt, coverage: p.coverage }), /req_synthetic_count|requestId/, "the provider request ID is not retained");
 assert.ok(Object.isFrozen(generationBody)); assert.ok(Object.isFrozen(generationBody!.messages));
 assert.equal(reviewCheckResult(p.coverage, false, 0).conclusion, "success");
 if (process.env.REVIEW_TEST_EVIDENCE_DIR) {

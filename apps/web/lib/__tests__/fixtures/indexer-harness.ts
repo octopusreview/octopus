@@ -1,4 +1,5 @@
 import { mock } from "bun:test";
+import { rateAdmission } from "./index-github-rate-mocks";
 import assert from "node:assert/strict";
 
 mock.module("server-only", () => ({}));
@@ -58,12 +59,13 @@ const { indexRepository } = await import("@/lib/indexer");
 const emptySha = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 const responses = new Map<string, [number, unknown]>();
 const requests: string[] = [];
+let responseHeaders: HeadersInit = {};
 globalThis.fetch = mock(async (input: string | URL | Request) => {
   const url = String(input);
   requests.push(url);
   const suffix = url.replace("https://api.github.com/repos/acme/new", "");
   const [status, body] = responses.get(suffix) ?? [500, { message: `Unexpected URL: ${url}` }];
-  return Response.json(body, { status });
+  return Response.json(body, { status, headers: responseHeaders });
 }) as typeof fetch;
 
 async function run(branch = "main") {
@@ -71,6 +73,7 @@ async function run(branch = "main") {
 }
 function reset() {
   responses.clear(); requests.length = 0; writes = 0; embedded.length = 0;
+  responseHeaders = {}; rateAdmission.kind = "open";
   details = { default_branch: "main" };
   responses.set("/contributors?per_page=30", [200, []]);
 }
@@ -113,16 +116,41 @@ responses.set("/git/trees/main?recursive=1", [404, {}]);
 await assert.rejects(run, /does not have access/);
 assert.equal(writes, 0);
 
-for (const status of [403, 429, 500, 409]) {
+for (const status of [403, 429, 451, 500, 409]) {
   reset(); responses.set("/git/trees/main?recursive=1", [status, { message: "Failure" }]);
-  await assert.rejects(run, new RegExp(`Failed to fetch tree: ${status}`));
+  await assert.rejects(run, (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, status === 429 ? /GitHub indexing is temporarily rate limited/ : new RegExp(`Failed to fetch tree: ${status}`));
+    assert.equal((error as Error & { status?: number }).status, status);
+    return true;
+  });
   assert.equal(writes, 0);
 }
+
+for (const variant of ["probe", "remaining", "corrected"] as const) {
+  reset();
+  if (variant === "probe") rateAdmission.kind = "probe";
+  if (variant === "remaining") responseHeaders = { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 3600), date: new Date().toUTCString() };
+  if (variant === "corrected") {
+    details = { default_branch: "other" };
+    responses.set("/git/trees/main?recursive=1", [404, {}]);
+    responses.set("/git/trees/other?recursive=1", [451, {}]);
+  } else responses.set("/git/trees/main?recursive=1", [451, {}]);
+  const logs: string[] = [];
+  await assert.rejects(() => indexRepository({ repoId: "repo-1", indexAttemptId: "attempt-1" }, "acme/new", "main", 123, message => logs.push(message)),
+    (error: unknown) => (error as { providerBlock?: boolean }).providerBlock === true);
+  assert.ok(logs.includes("GitHub has blocked access to this repository, so it cannot be indexed."));
+}
+
+reset(); rateAdmission.kind = "probe";
+const { githubIndexFetch, GitHubIndexDeferredError } = await import("@/lib/github-index-fetch");
+responses.set("/commits/main", [451, {}]);
+await assert.rejects(() => githubIndexFetch("scope", "https://api.github.com/repos/acme/new/commits/main"), GitHubIndexDeferredError);
 
 reset();
 responses.set("/git/trees/main?recursive=1", [404, {}]);
 responses.set("/commits/main", [429, {}]);
-await assert.rejects(run, /Failed to verify branch.*429/);
+await assert.rejects(run, /GitHub indexing is temporarily rate limited/);
 
 // Keep branch correction and branch names containing slashes working.
 reset(); details = { default_branch: "release/main" };
@@ -210,6 +238,17 @@ mock.module("@octopus/db", () => ({ prisma: { repository: {
 } } }));
 const { runRepositoryIndex, isIndexingCancelled } = await import("../../repository-index-completion");
 const { reportBackgroundFailure } = await import("../../background-failure");
+reset();
+suppliedToken = undefined;
+responses.set("/git/trees/main?recursive=1", [451, { message: "private upstream details" }]);
+try {
+  await run();
+  assert.fail("Expected the upstream refusal to fail indexing");
+} catch (error) {
+  reportBackgroundFailure(error, { stage: "indexing", retry: { retryCount: 2, retryLimit: 2 } });
+}
+assert.equal((sentryEvents.at(-1) as { tags: { failure_code: string } }).tags.failure_code, "http_451");
+assert.ok(!JSON.stringify(sentryEvents.at(-1)).includes("private upstream details"));
 for (const boundary of ["before-embedding", "after-embedding"]) {
   for (const timeout of [false, true]) {
     reset(); suppliedToken = undefined; indexRow.indexStatus = "indexing";
@@ -226,8 +265,7 @@ for (const boundary of ["before-embedding", "after-embedding"]) {
         { repoId: "repo-1", indexAttemptId: "attempt-1" }, "acme/new", "main", 123, undefined, controller.signal,
       ).catch(error => { rawError = error; throw error; }), controller.signal);
     } catch (error) { failure = error; }
-    assert.ok(rawError instanceof Error);
-    assert.equal(rawError.message, "Indexing cancelled");
+    assert.equal(rawError, controller.signal.reason);
     assert.equal(failure, controller.signal.reason);
     assert.equal(indexRow.indexStatus, timeout ? "failed" : "pending");
     assert.equal(writes, 0);

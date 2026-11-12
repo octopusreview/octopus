@@ -96,8 +96,11 @@ state so a delayed event cannot overwrite a replacement's status.
 
 For local uploads, the server validates ordered batches, unique paths and the
 declared file count. The first response returns `uploadId`; send it unchanged
-with every later batch to bind the upload to the same attempt. A single batch
-also qualifies if it produces a complete, usable index. Older clients remain
+with every later batch to bind the upload to the same attempt. Each batch must
+also match the repository identity recorded when the upload started. If that
+identity changes, restart the upload after refreshing the connection. Uploads
+started before identity binding was introduced must also be restarted. A single
+batch also qualifies if it produces a complete, usable index. Older clients remain
 supported without `uploadId`, but their unverified multi-batch completion never
 establishes a first-index date; any previously recorded date is preserved.
 The CLI implementation is maintained separately.
@@ -109,7 +112,7 @@ the new column into an existing PostHog source requires the operator step below.
 
 ## Restricted source dataset
 
-`scripts/analytics/access.sql` installs four security-barrier views and a
+`scripts/analytics/access.sql` installs six security-barrier views and a
 dedicated `octopus_analytics_reader` role in one transaction. The views export
 opaque namespaced identifiers, bounded states, timestamps and validated cash
 fields. They exclude credentials, names, emails, IPs, PR titles/URLs, source
@@ -120,6 +123,8 @@ content, full audit metadata and payment-provider objects.
 | `octopus_analytics.organizations_v1` | `organization_id` | Organisation cohort and current eligibility flags. |
 | `octopus_analytics.repositories_v1` | `repository_id` | Provider, repository setup, latest index state and `first_index_at`. |
 | `octopus_analytics.review_milestones_v1` | `pull_request_id` | First recorded PR/publication; strict activation explicitly unknown. |
+| `octopus_analytics.organization_provenance_v1` | `organization_id` | Creation provenance and creator arrival labels. |
+| `octopus_analytics.organization_signup_method_v1` | `organization_id` | Creator signup method, evidence and independent timing inference. |
 | `octopus_analytics.cash_events_v1` | `event_id` | Deduplicated observed purchases/refunds with integer minor-unit amount and currency. |
 
 `first_index_at` is NULL when no first successful index is on record. That
@@ -136,15 +141,116 @@ rather than selected arbitrarily. Reconcile excluded counts during ingestion.
 
 The installer refuses an existing role/schema and unsafe inherited PUBLIC
 privileges; it never changes other principals' grants. It grants SELECT only on
-these four views, no future-object privileges. The role starts **NOLOGIN**, with
+these six views, no future-object privileges. The role starts **NOLOGIN**, with
 no password, a two-connection limit and bounded query/idle timeouts. Read-only
 defaults supplement the actual privilege restrictions; they are not the access
 control themselves. PostgreSQL system metadata and permitted temporary objects
 are outside the business-table allowlist.
 
+### Organisation creation provenance
+
+`organization_provenance_v1` has one row per organisation, including deleted,
+banned and all organisation types, with these four columns in order:
+
+| Column | Labels / format |
+| --- | --- |
+| `organization_id` | `octopus:org:` followed by the organisation ID. |
+| `creation_source` | `auto_default`, `user_created`, `community_bot`, `demo_seed`, `not_recorded`, `other`. |
+| `creator_first_membership` | `yes`, `no`, `not_recorded`. |
+| `creator_arrival_source` | `signup`, `invite`, `system`, `not_recorded`, `other`, `no_creator`. |
+
+NULL source values map to `not_recorded`; unexpected source text maps to `other`.
+`creator_first_membership = yes` means the creator had no membership row of any
+kind, including removed memberships, when the organisation was created. It does
+not mean “first organisation created.” `invite` means a pending, unexpired
+invitation existed at account creation, not that it was accepted.
+
+The creator is the user of the only owner membership with exactly the
+organisation's creation timestamp; removed owner memberships count. Only NULL,
+`auto_default` and `user_created` creation sources qualify. Zero or several matches,
+a missing user, or any other creation source gives `creator_arrival_source = no_creator`. Unexpected non-NULL creation sources therefore give `creation_source = other` and `creator_arrival_source = no_creator`.
+
+Rows created before #938's release have `creation_source` and
+`creator_first_membership = not_recorded`; `creator_arrival_source` is
+`not_recorded` when a creator is found and `no_creator` when none is. After the
+release, `creator_arrival_source` can still be `not_recorded` when the creator's
+user account was created before #938.
+
+### Organisation signup method
+
+`organization_signup_method_v1` has exactly four text columns and one row per
+organisation, including deleted organisations:
+
+| Column | Values |
+| --- | --- |
+| `organization_id` | `octopus:org:` followed by the organisation ID. |
+| `signup_method` | `github`, `google`, `microsoft`, `magic_link`, `password`, `magic_link_or_unknown`, `unknown`. |
+| `signup_method_evidence` | `recorded`, `inferred`, `no_login_method`, `no_creator`. |
+| `signup_method_inferred` | `github`, `google`, `microsoft`, `password`, `magic_link_or_unknown`, `unknown`. |
+
+The creator is the unique owner membership whose `createdAt` equals the
+organisation's `createdAt`, including soft-deleted memberships. Only organisations
+with NULL, `auto_default` or `user_created` creation source qualify. The two
+ordinary creation paths insert the organisation and its owner membership in a
+single nested create, which gives both rows the same `createdAt`; the
+creation-provenance test asserts this for both paths. Inserting them as separate
+statements, even inside one transaction, would not.
+No matching owner, multiple matching owners, an excluded creation source or a
+missing user gives `unknown` / `no_creator` / `unknown`.
+
+For a creator, take the earliest account timestamp across **all** their accounts,
+not just accounts inside a window. A single provider at that earliest timestamp,
+created from 0 through 60 seconds after the user, maps `github`, `google`,
+`microsoft` directly and `credential` to `password`. Conflicting providers tied
+at an eligible earliest timestamp give `signup_method_inferred = unknown`.
+Other cases give `magic_link_or_unknown`, including no account, an unsupported
+provider, or an earliest account outside the window. Later accounts do not
+replace the earliest one. The 60-second window is a heuristic to be validated
+against recorded methods, not a guaranteed signup boundary.
+
+An allowlisted `users.signupMethod` always wins for `signup_method` and gives
+`recorded` evidence. Otherwise a timing-derived provider gives `inferred` evidence;
+all remaining creator cases give `magic_link_or_unknown` and `no_login_method`.
+`signup_method_inferred` is calculated independently even when a method is
+recorded, so the two columns can be compared without exporting user identifiers.
+**`magic_link_or_unknown` is not the same as magic link**: it mixes magic-link
+signups with missing or insufficient login evidence. The evidence column describes
+method evidence, not certainty of the reconstructed creator.
+
+Creator reconstruction can fail after merges move memberships or demote source
+owners. Login methods unlinked or re-linked after signup can make inference wrong
+or unknown. Raw providers, user IDs, names, emails and timestamps are never
+projected. The organisation ID remains a linkable identifier; this is a restricted
+dataset, not an anonymous export.
+
+The membership compound unique index starts with `organizationId` and supports
+the creator join; there is no index on account `userId`/`createdAt` in the current
+schema. The view aggregates earliest accounts in bulk, avoiding an account scan
+per organisation. This change adds no index or migration. Check the synthetic
+plan and reassess indexing if the account table grows substantially.
+
 ## Operator setup
 
-For an existing installation, run
+For the provenance view on an existing installation, run
+`scripts/analytics/update-organization-provenance.sql` once through the existing
+operator connection, then add `octopus_analytics.organization_provenance_v1` to
+the PostHog source. The script checks the schema, reader role, `organizations_v1`
+and all three provenance source columns before making changes. It is safe to
+repeat. Fresh installs receive the same definition and grant from `access.sql`.
+
+For the signup-method view on an existing installation, run
+`scripts/analytics/update-organization-signup-method.sql` once through the existing
+operator connection, then add `octopus_analytics.organization_signup_method_v1`
+as a new table in the PostHog source. The update refuses a missing analytics
+schema, reader role or `organizations_v1` view. It is safe to repeat and preserves
+the view identity, owner, reader grant and security barrier. Fresh installs get
+the same definition and grant from `access.sql`.
+
+The provenance (#1017) and signup-method (#948) updates need the same operator
+step as #939; if analytics view changes move into regular migrations, all three
+can be converted together.
+
+For the first-index column on an existing installation, run
 `scripts/analytics/update-repositories-first-index.sql` once through the existing
 operator connection, then refresh the PostHog source schema so `first_index_at`
 is imported. The script preserves the existing view grants and refuses a missing
@@ -156,17 +262,21 @@ schema or view. It is safe to repeat. Fresh installations use `access.sql` below
    Postgres restart, logical replication or application release is needed by
    this SQL itself.
 2. Run `scripts/analytics/check.sh` against the disposable local PostgreSQL
-   fixture. It requires the pinned PostgreSQL 17 image to be cached locally and
-   never pulls an image. It checks privileges, cash validation and synthetic
-   funnel aggregates at scale. Review the SQL through the repository's normal PR gates.
+   fixture. By default it uses the cached pinned PostgreSQL 17 image and never pulls.
+   Without Docker, use `ANALYTICS_TEST_BACKEND=local bash scripts/analytics/check.sh`
+   with PostgreSQL 17 or newer tools on PATH. This creates and removes a disposable
+   socket-only cluster; it never reuses a server or accepts a connection URL.
+   It checks both provenance and signup-method feature suites, including their
+   separate scale plans, plus privileges, cash validation and synthetic funnel
+   aggregates at scale. Review the SQL through the repository's normal PR gates.
 3. Apply the reviewed `access.sql` using the application's existing DB operator
    connection. Record its exact checksum and aggregate acceptance privately.
-4. Verify the four projections and deny checks using the restricted role. Then
+4. Verify the six projections and deny checks using the restricted role. Then
    generate a unique credential through the existing secret channel and enable
    LOGIN only for the approved connection. Never put a password in shell
    arguments, a committed file, an issue or a handover message. Do not share an
    operator credential with the analytics lead.
-5. Configure only this schema and these four views in the existing PostHog
+5. Configure only this schema and these six views in the existing PostHog
    project. Verify that the actual connector discovers views and can read them
    with these permissions. If it cannot, keep the source unconfigured and choose
    a separately reviewed projection/export path; do not broaden table grants.
@@ -179,7 +289,7 @@ schema or view. It is safe to repeat. Fresh installations use `access.sql` below
 
 Revoke login first with `ALTER ROLE octopus_analytics_reader NOLOGIN`, then
 terminate only that role's sessions when immediate revocation is required.
-Pause/remove its PostHog source before retiring the views. Remove only the four
+Pause/remove its PostHog source before retiring the views. Remove only the six
 named views, schema and principal after checking dependencies; do not use CASCADE.
 Rotation changes the dedicated credential and source config, never app DB secrets.
 

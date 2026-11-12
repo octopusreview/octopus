@@ -1,4 +1,5 @@
 import { mock } from "bun:test";
+import "./index-github-rate-mocks";
 import assert from "node:assert/strict";
 import { randomUUID, createHmac } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -216,7 +217,7 @@ try {
     mock.module("@/lib/github", () => ({ getRepositoryTree: async () => [], getPullRequestDiff: async () => "" }));
     mock.module("@/lib/events/bus", () => ({ eventBus: { emit: () => {} } }));
     mock.module("@/lib/queue", () => ({ enqueue: async () => "fixture" }));
-    mock.module("@/lib/community-pr-persist", () => ({ persistCommunityReviewToPR: async () => {} }));
+    mock.module("@/lib/community-pr-persist", () => ({ CommunityRepositoryChangedError: class extends Error {}, persistCommunityReviewToPR: async () => {} }));
     mock.module("@/lib/crypto", () => ({ encryptString: (text: string) => text, decryptString: (text: string) => text }));
     mock.module("@/lib/oss-bot", () => ({ getBotToken: () => "fixture-token" }));
     mock.module("@/lib/oss-review-post", () => ({ postOssReview: async () => ({ posted: 0, skipped: 0 }) }));
@@ -307,25 +308,25 @@ try {
     const id = prepared.repoId;
     const files = [{ path: "a.ts", content: "export const a = 1;" }, { path: "b.ts", content: "export const b = 2;" }];
     const firstFiles = single ? files : files.slice(0, 1);
-    const first = await claimLocalIndexBatch(id, 0, single ? 1 : 2, firstFiles, prepared.uploadId);
+    const first = await claimLocalIndexBatch(id, org.id, 0, single ? 1 : 2, firstFiles, prepared.uploadId);
     const delta = await indexLocalBatch(id, `local/${fixture}`, org.id, firstFiles, first);
     const progress = { indexedFiles: delta.indexedInBatch, totalChunks: delta.chunksInBatch, totalVectors: delta.chunksInBatch };
     await recordLocalIndexProgress(id, Date.now(), progress, single, first);
     if (scenario === "local-gap") {
-      await assert.rejects(() => claimLocalIndexBatch(id, 2, 3, files.slice(1), first.upload.id), /out of order/);
+      await assert.rejects(() => claimLocalIndexBatch(id, org.id, 2, 3, files.slice(1), first.upload.id), /out of order/);
     } else if (scenario === "local-duplicate") {
-      await assert.rejects(() => claimLocalIndexBatch(id, 1, 2, firstFiles, first.upload.id), /duplicate/);
+      await assert.rejects(() => claimLocalIndexBatch(id, org.id, 1, 2, firstFiles, first.upload.id), /duplicate/);
     } else if (scenario === "local-count-under" || scenario === "local-count-over") {
       const finalFiles = scenario === "local-count-under" ? [] : [...files.slice(1), { path: "c.ts", content: "export const c = 3;" }];
-      await assert.rejects(() => claimLocalIndexBatch(id, 1, 2, finalFiles, first.upload.id), /declared file count/);
+      await assert.rejects(() => claimLocalIndexBatch(id, org.id, 1, 2, finalFiles, first.upload.id), /declared file count/);
     } else if (scenario === "local-wrong-session") {
-      await assert.rejects(() => claimLocalIndexBatch(id, 1, 2, files.slice(1), "old-upload"), /no longer current/);
+      await assert.rejects(() => claimLocalIndexBatch(id, org.id, 1, 2, files.slice(1), "old-upload"), /no longer current/);
     } else if (!single && scenario !== "local-nonfinal") {
-      const final = await claimLocalIndexBatch(id, 1, 2, files.slice(1), scenario === "local-legacy" ? undefined : first.upload.id);
+      const final = await claimLocalIndexBatch(id, org.id, 1, 2, files.slice(1), scenario === "local-legacy" ? undefined : first.upload.id);
       if (scenario === "local-cancel") {
         await prisma.repository.update({ where: { id }, data: { indexStatus: "pending", indexAttemptId: null } });
         await assert.rejects(() => recordLocalIndexProgress(id, null, progress, true, final), /cancelled or replaced/);
-        await markLocalIndexFailed(id, final.attemptId);
+        await markLocalIndexFailed(id, final);
       } else await recordLocalIndexProgress(id, null, progress, true, final);
     }
     const result = await prisma.repository.findUniqueOrThrow({ where: { id } });

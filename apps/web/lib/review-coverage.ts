@@ -3,6 +3,7 @@ import type { Ignore } from "ignore";
 import { buildGeneratedMatcher } from "@/lib/generated-files";
 import { validateBinaryAssetEvidence, type BinaryAssetEvidence } from "@/lib/review-binary-assets";
 import { validateEmptyFileEvidence, type EmptyFileEvidence } from "@/lib/github-empty-files";
+import { isSafeFailureCode } from "@/lib/provider-failure";
 
 const defaultGenerated = buildGeneratedMatcher();
 
@@ -57,6 +58,8 @@ export type ReviewCoverage = {
   files: FileCoverage[];
   limitations: string[];
   nativeCheckId?: string;
+  /** The merge-gating decision of this attempt, kept so an interrupted publication finishes its check with the same result. */
+  nativeCheckDecision?: { fail: boolean; findings: number };
   reviewRequestVersion?: number;
   comment?: { receivedChars: number; suppliedChars: number; truncated: boolean; verifiedAsChangedSource: false };
 };
@@ -216,20 +219,31 @@ export function reviewAssessmentComplete(coverage: ReviewCoverage): boolean {
 }
 
 export function reviewCheckResult(coverage: ReviewCoverage, blocking: boolean, findings: number): { conclusion: "failure" | "success"; title: string; summary: string } {
-  if (!reviewAssessmentComplete(coverage)) return { conclusion: "failure", title: coverage.complete ? "Input complete — assessment invalid or unavailable" : "Review incomplete — input coverage missing", summary: coverageSummary(coverage) };
+  if (!reviewAssessmentComplete(coverage)) return { conclusion: "failure", title: coverage.complete ? generationFailed(coverage) ? "Review generation failed" : "Input complete — assessment invalid or unavailable" : "Review incomplete — input coverage missing", summary: coverageSummary(coverage) };
   if (coverage.assessment?.state === "not-required") return { conclusion: "success", title: "No eligible changes under repository policy", summary: coverage.assessment.reason };
   return { conclusion: blocking ? "failure" : "success", title: `${coverageCounts(coverage).total} changed files, ${findings} findings`, summary: blocking ? "Issues above the configured severity threshold require attention." : findings > 0 ? "Review scope complete. No issues above the configured threshold." : "Review scope complete. No issues found in the reviewed files." };
 }
 
 export function coverageSummary(coverage: ReviewCoverage): string {
   const c = coverageCounts(coverage);
-  return `${reviewAssessmentComplete(coverage) ? "Review scope complete" : coverage.complete ? "Input complete; assessment invalid or unavailable" : "Review incomplete"}: ${c.supplied}/${coverage.expectedFiles === null && !coverage.inventoryComplete ? "unknown" : c.total} files fully supplied, ${c.partial} partial, ${c.omitted} omitted, ${c.unavailable} unavailable, ${c.excluded} excluded${coverage.inventoryComplete ? "" : "; changed-file inventory incomplete"}.`;
+  return `${reviewAssessmentComplete(coverage) ? "Review scope complete" : coverage.complete ? generationFailed(coverage) ? "Input complete; review generation failed" : "Input complete; assessment invalid or unavailable" : "Review incomplete"}: ${c.supplied}/${coverage.expectedFiles === null && !coverage.inventoryComplete ? "unknown" : c.total} files fully supplied, ${c.partial} partial, ${c.omitted} omitted, ${c.unavailable} unavailable, ${c.excluded} excluded${coverage.inventoryComplete ? "" : "; changed-file inventory incomplete"}.`;
+}
+
+function generationFailed(coverage: ReviewCoverage): boolean {
+  return coverage.assessment?.state === "incomplete" && coverage.assessment.failure?.stage === "generation";
+}
+
+/** Shown beside the attempt ID only for a recorded generation failure, and only from the fixed allowlist. */
+export function generationFailureCode(coverage: ReviewCoverage): string | null {
+  const code = generationFailed(coverage) ? coverage.assessment?.failure?.code : null;
+  return isSafeFailureCode(code) ? code : null;
 }
 
 function safeCell(value: string): string { return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("|", "&#124;").replaceAll("`", "&#96;").replace(/[\r\n]/g, " "); }
 
 export function renderReviewCoverage(coverage: ReviewCoverage, attemptId: string): string {
   const summary = coverageSummary(coverage);
+  const failureCode = generationFailureCode(coverage);
   const attemptUrl = new URL(`/api/review-attempts/${attemptId}`, process.env.NEXT_PUBLIC_APP_URL ?? "https://octopus-review.ai").href;
   // Full inventory is retained in the immutable attempt; keep provider comments
   // bounded so a huge path list cannot cut the useful findings off GitHub's end.
@@ -241,11 +255,12 @@ export function renderReviewCoverage(coverage: ReviewCoverage, attemptId: string
     rows.push(row);
     renderedChars += row.length + 1;
   }
-  return `### Review coverage\n\n**${summary}**\n\nAttempt: ${attemptId} ${attemptUrl}.\nHead: \`${coverage.headSha ?? "unknown"}\`. Base: \`${coverage.baseSha ?? "unknown"}\`.\n\n${coverage.comment ? `Author context: ${coverage.comment.suppliedChars}/${coverage.comment.receivedChars} characters supplied${coverage.comment.truncated ? " (truncated)" : ""}; source excerpts and hashes remain unverified and do not add changed-file coverage.\n\n` : ""}${reviewAssessmentComplete(coverage) ? "Coverage describes the supplied review scope and assessment disposition; excluded files were not reviewed." : `**Overall: not assessed — ${unassessedReason(coverage)}.** Findings apply only to the supplied material; this is not a complete PR assessment.`}\n\n#### Changed-file coverage (${coverage.files.length} known paths)\n\n| File | Input coverage | Reason |\n| --- | --- | --- |\n${rows.join("\n")}\n${coverage.files.length > rows.length ? "\nThe full inventory is stored with this review attempt.\n" : ""}\n`;
+  return `### Review coverage\n\n**${summary}**\n\nAttempt: ${attemptId} ${attemptUrl}.${failureCode ? ` Failure code: \`${failureCode}\`.` : ""}\nHead: \`${coverage.headSha ?? "unknown"}\`. Base: \`${coverage.baseSha ?? "unknown"}\`.\n\n${coverage.comment ? `Author context: ${coverage.comment.suppliedChars}/${coverage.comment.receivedChars} characters supplied${coverage.comment.truncated ? " (truncated)" : ""}; source excerpts and hashes remain unverified and do not add changed-file coverage.\n\n` : ""}${reviewAssessmentComplete(coverage) ? "Coverage describes the supplied review scope and assessment disposition; excluded files were not reviewed." : `**Overall: not assessed — ${unassessedReason(coverage)}.** Findings apply only to the supplied material; this is not a complete PR assessment.`}\n\n#### Changed-file coverage (${coverage.files.length} known paths)\n\n| File | Input coverage | Reason |\n| --- | --- | --- |\n${rows.join("\n")}\n${coverage.files.length > rows.length ? "\nThe full inventory is stored with this review attempt.\n" : ""}\n`;
 }
 
 function unassessedReason(coverage: ReviewCoverage): string {
   if (coverage.assessment?.state === "not-required") return "no eligible changes under repository policy";
+  if (coverage.complete && generationFailed(coverage)) return "review generation failed";
   return coverage.complete ? "assessment invalid or unavailable" : "incomplete coverage";
 }
 

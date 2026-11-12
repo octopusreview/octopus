@@ -1,5 +1,5 @@
 import "server-only";
-import { AiProviderFailure, providerKeyOwner } from "./provider-failure";
+import { AiProviderFailure, providerKeyOwner, providerRouteUnchanged } from "./provider-failure";
 import { CapacityAdmissionError, capacityReceipt, refuseCapacity, withinReviewWindow, COMPLETE_REVIEW_POLICY } from "./review-capacity";
 import { prisma } from "@octopus/db";
 import { decryptStringMaybeLegacy } from "@/lib/crypto";
@@ -90,62 +90,21 @@ export async function getProviderForModel(modelId: string): Promise<AiProvider> 
 
 // ── Org key resolver ─────────────────────────────────────────────────────────
 
-type OrgKeys = {
-  anthropicApiKey: string | null;
-  openaiApiKey: string | null;
-  googleApiKey: string | null;
-  grokApiKey: string | null;
-  openrouterApiKey: string | null;
-  alibabaApiKey: string | null;
+type OrgKeyField = "anthropicApiKey" | "openaiApiKey" | "googleApiKey" | "grokApiKey" | "openrouterApiKey" | "alibabaApiKey";
+const PROVIDER_KEY_FIELDS: Record<AiProvider, OrgKeyField | null> = {
+  anthropic: "anthropicApiKey", openai: "openaiApiKey", google: "googleApiKey", grok: "grokApiKey",
+  openrouter: "openrouterApiKey", alibaba: "alibabaApiKey",
+  ollama: null, local: null, acp: null, opencode: null, "claude-code": null, mock: null, "mock-fail": null,
 };
 
-async function getOrgKeys(orgId: string): Promise<OrgKeys> {
+async function getOrgKeyForProvider(orgId: string, provider: AiProvider): Promise<string | null> {
+  const field = Object.hasOwn(PROVIDER_KEY_FIELDS, provider) ? PROVIDER_KEY_FIELDS[provider] : null;
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
-    select: {
-      anthropicApiKey: true,
-      openaiApiKey: true,
-      googleApiKey: true,
-      grokApiKey: true,
-      openrouterApiKey: true,
-      alibabaApiKey: true,
-    },
+    select: field ? { [field]: true } : { id: true },
   });
-  return {
-    anthropicApiKey: org?.anthropicApiKey ? decryptStringMaybeLegacy(org.anthropicApiKey) : null,
-    openaiApiKey: org?.openaiApiKey ? decryptStringMaybeLegacy(org.openaiApiKey) : null,
-    googleApiKey: org?.googleApiKey ? decryptStringMaybeLegacy(org.googleApiKey) : null,
-    grokApiKey: org?.grokApiKey ? decryptStringMaybeLegacy(org.grokApiKey) : null,
-    openrouterApiKey: org?.openrouterApiKey ? decryptStringMaybeLegacy(org.openrouterApiKey) : null,
-    alibabaApiKey: org?.alibabaApiKey ? decryptStringMaybeLegacy(org.alibabaApiKey) : null,
-  };
-}
-
-function getOrgKeyForProvider(keys: OrgKeys, provider: AiProvider): string | null {
-  switch (provider) {
-    case "anthropic": return keys.anthropicApiKey;
-    case "openai": return keys.openaiApiKey;
-    case "google": return keys.googleApiKey;
-    case "grok": return keys.grokApiKey;
-    case "openrouter": return keys.openrouterApiKey;
-    case "alibaba": return keys.alibabaApiKey;
-    // Ollama runs on the operator's own infra — env-configured, no per-org key.
-    case "ollama": return null;
-    // Local-agent bridge dispatches to a laptop; provider.create() reads org
-    // state from prisma directly, so no key here.
-    case "local": return null;
-    // ACPX / OpenCode are operator-configured gateways (env base URL + token,
-    // resolved inside the provider). Claude Code reads its config (mode + key)
-    // from prisma inside provider.create(). No per-org key here.
-    case "acp":
-    case "opencode":
-    case "claude-code":
-      return null;
-    // Test doubles take no key.
-    case "mock":
-    case "mock-fail":
-      return null;
-  }
+  const value = field ? (org as Partial<Record<OrgKeyField, string | null>> | null)?.[field] : null;
+  return value ? decryptStringMaybeLegacy(value) : null;
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -157,7 +116,10 @@ function getOrgKeyForProvider(keys: OrgKeys, provider: AiProvider): string | nul
 export async function createAiMessage(
   params: AiCreateParams,
   orgId: string,
+  /** Prevents provider entry after cancellation; does not interrupt a provider already entered. */
+  signal?: AbortSignal,
 ): Promise<AiResponse> {
+  signal?.throwIfAborted();
   const admission = params.completeReviewAdmission;
   const window = admission?.window ?? params.executionWindow;
   const setup = async () => {
@@ -166,8 +128,7 @@ export async function createAiMessage(
       refuseCapacity(admission, capacityReceipt(admission, params.model), "unsupported-route");
     }
     if (window && provider !== "anthropic") throw new Error("Measured review provider changed before recovery");
-    const keys = await getOrgKeys(orgId);
-    const orgKey = getOrgKeyForProvider(keys, provider);
+    const orgKey = await getOrgKeyForProvider(orgId, provider);
 
     // Only always-thinking text calls consume effort; an explicit effort wins.
     if (
@@ -194,21 +155,36 @@ export async function createAiMessage(
       if (reason) return reason;
       // Billing must describe this already prepared client's payer. Never swap clients after counting.
       // Compare only in memory; credential material never enters the evidence or reviewer.
-      const currentKey = getOrgKeyForProvider(await getOrgKeys(orgId), provider);
+      const currentKey = await getOrgKeyForProvider(orgId, provider);
       signal.throwIfAborted();
       return currentKey === orgKey ? null : "credential-route-changed";
     } } };
   }
 
+  signal?.throwIfAborted();
+  params.signal?.throwIfAborted();
   try {
     const response = await getProvider(provider).create(params, orgKey, orgId);
     return window ? { ...response, usedOwnKey: !!orgKey } : response;
   } catch (error) {
-    if (error instanceof CapacityAdmissionError || error instanceof AiProviderFailure) throw error;
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`[ai-router] ${provider} API error for model ${params.model}:`, message);
-    throw new AiProviderFailure(error, provider, params.model, providerKeyOwner(provider, !!orgKey));
+    if (error instanceof CapacityAdmissionError) throw error;
+    if (error instanceof AiProviderFailure) { failedRouteKeys.set(error, orgKey); throw error; }
+    const failure = new AiProviderFailure(error, provider, params.model, providerKeyOwner(provider, !!orgKey));
+    failedRouteKeys.set(failure, orgKey);
+    console.error(`[ai-router] ${provider} API error:`, failure.details);
+    throw failure;
   }
+}
+
+// Held in memory only, so a retry can prove it would use the same credential. Never logged or persisted.
+const failedRouteKeys = new WeakMap<AiProviderFailure, string | null>();
+
+/** True only when a retry of this failed request would use the same provider and the same credential. */
+export async function credentialRouteUnchanged(failure: AiProviderFailure, orgId: string): Promise<boolean> {
+  if (!failedRouteKeys.has(failure)) return false;
+  const provider = await resolveProvider(failure.model);
+  if (["claude-code", "acp", "opencode"].includes(provider)) return provider === failure.provider && await providerRouteUnchanged(failure, orgId);
+  return provider === failure.provider && await getOrgKeyForProvider(orgId, provider) === failedRouteKeys.get(failure);
 }
 
 /**

@@ -2,7 +2,8 @@
 // public self-host image never embeds octopus's DSN — self-hosters opt in by
 // setting SENTRY_DSN (Sentry stays disabled when it's unset).
 import * as Sentry from "@sentry/nextjs";
-import { scrubEvent, parseRate } from "@/lib/sentry-scrub";
+import { scrubDynamicSamplingContext, scrubEvent, parseRate } from "@/lib/sentry-scrub";
+import { scrubEnvelope, scrubStreamedSpan, scrubTransaction } from "@/lib/sentry-trace-envelope";
 
 const dsn = process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN;
 
@@ -17,4 +18,8 @@ Sentry.init({
   // Never attach cookies / headers / IP.
   sendDefaultPii: false,
   beforeSend: (event) => scrubEvent(event),
+  beforeSendSpan: Sentry.withStreamedSpan(scrubStreamedSpan),
+  beforeSendTransaction: (event) => scrubTransaction(event),
 });
+Sentry.getClient()?.on("createDsc", scrubDynamicSamplingContext);
+Sentry.getClient()?.on("beforeEnvelope", scrubEnvelope);

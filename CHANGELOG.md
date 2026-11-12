@@ -7,6 +7,141 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.11] - 2026-11-12
+
+### Fixed
+
+- If a review's worker stops mid-run, the retried job reuses the unfinished GitHub check and finishes the interrupted comment instead of leaving them behind.
+- An interrupted review attempt is kept in the review history, noting when the AI provider's result is unknown.
+
+### Upgrade notes
+
+- Apply the `20261112150000_review_attempt_id` migration before starting instances with this change. It adds one nullable column to `pull_requests`.
+
+## [1.4.10] - 2026-11-12
+
+### Fixed
+
+- A failed review now shows a failure code, and the AI provider's request identifier is no longer stored.
+- A review interrupted by a temporary AI provider failure is retried once automatically before it is reported as failed.
+
+### Upgrade notes
+
+- Apply the `20261112090000_review_generation_retry` migration before starting instances with this change. It adds two columns and a unique index to `ai_usages` and one column to `review_attempt_outcomes`; the index build briefly blocks writes to `ai_usages` on large tables.
+
+## [1.4.9] - 2026-11-12
+
+### Added
+
+- Releases can now pause job processing cluster-wide, wait for running reviews and indexing to finish, and resume, instead of interrupting work in progress. See docs/rollout-drain.md in the repository.
+
+### Upgrade notes
+
+- Apply the `20261111130000_queue_drain_state` migration before starting instances on this version. It adds two tables. A review worker that cannot read them does not start processing jobs.
+- Workers on earlier versions do not take part in a drain: they keep processing jobs and are not listed in its status. Use a drain only once every running worker is on this version or later. See docs/rollout-drain.md in the repository.
+
+## [1.4.8] - 2026-11-12
+
+### Security
+
+- Update the Sentry SDK to 10.75.2 and nodemailer to 10.5.0 to pick up upstream security fixes.
+
+## [1.4.7] - 2026-11-12
+
+### Fixed
+
+- On SIGTERM or SIGINT, server shutdown waits up to five minutes for active queue jobs, including reviews and indexing, to finish before exiting.
+
+## [1.4.6] - 2026-11-11
+
+### Changed
+
+- Update the OpenAI SDK to version 7.
+
+## [1.4.5] - 2026-11-11
+
+### Security
+
+- Update Next.js to 16.4.6 and sharp to 0.35.5 to pick up upstream security fixes, including advisories in image optimization and Server Actions.
+
+### Upgrade notes
+
+- No database migrations in this release. Self-hosted instances upgrading from 1.4.4 only need the new image; those upgrading from older versions should follow the intervening upgrade notes first.
+
+## [1.4.4] - 2026-11-11
+
+### Fixed
+
+- Stop re-indexing a repository every hour when GitHub has blocked access to it (HTTP 451). It stays marked as failed and can still be retried by hand.
+
+### Upgrade notes
+
+- Apply the `20261111120000_repository_index_blocked_at` migration before starting 1.4.4 instances. It adds one nullable column.
+
+## [1.4.3] - 2026-11-11
+
+### Fixed
+
+- GitHub indexing shares rate-limit waits across workers and automatically resumes eligible background indexes.
+- Scope community review reuse to the owning organization, repository identity and posting mode, and check identity when starting and polling jobs.
+- Keep clone credentials and upstream error text out of large-review failure comments, statuses and logs.
+- The indexing log viewer withholds message text that may contain paths or credentials, pages long histories, and warns when messages may be duplicated or missing.
+
+### Upgrade notes
+
+- Apply these migrations before starting 1.4.3 instances: `20261106120000_sync_log_attempt_marker`, `20261108123000_community_job_repository_external_id`, `20261108235500_large_review_failure_fingerprint` and `20261109010000_github_index_rate_secret`. All four only add tables or nullable columns.
+- Let in-flight indexing, community review and large-review jobs finish, then stop workers on earlier versions before starting 1.4.3 workers. Older workers ignore the shared GitHub cooldown and can still send unsanitized log and failure text.
+- Conflicting community review requests now return HTTP 409 without a job ID. Existing GitHub Action clients may fail on this response.
+
+## [1.4.2] - 2026-11-10
+
+### Fixed
+
+- Prevent abandoned queue workers from settling a later review or indexing retry.
+
+### Upgrade notes
+
+- This release upgrades the job queue library (pg-boss 12.37.1). The first upgraded instance to start, including a web instance that only enqueues jobs, migrates the shared queue schema. Stop every review worker on an earlier version before starting the first upgraded instance, then start the workers on this version. Do not run old and new workers side by side: an old worker can still settle a retry that a new worker has claimed. To roll back, stop the new workers before starting old ones. There are no Prisma migrations in this release.
+
+## [1.4.1] - 2026-11-10
+
+### Fixed
+
+- Redact provider error details from review failures and logs while retaining safe diagnostics.
+- Start the review summary publication timeout after acquiring the pull-request lock, while respecting the transaction deadline.
+- Honor the configured Qdrant API key in application and maintenance clients.
+- Stop fetching later repository file batches when GitHub continues to deny blob requests after a retry.
+- Keep provider error details out of Ask Octopus, CLI, GitHub Action and review failure messages. Authentication guidance now appears only when the organization's own API key is rejected.
+- Remove sensitive request data from Sentry error events, breadcrumbs, trace envelopes and spans.
+- Recheck repository state and permissions under a lock before a repository transfer commits.
+- Stop community reviews and local-index uploads from starting on, or saving results to, a repository that has since changed organization or identity.
+- Clear the stored GitHub token when a community review job finishes or expires.
+- A corrupt API key for one provider no longer blocks requests that use a different provider.
+
+### Changed
+
+- Add a privacy-safe last indexing milestone to worker-deadline diagnostics.
+
+## [1.4.0] - 2026-11-04
+
+### Added
+
+- Record CLI and GitHub Action review activity to improve product analytics.
+
+### Fixed
+
+- Cancelled indexing stops waiting for or starting another Qdrant vector upsert retry; an already dispatched write may still finish.
+- Indexing that supplies a cancellation signal interrupts an in-flight Qdrant collection lookup and does not start collection setup after a cancelled lookup. Creation already underway may still finish.
+- Chat requests reject malformed JSON and invalid input types before database access.
+- GitHub repository indexing now times out stalled blob downloads, including after response headers arrive.
+- Cancelling indexing now interrupts GitHub blob rate-limit retry waits.
+- GitHub indexing now interrupts installation-token requests and retry waits when an indexing cancellation signal is available.
+- When a cancellation signal is available, full repository indexing interrupts in-flight OpenAI and Ollama embedding requests and stops later batches. Provider-side work or charges may still continue.
+
+### Upgrade notes
+
+- Apply the `20261022120000_external_review_activity` migration before starting 1.4.0 web instances. CLI and authenticated GitHub Action review activity missed before the migration is not recovered.
+
 ## [1.3.3] - 2026-10-21
 
 ### Fixed
@@ -620,7 +755,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.98] - 2026-08-05
 
 ### Added
-- Self-hosted deployments can now enable Sentry error, performance, and session-replay monitoring by setting `SENTRY_DSN` (and optionally `NEXT_PUBLIC_SENTRY_DSN` for browser capture). Session replay masks all text, inputs, and media, and sensitive fields are scrubbed before anything leaves the app; Sentry stays fully disabled when no DSN is configured.
+- Self-hosted deployments can now enable Sentry error, performance, and session-replay monitoring by setting `SENTRY_DSN` (and optionally `NEXT_PUBLIC_SENTRY_DSN` for browser capture). Session replay masks all text, inputs, and media, and error events are scrubbed for selected sensitive fields; Sentry stays fully disabled when no DSN is configured.
 
 ## [1.0.97] - 2026-08-05
 

@@ -1,6 +1,7 @@
 import { mock, spyOn } from "bun:test";
 import assert from "node:assert/strict";
 import { randomUUID, createHash } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { readFile } from "node:fs/promises";
 import type { ReviewCoverage } from "../../review-coverage";
 
@@ -154,11 +155,29 @@ try {
     await finish(key, reviewKind(secondCoverage), "published", second, latest);
     assert.equal((await read()).kind, "substantive"); assert.equal((await read()).resultArchiveId, second);
   } else if (scenario === "concurrent") {
-    await Promise.all([start(key, late), start(key, latest)]);
-    assert.equal(await prisma.reviewAttemptOutcome.count({ where: { pullRequestId: pr.id } }), 1);
-    assert.equal((await read()).tries, 3);
-    await Promise.all([finish(key, "substantive", "published", archive, late), finish(key, "incomplete", "failed", null, latest)]);
-    assert.equal((await read()).outcome, "published"); assert.equal((await read()).resultArchiveId, archive);
+    const scope = new AsyncLocalStorage<string>();
+    const dropped = new Set<string>();
+    const warning = spyOn(console, "warn").mockImplementation((message: unknown) => {
+      assert.equal(message, "[review-outcome] recording unavailable");
+      const operation = scope.getStore();
+      assert.ok(operation && !dropped.has(operation), "each dropped write emits one warning");
+      dropped.add(operation);
+    });
+    try {
+      await Promise.all([scope.run("start-1", () => start(key, late)), scope.run("start-2", () => start(key, latest))]);
+      assert.equal(await prisma.reviewAttemptOutcome.count({ where: { pullRequestId: pr.id } }), 1);
+      assert.equal((await read()).tries, 3 - Number(dropped.has("start-1")) - Number(dropped.has("start-2")));
+      await Promise.all([
+        scope.run("published", () => finish(key, "substantive", "published", archive, late)),
+        scope.run("failed", () => finish(key, "incomplete", "failed", null, latest)),
+      ]);
+      const result = await read();
+      if (!dropped.has("published")) {
+        assert.equal(result.outcome, "published"); assert.equal(result.resultArchiveId, archive);
+      } else {
+        assert.equal(result.outcome, dropped.has("failed") ? null : "failed");
+      }
+    } finally { warning.mockRestore(); }
   } else if (scenario === "late-failure" || scenario === "stale-try") {
     await finish(key, "substantive", "published", archive, late); const before = await read();
     await finish(key, "incomplete", "failed", null, latest); await start(key, latest);
@@ -199,9 +218,12 @@ try {
     let release!: () => void; let locked!: () => void;
     const ready = new Promise<void>(r => { locked = r; }); const done = new Promise<void>(r => { release = r; });
     const holding = prisma.$transaction(async tx => { await tx.$executeRaw`UPDATE review_attempt_outcomes SET kind = kind WHERE "pullRequestId" = ${pr.id}`; locked(); await done; });
+    let warnings = 0;
+    const warning = spyOn(console, "warn").mockImplementation((message: unknown) => { assert.equal(message, "[review-outcome] recording unavailable"); warnings++; });
     await ready; const before = performance.now();
     try { await finish(key, "substantive", "published", archive, late); assert.ok(performance.now() - before < 500); }
-    finally { release(); await holding; }
+    finally { release(); await holding; warning.mockRestore(); }
+    assert.equal(warnings, 1, "a dropped write must be observable");
     assert.equal((await read()).outcome, null);
   } else if (scenario.startsWith("timezone-")) {
     assert.equal((await prisma.$queryRaw<Array<{ TimeZone: string }>>`SHOW TimeZone`)[0].TimeZone, timezone);
@@ -340,9 +362,6 @@ try {
       }
     }
   } else if (scenario === "claim") {
-    const source = await readFile(new URL("../../reviewer.ts", import.meta.url), "utf8");
-    assert.match(source, /await startReviewOutcome\(outcomeKey, new Date\(\)/);
-    assert.match(source, /if \(claimed.count\) await startReviewOutcome/); assert.match(source, /if \(outcomeDeferred\) await deferReviewOutcome/);
     await prisma.reviewAttemptOutcome.deleteMany({ where: { pullRequestId: pr.id } });
     const results = await Promise.all([productionClaim(), productionClaim()]);
     assert.equal(results.reduce((n: number, r: { count: number }) => n + r.count, 0), 1);

@@ -1,5 +1,7 @@
+import "server-only";
 import { prisma } from "@octopus/db";
 import { enqueue, loadQueueConfig, computeStaleReclaimMs } from "./queue";
+import { recordInterruptedAttempt } from "./review-attempt";
 
 // Reviews that die mid-flight (engine restart on deploy, crash, OOM, or a hang
 // past the job timeout) are left in "reviewing"/"queued" forever: the finalize
@@ -41,7 +43,7 @@ export async function reapStuckReviews(
         { status: "queued", updatedAt: { lt: queuedStale } },
       ],
     },
-    select: { id: true, createdAt: true },
+    select: { id: true, createdAt: true, status: true, updatedAt: true, reviewRequestVersion: true, reviewAttemptId: true, headSha: true, repository: { select: { provider: true } } },
   });
 
   const requeueCutoff = new Date(now.getTime() - REQUEUE_MAX_AGE_MS);
@@ -49,10 +51,14 @@ export async function reapStuckReviews(
   let failed = 0;
 
   for (const pr of orphans) {
-    // Guard on status so we never clobber a review a live worker just finished.
-    const updated = await prisma.pullRequest.updateMany({
-      where: { id: pr.id, status: { in: ["reviewing", "queued"] } },
-      data: { status: "failed", errorMessage: REAP_FAILED_MESSAGE },
+    // A new claim or request may have replaced the stale row since selection.
+    const updated = await prisma.$transaction(async tx => {
+      const updated = await tx.pullRequest.updateMany({
+        where: { id: pr.id, status: pr.status, updatedAt: pr.updatedAt, reviewRequestVersion: pr.reviewRequestVersion },
+        data: { status: "failed", errorMessage: REAP_FAILED_MESSAGE },
+      });
+      if (updated.count && pr.status === "reviewing") await recordInterruptedAttempt(pr, tx);
+      return updated;
     });
     if (updated.count === 0) continue;
 

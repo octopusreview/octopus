@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { bestEffort } from "./review-attempt-outcome";
+import { trackInline } from "./queue-drain-worker";
 
 export type ExternalReviewSource = "github_action" | "cli_local" | "cli_repo";
 type Activity = {
@@ -34,12 +35,13 @@ export async function finishExternalReviewActivity(id: string, outcome: "generat
  * An empty outcome is unresolved after 24 hours, derived by readers, never failed.
  */
 export async function withExternalReviewActivity(activity: Activity | null, review: () => Promise<Response>): Promise<Response> {
-  if (!activity) return review();
+  const counted = () => trackInline(review);
+  if (!activity) return counted();
   const id = randomUUID();
   await startExternalReviewActivity(id, activity, new Date());
   let outcome: "generated" | "failed" = "failed";
   try {
-    const response = await review();
+    const response = await counted();
     if (response.ok) outcome = "generated";
     return response;
   } finally {

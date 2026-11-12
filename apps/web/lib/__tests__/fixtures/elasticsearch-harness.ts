@@ -1,0 +1,137 @@
+import { mock } from "bun:test";
+import assert from "node:assert/strict";
+
+type Entry = { orgId: string; repoId: string; timestamp: number; message: string; level: "info" | "error"; indexAttemptId?: string; createdAt?: string };
+type Clause = { term?: Record<string, string>; bool?: { filter?: Clause[]; should?: Clause[]; minimum_should_match?: number } };
+const legacy: Entry[] = Array.from({ length: 600 }, (_, i) => ({ orgId: "org-a", repoId: "repo-a", timestamp: i, message: `event ${i}`, level: "info" }));
+legacy[598].message = "synthetic-private-path synthetic-secret";
+Object.assign(legacy[598], { extra: "synthetic-secret" });
+legacy[599].message = "Processing local batch 1/2";
+legacy.push({ orgId: "org-b", repoId: "repo-a", timestamp: 1000, message: "other org", level: "error" });
+legacy.push({ orgId: "org-a", repoId: "repo-b", timestamp: 1001, message: "other repo", level: "error" });
+const tagged: Entry[] = [
+  { orgId: "org-a", repoId: "repo-a", indexAttemptId: "current", timestamp: 1, message: "current", level: "info" },
+  { orgId: "org-a", repoId: "repo-a", indexAttemptId: "previous", timestamp: 2, message: "old", level: "info" },
+  { orgId: "org-b", repoId: "repo-a", indexAttemptId: "current", timestamp: 3, message: "other org", level: "info" },
+];
+const writes: Array<{ index: string; body: Entry }> = [];
+let fail: "write" | "read" | "delete" | null = null;
+let legacyMapping: "text" | "keyword" | "unsupported" | "normalized" | "normalized-subfield" = "text";
+let lastDelete: Clause | undefined;
+const matches = (row: Entry, clause: Clause, index: string): boolean => {
+  if (clause.term) return Object.entries(clause.term).every(([field, value]) => {
+    if (field === "_index") return index === value;
+    const key = field.replace(/\.keyword$/, "") as keyof Entry;
+    const actual = row[key];
+    if (typeof actual !== "string") return false;
+    if (!field.endsWith(".keyword") && index === "octopus_repo_sync" && legacyMapping === "text") {
+      return actual.toLowerCase().split(/[^a-z0-9]+/).includes(value);
+    }
+    return actual === value;
+  });
+  if (clause.bool) return (clause.bool.filter ?? []).every(item => matches(row, item, index)) &&
+    (!clause.bool.should || clause.bool.should.some(item => matches(row, item, index)));
+  throw new Error("Unexpected query clause");
+};
+class SyntheticElasticsearch {
+  indices = { exists: async () => true, getMapping: async () => ({ octopus_repo_sync: { mappings: { properties: {
+    orgId: legacyMapping === "text" || legacyMapping === "normalized-subfield" ? { type: "text", fields: { keyword: { type: "keyword", ...(legacyMapping === "normalized-subfield" ? { normalizer: "lowercase" } : {}) } } } : legacyMapping === "normalized" ? { type: "keyword", normalizer: "lowercase" } : { type: legacyMapping },
+    repoId: legacyMapping === "text" || legacyMapping === "normalized-subfield" ? { type: "text", fields: { keyword: { type: "keyword", ...(legacyMapping === "normalized-subfield" ? { normalizer: "lowercase" } : {}) } } } : legacyMapping === "normalized" ? { type: "keyword", normalizer: "lowercase" } : { type: legacyMapping },
+  } } } }) };
+  async index(request: { index: string; body: Entry }) {
+    if (fail === "write") throw new Error("synthetic-private-exception");
+    writes.push(request);
+    if (request.index === "octopus_repo_sync") legacy.push(request.body);
+    if (request.index === "octopus_repo_sync_attempts") tagged.push(request.body);
+  }
+  async search(query: { index: string; size: number; query: Clause; sort: Array<{ timestamp: { order: string } }> }) {
+    if (fail === "read") throw new Error("synthetic-private-exception");
+    const scoped = query.index === "octopus_repo_sync_attempts";
+    assert.equal(query.index, scoped ? "octopus_repo_sync_attempts" : "octopus_repo_sync");
+    const direction = query.sort[0].timestamp.order === "desc" ? -1 : 1;
+    return { hits: { hits: (scoped ? tagged : legacy).filter(row => matches(row, query.query, query.index))
+      .sort((a, b) => direction * (a.timestamp - b.timestamp)).slice(0, query.size).map(row => ({ _source: row })) } };
+  }
+  async deleteByQuery(request: { query: Clause }) { if (fail === "delete") throw new Error("synthetic-private-exception"); lastDelete = request.query; }
+}
+mock.module("@elastic/elasticsearch", () => ({ Client: SyntheticElasticsearch }));
+process.env.ELASTICSEARCH_URL = "http://localhost:9200";
+const { getSyncLogs, writeSyncLog, deleteSyncLogs } = await import("../../elasticsearch");
+const logs = await getSyncLogs("org-a", "repo-a", 500);
+assert.equal(logs.length, 500);
+assert.deepEqual(logs.map(row => row.timestamp), Array.from({ length: 500 }, (_, i) => i + 100));
+assert.ok(logs.every(row => row.orgId === "org-a" && row.repoId === "repo-a"));
+assert.equal(logs.at(-2)?.message, "Indexing message withheld for privacy.");
+assert.doesNotMatch(JSON.stringify(logs.at(-2)), /synthetic-secret|synthetic-private-path/);
+assert.equal(logs.at(-1)?.message, "Processing local batch 1/2");
+assert.deepEqual((await getSyncLogs("org-a", "repo-a", 500, "current")).map(row => row.message), ["Indexing message withheld for privacy."]);
+await writeSyncLog({ orgId: "org-a", repoId: "repo-a", timestamp: 0, message: "legacy write", level: "info" });
+assert.equal(writes[0].index, "octopus_repo_sync");
+assert.equal(writes[0].body.indexAttemptId, undefined);
+assert.equal(writes[0].body.message, "Indexing message withheld for privacy.");
+for (const indexAttemptId of [undefined, "synthetic-attempt"]) {
+  await writeSyncLog({ orgId: "privacy-org", repoId: "privacy-repo", indexAttemptId, timestamp: 1, message: "Failed /private/path: synthetic-token", level: "error" });
+  assert.equal(writes.at(-1)?.body.message, "Indexing message withheld for privacy.");
+  await writeSyncLog({ orgId: "privacy-org", repoId: "privacy-repo", indexAttemptId, timestamp: 2, message: "Processed 5 files, skipped 0", level: "info" });
+  assert.equal(writes.at(-1)?.body.message, "Processed 5 files, skipped 0");
+}
+
+
+const es = new SyntheticElasticsearch();
+const oldWriter = async (entry: Entry) => es.index({
+  index: "octopus_repo_sync",
+  body: { ...entry, createdAt: new Date(entry.timestamp).toISOString() },
+});
+const oldReader = async (orgId: string, repoId: string) => {
+  const result = await es.search({
+    index: "octopus_repo_sync", size: 500,
+    query: { bool: { filter: [{ term: { orgId } }, { term: { repoId } }] } },
+    sort: [{ timestamp: { order: "desc" } }],
+  });
+  return result.hits.hits.map(hit => hit._source).reverse();
+};
+const oldEntry: Entry = { orgId: "compatorg", repoId: "compatrepo", timestamp: 100, message: "old writer", level: "info" };
+const currentEntry: Entry = { orgId: "compatorg", repoId: "compatrepo", timestamp: 200, message: "Processed 5 files, skipped 0", level: "info" };
+await oldWriter(oldEntry);
+await oldWriter({ ...oldEntry, orgId: "otherorg", message: "other tenant" });
+await oldWriter({ ...oldEntry, repoId: "otherrepo", message: "other repository" });
+await writeSyncLog(currentEntry);
+const expected = [
+  { ...oldEntry, createdAt: "1970-01-01T00:00:00.100Z" },
+  { ...currentEntry, createdAt: "1970-01-01T00:00:00.200Z" },
+];
+assert.deepEqual(await oldReader("compatorg", "compatrepo"), expected);
+assert.deepEqual(await getSyncLogs("compatorg", "compatrepo"), [
+  { orgId: "compatorg", repoId: "compatrepo", timestamp: 100, message: "Indexing message withheld for privacy.", level: "info" },
+  { orgId: "compatorg", repoId: "compatrepo", timestamp: 200, message: "Processed 5 files, skipped 0", level: "info" },
+]);
+assert.deepEqual((await oldReader("otherorg", "compatrepo")).map(row => row.message), ["other tenant"]);
+assert.deepEqual((await getSyncLogs("otherorg", "compatrepo")).map(row => row.message), ["Indexing message withheld for privacy."]);
+await deleteSyncLogs("org-a", "repo-a");
+assert.ok(lastDelete && matches({ orgId: "org-a", repoId: "repo-a", timestamp: 0, message: "", level: "info" }, lastDelete, "octopus_repo_sync"));
+assert.equal(matches({ orgId: "org-a", repoId: "repo-a-other", timestamp: 0, message: "", level: "info" }, lastDelete!, "octopus_repo_sync"), false);
+legacyMapping = "keyword";
+assert.equal((await getSyncLogs("org-a", "repo-a")).length, 500);
+await deleteSyncLogs("org-a", "repo-a");
+assert.ok(lastDelete && matches({ orgId: "org-a", repoId: "repo-a", timestamp: 0, message: "", level: "info" }, lastDelete, "octopus_repo_sync"));
+legacyMapping = "text";
+const errors: unknown[][] = [];
+const originalError = console.error;
+console.error = (...args) => { errors.push(args); };
+try {
+  for (const mode of ["unsupported", "normalized", "normalized-subfield"] as const) {
+    legacyMapping = mode;
+    assert.deepEqual(await getSyncLogs("org-a", "repo-a"), []);
+    const previousDelete = lastDelete;
+    await deleteSyncLogs("org-a", "repo-a");
+    assert.equal(lastDelete, previousDelete, "unsafe mappings must not trigger a broad delete");
+  }
+  legacyMapping = "text";
+  fail = "write";
+  await writeSyncLog(currentEntry);
+  fail = "read";
+  assert.deepEqual(await getSyncLogs("org-a", "repo-a"), []);
+  fail = "delete";
+  await deleteSyncLogs("org-a", "repo-a");
+  assert.deepEqual(errors, [...Array.from({ length: 3 }, () => [["Failed to read sync logs from ES"], ["Failed to delete sync logs from ES"]]).flat(), ["Failed to write sync log to ES"], ["Failed to read sync logs from ES"], ["Failed to delete sync logs from ES"]]);
+} finally { console.error = originalError; }

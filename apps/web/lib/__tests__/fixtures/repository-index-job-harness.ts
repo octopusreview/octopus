@@ -8,6 +8,7 @@ const row = {
   id: "repo-1", provider: "github", organizationId: "org-1", fullName: "acme/new", defaultBranch: "main",
   installationId: 123, indexStatus: "pending", totalFiles: 0,
   indexAttemptId: null as string | null, indexedAt: null as Date | null, firstIndexedAt: null as Date | null,
+  indexBlockedAt: null as Date | null,
   organization: { githubInstallationId: 123 as number | null },
 };
 let currentRow: typeof row | null = row;
@@ -15,6 +16,7 @@ let claimCount = 1;
 let indexFailure: Error | null = null;
 let cancelled = false;
 let timedOut = false;
+let indexMessages: string[] = [];
 let timeoutCallback: (() => void) | undefined;
 const realSetTimeout = globalThis.setTimeout;
 globalThis.setTimeout = ((callback: () => void, ms?: number, ...args: unknown[]) => {
@@ -40,11 +42,12 @@ mock.module("@/lib/indexing-abort", () => ({
   createAbortController: () => { controller = new AbortController(); return controller; },
   clearAbortController: () => {},
 }));
-const update = async (args: { where: { id?: string; indexStatus?: string; indexAttemptId?: string; OR?: unknown[] }; data: Record<string, unknown> }) => {
+const update = async (args: { where: { id?: string; indexStatus?: string; indexAttemptId?: string; indexBlockedAt?: null; OR?: unknown[] }; data: Record<string, unknown> }) => {
   (transactionActive ? writes : claims).push(args);
   if (!claimCount || !currentRow || (args.where.id && args.where.id !== currentRow.id)
     || (typeof args.where.indexStatus === "string" && args.where.indexStatus !== currentRow.indexStatus)
     || (args.where.indexAttemptId !== undefined && args.where.indexAttemptId !== currentRow.indexAttemptId)) return { count: 0 };
+  if (args.where.indexBlockedAt === null && currentRow.indexBlockedAt) return { count: 0 };
   if (args.where.OR && !(["pending", "failed"].includes(currentRow.indexStatus) || (currentRow.indexStatus === "indexed" && currentRow.totalFiles === 0))) return { count: 0 };
   Object.assign(currentRow, args.data);
   return { count: 1 };
@@ -67,7 +70,7 @@ const db = {
   },
   repository: {
     findUniqueOrThrow: async () => ({ ...currentRow }),
-    findMany: async (args: { where: Record<string, unknown> }) => { queries.push(args); return [{ id: "repo-1" }]; },
+    findMany: async (args: { where: Record<string, unknown> }) => { queries.push(args); return args.where.indexBlockedAt === null && currentRow?.indexBlockedAt ? [] : [{ id: "repo-1" }]; },
     findFirst: async (args: { where: Record<string, unknown> }) => { queries.push(args); return currentRow ? { ...currentRow } : null; },
     updateMany: update,
   },
@@ -81,6 +84,7 @@ mock.module("@/lib/elasticsearch", () => ({ writeSyncLog: () => {}, deleteSyncLo
 mock.module("@/lib/indexer", () => ({
   indexRepository: async (...args: unknown[]) => {
     indexCalls.push(args);
+    for (const message of indexMessages) (args[4] as (message: string) => void)(message);
     if (cancelled) { controller.abort(); throw controller.signal.reason; }
     if (timedOut) { assert.ok(timeoutCallback); timeoutCallback(); throw new Error("Indexing cancelled"); }
     if (replaceAttempt) {
@@ -103,7 +107,7 @@ assert.equal(queries.length, 0, "invalid jobs must never issue an unscoped query
 await enqueuePendingRepositoryIndexes("org-1");
 assert.deepEqual(queued, [["index-repository", job, { singletonKey: "repo-1", singletonSeconds: 60 }]]);
 assert.deepEqual(queries[0].where, {
-  organizationId: "org-1", provider: { in: ["github", "forgejo"] }, isActive: true, dismissedAt: null,
+  organizationId: "org-1", provider: { in: ["github", "forgejo"] }, isActive: true, dismissedAt: null, indexBlockedAt: null,
   organization: { deletedAt: null, bannedAt: null, autoDiscoverRepos: true },
   OR: [{ indexStatus: { in: ["pending", "failed"] } }, { indexStatus: "indexed", totalFiles: 0 }],
 });
@@ -139,10 +143,10 @@ assert.equal(sentryEvents.length, 0, "a scheduled retry is not a terminal failur
 await assert.rejects(() => processRepositoryIndex(job, { retryCount: 2, retryLimit: 2 }), /GitHub unavailable/);
 assert.equal(sentryEvents.length, 1);
 assert.equal(sentryEvents[0].tags?.failure_stage, "indexing");
-assert.equal(claims.at(-1)?.data.indexStatus, "failed", "failures must release the claim for retry");
+assert.equal(currentRow?.indexStatus, "failed", "failures must release the claim for retry");
 indexFailure = null;
 await processRepositoryIndex(job);
-assert.equal(writes.length, 2, "a retry must be able to complete");
+assert.equal(writes.filter(write => write.data.indexStatus === "indexed").length, 2, "a retry must be able to complete");
 
 currentRow = { ...row, provider: "forgejo", organization: { githubInstallationId: null } };
 await processRepositoryIndex(job);
@@ -150,6 +154,7 @@ assert.equal(indexCalls.at(-1)?.[3], 0);
 assert.equal(indexCalls.at(-1)?.[6], "forgejo", "Forgejo jobs must not use GitHub authentication");
 
 cancelled = true;
+indexMessages = ["Fetching and chunking file contents...", "synthetic-private-path-or-token"];
 const beforeCancellation = sentryEvents.length;
 await processRepositoryIndex(job);
 assert.equal(sentryEvents.length, beforeCancellation, "cancelled work is not a platform incident");
@@ -157,18 +162,52 @@ assert.equal(claims.at(-1)?.data.indexStatus, "pending", "cancelled work must re
 assert.equal(notifications.at(-1), "pending");
 cancelled = false;
 timedOut = true;
+indexMessages = ["Authenticating with GitHub...", "Fetching and chunking file contents...", "synthetic-private-path-or-token"];
 const beforeTimeout = sentryEvents.length;
 await assert.rejects(() => processRepositoryIndex(job, { retryCount: 1, retryLimit: 2 }), { name: "TimeoutError" });
 assert.equal(sentryEvents.length, beforeTimeout);
 await assert.rejects(() => processRepositoryIndex(job, { retryCount: 2, retryLimit: 2 }), { name: "TimeoutError" });
 assert.equal(sentryEvents.length, beforeTimeout + 1);
 assert.equal(sentryEvents.at(-1)?.contexts?.background_failure?.name, "TimeoutError");
+assert.equal(sentryEvents.at(-1)?.tags?.indexing_deadline, "worker_25m");
+assert.equal(sentryEvents.at(-1)?.tags?.indexing_last_milestone, "fetching_files");
+assert.ok(!JSON.stringify(sentryEvents.at(-1)).includes("synthetic-private-path-or-token"));
 assert.equal(sentryEvents.at(-1)?.contexts?.background_failure?.attemptId, currentRow?.indexAttemptId);
 assert.equal(sentryEvents.at(-1)?.contexts?.background_failure?.retryCount, 2);
 assert.equal(currentRow?.indexStatus, "failed");
 assert.equal(notifications.at(-1), "failed");
 assert.equal(currentRow?.firstIndexedAt, null);
+indexMessages = ["synthetic-private-path-or-token"];
+await assert.rejects(() => processRepositoryIndex(job, { retryCount: 2, retryLimit: 2 }), { name: "TimeoutError" });
+assert.equal(sentryEvents.at(-1)?.tags?.indexing_last_milestone, "not_recorded");
+assert.ok(!JSON.stringify(sentryEvents.at(-1)).includes("synthetic-private-path-or-token"));
+for (const [message, expected] of [
+  ["GitHub authentication successful", "authenticated"],
+  ["Repository cloned successfully", "cloned"],
+  ["Scanning repository files...", "scanning_files"],
+  ["Processing files... 2/3", "fetching_files"],
+  ["Preparing vector database...", "preparing_vectors"],
+  ["Vector database ready", "vector_ready"],
+  ["Generating embeddings for 42 chunks (2 batches)...", "embedding"],
+  ["Generating embeddings for 42 chunks (1 batch)...", "embedding"],
+  ["Processing embedding batch 1/2...", "embedding"],
+  ["Generated 42 embeddings", "embedded"],
+  ["Storing 42 vectors in database (1 batch)...", "writing_vectors"],
+  ["Storing 42 vectors in database (2 batches)...", "writing_vectors"],
+  ["Successfully stored 42 vectors", "vectors_written"],
+] as const) {
+  indexMessages = [message, "synthetic-private-path-or-token"];
+  await assert.rejects(() => processRepositoryIndex(job, { retryCount: 2, retryLimit: 2 }), { name: "TimeoutError" });
+  assert.equal(sentryEvents.at(-1)?.tags?.indexing_last_milestone, expected);
+  assert.ok(!JSON.stringify(sentryEvents.at(-1)).includes("synthetic-private-path-or-token"));
+}
+indexMessages = [];
 timedOut = false;
+indexFailure = new DOMException("other timeout", "TimeoutError");
+await assert.rejects(() => processRepositoryIndex(job, { retryCount: 2, retryLimit: 2 }), { name: "TimeoutError" });
+assert.equal(sentryEvents.at(-1)?.tags?.indexing_deadline, undefined, "a dependency timeout must not be labeled as the worker deadline");
+assert.equal(sentryEvents.at(-1)?.tags?.indexing_last_milestone, undefined, "a dependency timeout must not have a worker-deadline milestone");
+indexFailure = null;
 const priorQueries = queries.length;
 await enqueuePendingRepositoryIndexes("org-1", undefined, ["bitbucket", "gitlab", "unrecognized"]);
 assert.equal(queries.length, priorQueries, "provider-scoped setup must not expand the indexing allowlist");
@@ -181,6 +220,36 @@ assert.ok(currentRow?.firstIndexedAt);
 assert.equal(currentRow?.indexedAt, currentRow?.firstIndexedAt);
 assert.ok(transactions > 0);
 const firstDate = currentRow?.firstIndexedAt;
+
+// A provider block settles the job without a queue retry and keeps automatic indexing away.
+Object.assign(currentRow!, { indexStatus: "pending", indexBlockedAt: null });
+indexFailure = Object.assign(new Error("Failed to fetch tree: 451"), { status: 451, providerBlock: true });
+await processRepositoryIndex(job, { retryCount: 0, retryLimit: 2 }, "00000000-0000-4000-8000-000000000002");
+assert.equal(currentRow?.indexStatus, "failed", "a blocked repository stays failed so it can be retried by hand");
+assert.ok(currentRow?.indexBlockedAt instanceof Date);
+queued.length = 0;
+await enqueuePendingRepositoryIndexes("org-1");
+assert.equal(queued.length, 0, "the sweep must leave a blocked repository alone");
+const callsWhileBlocked = indexCalls.length;
+await processRepositoryIndex(job, { retryCount: 0, retryLimit: 2 }, "00000000-0000-4000-8000-000000000003");
+assert.equal(indexCalls.length, callsWhileBlocked, "an already queued job must not index a blocked repository");
+// Other failures keep their queue retry and are not marked, including a 451 from another dependency.
+for (const [id, failure] of [["4", { status: 500 }], ["5", { status: 451 }]] as const) {
+  Object.assign(currentRow!, { indexStatus: "pending", indexBlockedAt: null });
+  indexFailure = Object.assign(new Error(`Dependency answered ${failure.status}`), failure);
+  await assert.rejects(() => processRepositoryIndex(job, { retryCount: 0, retryLimit: 2 }, `00000000-0000-4000-8000-00000000000${id}`), /Dependency answered/);
+  assert.equal(currentRow?.indexBlockedAt, null);
+}
+// A manual retry claims the row itself; a successful index lifts the block.
+indexFailure = null;
+const { runRepositoryIndex } = await import("@/lib/repository-index-completion");
+Object.assign(currentRow!, { indexStatus: "indexing", indexAttemptId: "manual", indexBlockedAt: new Date() });
+await runRepositoryIndex("repo-1", "manual", async () => ({
+  indexedFiles: 1, totalFiles: 1, totalChunks: 1, totalVectors: 1, contributors: [], contributorCount: 0, durationMs: 1,
+}));
+assert.equal(currentRow?.indexBlockedAt, null, "a successful index must lift the block");
+queued.length = 0;
+
 preparationFailure = true;
 currentRow!.indexStatus = "pending";
 const beforeFailure = indexCalls.length;

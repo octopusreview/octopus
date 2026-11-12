@@ -7,6 +7,7 @@ import type Stripe from "stripe";
 import { getStripe, getOffSessionPaymentMethodId } from "./stripe";
 import { eventBus } from "./events/bus";
 import { volumeBonusUsd } from "./plans";
+import { safeErrorDetails } from "./provider-failure";
 
 export type OffSessionPurchaseResult =
   | { status: "succeeded"; paymentIntentId: string }
@@ -373,6 +374,7 @@ export async function deductCredits(
   // the whole transaction rolls back instead of debiting twice. Left undefined
   // for ordinary usage deductions (which are intentionally non-unique).
   stripeRefundId?: string,
+  beforeDeduction?: (tx: Prisma.TransactionClient) => Promise<void>,
 ): Promise<void> {
   if (amount <= 0) return;
 
@@ -386,6 +388,7 @@ export async function deductCredits(
     >`SELECT "creditBalance"::float, "freeCreditBalance"::float FROM organizations WHERE id = ${orgId} FOR UPDATE`;
 
     if (rows.length === 0) return { totalAfter: 0, durableClaim: null };
+    await beforeDeduction?.(tx);
 
     const free = rows[0].freeCreditBalance;
     const purchased = rows[0].creditBalance;
@@ -443,7 +446,7 @@ export async function deductCredits(
       deduction.totalAfter,
       deduction.durableClaim.attempt,
     ).catch((err) =>
-      console.error("[credits] Auto-reload processing failed:", err),
+      console.error("[credits] Auto-reload processing failed:", safeErrorDetails(err)),
     );
   }
 }
@@ -737,7 +740,7 @@ function kickDurableAutoReloadClaim(
 ): void {
   if (!claim?.readyToProcess) return;
   void processDurableAutoReloadAttempt(orgId, currentBalance, claim.attempt).catch((err) =>
-    console.error("[credits] Auto-reload processing failed:", err),
+    console.error("[credits] Auto-reload processing failed:", safeErrorDetails(err)),
   );
 }
 
@@ -1492,7 +1495,7 @@ async function executeAutoReloadAttempt(
       { idempotencyKey: attempt.idempotencyKey },
     );
   } catch (err) {
-    console.error("[credits] Auto-reload payment request failed:", err);
+    console.error("[credits] Auto-reload payment request failed:", safeErrorDetails(err));
     const code = (err as { code?: unknown } | null)?.code;
     const reason = typeof code === "string" ? code : undefined;
     const indeterminate = isIndeterminateStripeError(err);

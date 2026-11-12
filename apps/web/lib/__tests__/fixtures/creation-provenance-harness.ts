@@ -224,6 +224,12 @@ try {
       });
     } else created = await createOrgForUser(person.id, "Fixture");
     assert.equal(created.creationSource, scenario === "user-created" ? "user_created" : "auto_default");
+    // The analytics views find an organisation's creator through an owner membership created at the
+    // same instant, so both real creation paths must give the two rows one createdAt.
+    if (scenario !== "membership-unavailable") {
+      const owner = await prisma.organizationMember.findFirstOrThrow({ where: { organizationId: created.id, role: "owner" } });
+      assert.equal(owner.createdAt.getTime(), created.createdAt.getTime(), "owner membership and organisation share createdAt");
+    }
     if (scenario !== "concurrent-organizations") {
       assert.equal(created.creatorFirstOrganization, scenario === "membership-unavailable" ? null : !["second", "removed-member"].includes(scenario));
     }

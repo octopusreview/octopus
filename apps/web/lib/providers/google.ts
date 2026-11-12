@@ -41,7 +41,7 @@ export const googleProvider: Provider = {
             }
           : {}),
       },
-    }));
+    }), params.signal ? { signal: params.signal } : undefined);
 
     const response = result.response;
     const text = response.text();

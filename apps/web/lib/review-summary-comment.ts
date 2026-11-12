@@ -5,6 +5,10 @@ import { createPullRequestComment, updatePullRequestComment, getInstallationToke
 
 import { assertReviewProcessingActive, reviewPublicationSignal, type ReviewExecutionWindow } from "./review-capacity";
 
+const SUMMARY_TRANSACTION_TIMEOUT_MS = 20_000;
+const SUMMARY_PROVIDER_TIMEOUT_MS = 10_000;
+const SUMMARY_COMMIT_RESERVE_MS = 1_000;
+
 type SummaryTarget = {
   onPosted?: () => void | Promise<void>;
   executionWindow?: ReviewExecutionWindow;
@@ -31,8 +35,10 @@ export async function publishReviewSummary(target: SummaryTarget): Promise<numbe
     let creationAttempted = false;
     let creationRejected = false;
     try {
+      // Include connection wait and reserve time to finish the transaction.
+      const deadline = performance.now() + SUMMARY_TRANSACTION_TIMEOUT_MS - SUMMARY_COMMIT_RESERVE_MS;
       const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const signal = reviewPublicationSignal(target.executionWindow, 10_000)!;
+        if (target.executionWindow) assertReviewProcessingActive(target.executionWindow);
         const [current] = await tx.$queryRaw<{
           headSha: string | null; reviewRequestVersion: number; reviewCommentId: bigint | null; reviewBody: string | null; status: string;
         }[]>`SELECT "headSha", "reviewRequestVersion", "reviewCommentId", "reviewBody", status
@@ -52,6 +58,9 @@ export async function publishReviewSummary(target: SummaryTarget): Promise<numbe
         const footer = /\n*Last reviewed commit: [0-9a-f]{40}\s*$/i.exec(target.body)?.[0] ?? "";
         const body = (footer ? target.body.slice(0, -footer.length) : target.body) + history + footer;
         if (target.executionWindow) assertReviewProcessingActive(target.executionWindow);
+        const remainingMs = Math.floor(deadline - performance.now());
+        if (remainingMs <= 0) throw new DOMException("PR summary publication deadline expired", "TimeoutError");
+        const signal = reviewPublicationSignal(target.executionWindow, Math.min(SUMMARY_PROVIDER_TIMEOUT_MS, remainingMs))!;
         signal.throwIfAborted();
         let id = current.reviewCommentId === null ? null : Number(current.reviewCommentId);
         if (id === null) {
@@ -62,7 +71,7 @@ export async function publishReviewSummary(target: SummaryTarget): Promise<numbe
         const marker = id < 0 ? `Octopus publication reference: ${target.pullRequestId}:${-id}` : undefined;
         if (id < 0 && id !== reservation) {
           id = await findPullRequestSummaryComment(target.owner, target.repo, target.prNumber, marker!, token, signal);
-          if (id === null) return { pendingCreation: true };
+          if (id === null) return { pendingCreation: Number(current.reviewCommentId) };
         }
         if (target.executionWindow) assertReviewProcessingActive(target.executionWindow);
         signal.throwIfAborted();
@@ -97,7 +106,7 @@ export async function publishReviewSummary(target: SummaryTarget): Promise<numbe
         }
         await tx.pullRequest.updateMany({ where: { id: target.pullRequestId }, data: { reviewCommentId: id } });
         return id;
-      }, { timeout: 20_000, maxWait: 10_000 });
+      }, { timeout: SUMMARY_TRANSACTION_TIMEOUT_MS, maxWait: 10_000 });
       if (result === null && reservation !== undefined) {
         await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
           await tx.pullRequest.updateMany({ where: { id: target.pullRequestId, reviewCommentId: reservation }, data: { reviewCommentId: null } });
@@ -108,10 +117,10 @@ export async function publishReviewSummary(target: SummaryTarget): Promise<numbe
         // Release the row lock before waiting so the reservation's owner can
         // enter its POST transaction. Every recheck repeats the stale guards.
         reconciliationDeadline ??= performance.now() + 10_000;
-        if (performance.now() >= reconciliationDeadline) {
-          throw new Error("PR summary creation is unresolved; awaiting reconciliation");
-        }
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // After the owner's provider timeout, adopt the reservation if its marker is still absent.
+        // A delayed GitHub listing can still cause a duplicate.
+        if (performance.now() >= reconciliationDeadline) reservation = result.pendingCreation;
+        else await new Promise(resolve => setTimeout(resolve, 100));
         continue;
       }
       reservation = result.reserved;

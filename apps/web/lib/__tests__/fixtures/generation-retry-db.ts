@@ -17,7 +17,7 @@ mock.module("@/lib/events/bus", () => ({ eventBus: { emit: () => {}, on: () => {
 // One synthetic dollar per charged call keeps the ledger arithmetic exact.
 mock.module("@/lib/cost", () => ({ getModelPricing: async () => ({}), calcCost: () => 1 }));
 const { prisma } = await import("@octopus/db");
-const { claimGenerationAttempt, startReviewOutcome, GENERATION_ATTEMPT_BUDGET } = await import("../../review-attempt-outcome");
+const { claimGenerationAttempt, exhaustGenerationAttempts, deferReviewOutcome, startReviewOutcome, GENERATION_ATTEMPT_BUDGET } = await import("../../review-attempt-outcome");
 const { executeCoveredReview } = await import("../../review-assessment");
 const { AiProviderFailure } = await import("../../provider-failure");
 const { logAiUsage } = await import("../../ai-usage");
@@ -56,6 +56,20 @@ try {
   const raced = await Promise.all(Array.from({ length: 6 }, () => claimGenerationAttempt(key(2))));
   assert.equal(raced.filter(Boolean).length, GENERATION_ATTEMPT_BUDGET);
   assert.equal(await attempts(2), GENERATION_ATTEMPT_BUDGET);
+  // A permanent or unknown failure closes the budget: no later delivery may dispatch again.
+  assert.equal(await claimGenerationAttempt(key(3)), true);
+  await exhaustGenerationAttempts(key(3));
+  assert.equal(await claimGenerationAttempt(key(3)), false, "the unused unit is gone after a non-transient failure");
+  assert.equal(await attempts(3), GENERATION_ATTEMPT_BUDGET);
+  // A deferral must not erase a claimed generation, or a later delivery would get a fresh budget.
+  await startReviewOutcome(key(4), new Date());
+  assert.equal(await claimGenerationAttempt(key(4)), true);
+  await deferReviewOutcome(key(4));
+  assert.equal(await attempts(4), 1, "the claimed generation survives the deferral");
+  assert.deepEqual([await claimGenerationAttempt(key(4)), await claimGenerationAttempt(key(4))], [true, false]);
+  await startReviewOutcome(key(5), new Date());
+  await deferReviewOutcome(key(5));
+  assert.equal(await prisma.reviewAttemptOutcome.count({ where: { pullRequestId: pr.id, requestVersion: 5 } }), 0, "a deferral without a generation still removes its row");
 
   const balance = async () => { const row = await prisma.organization.findUniqueOrThrow({ where: { id: org.id } }); return Number(row.creditBalance) + Number(row.freeCreditBalance); };
   const usage = { provider: "openai" as const, model: "gpt-fixture", operation: "review", inputTokens: 1, outputTokens: 1, organizationId: org.id };

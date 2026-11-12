@@ -22,7 +22,7 @@ const server = Bun.serve({ port: 0, fetch() {
 } });
 process.env.OPENAI_BASE_URL = `http://127.0.0.1:${server.port}/v1`;
 process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${server.port}`;
-process.env.OPENAI_API_KEY = process.env.ANTHROPIC_API_KEY = "synthetic-platform-key";
+process.env.OPENAI_API_KEY = process.env.ANTHROPIC_API_KEY = process.env.GOOGLE_API_KEY = "synthetic-platform-key";
 const { createAiMessage, credentialRouteUnchanged } = await import("../../ai-router");
 const { AiProviderFailure, classifyFailure } = await import("../../provider-failure");
 const { executeCoveredReview } = await import("../../review-assessment");
@@ -61,6 +61,8 @@ try {
 
   const claudeFailure = await failed("claude-code:fixture", { maxRetries: 0 });
   assert.equal(await credentialRouteUnchanged(claudeFailure.error, "org"), true);
+  responses = [{ status: 429, headers: { "retry-after": "7" } }];
+  assert.equal((await failed("claude-code:fixture", { maxRetries: 0 })).error.retryAfterMs, 7000, "Retry-After survives the Claude Code wrapper as a number");
   claudeKey = "synthetic-replacement-key";
   assert.equal(await credentialRouteUnchanged(claudeFailure.error, "org"), false, "rotating the Claude Code key changes the route");
   claudeKey = "synthetic-claude-key";
@@ -113,6 +115,15 @@ try {
   try {
     await assert.rejects(() => createAiMessage({ model: "gpt-fixture", maxTokens: 16, maxRetries: 0, signal: sdkAbort.signal, messages: [{ role: "user", content: "fixture" }] }, "org"));
     assert.equal(sdkSignal?.aborted, true, "the OpenAI SDK receives and honors the request signal");
+    const googleAbort = new AbortController();
+    let googleSignal: AbortSignal | null | undefined;
+    globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      googleSignal = init?.signal;
+      googleAbort.abort();
+      return Promise.reject(new DOMException("cancelled", "AbortError"));
+    }) as typeof fetch;
+    await assert.rejects(() => createAiMessage({ model: "gemini-fixture", maxTokens: 16, maxRetries: 0, signal: googleAbort.signal, messages: [{ role: "user", content: "fixture" }] }, "org"));
+    assert.equal(googleSignal?.aborted, true, "the Google SDK receives and honors the request signal");
   } finally { globalThis.fetch = originalFetch; storedKey = null; }
 
   // A retry refused before dispatch leaves the original classified failure, and the supplied input, standing.

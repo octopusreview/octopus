@@ -1,6 +1,6 @@
 import "server-only";
 import { reportBackgroundFailure, type FailureStage } from "./background-failure";
-import { ReviewOutcomeRecorder, startReviewOutcome, deferReviewOutcome, claimGenerationAttempt } from "@/lib/review-attempt-outcome";
+import { ReviewOutcomeRecorder, startReviewOutcome, deferReviewOutcome, claimGenerationAttempt, exhaustGenerationAttempts } from "@/lib/review-attempt-outcome";
 import { runRepositoryIndex, SupersededIndexError } from "@/lib/repository-index-completion";
 import crypto from "node:crypto";
 import { prisma, type Prisma } from "@octopus/db";
@@ -2657,8 +2657,12 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
     if (attemptCoverage && !attemptSaved && attemptCoverage.assessment && attemptCoverage.assessment.state !== "incomplete") {
       markReviewAssessmentIncomplete(attemptCoverage, "Review processing failed or was interrupted before persistence");
     }
-    // Only after an admitted retry was dispatched and was interrupted as well.
-    const interruptedTwice = failureStage === "generation" && !attemptCoverage?.assessment?.responseSha256 && attemptCoverage?.assessment?.attempts?.length === 1 && (attemptCoverage.assessment.requests.length > 0 || attemptCoverage.assessment.capacityAdmission?.primaryDispatch === "started")
+    // A redelivered or re-enqueued job must not dispatch again after a permanent or unknown generation failure.
+    if (failureStage === "generation" && reportingError instanceof AiProviderFailure && attemptCoverage?.assessment?.failure?.retryability !== "transient") {
+      await exhaustGenerationAttempts(outcomeKey).catch(e => console.error("[reviewer] Failed to close the generation budget:", safeErrorDetails(e)));
+    }
+    // Only after an admitted retry was dispatched and failed as well; a retry refused before dispatch leaves no earlier attempt.
+    const interruptedTwice = failureStage === "generation" && !attemptCoverage?.assessment?.responseSha256 && attemptCoverage?.assessment?.attempts?.length === 1
       ? `Review generation was interrupted twice and was not completed. No score was produced. Comment \`${isForgejo ? "@octopus" : "@octopus-review"}\` to run it again.` : null;
     const failureBody = attemptCoverage?.assessment && !attemptSaved
       ? applyReviewCoverage(`## 🐙 Octopus Review\n\n${interruptedTwice ?? "Assessment failed or was interrupted. No complete assessment is available."}`, attemptCoverage, failureAttemptId) : null;

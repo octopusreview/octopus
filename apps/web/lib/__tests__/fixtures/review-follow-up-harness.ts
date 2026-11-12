@@ -17,11 +17,13 @@ const refusalFlow = process.argv.includes("--provider-refusal");
 const providerErrorPrivacy = process.argv.includes("--provider-error-privacy");
 const generationRetry = process.argv.includes("--generation-retry");
 const generationDiagnostic = process.argv.includes("--generation-failure-diagnostic") || generationRetry;
-type GenerationOutcome = "terminated" | "unavailable" | "organization-auth" | "rate-limit" | "unknown" | "success";
+type GenerationOutcome = "terminated" | "unavailable" | "organization-auth" | "rate-limit" | "unknown" | "deadline" | "success";
 let generationFailure: GenerationOutcome = "terminated";
 // Scripted primary-generation outcomes; when empty every dispatch fails with `generationFailure`.
 const generationScript: GenerationOutcome[] = [];
 let retryAfterHeader = "1";
+// Adapters such as a CLI send no request receipt.
+let recordRequests = true;
 // A change that takes effect after the first failed dispatch, i.e. between the two attempts.
 type RetryBlock = "" | "head" | "superseded" | "cancelled" | "key" | "access" | "spend" | "guard";
 let pendingRetryBlock: RetryBlock = "";
@@ -226,7 +228,9 @@ mock.module("@/lib/ai-router", () => ({ credentialRouteUnchanged: async () => re
     generationDispatches++;
     const outcome = generationScript.shift() ?? generationFailure;
     if (outcome !== "success") {
-      params.onRequest?.({ provider: "openai", model: params.model, sha256: "fixture", inputPreserved: true });
+      if (recordRequests) params.onRequest?.({ provider: "openai", model: params.model, sha256: "fixture", inputPreserved: true });
+      // The job deadline passes while the provider is still generating.
+      if (outcome === "deadline") { retryAbort.abort(new DOMException("fixture", "TimeoutError")); await new Promise(() => {}); }
       retryBlock = pendingRetryBlock;
       if (retryBlock === "cancelled") retryAbort.abort(new DOMException("fixture", "AbortError"));
       const raw = Object.assign(new Error("synthetic-generation-secret"), { status: { terminated: 503, unavailable: 503, "organization-auth": 401, "rate-limit": 429, unknown: undefined }[outcome],
@@ -583,9 +587,9 @@ if (generationRetry) {
   const originalError = console.error;
   console.error = (...args: unknown[]) => { errors.push(args); };
   const interruptedTwice = "Review generation was interrupted twice and was not completed. No score was produced. Comment `@octopus-review` to run it again.";
-  const run = async (script: GenerationOutcome[], options: { block?: RetryBlock; remaining?: number; retryAfter?: string; budget?: number } = {}) => {
+  const run = async (script: GenerationOutcome[], options: { block?: RetryBlock; remaining?: number; retryAfter?: string; budget?: number; unrecorded?: boolean } = {}) => {
     generationScript.length = 0; generationScript.push(...script);
-    pendingRetryBlock = options.block ?? ""; retryBlock = ""; retryAbort = new AbortController(); retryAfterHeader = options.retryAfter ?? "1";
+    pendingRetryBlock = options.block ?? ""; retryBlock = ""; retryAbort = new AbortController(); retryAfterHeader = options.retryAfter ?? "1"; recordRequests = !options.unrecorded;
     generationBudget.claims = 0; generationBudget.limit = options.budget ?? Infinity;
     pr.status = "pending";
     summaries.length = 0; checkOutputs.length = 0; unknownUsage.length = 0; chargeKeys.length = 0; usageOperations.length = 0;
@@ -639,12 +643,29 @@ if (generationRetry) {
       }
     }
 
+    result = await run(["terminated", "organization-auth"], { unrecorded: true });
+    assert.equal(result.dispatches, 2);
+    for (const output of [result.body, result.check]) {
+      assert.ok(output.includes(interruptedTwice), "two failed generations are reported without a request receipt");
+      assert.ok(output.includes("Failure code: `http_401`."));
+    }
+
+    result = await run(["terminated", "deadline"]);
+    assert.equal(result.dispatches, 2);
+    assert.deepEqual([result.assessment?.failure?.code, result.assessment?.attempts?.length], ["ETIMEDOUT", 1], "a retry cut off by the deadline keeps a safe code");
+    for (const output of [result.body, result.check]) {
+      assert.ok(output.includes(interruptedTwice));
+      assert.ok(output.includes("Failure code: `ETIMEDOUT`.") && output.includes(result.attemptId));
+    }
+
     result = await run(["organization-auth"]);
     assert.equal(result.dispatches, 1, "an organization-level rejection is never retried");
     assert.ok(!result.body.includes("interrupted twice"));
+    assert.equal(generationBudget.limit, 0, "a permanent failure uses up the durable budget");
     result = await run(["unknown"]);
     assert.equal(result.dispatches, 1, "an unknown cause is never retried");
     assert.equal(result.assessment?.failure?.retryability, "unknown");
+    assert.equal(generationBudget.limit, 0, "an unknown failure uses up the durable budget");
 
     result = await run(["rate-limit", "success"], { retryAfter: "2" });
     assert.equal(result.dispatches, 2, "a platform-key 429 is retried after its Retry-After");
@@ -659,6 +680,7 @@ if (generationRetry) {
 
     result = await run(["terminated", "success"], { remaining: 200_000 });
     assert.equal(result.dispatches, 1, "too little of the job window is left");
+    assert.equal(generationBudget.limit, Infinity, "a transient failure leaves the remaining budget for a later delivery");
     for (const block of ["head", "superseded", "cancelled", "key", "access", "spend", "guard"] as const) {
       result = await run(["terminated", "success"], { block });
       assert.equal(result.dispatches, 1, `no second dispatch after: ${block}`);

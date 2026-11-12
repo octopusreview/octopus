@@ -9,4 +9,12 @@ import { fileURLToPath } from "node:url";
     const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
     expect(code, `${stdout}\n${stderr}`).toBe(0);
   }, 30_000);
+
+  it("keeps failed attempts with unknown usage out of the daily usage chart", async () => {
+    const child = Bun.spawn([process.execPath, fileURLToPath(new URL("./fixtures/usage-unknown-db.tsx", import.meta.url))], {
+      cwd: process.cwd(), stdout: "pipe", stderr: "pipe",
+    });
+    const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+    expect(code, `${stdout}\n${stderr}`).toBe(0);
+  }, 30_000);
 });

@@ -87,6 +87,12 @@ export async function claimGenerationAttempt(key: ReviewOutcomeKey, at: Date = n
   return claimed.length === 1;
 }
 
+/** Only a transient failure may be retried: any other generation failure uses up the budget for its request version. */
+export async function exhaustGenerationAttempts(key: ReviewOutcomeKey): Promise<void> {
+  await prisma.$executeRaw`UPDATE review_attempt_outcomes SET "generationAttempts" = ${GENERATION_ATTEMPT_BUDGET}
+    WHERE "pullRequestId" = ${key.pullRequestId} AND "requestVersion" = ${key.requestVersion}`;
+}
+
 export async function finishReviewOutcome(key: ReviewOutcomeKey, kind: ReviewKind, outcome: ReviewOutcome, archiveId: string | null, at: Date): Promise<void> {
   await bestEffort(tx => tx.$executeRaw`
     UPDATE review_attempt_outcomes SET kind = ${kind}, outcome = ${outcome},
@@ -120,7 +126,8 @@ export async function deferReviewOutcome(key: ReviewOutcomeKey): Promise<void> {
       WHERE "pullRequestId" = ${key.pullRequestId} AND "requestVersion" = ${key.requestVersion}
         AND outcome IS DISTINCT FROM 'published' AND tries > 0`;
     await tx.$executeRaw`DELETE FROM review_attempt_outcomes
-      WHERE "pullRequestId" = ${key.pullRequestId} AND "requestVersion" = ${key.requestVersion} AND tries = 0 AND outcome IS NULL`;
+      WHERE "pullRequestId" = ${key.pullRequestId} AND "requestVersion" = ${key.requestVersion} AND tries = 0 AND outcome IS NULL
+        AND "generationAttempts" = 0`;
   });
 }
 

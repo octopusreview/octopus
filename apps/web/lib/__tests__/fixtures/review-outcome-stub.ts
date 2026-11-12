@@ -6,6 +6,7 @@ import { mock } from "bun:test";
 export const generationBudget = { claims: 0, limit: Infinity };
 mock.module("@/lib/review-attempt-outcome", () => ({
   claimGenerationAttempt: async () => ++generationBudget.claims <= generationBudget.limit,
+  exhaustGenerationAttempts: async () => { generationBudget.limit = 0; },
   startReviewOutcome: async () => {},
   deferReviewOutcome: async () => {},
   supersedeReviewOutcomes: async () => {},

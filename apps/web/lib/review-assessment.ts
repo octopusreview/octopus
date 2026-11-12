@@ -3,7 +3,7 @@ import type { AiRequestReceipt } from "@/lib/providers/request-evidence";
 import { sha256, type ReviewCoverage } from "@/lib/review-coverage";
 import { parseRecoveryFindingsSet, recoveryFindingsBody } from "@/lib/review-evidence";
 import { parseFindingsFromJson, type InlineFinding } from "@/lib/review-dedup";
-import { CapacityAdmissionError, markCapacityNotDispatched, admitGenerationRetry, withinReviewWindow, COMPLETE_REVIEW_POLICY, GENERATION_RETRY, type CapacityAdmissionReceipt, type ReviewExecutionWindow } from "./review-capacity";
+import { CapacityAdmissionError, markCapacityNotDispatched, admitGenerationRetry, withinReviewWindow, isReviewCancelled, COMPLETE_REVIEW_POLICY, GENERATION_RETRY, type CapacityAdmissionReceipt, type ReviewExecutionWindow } from "./review-capacity";
 import { AiProviderFailure, classifyFailure, safeErrorDetails, type FailureClass, type KeyOwner } from "./provider-failure";
 
 export type FindingsRecoveryEvidence = {
@@ -281,10 +281,11 @@ export async function executeCoveredReview(
     } } : {}),
   });
   let first: { error: unknown; reason: string; attempt: NonNullable<ReviewAssessment["attempts"]>[number] } | undefined;
+  let retryDeadline: AbortSignal | undefined;
   for (;;) try {
     // The admitted path bounds itself; any other retry is held to the original job window here.
     response = first && retry?.window && !request.completeReviewAdmission
-      ? await withinReviewWindow(retry.window, retry.window.remainingMs() - COMPLETE_REVIEW_POLICY.publicationReserveMs, dispatch) : await dispatch();
+      ? await withinReviewWindow(retry.window, retry.window.remainingMs() - COMPLETE_REVIEW_POLICY.publicationReserveMs, signal => dispatch(retryDeadline = signal)) : await dispatch();
     break;
   } catch (error) {
     if (first && error instanceof CapacityAdmissionError && error.receipt.primaryDispatch === "not-started" && assessment.requests.length === 0) {
@@ -309,6 +310,12 @@ export async function executeCoveredReview(
             assessment.reason = "Provider request failed during review generation";
           }
         } catch { /* Preserve the original failure if diagnostics are unavailable. */ }
+      }
+      // The deadline wrapper's error carries no provider detail; a retry it cut off still gets a safe code.
+      if (first && !assessment.failure && retryDeadline?.aborted && !isReviewCancelled(retry?.window)) {
+        const { keyOwner } = first.attempt.failure;
+        assessment.failure = { stage: "generation", ...classifyFailure({ code: "ETIMEDOUT" }, keyOwner, "generation"), keyOwner };
+        assessment.reason = "Provider request failed during review generation";
       }
     }
     const failure = assessment.failure;

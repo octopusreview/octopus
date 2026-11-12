@@ -219,6 +219,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
       WHERE "organizationId" = ${orgId}
         AND "createdAt" >= ${periodStart}
         AND "createdAt" < ${periodEnd}
+        AND NOT "usageUnknown"
       GROUP BY day, model, provider
       ORDER BY day ASC
     `,

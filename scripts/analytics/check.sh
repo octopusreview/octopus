@@ -66,8 +66,9 @@ SELECT 'one','live','delivered','purchase',payload FROM (VALUES
   (json_build_object('schemaVersion',1,'eventId','payment_'||repeat('c',64),'eventType','purchase','currency','USD','amountMinor','1000','occurredAt','not a date')::text)
 ) AS invalid(payload);
 SQL
-# The creation paths use nested owner INSERTs inside one transaction. Verify
-# transaction-stable PostgreSQL defaults, even across separate statements.
+# The application gives an organisation and its owner membership one createdAt by
+# inserting both in a single nested create (asserted in the creation-provenance test).
+# This probe only checks that this fixture's own defaults agree within a transaction.
 psql_fixture <<'SQL'
 BEGIN;
 INSERT INTO organizations (id) VALUES ('timestamp-probe');
@@ -86,19 +87,19 @@ SQL
 if output=$(psql_fixture < update-repositories-first-index.sql 2>&1); then
   echo 'Update unexpectedly accepted a missing schema' >&2; exit 1
 fi
-[[ "$output" == *'Analytics schema missing; install access.sql before this update'* ]]
+[[ "$output" == *'Analytics schema missing; install access.sql before this update'* ]] || { echo 'Expected refusal message not found' >&2; exit 1; }
 psql_fixture -c 'CREATE SCHEMA octopus_analytics'
 if output=$(psql_fixture < update-repositories-first-index.sql 2>&1); then
   echo 'Update unexpectedly accepted a missing view' >&2; exit 1
 fi
-[[ "$output" == *'Analytics repositories_v1 view missing; install access.sql before this update'* ]]
+[[ "$output" == *'Analytics repositories_v1 view missing; install access.sql before this update'* ]] || { echo 'Expected refusal message not found' >&2; exit 1; }
 psql_fixture -c 'DROP SCHEMA octopus_analytics'
 # Column grants must reject installation and roll back its role and schema.
 psql_fixture -c 'GRANT SELECT ("anthropicApiKey") ON organizations TO PUBLIC'
 if output=$(psql_fixture < access.sql 2>&1); then
   echo 'PUBLIC column grant unexpectedly accepted' >&2; exit 1
 fi
-[[ "$output" == *'Existing public privileges need operator review; no changes applied'* ]]
+[[ "$output" == *'Existing public privileges need operator review; no changes applied'* ]] || { echo 'Expected refusal message not found' >&2; exit 1; }
 psql_fixture <<'SQL'
 DO $$ BEGIN
   IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'octopus_analytics_reader')
@@ -393,7 +394,7 @@ for prerequisite in schema role view creationSource creatorFirstOrganization arr
   if output=$({ printf 'BEGIN;\n%s\n' "$setup"; cat update-organization-provenance.sql; } | psql_fixture 2>&1); then
     echo "Provenance update unexpectedly accepted missing $prerequisite" >&2; exit 1
   fi
-  [[ "$output" == *"$message"* ]]
+  [[ "$output" == *"$message"* ]] || { echo 'Expected refusal message not found' >&2; exit 1; }
   psql_fixture <<'SQL'
 DO $$ BEGIN
   IF to_regclass('octopus_analytics.organization_provenance_v1') IS NOT NULL
@@ -629,9 +630,9 @@ for prerequisite in schema role view; do
     echo 'Signup update unexpectedly accepted a missing prerequisite' >&2; exit 1
   fi
   case "$prerequisite" in
-    schema) [[ "$output" == *'Analytics schema missing;'* ]] ;;
-    role) [[ "$output" == *'Analytics reader role missing;'* ]] ;;
-    view) [[ "$output" == *'Analytics organizations_v1 view missing;'* ]] ;;
+    schema) [[ "$output" == *'Analytics schema missing;'* ]] || { echo 'Expected refusal message not found' >&2; exit 1; } ;;
+    role) [[ "$output" == *'Analytics reader role missing;'* ]] || { echo 'Expected refusal message not found' >&2; exit 1; } ;;
+    view) [[ "$output" == *'Analytics organizations_v1 view missing;'* ]] || { echo 'Expected refusal message not found' >&2; exit 1; } ;;
   esac
   psql_fixture <<'SQL'
 DO $$ BEGIN

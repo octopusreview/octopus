@@ -191,8 +191,10 @@ organisation, including deleted organisations:
 The creator is the unique owner membership whose `createdAt` equals the
 organisation's `createdAt`, including soft-deleted memberships. Only organisations
 with NULL, `auto_default` or `user_created` creation source qualify. The two
-ordinary creation paths insert the organisation and owner membership together in
-one transaction, with both timestamps defaulting to that transaction's `now()`.
+ordinary creation paths insert the organisation and its owner membership in a
+single nested create, which gives both rows the same `createdAt`; the
+creation-provenance test asserts this for both paths. Inserting them as separate
+statements, even inside one transaction, would not.
 No matching owner, multiple matching owners, an excluded creation source or a
 missing user gives `unknown` / `no_creator` / `unknown`.
 

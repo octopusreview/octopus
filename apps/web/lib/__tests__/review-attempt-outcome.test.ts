@@ -25,3 +25,19 @@ const scenarios = [
     }, 30_000);
   }
 });
+
+(process.env.RUN_REVIEW_OUTCOME_DB_TESTS === "1" ? describe : describe.skip)("review summary publication with PostgreSQL", () => {
+  for (const scenario of ["lock-success", "superseded", "cancelled", "deadline"]) {
+    it(scenario, async () => {
+      const child = Bun.spawn([process.execPath, fileURLToPath(new URL("./fixtures/review-summary-lock-db.ts", import.meta.url)), scenario], {
+        stdout: "pipe", stderr: "pipe", env: process.env,
+      });
+      const watchdog = setTimeout(() => child.kill(), 26_000);
+      try {
+        const [exit, , stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+        const reason = stderr.includes("TimeoutError") ? "TimeoutError" : stderr.includes("AssertionError") ? "AssertionError" : "child failed";
+        expect({ exit, reason: exit === 0 ? "" : reason }).toEqual({ exit: 0, reason: "" });
+      } finally { clearTimeout(watchdog); }
+    }, 30_000);
+  }
+});

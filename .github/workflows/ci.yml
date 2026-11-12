@@ -129,6 +129,46 @@ jobs:
         run: bun test lib/__tests__/agent-task-security.db.test.ts
         working-directory: apps/web
 
+      - name: Test queue database safety guard
+        run: bun test lib/__tests__/queue-test-database.test.ts
+        working-directory: apps/web
+
+      - name: Test queue attempt fencing against PostgreSQL
+        run: bun test lib/__tests__/queue-attempt-fence.db.test.ts
+        working-directory: apps/web
+        env:
+          RUN_QUEUE_DB_TESTS: "1"
+
+      - name: Test graceful queue shutdown against PostgreSQL
+        run: bun test lib/__tests__/queue-shutdown.db.test.ts
+        working-directory: apps/web
+        env:
+          RUN_QUEUE_DB_TESTS: "1"
+
+      - name: Test queue drain state against PostgreSQL
+        run: bun test lib/__tests__/queue-drain.db.test.ts
+        working-directory: apps/web
+        env:
+          RUN_QUEUE_DB_TESTS: "1"
+
+      - name: Test queue workers following the drain state against PostgreSQL
+        run: bun test lib/__tests__/queue-drain-worker.db.test.ts
+        working-directory: apps/web
+        env:
+          RUN_QUEUE_DB_TESTS: "1"
+
+      - name: Test queue drain admin endpoint and inline work against PostgreSQL
+        run: bun test lib/__tests__/queue-drain-route.db.test.ts
+        working-directory: apps/web
+        env:
+          RUN_QUEUE_DB_TESTS: "1"
+
+      - name: Test a rolling update with a queue drain against PostgreSQL
+        run: bun test lib/__tests__/queue-drain-rollout.db.test.ts
+        working-directory: apps/web
+        env:
+          RUN_QUEUE_DB_TESTS: "1"
+
       - name: Test billing auto-reload invariants against PostgreSQL
         run: bun test lib/__tests__/billing.db.test.ts
         working-directory: apps/web
@@ -172,6 +212,18 @@ jobs:
         working-directory: apps/web
         env:
           RUN_REVIEW_OUTCOME_DB_TESTS: "1"
+
+      - name: Test review reaper claims against PostgreSQL
+        run: bun test lib/__tests__/reap-stuck-reviews.db.test.ts
+        working-directory: apps/web
+        env:
+          RUN_REAPER_DB_TESTS: "1"
+
+      - name: Test review generation retry budget and charge idempotency against PostgreSQL
+        run: bun test lib/__tests__/generation-retry.db.test.ts
+        working-directory: apps/web
+        env:
+          RUN_GENERATION_RETRY_DB_TESTS: "1"
 
       - name: Test external review activity against PostgreSQL
         run: bun test lib/__tests__/external-review-activity.test.ts

@@ -6,8 +6,13 @@ import { notifyRepositoryIndex } from "@/lib/repository-index-notifications";
 import { clearAbortController } from "@/lib/indexing-abort";
 import { eventBus } from "@/lib/events";
 import type { LogLevel } from "@/lib/indexer";
+import { GitHubIndexDeferredError } from "@/lib/github-index-fetch";
+import { trackInline } from "@/lib/queue-drain-worker";
 
-export async function runIndexingInBackground(
+/** Detached from the request that started it, so it is counted until it settles. */
+export const runIndexingInBackground: typeof indexInBackground = (...args) => trackInline(() => indexInBackground(...args));
+
+async function indexInBackground(
   repoId: string,
   fullName: string,
   defaultBranch: string,
@@ -18,19 +23,20 @@ export async function runIndexingInBackground(
   abortController: AbortController,
   indexAttemptId: string,
   provider: string = "github",
+  allowPausedProbe = false,
 ) {
   try {
     const stats = await runRepositoryIndex(repoId, indexAttemptId, async () => {
       const { indexRepository: runIndexing } = await import("@/lib/indexer");
       void notifyRepositoryIndex(channel, repoId);
-      emitLog(`Starting indexing for ${fullName}...`);
+      emitLog("Starting indexing");
       return runIndexing(
         { repoId, indexAttemptId }, fullName, defaultBranch, installationId, emitLog,
-        abortController.signal, provider, organizationId,
+        abortController.signal, provider, organizationId, undefined, allowPausedProbe,
       );
     }, abortController.signal);
 
-    emitLog(`Indexing completed for ${fullName}`, "success");
+    emitLog("Indexing complete", "success");
 
     // Generate summary with AI
     emitLog("Generating repository summary with AI...");
@@ -44,8 +50,8 @@ export async function runIndexingInBackground(
       });
 
       emitLog("Repository summary generated", "success");
-    } catch (summarizeError) {
-      console.error("Failed to generate summary:", summarizeError);
+    } catch {
+      console.error("Failed to generate summary");
       emitLog("Summary generation failed (indexing still succeeded)", "warning");
     }
 
@@ -69,17 +75,19 @@ export async function runIndexingInBackground(
     clearAbortController(indexAttemptId);
     if (error instanceof SupersededIndexError) return;
 
-    const errorMsg = error instanceof Error ? error.message : "Unknown error";
+    const errorMsg = error instanceof GitHubIndexDeferredError && error.paused
+      ? "GitHub indexing paused after repeated rate limits. Check GitHub limits before retrying."
+      : "Indexing failed";
     const isCancelled = isIndexingCancelled(abortController.signal);
 
-    console.error(`Failed to index repo ${fullName}:`, error);
+    console.error("Failed to index repository");
 
     if (isCancelled) {
       emitLog("Indexing cancelled by user", "warning");
       void notifyRepositoryIndex(channel, repoId);
     } else {
       reportBackgroundFailure(error, { stage: "indexing", repositoryId: repoId, attemptId: indexAttemptId });
-      emitLog(`Indexing failed: ${errorMsg}`, "error");
+      emitLog(errorMsg, "error");
       eventBus.emit({
         type: "repo-indexed",
         orgId: organizationId,

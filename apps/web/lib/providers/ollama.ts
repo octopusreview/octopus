@@ -1,6 +1,6 @@
 import "server-only";
-import { observeAiRequest, completionEvidence } from "./request-evidence";
-import OpenAI from "openai";
+import { observeAiRequest, completionEvidence, sdkRequestOptions } from "./request-evidence";
+import OpenAI, { type ClientOptions } from "openai";
 import { prisma } from "@octopus/db";
 import type { Provider, AiCreateParams, AiResponse } from "./index";
 import { validateProviderUrl } from "./url-validation";
@@ -21,6 +21,19 @@ import { stripLoneSurrogates } from "./sanitize";
  */
 
 const DEFAULT_BASE_URL = "http://localhost:11434";
+
+// The SDK otherwise discards connection-timeout causes when wrapping fetch errors.
+const ollamaFetch: NonNullable<ClientOptions["fetch"]> = async (input, init) => {
+  try {
+    return await globalThis.fetch(input, init);
+  } catch (error) {
+    const cause = (error as { cause?: { code?: unknown; syscall?: unknown } })?.cause;
+    if (!init?.signal?.aborted && (cause?.code === "UND_ERR_CONNECT_TIMEOUT" || (cause?.code === "ETIMEDOUT" && cause.syscall === "connect"))) {
+      throw Object.assign(new Error("Connection failed"), { code: "UND_ERR_CONNECT_TIMEOUT" });
+    }
+    throw error;
+  }
+};
 
 /**
  * Parse + sanitize the operator-supplied base URL: require http(s) and reduce
@@ -63,6 +76,7 @@ function getClient(): OpenAI {
     apiKey: "ollama", // ignored by Ollama; the SDK just requires a non-empty value
     baseURL: `${base}/v1`,
     defaultHeaders,
+    fetch: ollamaFetch,
   });
   return platformClient;
 }
@@ -86,7 +100,7 @@ async function resolveOrgClient(orgId: string | null): Promise<OpenAI | null> {
   // Not cached: per-org base URLs vary, so the platformClient singleton can't
   // serve them. The env-level basic-auth credentials are host-specific and
   // intentionally not applied to a per-org host.
-  return new OpenAI({ apiKey: "ollama", baseURL: `${base}/v1` });
+  return new OpenAI({ apiKey: "ollama", baseURL: `${base}/v1`, fetch: ollamaFetch });
 }
 
 export const ollamaProvider: Provider = {
@@ -112,7 +126,7 @@ export const ollamaProvider: Provider = {
       model,
       max_completion_tokens: params.maxTokens,
       messages,
-    }));
+    }), sdkRequestOptions(params));
 
     const text = response.choices[0]?.message?.content ?? "";
 

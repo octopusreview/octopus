@@ -1,0 +1,10 @@
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { IndexingLogs } from '@/components/indexing-logs';
+const listeners = new Map<string, (event: unknown) => void>();
+const channel = { bind: (name: string, cb: (event: unknown) => void) => listeners.set(name, cb), unbind: (name: string) => listeners.delete(name) };
+const root = createRoot(document.getElementById('root')!);
+let logs: unknown[] = [];
+Object.assign(window, { privacyFixture: { channel, emit: (event: unknown) => listeners.get('index-log')?.(event), finish: (saved: unknown[]) => { logs = saved; root.render(<IndexingLogs repoId="repo" orgId="org" initialStatus="indexed" provider="github" />); } } });
+window.fetch = async () => Response.json({ logs, attempt: null, indexAttemptId: null });
+root.render(<IndexingLogs repoId="repo" orgId="org" initialStatus="indexing" provider="github" />);

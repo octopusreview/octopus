@@ -65,6 +65,7 @@ const outcomeTransaction = {
 };
 mock.module("@octopus/db", () => ({ prisma: {
   $transaction: async (run: (tx: typeof outcomeTransaction) => Promise<unknown>) => run(outcomeTransaction),
+  $queryRaw: async () => [{ generationAttempts: 1 }], // the durable generation budget always has room in this fixture
   repository: { findUnique: async () => repo, findMany: async () => [{ id: repo.id, activeIndexGeneration: null }] },
   systemConfig: { findUnique: async () => null },
   reviewIssue: { findMany: async () => [] },
@@ -83,7 +84,7 @@ mock.module("@/lib/reranker", () => ({ rerankDocuments: async () => [] }));
 mock.module("@/lib/knowledge-context", () => ({ getAlwaysIncludeKnowledge: async () => [], mergeKnowledgeChunks: () => [] }));
 mock.module("@/lib/review-routing", () => ({ resolveReviewModel: async () => "fixture-model" }));
 mock.module("@/lib/ai-usage", () => ({ logAiUsage: async () => {} }));
-mock.module("@/lib/ai-router", () => ({ getProviderForModel: async () => { throw new Error("Legacy fixture must not resolve adaptive capacity"); }, createAiMessage: async () => ({
+mock.module("@/lib/ai-router", () => ({ credentialRouteUnchanged: async () => true, getProviderForModel: async () => { throw new Error("Legacy fixture must not resolve adaptive capacity"); }, createAiMessage: async () => ({
   provider: "fixture", text: `Summary\n<!-- OCTOPUS_FINDINGS_START -->\n${JSON.stringify([finding])}\n<!-- OCTOPUS_FINDINGS_END -->`,
   usage: { inputTokens: 1, outputTokens: 1 },
 }) }));
@@ -102,7 +103,10 @@ mock.module("@/lib/review-summary-comment", () => ({ publishReviewSummary: async
   summaries.push(target.body);
   return 123;
 } }));
+// This fixture keeps no delivery table; publication runs without checkpoints.
+mock.module("@/lib/review-attempt-delivery", () => ({ deliverReviewAttempt: async (_id: string, deliver: (progress: unknown, checkpoint: () => Promise<void>) => Promise<void>) => deliver({}, async () => {}) }));
 mock.module("@/lib/review-attempt", () => ({
+  recordInterruptedAttempt: async () => { throw new Error("Unexpected interrupted attempt"); },
   recordFirstReviewCompletion: async () => { throw new Error("Fixture must stop before completion"); },
   withForgejoReviewPublication: async () => { throw new Error("Unexpected Forgejo publication"); },
   createReviewAttemptComment: async (_id: string, _head: string, _version: number, create: () => Promise<number>) => create(),
@@ -265,7 +269,9 @@ try {
       "hosted persistence and local output apply the same semantic suppression decision");
     assert.equal(published.at(-1)?.comments.length, retained, "hosted inline publication uses the suppressed union");
     assert.equal(parseFindingsFromJson(archived.at(-1)!.body)?.length, 1, "the archived raw model response preserves its findings markers");
-    assert.deepEqual(archived.at(-1)!.coverage, archived[0].coverage, "suppression does not change review coverage");
+    // The check decision follows the findings, so it is the one part that suppression may change.
+    const inputCoverage = ({ nativeCheckDecision: _decision, ...rest }: { nativeCheckDecision?: unknown }) => rest;
+    assert.deepEqual(inputCoverage(archived.at(-1)!.coverage), inputCoverage(archived[0].coverage), "suppression does not change review coverage");
     assert.equal(local.model, "fixture-model", "model routing is preserved");
     assert.equal(local.summary, "Summary", "local summary excludes the findings protocol block");
     assert.match(published.at(-1)!.body, new RegExp(`${retained} finding`), "summary count agrees with inline findings");

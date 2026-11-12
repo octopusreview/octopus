@@ -3,17 +3,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { hasOrgPermission } from "@/lib/org-permissions";
-import { decryptStringMaybeLegacy } from "@/lib/crypto";
+import { maskStoredKey } from "@/lib/api-key-preview";
 import { ApiKeysForm } from "../api-keys-form";
-
-// Decrypt the stored key (ciphertext at rest) and return a masked preview so the
-// full plaintext key never reaches the browser.
-function maskStoredKey(stored: string | null): string | null {
-  if (!stored) return null;
-  const key = decryptStringMaybeLegacy(stored);
-  if (key.length <= 8) return "••••••••";
-  return key.slice(0, 7) + "••••••••" + key.slice(-4);
-}
 
 export default async function ApiKeysPage() {
   const session = await auth.api.getSession({

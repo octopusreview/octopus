@@ -1,5 +1,6 @@
 import { CohereClient } from "cohere-ai";
 import { logAiUsage } from "./ai-usage";
+import { safeErrorDetails } from "./provider-failure";
 
 let cohereClient: CohereClient | null = null;
 
@@ -79,7 +80,7 @@ export async function rerankDocuments<T extends DocumentWithText>(
 
     return finalResults.map((r) => documents[r.index]!);
   } catch (err) {
-    console.warn("[reranker] Cohere API failed, skipping rerank:", (err as Error).message);
+    console.warn("[reranker] Cohere API failed, skipping rerank:", safeErrorDetails(err));
     return documents.slice(0, options.topK ?? 10);
   }
 }

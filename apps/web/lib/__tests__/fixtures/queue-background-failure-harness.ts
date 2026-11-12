@@ -5,12 +5,19 @@ const events: Array<{ contexts?: Record<string, Record<string, unknown>> }> = []
 mock.module("@sentry/nextjs", () => ({ captureEvent: (event: typeof events[number]) => { events.push(event); return "e".repeat(32); } }));
 for (const [path, names] of Object.entries({
   "forgejo-connector": ["cleanupForgejoConnectorRequests"], "emails/welcome": ["sendWelcomeEmail"],
-  "large-review-result": ["handleLargeReviewResult"], "community-review": ["processCommunityReview"],
   audit: ["enforceAuditLogRetention", "enforceActivityEventRetention"], "webhook-tenant": ["enforceWebhookDeliveryRetention"],
   releases: ["refreshReleaseCache"], subscription: ["renewDueSubscriptions"], credits: ["reconcileAutoReloadAttempts"],
   "marketing-outbox": ["syncMarketingConversions"], "ollama-admin": ["runOllamaPull"],
-  "reap-stuck-reviews": ["reapStuckReviews"], "discover-repositories": ["discoverRepositories"],
+  "discover-repositories": ["discoverRepositories"],
 })) mock.module(`../../${path}`, () => Object.fromEntries(names.map(name => [name, () => { throw new Error("Unexpected unrelated job"); }])));
+const largeResultError = Object.assign(new Error("synthetic-large-result-secret-request-id"), { status: 503 });
+mock.module("../../large-review-result", () => ({ handleLargeReviewResult: async () => { throw largeResultError; } }));
+let reaperCalls = 0;
+mock.module("../../reap-stuck-reviews", () => ({ reapStuckReviews: async () => { reaperCalls++; return { requeued: 0, failed: 0 }; } }));
+mock.module("../../github-deferred-index", () => ({ dispatchDeferredIndexes: async () => { throw new Error("synthetic private dispatch details"); } }));
+mock.module("../../github-index-rate-state", () => ({ pruneExpiredIndexRateWindows: async () => { throw new Error("Unexpected unrelated job"); } }));
+const communityError = Object.assign(new Error("synthetic-community-secret-request-id"), { status: 503 });
+mock.module("../../community-review", () => ({ processCommunityReview: async () => { throw communityError; } }));
 const reviewCalls: unknown[][] = [];
 let reviewError: Error | undefined;
 mock.module("../../reviewer", () => ({ processReview: async (...args: unknown[]) => {
@@ -21,6 +28,34 @@ const { registerWorkers } = await import("../../queue-workers");
 const callbacks = new Map<string, (jobs: unknown[]) => Promise<void>>();
 await registerWorkers({ work: async (name: string, ...args: unknown[]) => { callbacks.set(name, args.at(-1) as never); } } as never,
   { reviewConcurrency: 1 } as never);
+const reaperLogs: unknown[][] = [];
+const originalReaperError = console.error;
+console.error = (...args: unknown[]) => { reaperLogs.push(args); };
+try { await callbacks.get("reap-stuck-reviews")!([{ id: "sweep" }]); }
+finally { console.error = originalReaperError; }
+assert.equal(reaperCalls, 1, "a failed deferred-index sweep must not disable the review reaper");
+assert.equal(JSON.stringify(reaperLogs).includes("synthetic private dispatch details"), false);
+const communityLogs: unknown[][] = [];
+const originalCommunityError = console.error;
+console.error = (...args: unknown[]) => { communityLogs.push(args); };
+try {
+  await assert.rejects(() => callbacks.get("community-review")!([{ id: "queue-job", data: { jobId: "community-job" } }]), error => error === communityError);
+  assert.deepEqual(communityLogs[0][1], { name: "Error", status: 503 });
+  assert.equal(JSON.stringify(communityLogs).includes("synthetic-community-secret-request-id"), false);
+} finally { console.error = originalCommunityError; }
+const largeResultLogs: unknown[][] = [];
+console.error = (...args: unknown[]) => { largeResultLogs.push(args); };
+try {
+  await assert.rejects(() => callbacks.get("post-large-review-result")!([{ id: "queue-job", data: { pullRequestId: "pr" } }]), error => {
+    assert.ok(error instanceof Error);
+    assert.equal(error.message, "Large review result delivery failed");
+    assert.equal((error as Error & { status?: number }).status, 503);
+    assert.doesNotMatch(String(error.stack), /synthetic-large-result-secret-request-id/);
+    return true;
+  });
+  assert.deepEqual(largeResultLogs[0][1], { name: "Error", status: 503 });
+  assert.doesNotMatch(JSON.stringify(largeResultLogs), /synthetic-large-result-secret-request-id/);
+} finally { console.error = originalCommunityError; }
 const job = { id: "job", data: { pullRequestId: "pr", repositoryId: "repo" }, retryCount: 1, retryLimit: 2,
   startedOn: new Date(), expireInSeconds: 900, signal: new AbortController().signal };
 await callbacks.get("process-review")!([job]);

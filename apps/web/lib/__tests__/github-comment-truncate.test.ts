@@ -125,6 +125,44 @@ it("pins submitted review records to the originating commit", async () => {
   }
 });
 
+it("keeps GitHub review rejection bodies private while retaining the status", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response("synthetic-review-response-private", { status: 422 })) as typeof fetch;
+  try {
+    let failure: unknown;
+    try { await createPullRequestReview(1, "owner", "repo", 2, "Review", "COMMENT", [], "test-only-token"); }
+    catch (error) { failure = error; }
+    expect(failure).toMatchObject({ message: "Failed to create PR review: 422", status: 422 });
+    expect(String(failure)).not.toContain("synthetic-review-response-private");
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+it("retains OSS summary-only fallback for a GitHub 422 without retrying unrelated rejections", async () => {
+  const { postOssReview } = await import("@/lib/oss-review-post");
+  const originalFetch = globalThis.fetch;
+  const requests: { comments: unknown[] }[] = [];
+  let status = 422;
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    requests.push(JSON.parse(String(init?.body)));
+    return requests.length === 1 ? new Response("synthetic-review-response-private", { status }) : Response.json({ id: 123 });
+  }) as typeof fetch;
+  const params = { owner: "fixture", repo: "review", prNumber: 1, botToken: "test-only-token", summary: "Synthetic review",
+    diff: "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
+    findings: [{ severity: "🟠", title: "Fixture", filePath: "src/a.ts", startLine: 1, endLine: 1, category: "Bug", description: "Fixture finding", suggestion: "", confidence: 95 }] };
+  try {
+    expect(await postOssReview(params)).toEqual({ posted: 0, skipped: 1 });
+    expect(requests.map(request => request.comments.length)).toEqual([1, 0]);
+    for (status of [401, 403, 429]) {
+      requests.length = 0;
+      let failure: unknown;
+      try { await postOssReview(params); } catch (error) { failure = error; }
+      expect(failure).toMatchObject({ status });
+      expect(String(failure)).not.toContain("synthetic-review-response-private");
+      expect(requests).toHaveLength(1);
+    }
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 it("publishes coverage totals and the record link without a file inventory", async () => {
   const { prepareReviewInput, applyReviewCoverage } = await import("@/lib/review-coverage");
   const head = "a".repeat(40), base = "b".repeat(40), attempt = "11111111-2222-4333-8444-555555555555";

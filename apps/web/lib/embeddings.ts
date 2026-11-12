@@ -5,11 +5,13 @@ import { getEmbedModel } from "@/lib/ai-client";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { getEmbedConfig, type EmbedConfig } from "@/lib/embed-config";
 import { validateProviderUrl } from "@/lib/providers/url-validation";
+import { EmbeddingDimensionError, MissingEmbeddingKeyError, OllamaEmbeddingResponseError, OllamaEmbeddingUrlError } from "@/lib/embedding-error";
 
 let openai: OpenAI | null = null;
 
 function getOpenAIClient(): OpenAI {
   if (!openai) {
+    if (!process.env.OPENAI_API_KEY) throw new MissingEmbeddingKeyError();
     openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
   }
   return openai;
@@ -57,7 +59,11 @@ function estimateTokens(text: string): number {
 export async function createEmbeddings(
   texts: string[],
   tracking?: { organizationId: string; operation: string; repositoryId?: string },
+  signal?: AbortSignal,
 ): Promise<number[][]> {
+  // shortcut: tracked cancellation needs per-batch usage accounting before signals can be combined with tracking.
+  if (tracking && signal) throw new Error("Cancellation is not supported for tracked embeddings");
+  signal?.throwIfAborted();
   if (tracking?.organizationId && (await isOrgOverSpendLimit(tracking.organizationId))) {
     console.warn(`[embeddings] Org ${tracking.organizationId} over spend limit — skipping embeddings`);
     return texts.map(() => []);
@@ -89,10 +95,17 @@ export async function createEmbeddings(
     return texts.map(() => []);
   }
 
-  const { vectors: validVectors, promptTokens } =
-    config.provider === "ollama"
-      ? await embedWithOllama(validTexts, config)
-      : await embedWithOpenAI(validTexts, config);
+  let result: { vectors: number[][]; promptTokens: number };
+  try {
+    signal?.throwIfAborted();
+    result = config.provider === "ollama"
+      ? await embedWithOllama(validTexts, config, signal)
+      : await embedWithOpenAI(validTexts, config, signal);
+  } catch (error) {
+    signal?.throwIfAborted();
+    throw error;
+  }
+  const { vectors: validVectors, promptTokens } = result;
 
   // Map valid vectors back to original positions; empty array for filtered-out.
   const out: number[][] = texts.map(() => []);
@@ -138,12 +151,14 @@ const OPENAI_MAX_BATCH_ITEMS = 512;
 async function embedWithOpenAI(
   texts: string[],
   config: EmbedConfig,
+  signal?: AbortSignal,
 ): Promise<{ vectors: number[][]; promptTokens: number }> {
   const client = getOpenAIClient();
   const vectors: number[][] = [];
   let promptTokens = 0;
 
   async function embedBatch(batch: string[]): Promise<void> {
+    signal?.throwIfAborted();
     // For text-embedding-3-* models OpenAI accepts an explicit
     // `dimensions` arg and returns vectors at that length. Pass
     // config.dim through so an org override (eg. 1536 for compact
@@ -158,8 +173,9 @@ async function embedWithOpenAI(
         model: config.model,
         input: batch,
         ...(supportsDimensionsArg ? { dimensions: config.dim } : {}),
-      });
+      }, { signal });
     } catch (err) {
+      signal?.throwIfAborted();
       // The split-on-token-limit recovery applies ONLY to OpenAI's
       // "request too large" 400, never to any other error. Anything
       // else (auth, network, our own dim-mismatch below) propagates
@@ -181,11 +197,7 @@ async function embedWithOpenAI(
     if (res.data.length > 0) {
       const gotDim = res.data[0].embedding.length;
       if (gotDim !== config.dim) {
-        throw new Error(
-          `OpenAI embeddings dim mismatch: model "${config.model}" returned ` +
-            `${gotDim}-dim vectors, but OCTOPUS_EMBED_DIM is ${config.dim}. ` +
-            `Set OCTOPUS_EMBED_DIM=${gotDim} (and wipe Qdrant collections so they get re-created).`,
-        );
+        throw new EmbeddingDimensionError(gotDim, config.dim);
       }
     }
     for (const item of res.data) vectors.push(item.embedding);
@@ -224,6 +236,7 @@ const OLLAMA_BATCH_ITEMS = 64;
 async function embedWithOllama(
   texts: string[],
   config: EmbedConfig,
+  signal?: AbortSignal,
 ): Promise<{ vectors: number[][]; promptTokens: number }> {
   if (!config.ollamaBaseUrl) {
     throw new Error("Ollama embeddings selected but OCTOPUS_OLLAMA_BASE_URL not configured");
@@ -232,24 +245,30 @@ async function embedWithOllama(
   // (low SSRF risk), route it through the same validator the per-org BYOK
   // path uses. `hosted: false` mirrors the `SELF_HOSTED` env default and
   // allows localhost / RFC1918 destinations for self-hosters.
-  const safeBaseUrl = validateProviderUrl(config.ollamaBaseUrl, {
-    hosted: process.env.SELF_HOSTED !== "true",
-  });
+  let safeBaseUrl: string;
+  try {
+    safeBaseUrl = validateProviderUrl(config.ollamaBaseUrl, {
+      hosted: process.env.SELF_HOSTED !== "true",
+    });
+  } catch {
+    throw new OllamaEmbeddingUrlError();
+  }
   const vectors: number[][] = [];
   let promptTokens = 0;
 
   for (let i = 0; i < texts.length; i += OLLAMA_BATCH_ITEMS) {
+    signal?.throwIfAborted();
     const batch = texts.slice(i, i + OLLAMA_BATCH_ITEMS);
     const res = await fetch(`${safeBaseUrl}/api/embed`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ model: config.model, input: batch }),
+      signal,
     });
     if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      throw new Error(
-        `Ollama embeddings HTTP ${res.status} from ${safeBaseUrl}/api/embed: ${detail.slice(0, 200)}`,
-      );
+      void res.body?.cancel().catch(() => {});
+      throw Object.assign(new Error("Ollama embeddings request failed"),
+        Number.isInteger(res.status) && res.status >= 400 && res.status <= 599 ? { status: res.status } : {});
     }
     const j = (await res.json()) as { embeddings?: number[][]; embedding?: number[] };
     // /api/embed returns `embeddings`; the older /api/embeddings returned `embedding`
@@ -257,17 +276,10 @@ async function embedWithOllama(
     // is on an older Ollama build.
     const got = j.embeddings ?? (j.embedding ? [j.embedding] : null);
     if (!got || got.length !== batch.length) {
-      throw new Error(
-        `Ollama embeddings: expected ${batch.length} vectors, got ${got?.length ?? 0}. ` +
-          `Check that model "${config.model}" is pulled (ollama pull ${config.model}).`,
-      );
+      throw new OllamaEmbeddingResponseError();
     }
     if (got[0].length !== config.dim) {
-      throw new Error(
-        `Ollama embeddings dim mismatch: model "${config.model}" returned ` +
-          `${got[0].length}-dim vectors, but OCTOPUS_EMBED_DIM is ${config.dim}. ` +
-          `Set OCTOPUS_EMBED_DIM=${got[0].length} (and wipe Qdrant collections so they get re-created).`,
-      );
+      throw new EmbeddingDimensionError(got[0].length, config.dim);
     }
     vectors.push(...got);
     for (const t of batch) promptTokens += estimateTokens(t);

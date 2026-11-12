@@ -1,6 +1,6 @@
 import "server-only";
 import { reportBackgroundFailure, type FailureStage } from "./background-failure";
-import { ReviewOutcomeRecorder, startReviewOutcome, deferReviewOutcome } from "@/lib/review-attempt-outcome";
+import { ReviewOutcomeRecorder, startReviewOutcome, deferReviewOutcome, claimGenerationAttempt, exhaustGenerationAttempts } from "@/lib/review-attempt-outcome";
 import { runRepositoryIndex, SupersededIndexError } from "@/lib/repository-index-completion";
 import crypto from "node:crypto";
 import { prisma, type Prisma } from "@octopus/db";
@@ -58,15 +58,17 @@ import { getGithubAppConfig } from "@/lib/github-app-config";
 import { parseOctopusIgnore, detectBadCommits } from "@/lib/octopus-ignore";
 import { buildGeneratedMatcher } from "@/lib/generated-files";
 import { MAX_DIFF_CHARS } from "@/lib/diff-truncate";
-import { completeReviewCandidate, reviewCandidateSha256, assertReviewProcessingActive, isReviewCancelled, ReviewProcessingExpiredError, type CompleteReviewAdmission, type ReviewExecutionWindow } from "@/lib/review-capacity";
-import { confirmCompleteReviewCurrent } from "@/lib/review-capacity-current";
-import { prepareReviewInput, applyReviewCoverage, coverageSummary, reviewCheckResult, reviewAssessmentComplete, type ReviewInput, type ReviewCoverage } from "@/lib/review-coverage";
+import { completeReviewCandidate, reviewCandidateSha256, assertReviewProcessingActive, isReviewCancelled, CapacityAdmissionError, ReviewProcessingExpiredError, type CompleteReviewAdmission, type ReviewExecutionWindow } from "@/lib/review-capacity";
+import { AiProviderFailure, safeErrorDetails } from "@/lib/provider-failure";
+import { confirmCompleteReviewCurrent, confirmGenerationRetryCurrent } from "@/lib/review-capacity-current";
+import { prepareReviewInput, applyReviewCoverage, coverageSummary, reviewCheckResult, reviewAssessmentComplete, generationFailureCode, type ReviewInput, type ReviewCoverage } from "@/lib/review-coverage";
 import { prepareReviewComment } from "@/lib/review-comment-context";
 import { createCoveredReviewRequest } from "@/lib/review-request";
 import { canRestrictReviewToFollowUp } from "@/lib/review-follow-up";
 import { prepareRecoveredReviewPresentation, prepareReviewPresentation, mapReviewPresentation, enforceReviewFindingsIntegrity, finalizeReviewPresentation } from "@/lib/review-presentation";
 import { executeCoveredReview, executeFindingsRecovery, recordNoModelAssessment, markReviewAssessmentIncomplete } from "@/lib/review-assessment";
-import { saveReviewAttempt, createReviewAttemptComment, updateCurrentReview, withForgejoReviewPublication, recordFirstReviewCompletion } from "@/lib/review-attempt";
+import { saveReviewAttempt, createReviewAttemptComment, updateCurrentReview, withForgejoReviewPublication, recordFirstReviewCompletion, recordInterruptedAttempt } from "@/lib/review-attempt";
+import { deliverReviewAttempt } from "@/lib/review-attempt-delivery";
 import { publishReviewSummary } from "@/lib/review-summary-comment";
 import type { ReviewComment } from "@/lib/github";
 import { eventBus } from "@/lib/events";
@@ -114,10 +116,11 @@ import {
 } from "@/lib/review-dedup";
 import type { LogLevel } from "@/lib/indexer";
 import { ensureRepositoryAnalysis, deferReviewForRepository } from "@/lib/review-repository-preparation";
+import { safeIndexLogMessage } from "@/lib/index-log-safety";
 import { writeSyncLog, deleteSyncLogs } from "@/lib/elasticsearch";
 import { logAiUsage } from "@/lib/ai-usage";
 import { resolveReviewModel } from "@/lib/review-routing";
-import { createAiMessage, getProviderForModel } from "@/lib/ai-router";
+import { createAiMessage, getProviderForModel, credentialRouteUnchanged } from "@/lib/ai-router";
 import { getOrgSpendLimitStatus, shouldGuardConcurrency } from "@/lib/cost";
 import fs from "node:fs";
 import path from "node:path";
@@ -171,7 +174,7 @@ async function emitReviewStatus(orgId: string, event: ReviewEvent) {
   await pubby
     .trigger(`presence-org-${orgId}`, "review-status", event)
     .catch((err) =>
-      console.error("[reviewer] Pubby trigger failed:", err),
+      console.error("[reviewer] Pubby trigger failed:", safeErrorDetails(err)),
     );
   return true;
 }
@@ -274,7 +277,7 @@ Reply ONLY with a JSON array of strings, one per entry, in order. Example: ["dis
       return validIntents.has(val) ? (val as ReplyIntent) : "unclear";
     });
   } catch (err) {
-    console.error("[reviewer] LLM reply classification failed, falling back to unclear:", err);
+    console.error("[reviewer] LLM reply classification failed, falling back to unclear:", safeErrorDetails(err));
     return entries.map(() => "unclear");
   }
 }
@@ -408,7 +411,7 @@ async function syncReactionsForPR(
         synced++;
       }
     } catch (err) {
-      console.error(`[reviewer] Failed to sync reaction for issue ${issue.id}:`, err);
+      console.error(`[reviewer] Failed to sync reaction for issue ${issue.id}:`, safeErrorDetails(err));
     }
   }
 
@@ -522,7 +525,7 @@ async function syncTextDismissalsForPR(
           dismissedIds.add(issue.id);
           synced++;
         } catch (err) {
-          console.error(`[reviewer] Failed to record text feedback for issue ${issue.id}:`, err);
+          console.error(`[reviewer] Failed to record text feedback for issue ${issue.id}:`, safeErrorDetails(err));
         }
       }
     }
@@ -578,7 +581,7 @@ async function syncTextDismissalsForPR(
               dismissedIds.add(issue.id);
               synced++;
             } catch (err) {
-              console.error(`[reviewer] Failed to record per-finding feedback for issue ${issue.id}:`, err);
+              console.error(`[reviewer] Failed to record per-finding feedback for issue ${issue.id}:`, safeErrorDetails(err));
             }
           }
         }
@@ -618,7 +621,7 @@ async function syncTextDismissalsForPR(
           try {
             await embedFeedbackPattern(issue, "down");
           } catch (err) {
-            console.error(`[reviewer] Failed to embed feedback pattern for issue ${issue.id}:`, err);
+            console.error(`[reviewer] Failed to embed feedback pattern for issue ${issue.id}:`, safeErrorDetails(err));
           }
         }
         console.log(`[reviewer] Dismissed ${count} findings via bulk issue comment dismissal`);
@@ -647,6 +650,45 @@ export async function processReview(pullRequestId: string, executionWindow?: Rev
   return processReviewInternal(pullRequestId, executionWindow, undefined, retryCount);
 }
 
+/**
+ * A worker can stop after archiving its result and before publishing it, which leaves a completed PR with a
+ * placeholder comment and an unfinished check. A redelivered job finishes that publication from the archive.
+ */
+async function resumeReviewPublication(pr: Prisma.PullRequestGetPayload<{ include: { repository: { include: { organization: true } } } }>): Promise<void> {
+  const repo = pr.repository;
+  const installationId = repo.installationId ?? repo.organization.githubInstallationId;
+  if (repo.provider !== "github" || !installationId || !pr.reviewAttemptId || !pr.reviewBody) return;
+  const attempt = await prisma.reviewAttempt.findUnique({ where: { id: pr.reviewAttemptId }, include: { delivery: true } });
+  const coverage = attempt?.coverage as ReviewCoverage | undefined;
+  // Large-PR results carry no assessment and are delivered by their own job.
+  if (!attempt || attempt.delivery?.completedAt || attempt.reviewBody !== pr.reviewBody || !coverage?.assessment) return;
+  if (attempt.delivery?.leaseUntil && attempt.delivery.leaseUntil > new Date()) {
+    // Its publisher may still be running; look again once that lease has passed.
+    await enqueueAfter("process-review", { pullRequestId: pr.id }, 330);
+    return;
+  }
+  const [owner, repoName] = repo.fullName.split("/");
+  const outcomeRecord = new ReviewOutcomeRecorder({ organizationId: repo.organization.id, repositoryId: repo.id, pullRequestId: pr.id, requestVersion: pr.reviewRequestVersion });
+  outcomeRecord.assessment(coverage, attempt.id);
+  await deliverReviewAttempt(attempt.id, async () => {
+    // The comment is derived from the archived report; the check uses the findings saved with it.
+    const body = `Review attempt: ${attempt.id}. Head: ${pr.headSha ?? "unknown"}.\n\n${stripDetailedFindings(attempt.reviewBody)}`;
+    if (await outcomeRecord.publish(() => publishReviewSummary({ pullRequestId: pr.id, headSha: pr.headSha, reviewRequestVersion: pr.reviewRequestVersion,
+      installationId, owner, repo: repoName, prNumber: pr.number, body, expectedReviewBody: attempt.reviewBody })) === null) return;
+    if (coverage.nativeCheckId) {
+      // Attempts archived before the decision was kept fall back to the saved findings.
+      const severities = coverage.nativeCheckDecision ? [] : (await prisma.reviewIssue.findMany({ where: { pullRequestId: pr.id }, select: { severity: true } })).map(issue => issue.severity);
+      const result = reviewCheckResult(coverage, coverage.nativeCheckDecision?.fail ?? shouldFailReviewCheck(
+        { hasCritical: severities.includes("critical"), hasHigh: severities.includes("high"), hasMedium: severities.includes("medium") },
+        repo.organization.checkFailureThreshold || "critical",
+      ), coverage.nativeCheckDecision?.findings ?? severities.length);
+      await ghUpdateCheckRun(installationId, owner, repoName, Number(coverage.nativeCheckId), result.conclusion, { title: result.title, summary: result.summary });
+    }
+    await recordFirstReviewCompletion(pr.id, pr.headSha, pr.reviewRequestVersion, attempt.reviewBody);
+    console.log(`[reviewer] Finished the interrupted publication of review attempt ${attempt.id}`);
+  });
+}
+
 async function processReviewInternal(pullRequestId: string, executionWindow?: ReviewExecutionWindow, expected?: { headSha: string | null; reviewRequestVersion: number }, retryCount = 0): Promise<void> {
   // Load PR with repo and org info
   const pr = await prisma.pullRequest.findUnique({
@@ -672,6 +714,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
   // reviews are recovered via a separate stale-claim path keyed on updatedAt.
   const serverId = process.env.OCTOPUS_SERVER_ID || "unknown";
   if (pr.status === "completed") {
+    await resumeReviewPublication(pr);
     console.log(`[reviewer] PR ${pullRequestId} already completed, skipping`);
     return;
   }
@@ -685,12 +728,16 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
   const queuedStale = new Date(Date.now() - computeStaleReclaimMs(queueConfig.largeReviewTimeoutSeconds));
   const outcomeKey = { organizationId: pr.repository.organization.id, repositoryId: pr.repository.id,
     pullRequestId: pr.id, requestVersion: pr.reviewRequestVersion };
+  // One ID per execution, stored with the claim so that it can still be recorded if this worker stops.
+  const attemptId = crypto.randomUUID();
   const claimed = await prisma.$transaction(async tx => {
     const claimed = await tx.pullRequest.updateMany({
       where: {
         id: pullRequestId,
         headSha: pr.headSha,
         reviewRequestVersion: pr.reviewRequestVersion,
+        status: pr.status,
+        updatedAt: pr.updatedAt,
         OR: [
           // Fresh-claim: never seen / explicitly retryable
           { status: "pending" },
@@ -702,9 +749,12 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           { status: "queued", updatedAt: { lt: queuedStale } },
         ],
       },
-      data: { status: "reviewing", updatedAt: new Date() },
+      data: { status: "reviewing", updatedAt: new Date(), reviewAttemptId: attemptId },
     });
-    if (claimed.count) await startReviewOutcome(outcomeKey, new Date(), tx);
+    if (claimed.count) {
+      if (pr.status === "reviewing" && pr.updatedAt < reviewingStale) await recordInterruptedAttempt(pr, tx);
+      await startReviewOutcome(outcomeKey, new Date(), tx);
+    }
     return claimed;
   });
   if (claimed.count === 0) {
@@ -715,10 +765,12 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
 
   const repo = pr.repository;
   const org = repo.organization;
-  const attemptId = crypto.randomUUID();
   let adaptiveProcessingWindow: ReviewExecutionWindow | undefined;
   let attemptCoverage: ReviewCoverage | undefined;
   let failureStage: FailureStage = "review";
+  let startingReview = true;
+  let embeddingPreparationFailed = false;
+  let preparationOperation: "review_input" | "repository_tree" | undefined;
   let failureIndexAttemptId: string | undefined;
   let attemptSaved = false;
   const outcomeRecord = new ReviewOutcomeRecorder(outcomeKey);
@@ -781,7 +833,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           : await bitbucket.getPullRequestDetails(org.id, owner, repoName, prNumber);
       return details.body ?? "";
     } catch (err) {
-      console.warn(`[reviewer] Could not fetch PR body for intent:`, err);
+      console.warn(`[reviewer] Could not fetch PR body for intent:`, safeErrorDetails(err));
       return "";
     }
   };
@@ -854,7 +906,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
     try {
       headSha = await providerGetBranchHead(branch);
     } catch (err) {
-      console.warn("[reviewer] Failed to fetch branch head, skipping tree cache:", err);
+      console.warn("[reviewer] Failed to fetch branch head, skipping tree cache:", safeErrorDetails(err));
     }
 
     if (
@@ -880,7 +932,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         });
         console.log(`[reviewer] Tree cache stored for ${repo.fullName}@${headSha.slice(0, 8)} (${paths.length} files)`);
       } catch (err) {
-        console.warn("[reviewer] Failed to persist tree cache:", err);
+        console.warn("[reviewer] Failed to persist tree cache:", safeErrorDetails(err));
       }
     }
     return paths;
@@ -904,6 +956,8 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         repoName,
         pr.headSha,
         "Octopus Review",
+        undefined,
+        `${pr.id}:${pr.reviewRequestVersion}`,
       );
       console.log(`[reviewer] Check run created — id: ${checkRunId}`);
 
@@ -916,14 +970,14 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         console.log(`[reviewer] Permission grant flag cleared for org: ${org.id}`);
       }
     } catch (err) {
-      console.error("[reviewer] Failed to create check run:", err);
+      console.error("[reviewer] Failed to create check run:", safeErrorDetails(err));
 
       // 403 means the GitHub App needs new permissions accepted
       if (err instanceof Error && err.message.includes("403")) {
         await prisma.organization.update({
           where: { id: org.id },
           data: { needsPermissionGrant: true },
-        }).catch((e) => console.error("[reviewer] Failed to set permission flag:", e));
+        }).catch((e) => console.error("[reviewer] Failed to set permission flag:", safeErrorDetails(e)));
         console.warn(`[reviewer] Permission grant needed for org: ${org.id}`);
       }
     }
@@ -936,7 +990,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
   if (pr.headSha && usesProjectApi && !isForgejoConnector) {
     await projectProvider
       .setCommitStatus(org.id, projectPath, pr.headSha, "running", COMMIT_STATUS_NAME, "Octopus review in progress")
-      .catch((err) => console.error("[reviewer] Failed to set provider running status:", err));
+      .catch((err) => console.error("[reviewer] Failed to set provider running status:", safeErrorDetails(err)));
   }
 
   // Pre-review: sync feedback from GitHub before generating new findings
@@ -945,12 +999,13 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       await syncReactionsForPR(installationId, owner, repoName, pr.id, pr.headSha, pr.reviewRequestVersion);
       await syncTextDismissalsForPR(installationId, owner, repoName, pr.number, pr.id, pr.author, pr.headSha, pr.reviewRequestVersion);
     } catch (err) {
-      console.warn("[reviewer] Pre-review feedback sync failed, continuing:", err);
+      console.warn("[reviewer] Pre-review feedback sync failed, continuing:", safeErrorDetails(err));
     }
   }
 
   try {
     if (!isForgejoConnector) reviewCommentId = await publishMainComment("> 🐙 **Octopus Review** — Preparing review...");
+    startingReview = false;
     failureStage = "indexing";
     // Phase 0: Ensure the repository is indexed before preparing review context
     if (repo.indexStatus !== "indexed") {
@@ -1024,7 +1079,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
             if (pr.headSha && usesProjectApi) {
               await projectProvider
                 .setCommitStatus(org.id, projectPath, pr.headSha, "failed", COMMIT_STATUS_NAME, "Repository indexing failed.")
-                .catch((e) => console.error("[reviewer] Failed to set provider status:", e));
+                .catch((e) => console.error("[reviewer] Failed to set provider status:", safeErrorDetails(e)));
             }
             return;
           }
@@ -1039,10 +1094,10 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           const timestamp = Date.now();
           pubby.trigger(indexChannel, "index-log", {
             repoId: repo.id,
-            message,
+            message: safeIndexLogMessage(message),
             level,
             timestamp,
-          }).catch((err) => console.error("[reviewer] Pubby index-log trigger failed:", err));
+          }).catch(() => console.error("[reviewer] Pubby index-log trigger failed"));
           writeSyncLog({
             orgId: org.id,
             repoId: repo.id,
@@ -1092,7 +1147,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           fullName: repo.fullName,
           indexedFiles: indexStats.indexedFiles,
           totalVectors: indexStats.totalVectors,
-        }).catch((err) => console.error("[reviewer] Pubby repo-indexed trigger failed:", err));
+        }).catch((err) => console.error("[reviewer] Pubby repo-indexed trigger failed:", safeErrorDetails(err)));
 
         eventBus.emit({
           type: "repo-indexed",
@@ -1142,7 +1197,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           : "Review skipped — monthly usage limit reached.";
         await projectProvider
           .setCommitStatus(org.id, projectPath, pr.headSha, "success", COMMIT_STATUS_NAME, statusMessage)
-          .catch((e) => console.error("[reviewer] Failed to set provider status:", e));
+          .catch((e) => console.error("[reviewer] Failed to set provider status:", safeErrorDetails(e)));
       }
       return;
     }
@@ -1280,10 +1335,17 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         await updateCurrentReview(pr.id, pr.headSha, pr.reviewRequestVersion, { status: "queued", updatedAt: new Date() });
         return;
       }
+      preparationOperation = "review_input";
       throw err;
     }
     const inputBaseRef = reviewInput.baseSha ?? repo.defaultBranch;
-    const repoTree = await getRepoTreeCached(inputBaseRef);
+    let repoTree: string[];
+    try {
+      repoTree = await getRepoTreeCached(inputBaseRef);
+    } catch (err) {
+      preparationOperation = "repository_tree";
+      throw err;
+    }
 
     // Detect committed build artifacts / dependency folders
     const badFiles = detectBadCommits(rawDiff);
@@ -1384,11 +1446,17 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
     // vs the old 8000-char slice.
     const searchText = buildRetrievalQuery(inventoryDiff + diff, pr.title);
     console.log(`[reviewer] Retrieval query: ${searchText.length} chars from ${diffFiles.size} changed files`);
-    const [queryVector] = await createEmbeddings([searchText], {
-      organizationId: org.id,
-      operation: "embedding",
-      repositoryId: repo.id,
-    });
+    let queryVector: number[];
+    try {
+      [queryVector] = await createEmbeddings([searchText], {
+        organizationId: org.id,
+        operation: "embedding",
+        repositoryId: repo.id,
+      });
+    } catch (error) {
+      embeddingPreparationFailed = true;
+      throw error;
+    }
 
     // Over-fetch from Qdrant, then rerank with Cohere (same composed query).
     const rerankQuery = searchText;
@@ -1426,7 +1494,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         if (findings.length) console.log(`[reviewer] Tool pre-pass: ${findings.length}/${raw.length} semgrep finding(s) on changed lines`);
         return formatToolFindings(findings);
       } catch (err) {
-        console.warn("[reviewer] Tool pre-pass failed, continuing:", err);
+        console.warn("[reviewer] Tool pre-pass failed, continuing:", safeErrorDetails(err));
         return "";
       }
     };
@@ -1567,7 +1635,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         }
       }
     } catch (err) {
-      console.warn("[reviewer] Failed to fetch feedback context:", err);
+      console.warn("[reviewer] Failed to fetch feedback context:", safeErrorDetails(err));
     }
 
     // Fetch prior review comments once — shared by prompt context injection and inline dedup.
@@ -1579,7 +1647,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       try {
         allPriorReviewComments = await ghListPullRequestReviewComments(installationId, owner, repoName, pr.number);
       } catch (err) {
-        console.warn("[reviewer] Failed to fetch prior review comments:", err);
+        console.warn("[reviewer] Failed to fetch prior review comments:", safeErrorDetails(err));
       }
 
       // Fetch prior review bodies to extract findings from summary tables.
@@ -1596,7 +1664,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           console.log(`[reviewer] Found ${priorSummaryTableFindings.length} prior findings from ${botReviews.length} review summary tables`);
         }
       } catch (err) {
-        console.warn("[reviewer] Failed to fetch prior review bodies:", err);
+        console.warn("[reviewer] Failed to fetch prior review bodies:", safeErrorDetails(err));
       }
     }
 
@@ -1714,7 +1782,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           );
         }
       } catch (err) {
-        console.warn("[reviewer] Failed to fetch dismissed findings for re-review context:", err);
+        console.warn("[reviewer] Failed to fetch dismissed findings for re-review context:", safeErrorDetails(err));
       }
 
       priorReviewContext = parts.join("\n");
@@ -1781,7 +1849,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           console.log(`[reviewer] Repo config: no candidate file found in ${candidates.join(", ")}`);
         }
       } catch (err) {
-        console.warn(`[reviewer] Repo config processing failed:`, err);
+        console.warn(`[reviewer] Repo config processing failed:`, safeErrorDetails(err));
       }
     }
 
@@ -1807,6 +1875,9 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       REVIEW_LANGUAGE_NAME: reviewLanguage.promptName,
     });
 
+    const fetchRevision = (signal: AbortSignal) => isGitHub ? ghGetPullRequestDetails(installationId!, owner, repoName, pr.number, signal)
+      : usesProjectApi ? projectProvider.getPullRequestDetails(org.id, projectPath, pr.number, signal)
+        : bitbucket.getPullRequestDetails(org.id, owner, repoName, pr.number, signal);
     const completeReviewAdmission: CompleteReviewAdmission | undefined = candidateSha256 && executionWindow ? {
       candidateSha256, headSha: coverage.headSha!, baseSha: coverage.baseSha!, reviewRequestVersion: pr.reviewRequestVersion,
       preparedSource: { chars: diff.length, files: coverage.files.filter(file => file.state === "supplied").length,
@@ -1814,9 +1885,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       window: executionWindow,
       beforeGeneration: signal => confirmCompleteReviewCurrent({ pullRequestId: pr.id, orgId: org.id, repoId: repo.id,
         model: reviewModel, headSha: coverage.headSha!, baseSha: coverage.baseSha!, reviewRequestVersion: pr.reviewRequestVersion,
-        fetchRevision: signal => isGitHub ? ghGetPullRequestDetails(installationId!, owner, repoName, pr.number, signal)
-          : usesProjectApi ? projectProvider.getPullRequestDetails(org.id, projectPath, pr.number, signal)
-            : bitbucket.getPullRequestDetails(org.id, owner, repoName, pr.number, signal),
+        fetchRevision,
       }, signal),
     } : undefined;
     const primaryRequest = createCoveredReviewRequest({
@@ -1826,8 +1895,22 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
     });
     adaptiveProcessingWindow = completeReviewAdmission?.window;
     failureStage = "generation";
-    const response = await executeCoveredReview({ ...primaryRequest, ...(completeReviewAdmission ? { completeReviewAdmission } : {}) },
-      coverage, getSystemPrompt(), request => createAiMessage(request, org.id));
+    // Every dispatch, including a redelivered or re-enqueued job, draws on one durable budget per request version.
+    if (!await claimGenerationAttempt(outcomeKey)) throw new Error("Review generation attempts for this request are used up");
+    const response = await executeCoveredReview({ ...primaryRequest, maxRetries: 0, ...(completeReviewAdmission ? { completeReviewAdmission } : {}) },
+      coverage, getSystemPrompt(), request => createAiMessage(request, org.id).catch(async (error: unknown) => {
+        // The provider may have billed a failed request; its usage is unknown and is never charged to the customer.
+        if (error instanceof AiProviderFailure) {
+          await logAiUsage({ provider: error.provider, usedOwnKey: error.keyOwner === "unknown" ? undefined : error.keyOwner === "organization",
+            model: reviewModel, operation: "review-failed-attempt", inputTokens: 0, outputTokens: 0, organizationId: org.id, usageUnknown: true });
+        }
+        throw error;
+      }), { window: executionWindow, confirm: async (failure, signal) => !!coverage.headSha && !!coverage.baseSha
+        && await confirmGenerationRetryCurrent({ pullRequestId: pr.id, orgId: org.id, repoId: repo.id, model: reviewModel, provider: failure.provider,
+          headSha: coverage.headSha, baseSha: coverage.baseSha, reviewRequestVersion: pr.reviewRequestVersion, fetchRevision }, signal) === null
+        // shortcut: a claim that lands just after the admission deadline uses the unit without a dispatch, so a
+        // redelivery is refused; release the unit on a failed admission if that ever shows up in production.
+        && await credentialRouteUnchanged(failure, org.id) && !signal.aborted && await claimGenerationAttempt(outcomeKey) });
     const assertProcessingActive = () => { if (completeReviewAdmission) assertReviewProcessingActive(completeReviewAdmission.window); };
 
     let reviewBody = prepareReviewPresentation(response.text, coverage);
@@ -1854,6 +1937,8 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       usedOwnKey: response.usedOwnKey,
       model: reviewModel,
       operation: "review",
+      // A rerun for the same head and request version must not debit a second time.
+      chargeKey: `review-generation:${pr.id}:${pr.reviewRequestVersion}:${pr.headSha}`,
       inputTokens: response.usage.inputTokens,
       outputTokens: response.usage.outputTokens,
       cacheReadTokens: response.usage.cacheReadTokens,
@@ -1952,7 +2037,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
             console.warn(`[reviewer] Follow-up also returned no parseable findings (provider: ${repo.provider}, pr: #${pr.number})`);
           }
         } catch (err) {
-          console.error("[reviewer] Follow-up findings call failed:", err);
+          console.error("[reviewer] Follow-up findings call failed:", safeErrorDetails(err instanceof AiProviderFailure || err instanceof CapacityAdmissionError ? err.details : err));
         }
     }
 
@@ -2034,7 +2119,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         assertProcessingActive();
       } catch (err) {
         if (err instanceof ReviewProcessingExpiredError) throw err;
-        console.warn("[reviewer] Two-pass validation failed, keeping all findings:", err);
+        console.warn("[reviewer] Two-pass validation failed, keeping all findings:", safeErrorDetails(err));
       }
     }
 
@@ -2111,7 +2196,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
             );
             console.log(`[reviewer] Updated main comment for re-review (${allParsedFindings.length} findings remain)`);
           } catch (err) {
-            console.warn("[reviewer] Failed to update main comment for re-review:", err);
+            console.warn("[reviewer] Failed to update main comment for re-review:", safeErrorDetails(err));
           }
         }
       }
@@ -2283,11 +2368,11 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
             }
             console.log(`[reviewer] Matched ${issueRecords.filter((i) => i.filePath).length} review issues to GitHub comment IDs`);
           } catch (matchErr) {
-            console.error("[reviewer] Failed to match GitHub comment IDs:", matchErr);
+            console.error("[reviewer] Failed to match GitHub comment IDs:", safeErrorDetails(matchErr));
           }
         } catch (err) {
           if (err instanceof ReviewProcessingExpiredError) throw err;
-          console.error("[reviewer] Failed to submit inline review, falling back to summary-only:", err);
+          console.error("[reviewer] Failed to submit inline review, falling back to summary-only:", safeErrorDetails(err));
         }
       }
 
@@ -2308,7 +2393,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           console.log(`[reviewer] PR review submitted without inline comments, ${allSummaryFindings.length} in summary (${reviewEvent})`);
         } catch (err) {
           if (err instanceof ReviewProcessingExpiredError) throw err;
-          console.error("[reviewer] Failed to submit PR review, falling back to comment:", err);
+          console.error("[reviewer] Failed to submit PR review, falling back to comment:", safeErrorDetails(err));
           // Publish fallback findings with the archived result and final summary guards below.
           mainCommentBody += `\n\n${findingsBlock}`;
         }
@@ -2332,7 +2417,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
           }
           outcomeRecord.inlinePosted();
         } catch (err) {
-          console.error(`[reviewer] Failed to post inline comment on ${comment.path}:${comment.line}:`, err);
+          console.error(`[reviewer] Failed to post inline comment on ${comment.path}:${comment.line}:`, safeErrorDetails(err));
           failedInlineComments.push(comment);
         }
       }
@@ -2428,11 +2513,14 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       response.text, effectiveReviewBody, mainCommentBody, coverage, attemptId, { hasCritical, hasHigh, hasMedium },
     ));
     assertProcessingActive();
+    coverage.nativeCheckDecision = { fail: shouldFailReviewCheck({ hasCritical, hasHigh, hasMedium }, threshold), findings: effectiveFindingsCount };
     const promoted = await saveReviewAttempt(attemptId, pr.id, coverage, effectiveReviewBody, mergedIssues);
     attemptSaved = true;
 
     // The final scored comment becomes visible only after its immutable outcome is durable.
     assertProcessingActive();
+    // Publication is checkpointed, so a redelivered job can finish it if this worker stops (see resumeReviewPublication).
+    await deliverReviewAttempt(attemptId, async (_progress, checkpoint) => {
     outcomeArchiveId = attemptId;
     outcomeRecord.assessment(coverage, attemptId);
     recordReviewMain = true;
@@ -2459,6 +2547,8 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       );
     }
 
+    if (reviewCommentId) await checkpoint({ mainCommentId: reviewCommentId });
+
     // Merge-gating result, computed once and applied to whichever provider
     // supports a status check (GitHub check-run, GitLab commit status).
     const checkResult = reviewCheckResult(coverage, shouldFailReviewCheck(
@@ -2482,10 +2572,11 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         .setCommitStatus(org.id, projectPath, pr.headSha, state, COMMIT_STATUS_NAME, summaryText, undefined, completeReviewAdmission?.window)
         .catch((err) => {
           assertProcessingActive();
-          console.error("[reviewer] Failed to set provider commit status:", err);
+          console.error("[reviewer] Failed to set provider commit status:", safeErrorDetails(err));
         });
       console.log(`[reviewer] ${repo.provider} commit status set — state: ${state} (threshold: ${threshold})`);
     }
+    });
 
     if (!promoted) return;
 
@@ -2519,7 +2610,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       ]);
       console.log(`[reviewer] Review stored in vector DB — prId: ${pr.id}`);
     } catch (err) {
-      console.error("[reviewer] Failed to store review in vector DB:", err);
+      console.error("[reviewer] Failed to store review in vector DB:", safeErrorDetails(err));
     }
 
     // Step 8: Store diagrams in vector DB (all mermaid blocks)
@@ -2565,7 +2656,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         console.log(`[reviewer] ${mermaidBlocks.length} diagram(s) stored in vector DB — prId: ${pr.id}`);
       }
     } catch (err) {
-      console.error("[reviewer] Failed to store diagrams in vector DB:", err);
+      console.error("[reviewer] Failed to store diagrams in vector DB:", safeErrorDetails(err));
     }
 
     await recordFirstReviewCompletion(pr.id, pr.headSha, pr.reviewRequestVersion, effectiveReviewBody);
@@ -2594,9 +2685,18 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       err = new ReviewProcessingExpiredError();
     }
     outcomeHandedOff = false;
-    const errorMessage =
-      err instanceof Error ? err.message : "Unknown error";
-    console.error(`[reviewer] Review failed for PR #${pr.number}:`, err);
+    const errorMessage = failureStage === "indexing"
+      ? err instanceof SupersededIndexError ? "Indexing attempt is no longer current"
+        : err instanceof ReviewProcessingExpiredError ? "Review processing cancelled or expired before completion"
+        : "Review failed while preparing the repository"
+      : err instanceof ReviewProcessingExpiredError ? err.message
+        : embeddingPreparationFailed ? "Review failed while preparing search context"
+        : startingReview ? "Review failed while starting the review"
+        : failureStage === "preparation" ? "Review failed during preparation"
+        : failureStage === "publication" ? "Review failed while publishing the review"
+        : failureStage === "generation" && !(err instanceof AiProviderFailure || err instanceof CapacityAdmissionError) ? "Review failed during generation"
+        : err instanceof Error ? err.message : "Unknown error";
+    console.error(`[reviewer] Review failed for PR #${pr.number}:`, failureStage === "indexing" ? errorMessage : safeErrorDetails(err instanceof AiProviderFailure || err instanceof CapacityAdmissionError ? err.details : err));
 
     // A deadline can expire while a completed assessment is being committed. Keep that immutable
     // record and append the interrupted processing outcome before publishing any scored completion.
@@ -2614,24 +2714,34 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
     if (attemptCoverage && !attemptSaved && attemptCoverage.assessment && attemptCoverage.assessment.state !== "incomplete") {
       markReviewAssessmentIncomplete(attemptCoverage, "Review processing failed or was interrupted before persistence");
     }
+    // A redelivered or re-enqueued job must not dispatch again after a permanent or unknown generation failure.
+    // A generation cut off without a classified failure (the job window ended) keeps its remaining unit.
+    const generationFailure = attemptCoverage?.assessment?.failure;
+    if (failureStage === "generation" && reportingError instanceof AiProviderFailure && generationFailure && generationFailure.retryability !== "transient") {
+      await exhaustGenerationAttempts(outcomeKey).catch(e => console.error("[reviewer] Failed to close the generation budget:", safeErrorDetails(e)));
+    }
+    // Only after an admitted retry was dispatched and failed as well; a retry refused before dispatch leaves no earlier attempt.
+    const interruptedTwice = failureStage === "generation" && !attemptCoverage?.assessment?.responseSha256 && attemptCoverage?.assessment?.attempts?.length === 1
+      ? `Review generation was interrupted twice and was not completed. No score was produced. Comment \`${isForgejo ? "@octopus" : "@octopus-review"}\` to run it again.` : null;
     const failureBody = attemptCoverage?.assessment && !attemptSaved
-      ? applyReviewCoverage("## 🐙 Octopus Review\n\nAssessment failed or was interrupted. No complete assessment is available.", attemptCoverage, failureAttemptId) : null;
+      ? applyReviewCoverage(`## 🐙 Octopus Review\n\n${interruptedTwice ?? "Assessment failed or was interrupted. No complete assessment is available."}`, attemptCoverage, failureAttemptId) : null;
     if (failureBody && attemptCoverage) {
-      await saveReviewAttempt(failureAttemptId, pr.id, attemptCoverage, failureBody).then(() => { outcomeArchiveId = failureAttemptId; }).catch(e => console.error("[reviewer] Failed to archive interrupted assessment:", e));
+      await saveReviewAttempt(failureAttemptId, pr.id, attemptCoverage, failureBody).then(() => { outcomeArchiveId = failureAttemptId; }).catch(e => console.error("[reviewer] Failed to archive interrupted assessment:", safeErrorDetails(e)));
     }
 
     // Update placeholder comment with error if possible
     if (isGitHub && failureBody) {
-      await publishMainComment(failureBody, failureBody, failureAttemptId).catch((e) => console.error("[reviewer] Failed to publish archived failure:", e));
+      await publishMainComment(failureBody, failureBody, failureAttemptId).catch((e) => console.error("[reviewer] Failed to publish archived failure:", safeErrorDetails(e)));
     } else if (reviewCommentId) {
       await providerUpdateComment(
         reviewCommentId,
         failureBody ?? `> 🐙 **Octopus Review** encountered an error while analyzing this pull request.\n>\n> \`${errorMessage}\`\n>\n> Please try again by commenting \`${isForgejo ? "@octopus" : "@octopus-review"}\` on this PR.`,
         failureAttemptId,
-      ).catch((e) => console.error("[reviewer] Failed to update placeholder with error:", e));
+      ).catch((e) => console.error("[reviewer] Failed to update placeholder with error:", safeErrorDetails(e)));
     }
 
     // Update check run as failed (GitHub only)
+    const failureCode = attemptCoverage ? generationFailureCode(attemptCoverage) : null;
     if (checkRunId && isGitHub && installationId) {
       await ghUpdateCheckRun(
         installationId,
@@ -2640,27 +2750,27 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
         checkRunId,
         "failure",
         {
-          title: "Review failed",
-          summary: `Octopus Review encountered an error: ${errorMessage}`,
+          title: attemptCoverage?.assessment?.failure?.stage === "generation" ? "Review generation failed" : "Review failed",
+          summary: `${interruptedTwice ?? `Octopus Review encountered an error: ${errorMessage}${failureCode ? "." : ""}`}${failureCode ? ` Attempt: ${failureAttemptId}. Failure code: \`${failureCode}\`.` : ""}`,
         },
-      ).catch((e) => console.error("[reviewer] Failed to update check run:", e));
+      ).catch((e) => console.error("[reviewer] Failed to update check run:", safeErrorDetails(e)));
     }
     // GitLab: mark the status failed on a review error so a gated MR isn't left
     // hanging on a "running" status forever.
     if (pr.headSha && usesProjectApi) {
       await projectProvider
         .setCommitStatus(org.id, projectPath, pr.headSha, "failed", COMMIT_STATUS_NAME, `Review error: ${errorMessage}`.slice(0, 255))
-        .catch((e) => console.error("[reviewer] Failed to set provider failed status:", e));
+        .catch((e) => console.error("[reviewer] Failed to set provider failed status:", safeErrorDetails(e)));
     }
 
     const failedUpdate = await updateCurrentReview(pr.id, pr.headSha, pr.reviewRequestVersion, {
       status: "failed",
       errorMessage,
     })
-      .catch((e) => console.error("[reviewer] Failed to update PR status:", e));
+      .catch((e) => console.error("[reviewer] Failed to update PR status:", safeErrorDetails(e)));
     if (failedUpdate?.count === 0) return;
     if (!(err instanceof SupersededIndexError)) {
-      reportBackgroundFailure(reportingError, { stage: failureStage,
+      reportBackgroundFailure(reportingError, { stage: failureStage, preparationOperation,
         attemptId: failureStage === "indexing" ? failureIndexAttemptId : failureAttemptId,
         repositoryId: repo.id, pullRequestId: pr.id, headSha: pr.headSha, requestVersion: pr.reviewRequestVersion,
         retryCount, cancelled });

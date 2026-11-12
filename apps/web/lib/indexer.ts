@@ -4,12 +4,16 @@ import { readFile, readdir, stat, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
+import { setTimeout as delay } from "node:timers/promises";
 import { getInstallationToken, getFileContent as ghGetFileContent, getRepositoryDetails } from "@/lib/github";
+import { githubIndexRateScope } from "@/lib/github-index-rate-scope";
+import { githubIndexFetch, GitHubIndexDeferredError, GitHubIndexUnavailableError } from "@/lib/github-index-fetch";
 import * as bitbucketLib from "@/lib/bitbucket";
 import * as gitlabLib from "@/lib/gitlab";
 import * as forgejoLib from "@/lib/forgejo";
 import { ForgejoResponseTooLargeError } from "@/lib/forgejo-http";
 import { ensureCollection, upsertChunks, deleteRepoFileChunks } from "@/lib/qdrant";
+import { PROVIDER_BLOCK_INDEX_LOG } from "@/lib/index-log-safety";
 import { generateSparseVectors } from "@/lib/sparse-vector";
 import { parseOctopusIgnore, type Ignore } from "@/lib/octopus-ignore";
 import { shouldIndex, chunkText, treeBlobs, MAX_FILE_SIZE, exceedsMaxFileSize } from "@/lib/index-chunking";
@@ -58,6 +62,7 @@ export async function indexRepository(
   organizationId?: string,
   /** Pre-resolved token (e.g. GITHUB_TOKEN from Actions). Skips getInstallationToken when provided. */
   providedToken?: string,
+  allowPausedProbe = false,
 ): Promise<IndexStats> {
   const { repoId } = attempt;
   const owner = { ...attempt, signal };
@@ -227,7 +232,7 @@ export async function indexRepository(
       onLog("Processing file contents...");
 
       for (let i = 0; i < filePaths.length; i++) {
-        if (signal?.aborted) throw new Error("Indexing cancelled");
+        signal?.throwIfAborted();
 
         const filePath = filePaths[i];
         try {
@@ -277,7 +282,19 @@ export async function indexRepository(
   } else {
     // ── GitHub indexing flow ──
     onLog("Authenticating with GitHub...");
-    const token = providedToken ?? await getInstallationToken(installationId);
+    const token = providedToken ?? await getInstallationToken(installationId, signal,
+      (url, init) => githubIndexFetch("github-index-app", url, init, allowPausedProbe));
+    let rateScope: string;
+    try { rateScope = await githubIndexRateScope({ installationId, providedToken }); }
+    catch {
+      signal?.throwIfAborted();
+      throw new GitHubIndexUnavailableError();
+    }
+    const indexFetch = (url: string, init?: RequestInit, returnTree451 = false) => {
+      const mayProbe = allowPausedProbe;
+      allowPausedProbe = false;
+      return githubIndexFetch(rateScope, url, init, mayProbe, returnTree451);
+    };
     const headers = {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github+json",
@@ -290,15 +307,15 @@ export async function indexRepository(
     let activeBranch = defaultBranch;
 
     onLog(`Fetching repository tree for ${fullName}@${activeBranch}...`);
-    let treeRes = await fetch(
+    let treeRes = await indexFetch(
       `${GITHUB_API}/repos/${fullName}/git/trees/${encodeURIComponent(activeBranch)}?recursive=1`,
-      { headers, signal },
+      { headers, signal }, true,
     );
 
     let branchExists = false;
     if (!treeRes.ok && treeRes.status === 404) {
       const [owner, repoName] = fullName.split("/");
-      const details = await getRepositoryDetails(installationId, owner, repoName, token);
+      const details = await getRepositoryDetails(installationId, owner, repoName, token, signal, indexFetch);
       if (!details) {
         onLog(`Repository not found or GitHub App lacks access to ${fullName}`, "error");
         onLog("Go to GitHub Settings → Applications → Configure to grant access", "warning");
@@ -308,9 +325,9 @@ export async function indexRepository(
         onLog(`Default branch mismatch: stored '${activeBranch}', actual '${details.default_branch}' — retrying`, "warning");
         activeBranch = details.default_branch;
         resolvedDefaultBranch = details.default_branch;
-        treeRes = await fetch(
+        treeRes = await indexFetch(
           `${GITHUB_API}/repos/${fullName}/git/trees/${encodeURIComponent(activeBranch)}?recursive=1`,
-          { headers, signal },
+          { headers, signal }, true,
         );
       }
     }
@@ -318,7 +335,7 @@ export async function indexRepository(
     // GitHub can return 404 for an existing branch whose commit references
     // Git's empty tree. Verify the commit instead of calling it a missing branch.
     if (!treeRes.ok && treeRes.status === 404) {
-      const commitRes = await fetch(
+      const commitRes = await indexFetch(
         `${GITHUB_API}/repos/${fullName}/commits/${encodeURIComponent(activeBranch)}`,
         { headers, signal },
       );
@@ -340,8 +357,8 @@ export async function indexRepository(
         onLog(`Branch '${activeBranch}' not found on ${fullName}`, "error");
         throw new Error(`Branch '${activeBranch}' not found on ${fullName}`);
       }
-      onLog(`Failed to fetch tree: HTTP ${treeRes.status}`, "error");
-      throw new Error(`Failed to fetch tree: ${treeRes.status}`);
+      onLog(treeRes.status === 451 ? PROVIDER_BLOCK_INDEX_LOG : `Failed to fetch tree: HTTP ${treeRes.status}`, "error");
+      throw Object.assign(new Error(`Failed to fetch tree: ${treeRes.status}`), { status: treeRes.status, providerBlock: treeRes.status === 451 });
     }
 
     const treeData = emptyRepository ? { tree: [] } : await treeRes.json();
@@ -359,13 +376,15 @@ export async function indexRepository(
     if (ignoreBlob) {
       try {
         const [owner, repoName] = fullName.split("/");
-        const ignoreContent = await ghGetFileContent(installationId, owner, repoName, activeBranch, ".octopusignore", token);
+        const ignoreContent = await ghGetFileContent(installationId, owner, repoName, activeBranch, ".octopusignore", token, signal, indexFetch);
         if (ignoreContent === null) throw new Error("Missing .octopusignore content");
         if (ignoreContent) {
           ig = parseOctopusIgnore(ignoreContent);
           onLog("Found .octopusignore — applying custom ignore rules", "info");
         }
-      } catch {
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        if (error instanceof GitHubIndexDeferredError || error instanceof GitHubIndexUnavailableError) throw error;
         throw new Error("Indexing incomplete: could not read .octopusignore");
       }
     }
@@ -378,9 +397,9 @@ export async function indexRepository(
 
     // 1b. Fetch contributors
     try {
-      const contribRes = await fetch(
+      const contribRes = await indexFetch(
         `${GITHUB_API}/repos/${fullName}/contributors?per_page=30`,
-        { headers },
+        { headers, signal },
       );
       if (contribRes.ok) {
         const contribData = await contribRes.json();
@@ -400,7 +419,9 @@ export async function indexRepository(
         }
       }
       onLog(`Found ${contributorCount} contributors`, "success");
-    } catch {
+    } catch (error) {
+      signal?.throwIfAborted();
+      if (error instanceof GitHubIndexDeferredError || error instanceof GitHubIndexUnavailableError) throw error;
       onLog("Could not fetch contributor count", "warning");
     }
 
@@ -413,16 +434,8 @@ export async function indexRepository(
     const BLOB_FETCH_TIMEOUT_MS = 30_000;
 
     async function fetchWithTimeout(url: string): Promise<Response> {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), BLOB_FETCH_TIMEOUT_MS);
-      const onParentAbort = () => ctrl.abort();
-      signal?.addEventListener("abort", onParentAbort);
-      try {
-        return await fetch(url, { headers, signal: ctrl.signal });
-      } finally {
-        clearTimeout(timer);
-        signal?.removeEventListener("abort", onParentAbort);
-      }
+      const timeout = AbortSignal.timeout(BLOB_FETCH_TIMEOUT_MS);
+      return indexFetch(url, { headers, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
     }
 
     function skip(filePath: string, reason: string, failed = true) {
@@ -431,24 +444,22 @@ export async function indexRepository(
       onLog(`Skipped ${filePath}: ${reason}`, "warning");
     }
 
+    let deniedBlobStatus: number | undefined;
+    let deferred: GitHubIndexDeferredError | GitHubIndexUnavailableError | undefined;
+
     async function fetchBlob(file: TreeItem): Promise<void> {
       try {
         const url = `${GITHUB_API}/repos/${fullName}/git/blobs/${file.sha}`;
-        const blobRes = await fetchWithTimeout(url);
+        let blobRes = await fetchWithTimeout(url);
+        if (blobRes.status === 403) {
+          await delay(5_000, undefined, { signal });
+          blobRes = await fetchWithTimeout(url);
+        }
 
         if (!blobRes.ok) {
           if (blobRes.status === 403 || blobRes.status === 429) {
-            const retryAfter = parseInt(blobRes.headers.get("retry-after") ?? "5", 10);
-            onLog(`Rate limited, waiting ${retryAfter}s...`, "warning");
-            await new Promise((r) => setTimeout(r, retryAfter * 1000));
-
-            const retry = await fetchWithTimeout(url);
-            if (!retry.ok) {
-              skip(file.path, `HTTP ${retry.status} after rate-limit retry`);
-              return;
-            }
-            const retryData = await retry.json();
-            processBlob(retryData, file.path);
+            deniedBlobStatus ??= blobRes.status;
+            skip(file.path, `HTTP ${blobRes.status}`);
             return;
           }
           skip(file.path, `HTTP ${blobRes.status}`);
@@ -458,7 +469,8 @@ export async function indexRepository(
         const blobData = await blobRes.json();
         processBlob(blobData, file.path);
       } catch (err) {
-        if (signal?.aborted) throw err;
+        signal?.throwIfAborted();
+        if (err instanceof GitHubIndexDeferredError || err instanceof GitHubIndexUnavailableError) { deferred ??= err; return; }
         const msg = err instanceof Error ? err.message : String(err);
         skip(file.path, msg);
       }
@@ -494,9 +506,16 @@ export async function indexRepository(
     }
 
     for (let i = 0; i < files.length; i += CONCURRENCY) {
-      if (signal?.aborted) throw new Error("Indexing cancelled");
+      signal?.throwIfAborted();
       const batch = files.slice(i, i + CONCURRENCY);
-      await Promise.all(batch.map(fetchBlob));
+      const settled = await Promise.allSettled(batch.map(fetchBlob));
+      signal?.throwIfAborted();
+      const rejected = settled.find(result => result.status === "rejected");
+      if (rejected?.status === "rejected") throw rejected.reason;
+      if (deferred) throw deferred;
+      if (deniedBlobStatus !== undefined) {
+        throw Object.assign(new Error("GitHub denied blob requests"), { status: deniedBlobStatus });
+      }
       if (processed > 0) {
         onLog(`Processing files... ${processed}/${files.length}`);
       }
@@ -512,8 +531,8 @@ export async function indexRepository(
 
   if (allChunks.length === 0) {
     if (emptyRepository) {
-      if (signal?.aborted) throw new Error("Indexing cancelled");
-      await ensureCollection();
+      signal?.throwIfAborted();
+      await ensureCollection(signal);
     }
     signal?.throwIfAborted();
     onLog("No indexable content found", "warning");
@@ -531,7 +550,7 @@ export async function indexRepository(
 
   // 3. Ensure Qdrant collection exists
   onLog("Preparing vector database...");
-  await ensureCollection();
+  await ensureCollection(signal);
   onLog("Vector database ready", "success");
 
   // 5. Create embeddings in batches
@@ -541,7 +560,7 @@ export async function indexRepository(
 
   const vectors: number[][] = [];
   for (let i = 0; i < texts.length; i += 512) {
-    if (signal?.aborted) throw new Error("Indexing cancelled");
+    signal?.throwIfAborted();
 
     const batch = texts.slice(i, i + 512);
     const batchNum = Math.floor(i / 512) + 1;
@@ -550,7 +569,7 @@ export async function indexRepository(
     }
 
     const { createEmbeddings: embed } = await import("@/lib/embeddings");
-    const batchVectors = await embed(batch);
+    const batchVectors = await embed(batch, undefined, signal);
     if (batchVectors.length !== batch.length || batchVectors.some(vector => vector.length === 0)) {
       throw new Error("Indexing incomplete: embedding results do not cover every chunk");
     }
@@ -559,7 +578,7 @@ export async function indexRepository(
 
   onLog(`Generated ${vectors.length} embeddings`, "success");
 
-  if (signal?.aborted) throw new Error("Indexing cancelled");
+  signal?.throwIfAborted();
 
   // 6. Upsert to Qdrant
   const sparseVectors = generateSparseVectors(texts);

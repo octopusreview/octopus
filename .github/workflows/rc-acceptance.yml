@@ -33,7 +33,7 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Check source contract and install locked schema tooling
         run: |
           python3 -m unittest discover -s scripts -p 'test_*images.py'
@@ -46,7 +46,7 @@ jobs:
           --output "$RUNNER_TEMP/rc-schema.sql"
         env:
           DATABASE_URL: postgresql://synthetic:synthetic@localhost:1/unused
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -61,7 +61,7 @@ jobs:
           RC_SCHEMA_SQL: ${{ runner.temp }}/rc-schema.sql
           # Required official support-image digest; mutable tags are refused.
           POSTGRES_IMAGE: ${{ vars.OCTOPUS_RC_POSTGRES_IMAGE }}
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rc-acceptance-${{ github.run_attempt }}
           path: rc-evidence/receipt.json
@@ -69,7 +69,7 @@ jobs:
           retention-days: 90
       - name: Retain scoped acceptance diagnostics
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rc-diagnostics-${{ github.run_attempt }}
           path: |

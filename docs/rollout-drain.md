@@ -1,15 +1,15 @@
 # Draining the job queue for a release
 
-A drain stops every queue worker from claiming new jobs, cluster-wide, so that a release can replace the workers without interrupting a review or an indexing run. Jobs that arrive during a drain are accepted and stay queued. Nothing is cancelled.
+A drain stops queue workers from claiming new jobs, cluster-wide, so that a release can replace the workers without interrupting a review or an indexing run. Workers stop after they observe the drain; jobs arriving in the meantime may still start. Running jobs are not cancelled.
 
 The drain state lives in PostgreSQL. Every process that starts the queue, web and review worker alike, registers itself and reads the state every 3 seconds. A worker that sees a drain stops fetching on all its queues, lets the jobs it is running finish, and only then acknowledges the drain. A drain is *quiescent* when every live instance has acknowledged it and no work is in flight.
 
 ## What a drain guarantees, and what it does not
 
 - No worker that has acknowledged the drain holds or claims a job until claiming is resumed. A worker started during a drain claims nothing.
-- Jobs enqueued during a drain stay queued until claiming resumes.
+- Jobs enqueued after workers have stopped claiming stay queued until claiming resumes.
 - A job still running at the deadline is **not** cancelled. A drain that has not gone quiescent by its deadline ends as `timed_out` and workers go back to claiming. Stopping the worker anyway interrupts that job, exactly as it did before this feature.
-- The deadline bounds only the wait. Once a `GET` has reported `quiescent`, the drain runs until it is resumed or its lease passes, however long the release takes.
+- The deadline bounds only the wait. Once an endpoint response has reported `quiescent`, the drain runs until it is resumed or its lease passes, however long the release takes.
 - A job whose worker dies stays `active` until its queue timeout passes. pg-boss can then retry it, subject to its retry limit. The drain does not shorten that wait.
 - Reviews that run inside a web request (CLI and GitHub Action reviews) and detached indexing or analysis started from a request keep being served during a drain. They are counted, and a drain is not quiescent while any is running. A process that receives SIGTERM waits up to five minutes for its own to finish.
 - If the caller that requested the drain disappears, the drain ends by itself when its lease passes, and workers go back to claiming.
@@ -31,7 +31,7 @@ Self-hosted single-container installs need the migration and nothing else. With 
 
 Returns the status object described below.
 
-`GET` is not free of side effects: while a drain is running and its lease has not passed, each `GET` renews the lease for another 120 seconds. Poll every few seconds to keep a drain alive; stop polling to let it expire. A `GET` also records the first time the drain is quiescent, and ends a drain whose lease or deadline has passed. It does not revive a lease that has already passed, and writes nothing when no drain is running.
+`GET` is not free of side effects: while a drain is running and its lease has not passed, each `GET` renews the lease for another 120 seconds. Poll every few seconds to keep a drain alive; stop polling to let it expire. An endpoint response records quiescence before reporting it; a `GET` also ends a drain whose lease or deadline has passed. It does not revive a lease that has already passed, and writes nothing when no drain is running.
 
 ### `POST {"action":"drain"}`: request a drain
 

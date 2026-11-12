@@ -23,7 +23,7 @@ export const googleProvider: Provider = {
     const contents = params.messages.map((m) => ({
       role: m.role === "assistant" ? "model" : "user",
       parts: [{ text: m.content }],
-    }));
+    }), params.signal ? { signal: params.signal } : undefined);
 
     const result = await model.generateContent(observeAiRequest(params, "google", {
       contents,

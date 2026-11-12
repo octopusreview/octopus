@@ -17,7 +17,7 @@ const refusalFlow = process.argv.includes("--provider-refusal");
 const providerErrorPrivacy = process.argv.includes("--provider-error-privacy");
 const generationRetry = process.argv.includes("--generation-retry");
 const generationDiagnostic = process.argv.includes("--generation-failure-diagnostic") || generationRetry;
-type GenerationOutcome = "terminated" | "organization-auth" | "rate-limit" | "unknown" | "success";
+type GenerationOutcome = "terminated" | "unavailable" | "organization-auth" | "rate-limit" | "unknown" | "success";
 let generationFailure: GenerationOutcome = "terminated";
 // Scripted primary-generation outcomes; when empty every dispatch fails with `generationFailure`.
 const generationScript: GenerationOutcome[] = [];
@@ -226,11 +226,12 @@ mock.module("@/lib/ai-router", () => ({ credentialRouteUnchanged: async () => re
     generationDispatches++;
     const outcome = generationScript.shift() ?? generationFailure;
     if (outcome !== "success") {
+      params.onRequest?.({ provider: "openai", model: params.model, sha256: "fixture", inputPreserved: true });
       retryBlock = pendingRetryBlock;
       if (retryBlock === "cancelled") retryAbort.abort(new DOMException("fixture", "AbortError"));
-      const raw = Object.assign(new Error("synthetic-generation-secret"), { status: { terminated: 503, "organization-auth": 401, "rate-limit": 429, unknown: undefined }[outcome],
+      const raw = Object.assign(new Error("synthetic-generation-secret"), { status: { terminated: 503, unavailable: 503, "organization-auth": 401, "rate-limit": 429, unknown: undefined }[outcome],
         request_id: "req_syntheticgenerationsecret", cause: { message: outcome === "terminated" ? "terminated" : "synthetic private" },
-        ...(outcome === "rate-limit" ? { headers: new Headers({ "retry-after": retryAfterHeader }) } : {}) });
+        ...(["rate-limit", "unavailable"].includes(outcome) ? { headers: new Headers({ "retry-after": retryAfterHeader }) } : {}) });
       throw new AiProviderFailure(raw, "openai", params.model, outcome === "organization-auth" ? "organization" : "platform");
     }
   }
@@ -623,6 +624,15 @@ if (generationRetry) {
     assert.equal(result.debits, 0, "failed attempts are never a customer debit");
     assert.deepEqual(unknownUsage, ["review-failed-attempt", "review-failed-attempt"]);
 
+    for (const outcome of ["organization-auth", "unknown"] as const) {
+      result = await run(["terminated", outcome]);
+      assert.equal(result.dispatches, 2);
+      for (const output of [result.body, result.check]) {
+        assert.ok(output.includes(interruptedTwice));
+        assert.ok(output.includes(`Failure code: \`${outcome === "unknown" ? "unclassified" : "http_401"}\`.`));
+      }
+    }
+
     result = await run(["organization-auth"]);
     assert.equal(result.dispatches, 1, "an organization-level rejection is never retried");
     assert.ok(!result.body.includes("interrupted twice"));
@@ -637,6 +647,9 @@ if (generationRetry) {
     result = await run(["rate-limit", "success"], { retryAfter: "900" });
     assert.equal(result.dispatches, 1, "a Retry-After that does not fit the job is not waited for");
     assert.equal(result.assessment?.failure?.code, "http_429");
+
+    result = await run(["unavailable", "success"], { retryAfter: "900" });
+    assert.equal(result.dispatches, 1, "a 503 Retry-After that does not fit must prevent the retry");
 
     result = await run(["terminated", "success"], { remaining: 200_000 });
     assert.equal(result.dispatches, 1, "too little of the job window is left");

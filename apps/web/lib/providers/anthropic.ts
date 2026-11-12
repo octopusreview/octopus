@@ -60,8 +60,8 @@ export const anthropicProvider: Provider = {
       throw error;
     }
     const signal = window
-      ? AbortSignal.any([window.signal, AbortSignal.timeout(timeoutMs)])
-      : AbortSignal.timeout(timeoutMs);
+      ? AbortSignal.any([window.signal, AbortSignal.timeout(timeoutMs), ...(params.signal ? [params.signal] : [])])
+      : params.signal ? AbortSignal.any([params.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
     // This is a local call-start observation, not a provider delivery receipt.
     if (admission) {
       admission.generationTimeoutMs = timeoutMs;
@@ -70,8 +70,8 @@ export const anthropicProvider: Provider = {
     }
     // SDK 0.91.1 serializes between_tools correctly but does not yet type it.
     const stream = client.messages.stream(observeAiRequest(params, "anthropic", body) as Anthropic.MessageCreateParamsStreaming, {
-      signal,
       ...sdkRequestOptions(params),
+      signal,
       ...(window ? { maxRetries: 0, timeout: timeoutMs } : {}),
     });
 

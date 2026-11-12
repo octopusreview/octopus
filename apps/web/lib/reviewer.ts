@@ -2658,7 +2658,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
       markReviewAssessmentIncomplete(attemptCoverage, "Review processing failed or was interrupted before persistence");
     }
     // Only after an admitted retry was dispatched and was interrupted as well.
-    const interruptedTwice = attemptCoverage?.assessment?.attempts?.length === 1 && attemptCoverage.assessment.failure?.retryability === "transient"
+    const interruptedTwice = attemptCoverage?.assessment?.attempts?.length === 1 && (attemptCoverage.assessment.requests.length > 0 || attemptCoverage.assessment.capacityAdmission?.primaryDispatch === "started")
       ? `Review generation was interrupted twice and was not completed. No score was produced. Comment \`${isForgejo ? "@octopus" : "@octopus-review"}\` to run it again.` : null;
     const failureBody = attemptCoverage?.assessment && !attemptSaved
       ? applyReviewCoverage(`## 🐙 Octopus Review\n\n${interruptedTwice ?? "Assessment failed or was interrupted. No complete assessment is available."}`, attemptCoverage, failureAttemptId) : null;

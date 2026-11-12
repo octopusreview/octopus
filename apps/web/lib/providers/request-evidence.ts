@@ -22,8 +22,8 @@ export function observeAiRequest<T>(params: AiCreateParams, provider: AiProvider
 }
 
 /** Per-request SDK options; leaves the SDK default untouched unless the caller asked for no SDK retries. */
-export function sdkRequestOptions(params: AiCreateParams): { maxRetries: 0 } | undefined {
-  return params.maxRetries === 0 ? { maxRetries: 0 } : undefined;
+export function sdkRequestOptions(params: AiCreateParams): { maxRetries?: 0; signal?: AbortSignal } | undefined {
+  return params.maxRetries === 0 || params.signal ? { ...(params.maxRetries === 0 ? { maxRetries: 0 } : {}), ...(params.signal ? { signal: params.signal } : {}) } : undefined;
 }
 
 export function completionEvidence(reason: string | null | undefined, completedReasons: string[]): NonNullable<AiResponse["completion"]> {

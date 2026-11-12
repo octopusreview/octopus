@@ -56,6 +56,7 @@ export type AiCreateParams = {
   onRequest?: (receipt: import("./request-evidence").AiRequestReceipt) => void;
   /** Review generation sets 0 so one application attempt is exactly one provider request. */
   maxRetries?: 0;
+  signal?: AbortSignal;
   maxTokens: number;
   system?: string;
   messages: AiMessage[];

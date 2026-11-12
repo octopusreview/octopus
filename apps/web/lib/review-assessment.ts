@@ -275,7 +275,7 @@ export async function executeCoveredReview(
   };
   coverage.assessment = assessment;
   let response: AiResponse;
-  const dispatch = () => call({ ...request, onRequest: receipt => assessment.requests.push(receipt),
+  const dispatch = (signal?: AbortSignal) => call({ ...request, ...(signal ? { signal } : {}), onRequest: receipt => assessment.requests.push(receipt),
     ...(request.completeReviewAdmission ? { completeReviewAdmission: { ...request.completeReviewAdmission,
       onDecision: receipt => { assessment.capacityAdmission = receipt; request.completeReviewAdmission?.onDecision?.(receipt); },
     } } : {}),
@@ -315,7 +315,7 @@ export async function executeCoveredReview(
     // One retry, only for a classified transient provider failure; unknown causes are never retried.
     if (!first && retry && failure?.retryability === "transient" && error instanceof AiProviderFailure
       && await admitGenerationRetry(retry.window, request.completeReviewAdmission ? COMPLETE_REVIEW_POLICY.minGenerationMs : GENERATION_RETRY.minGenerationMs,
-        failure.status === 429 && failure.keyOwner === "platform" ? error.retryAfterMs : undefined, signal => retry.confirm(error, signal))) {
+        error.retryAfterMs, signal => retry.confirm(error, signal))) {
       first = { error, reason: assessment.reason, attempt: { failure, requests: assessment.requests, ...(assessment.capacityAdmission ? { capacityAdmission: assessment.capacityAdmission } : {}) } };
       assessment.attempts = [first.attempt];
       delete assessment.failure; delete assessment.capacityAdmission;

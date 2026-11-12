@@ -183,7 +183,7 @@ async function runAnthropicApi(params: AiCreateParams, apiKey: string | null): P
           }
         : {}),
     }),
-    { signal: AbortSignal.timeout(ANTHROPIC_CALL_TIMEOUT_MS), ...sdkRequestOptions(params) },
+    { ...sdkRequestOptions(params), signal: params.signal ? AbortSignal.any([params.signal, AbortSignal.timeout(ANTHROPIC_CALL_TIMEOUT_MS)]) : AbortSignal.timeout(ANTHROPIC_CALL_TIMEOUT_MS) },
   );
 
   let response: Anthropic.Message;

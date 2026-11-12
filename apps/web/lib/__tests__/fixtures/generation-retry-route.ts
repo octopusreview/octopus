@@ -74,6 +74,34 @@ try {
   assert.equal(coverage.assessment?.requests.length, 1);
   assert.equal(coverage.assessment?.failure, undefined);
 
+  const controller = new AbortController();
+  const cancellableWindow = { ...window, signal: controller.signal };
+  let retrySignal: AbortSignal | undefined;
+  let callCount = 0;
+  const cancelled = structuredClone(coverage); delete cancelled.assessment;
+  await assert.rejects(() => executeCoveredReview({ model: "gpt-fixture", maxTokens: 16, maxRetries: 0, messages: [{ role: "user", content: "fixture" }] }, cancelled, "fixture",
+    async request => {
+      if (++callCount === 1) throw new AiProviderFailure(new Error("terminated"), "openai", "gpt-fixture", "platform");
+      retrySignal = request.signal;
+      controller.abort();
+      throw new Error("aborted");
+    }, { window: cancellableWindow, confirm: async () => true }));
+  assert.equal(callCount, 2);
+  assert.equal(retrySignal?.aborted, true, "the dispatched retry receives the job cancellation signal");
+
+  const originalFetch = globalThis.fetch;
+  const sdkAbort = new AbortController();
+  let sdkSignal: AbortSignal | null | undefined;
+  globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
+    sdkSignal = init?.signal;
+    sdkAbort.abort();
+    return Promise.reject(new DOMException("cancelled", "AbortError"));
+  }) as typeof fetch;
+  try {
+    await assert.rejects(() => createAiMessage({ model: "gpt-fixture", maxTokens: 16, maxRetries: 0, signal: sdkAbort.signal, messages: [{ role: "user", content: "fixture" }] }, "org"));
+    assert.equal(sdkSignal?.aborted, true, "the OpenAI SDK receives and honors the request signal");
+  } finally { globalThis.fetch = originalFetch; }
+
   // A retry refused before dispatch leaves the original classified failure, and the supplied input, standing.
   const { CapacityAdmissionError, capacityReceipt } = await import("../../review-capacity");
   const refusal = new CapacityAdmissionError({ ...capacityReceipt({ candidateSha256: "c".repeat(64), preparedSource: { chars: 1, files: 1, hunks: 0 },

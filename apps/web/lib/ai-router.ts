@@ -162,6 +162,7 @@ export async function createAiMessage(
   }
 
   signal?.throwIfAborted();
+  params.signal?.throwIfAborted();
   try {
     const response = await getProvider(provider).create(params, orgKey, orgId);
     return window ? { ...response, usedOwnKey: !!orgKey } : response;

@@ -7,10 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.11] - 2026-11-12
+
 ### Fixed
 
-- Retried GitHub reviews can reuse an unfinished check and resume an interrupted publication.
-- Interrupted attempts can be recorded in review history, including an unknown AI provider outcome.
+- If a review's worker stops mid-run, the retried job reuses the unfinished GitHub check and finishes the interrupted comment instead of leaving them behind.
+- An interrupted review attempt is kept in the review history, noting when the AI provider's result is unknown.
 
 ### Upgrade notes
 

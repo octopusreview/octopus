@@ -117,8 +117,8 @@ export async function publishReviewSummary(target: SummaryTarget): Promise<numbe
         // Release the row lock before waiting so the reservation's owner can
         // enter its POST transaction. Every recheck repeats the stale guards.
         reconciliationDeadline ??= performance.now() + 10_000;
-        // The wait outlasts the owner's provider timeout. A reservation still without a comment
-        // belongs to a publisher that stopped before posting, so adopt it and post under its marker.
+        // After the owner's provider timeout, adopt the reservation if its marker is still absent.
+        // A delayed GitHub listing can still cause a duplicate.
         if (performance.now() >= reconciliationDeadline) reservation = result.pendingCreation;
         else await new Promise(resolve => setTimeout(resolve, 100));
         continue;

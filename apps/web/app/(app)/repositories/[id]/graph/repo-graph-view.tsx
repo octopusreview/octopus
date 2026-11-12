@@ -105,10 +105,26 @@ const DIR_PALETTE = [
 ];
 
 const KIND_STYLES: Record<Highlight["kind"], { label: string; className: string }> = {
-  entrypoint: { label: "Entry", className: "bg-blue-500/15 text-blue-300 ring-blue-500/30" },
-  config: { label: "Config", className: "bg-amber-500/15 text-amber-300 ring-amber-500/30" },
-  hub: { label: "Hub", className: "bg-fuchsia-500/15 text-fuchsia-300 ring-fuchsia-500/30" },
-  large: { label: "Large", className: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30" },
+  entrypoint: {
+    label: "Entry",
+    className:
+      "bg-blue-100 text-blue-800 ring-blue-300 dark:bg-blue-500/15 dark:text-blue-300 dark:ring-blue-500/30",
+  },
+  config: {
+    label: "Config",
+    className:
+      "bg-amber-100 text-amber-800 ring-amber-300 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-500/30",
+  },
+  hub: {
+    label: "Hub",
+    className:
+      "bg-fuchsia-100 text-fuchsia-800 ring-fuchsia-300 dark:bg-fuchsia-500/15 dark:text-fuchsia-300 dark:ring-fuchsia-500/30",
+  },
+  large: {
+    label: "Large",
+    className:
+      "bg-emerald-100 text-emerald-800 ring-emerald-300 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-500/30",
+  },
 };
 
 function buildDirColorMap(nodes: GraphNode[]): Map<string, string> {

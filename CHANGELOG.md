@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Failed reviews now say which kind of failure occurred, and no longer store the AI provider's request identifier.
-- A review interrupted by a temporary AI provider failure is now retried once automatically before it is reported as failed.
+- Review generation failures can show a safe code; new capacity receipts omit the provider request identifier.
+- Eligible reviews retry a transient AI provider failure once automatically.
 
 ### Upgrade notes
 

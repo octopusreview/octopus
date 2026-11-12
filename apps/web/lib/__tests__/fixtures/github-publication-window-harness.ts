@@ -6,7 +6,7 @@ mock.module("server-only", () => ({}));
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
 mock.module("@/lib/github-app-config", () => ({ getGithubAppConfig: async () => ({ appId: "123", privateKey }) }));
 const { createCheckRun, updateCheckRun } = await import("../../github");
-const checkRuns: { id: number; status: string; external_id?: string }[] = [];
+const checkRuns: { id: number; status: string; external_id?: string; app?: { id: number } }[] = [];
 let lookupBroken = false;
 const checkCalls: string[] = [];
 let controller = new AbortController();
@@ -28,7 +28,7 @@ globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     return Response.json({ check_runs: checkRuns.slice((page - 1) * 100, page * 100) });
   }
   if (String(url).endsWith("/check-runs")) {
-    const run = { id: 50 + checkRuns.length, status: "in_progress", external_id: JSON.parse(String(init?.body)).external_id };
+    const run = { id: 50 + checkRuns.length, status: "in_progress", external_id: JSON.parse(String(init?.body)).external_id, app: { id: 123 } };
     checkRuns.push(run);
     checkCalls.push(`POST ${run.id}`);
     return Response.json(run);
@@ -79,8 +79,15 @@ assert.equal(checkCalls.length, 1);
 assert.ok(checkCalls[0].startsWith("POST"));
 checkRuns.length = 0;
 checkRuns.push(...Array.from({ length: 100 }, (_, id) => ({ id, status: "completed" })));
-checkRuns.push({ id: 100, status: "in_progress", external_id: "pr:later" });
+checkRuns.push({ id: 100, status: "in_progress", external_id: "pr:later", app: { id: 123 } });
 assert.equal(await createCheckRun(1, "owner", "repo", head, "Octopus Review", undefined, "pr:later"), 100);
+checkRuns.length = 0;
+checkRuns.push({ id: 1, status: "in_progress", external_id: "pr:foreign", app: { id: 456 } });
+checkRuns.push({ id: 2, status: "in_progress", external_id: "pr:foreign" });
+const ownedRun = await createCheckRun(1, "owner", "repo", head, "Octopus Review", undefined, "pr:foreign");
+assert.notEqual(ownedRun, 1);
+assert.notEqual(ownedRun, 2);
+assert.equal(await createCheckRun(1, "owner", "repo", head, "Octopus Review", undefined, "pr:foreign"), ownedRun);
 // A lookup that cannot be read still creates the check run.
 lookupBroken = true; checkCalls.length = 0;
 await createCheckRun(1, "owner", "repo", head, "Octopus Review", undefined, "pr:unreadable");

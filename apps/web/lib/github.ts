@@ -355,14 +355,15 @@ export async function createCheckRun(
   const token = await getInstallationToken(installationId);
   // A lookup that fails in any way creates a check run, as before.
   if (externalId) try {
+    const config = await getGithubAppConfig();
     for (let page = 1; ; page++) {
       const existing = await fetchWithRetry(
         `${GITHUB_API}/repos/${owner}/${repo}/commits/${headSha}/check-runs?check_name=${encodeURIComponent(name)}&filter=all&per_page=100&page=${page}`,
         { headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" } },
       );
       // A failed lookup creates a check run, as before.
-      const runs = existing.ok ? ((await existing.json()) as { check_runs?: { id: number; status: string; external_id?: string | null }[] }).check_runs ?? [] : [];
-      const unfinished = runs.find(run => run.external_id === externalId && run.status !== "completed");
+      const runs = existing.ok ? ((await existing.json()) as { check_runs?: { id: number; status: string; external_id?: string | null; app?: { id: number } | null }[] }).check_runs ?? [] : [];
+      const unfinished = runs.find(run => config && String(run.app?.id) === String(config.appId) && run.external_id === externalId && run.status !== "completed");
       if (unfinished) return unfinished.id;
       if (runs.length < 100) break;
     }

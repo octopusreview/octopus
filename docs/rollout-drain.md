@@ -13,7 +13,7 @@ The drain state lives in PostgreSQL. Every process that starts the queue, web an
 - A job whose worker dies stays `active` until its queue timeout passes. pg-boss can then retry it, subject to its retry limit. The drain does not shorten that wait.
 - Reviews that run inside a web request (CLI and GitHub Action reviews) and detached indexing or analysis started from a request keep being served during a drain. They are counted, and a drain is not quiescent while any is running. A process that receives SIGTERM waits up to five minutes for its own to finish.
 - If the caller that requested the drain disappears, the drain ends by itself when its lease passes, and workers go back to claiming.
-- A worker that was frozen through a drain request and wakes up later refuses the next job it fetches. That failure consumes a retry; a job on its last attempt fails without running. The `pull-ollama-model` queue is exempt from this backstop because it has no retries.
+- A worker whose last state read is more than two heartbeats old rereads it before starting a fetched job. If it sees a drain, it refuses the job; if the read fails, it uses the last known state. Refusal consumes a retry, so a job on its last attempt fails without running. The `pull-ollama-model` queue is exempt from this backstop because it has no retries.
 
 ## Requirements
 

@@ -24,7 +24,12 @@ const TEST_PRIVATE_KEY = crypto
   .privateKey.export({ type: "pkcs8", format: "pem" })
   .toString();
 
-const redisSet = mock(() => Promise.resolve("OK"));
+const redisSet = mock((..._args: unknown[]): Promise<string | null> => Promise.resolve("OK"));
+const redisGet = mock((..._args: unknown[]): Promise<string | null> => Promise.resolve(null));
+const captureException = mock((..._args: unknown[]) => "event-id");
+const realSentry = await import("@sentry/nextjs");
+mock.module("@sentry/nextjs", () => ({ ...realSentry, captureException }));
+const storeDown = () => Promise.reject(new Error("Stream isn't writeable and enableOfflineQueue options is false"));
 const organizationUpdate = mock(
   ({ where, data }: { where: { id: string }; data: { githubInstallationId: number | null } }) => {
     if (where.id === "org_victim") boundInstallationId = data.githubInstallationId;
@@ -54,7 +59,7 @@ mock.module("@/lib/auth", () => ({
 }));
 
 mock.module("@/lib/redis", () => ({
-  getRedis: () => ({ set: redisSet }),
+  getRedis: () => ({ set: redisSet, get: redisGet }),
 }));
 
 const writeAuditLog = mock((_entry: Record<string, unknown>) => Promise.resolve());
@@ -155,7 +160,11 @@ beforeEach(() => {
   existingBinding = null;
   repositoryListingFails = false;
   setupUpdates.length = 0;
-  redisSet.mockClear();
+  redisSet.mockReset();
+  redisSet.mockImplementation(() => Promise.resolve("OK"));
+  redisGet.mockReset();
+  redisGet.mockImplementation(() => Promise.resolve(null));
+  captureException.mockClear();
   organizationUpdate.mockClear();
   writeAuditLog.mockClear();
 });
@@ -261,6 +270,61 @@ describe("GitHub installation callback authorization", () => {
     expect(location.searchParams.get("error")).toBeNull();
     expect(boundInstallationId).toBe(424242);
     expect(setupUpdates.at(-1)).toMatchObject({ githubSetupStatus: { sync: { status: "ready" }, webhook: { status: "unknown" } } });
+  });
+
+  describe("state replay store", () => {
+    async function verifiedCallback() {
+      const nonce = "store-browser-nonce";
+      const state = signInstallationVerificationState({
+        uid: "user_victim", oid: "org_victim", rt: "/settings/integrations", nonce, installationId: 424242,
+      });
+      requestCookies.set(GITHUB_INSTALL_STATE_COOKIE, nonce);
+      installationAccessible = true;
+      const response = await GET(callbackRequest({ state, code: "one-time-code" }));
+      return new URL(response.headers.get("location")!).searchParams.get("error");
+    }
+
+    it("connects when the store rejects one command during a reconnect", async () => {
+      redisSet.mockImplementationOnce(storeDown);
+
+      expect(await verifiedCallback()).toBeNull();
+      expect(boundInstallationId).toBe(424242);
+      expect(redisSet).toHaveBeenCalledTimes(2);
+      expect(captureException).not.toHaveBeenCalled();
+    });
+
+    it("accepts its own earlier write when only the reply was lost", async () => {
+      redisSet.mockImplementationOnce(storeDown);
+      redisSet.mockImplementationOnce(() => Promise.resolve(null));
+      redisGet.mockImplementation(() => Promise.resolve(redisSet.mock.calls[0][1] as string));
+
+      expect(await verifiedCallback()).toBeNull();
+      expect(boundInstallationId).toBe(424242);
+    });
+
+    it("refuses a state another request consumed, on the first attempt and after a failed one", async () => {
+      redisSet.mockImplementation(() => Promise.resolve(null));
+      expect(await verifiedCallback()).toBe("replay_detected");
+      expect(redisGet).not.toHaveBeenCalled();
+
+      redisSet.mockReset();
+      redisSet.mockImplementationOnce(storeDown);
+      redisSet.mockImplementation(() => Promise.resolve(null));
+      redisGet.mockImplementation(() => Promise.resolve("written-by-another-request"));
+      expect(await verifiedCallback()).toBe("replay_detected");
+      expect(boundInstallationId).toBeNull();
+      expect(organizationUpdate).not.toHaveBeenCalled();
+    });
+
+    it("fails closed and reports once when the store stays down", async () => {
+      redisSet.mockImplementation(storeDown);
+
+      expect(await verifiedCallback()).toBe("state_store_unavailable");
+      expect(boundInstallationId).toBeNull();
+      expect(organizationUpdate).not.toHaveBeenCalled();
+      expect(redisSet).toHaveBeenCalledTimes(3);
+      expect(captureException).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("retains verified authorization but exposes failed repository setup", async () => {

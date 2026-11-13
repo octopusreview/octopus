@@ -1,5 +1,7 @@
 import "server-only";
 import crypto from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
+import * as Sentry from "@sentry/nextjs";
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
@@ -27,6 +29,8 @@ import {
 
 const baseUrl = process.env.BETTER_AUTH_URL || "http://localhost:3000";
 const callbackUrl = new URL("/api/github/callback", baseUrl).toString();
+// Allow a brief reconnect while keeping persistent store failures closed.
+const STATE_STORE_ATTEMPTS = 3;
 
 type FailureActor = { actorId: string; organizationId: string };
 
@@ -82,13 +86,24 @@ async function consumeState(jti: string, exp: number): Promise<"ok" | "replay" |
     console.warn("[github/callback] Redis unavailable — relying on OAuth code and browser nonce replay controls");
     return "ok";
   }
-  try {
-    const ttlMs = Math.max(exp - Date.now(), 0) + 60_000;
-    const set = await redis.set(stateReplayKey(jti), "1", "PX", ttlMs, "NX");
-    return set === "OK" ? "ok" : "replay";
-  } catch (error) {
-    console.error("[github/callback] state replay store failed:", error);
-    return "unavailable";
+  const key = stateReplayKey(jti);
+  const ttlMs = Math.max(exp - Date.now(), 0) + 60_000;
+  // Identifies this request's own write, so a retry can tell it apart from a replay.
+  const token = crypto.randomUUID();
+  for (let attempt = 1; ; attempt++) {
+    try {
+      if (await redis.set(key, token, "PX", ttlMs, "NX") === "OK") return "ok";
+      // A failed attempt may have reached Redis before its reply was lost; the key then holds our token.
+      return attempt > 1 && await redis.get(key) === token ? "ok" : "replay";
+    } catch (error) {
+      if (attempt === STATE_STORE_ATTEMPTS) {
+        console.error("[github/callback] state replay store failed:", error);
+        Sentry.captureException(error, { tags: { failure_stage: "github_callback_state_store" } });
+        return "unavailable";
+      }
+      // The shared client rejects commands at once while it reconnects (enableOfflineQueue: false).
+      await delay(250 * attempt);
+    }
   }
 }
 

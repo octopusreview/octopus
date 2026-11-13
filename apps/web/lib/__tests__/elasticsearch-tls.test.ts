@@ -4,15 +4,16 @@ import { createServer as createHttpsServer } from "node:https";
 import { createServer as createHttpServer } from "node:http";
 import { join, resolve } from "node:path";
 
+const appDir = resolve(import.meta.dir, "../..");
 let dir = "", bundle = "", cert = "", key = "";
 beforeAll(async () => {
-  dir = await mkdtemp(join(process.cwd(), ".es-tls-test-"));
+  dir = await mkdtemp(join(appDir, ".es-tls-test-"));
   bundle = join(dir, "client.cjs"); cert = join(dir, "cert.pem"); key = join(dir, "key.pem");
   const config = join(dir, "openssl.cnf");
   await writeFile(config, "[req]\ndistinguished_name=dn\nx509_extensions=v3\nprompt=no\n[dn]\nCN=synthetic.invalid\n[v3]\nsubjectAltName=IP:127.0.0.1\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,digitalSignature,keyEncipherment,keyCertSign\n");
   const certResult = Bun.spawnSync(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert, "-days", "1", "-config", config], { stdout: "ignore", stderr: "pipe" });
   expect(certResult.exitCode, certResult.stderr.toString()).toBe(0);
-  const compiled = Bun.spawnSync([process.execPath, "build", "lib/elasticsearch.ts", "--target=node", "--format=cjs", "--external", "@elastic/elasticsearch", "--outfile", bundle], { cwd: process.cwd(), stdout: "pipe", stderr: "pipe" });
+  const compiled = Bun.spawnSync([process.execPath, "build", "lib/elasticsearch.ts", "--target=node", "--format=cjs", "--external", "@elastic/elasticsearch", "--outfile", bundle], { cwd: appDir, stdout: "pipe", stderr: "pipe" });
   expect(compiled.exitCode, compiled.stderr.toString()).toBe(0);
 }, 30_000);
 afterAll(async () => { if (dir) await rm(dir, { recursive: true, force: true }); });

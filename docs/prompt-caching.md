@@ -14,7 +14,7 @@ Usage retains provider-native input semantics for compatibility with existing re
 
 Anthropic streaming chat keeps its existing five-minute retention for cacheable prefixes. Its usage result carries that request TTL through web, CLI and queued-chat callers to settlement, so writes cost 1.25x even when `PROMPT_CACHE_TTL=1h`. Review requests retain their configured TTL: five-minute writes cost 1.25x base input and one-hour writes cost 2x. TTL is not added to stored usage: historical reports without it still estimate writes using the current deployment TTL. New charged-cost snapshots continue to record only the successful deduction.
 
-OpenAI cache-write counters are retained when returned; their 1.25x replacement rate is independent of Anthropic's configured TTL. Absence of a write field means zero recorded writes. Fable 5.1/Mythos 5.1 use their published 0.025x read rate, Opus 5.5 uses 0.05x. Direct OpenAI text-model cached-input exceptions, including dated variants, are:
+OpenAI cache-write counters are retained when returned; their 1.25x replacement rate is independent of Anthropic's configured TTL. Absence of a write field means zero recorded writes. Fable 5.1, Fable 5.2 and Mythos 5.1 use their published 0.025x read rate, Opus 5.5 uses 0.05x. Direct OpenAI text-model cached-input exceptions, including dated variants, are:
 
 | Multiplier | Models |
 | --- | --- |

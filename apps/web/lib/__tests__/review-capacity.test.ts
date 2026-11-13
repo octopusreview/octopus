@@ -21,6 +21,7 @@ function input(): ReviewInput {
 }
 const windowFor = (remaining = 900_000) => ({ jobId: "synthetic", deadlineEpochMs: Date.now() + remaining,
   signal: new AbortController().signal, remainingMs: () => remaining });
+const policyModel = policy.models[0];
 
 describe("complete review candidate", () => {
   const options = { maxChars: 350_000, generated: buildGeneratedMatcher() };
@@ -33,24 +34,35 @@ describe("complete review candidate", () => {
     const source = input();
     const baseline = prepareReviewInput(source, options);
     expect(baseline.coverage.complete).toBe(false);
-    const candidate = completeReviewCandidate(source, options, baseline, policy.model, "anthropic", windowFor(), parseDiffCharCap(undefined));
+    const candidate = completeReviewCandidate(source, options, baseline, policyModel, "anthropic", windowFor(), parseDiffCharCap(undefined));
     expect(candidate?.coverage.complete).toBe(true);
     expect(candidate?.coverage.files.filter(file => file.state === "supplied")).toHaveLength(130);
     expect(candidate?.coverage.files.filter(file => file.state === "excluded")).toHaveLength(110);
     expect(candidate?.diff.length).toBeGreaterThan(350000);
     expect(candidate?.coverage.files.filter(file => file.state === "supplied").every(file => file.hunks.length === 1 && file.suppliedSha256)).toBe(true);
   });
+  it("admits every policy model and no neighbouring id", () => {
+    const source = input();
+    const baseline = prepareReviewInput(source, options);
+    expect(policy.models).toEqual(["claude-fable-5-1", "claude-fable-5-2"]);
+    for (const model of policy.models) {
+      expect(completeReviewCandidate(source, options, baseline, model, "anthropic", windowFor(), parseDiffCharCap(undefined))?.coverage.complete).toBe(true);
+    }
+    for (const other of ["claude-fable-5", "claude-fable-5-1-alias", "claude-fable-5-3", "claude-mythos-5-2", "claude-opus-5-5", ""]) {
+      expect(completeReviewCandidate(source, options, baseline, other, "anthropic", windowFor(), parseDiffCharCap(undefined))).toBeNull();
+    }
+  });
   it("never expands a present cap, changes model/provider, or exceeds the existing acquisition ceiling", () => {
     const source = input();
     const baseline = prepareReviewInput(source, options);
     for (const raw of ["350000", "100", "350000.75", "800000", "bad", ""]) {
-      expect(completeReviewCandidate(source, options, baseline, policy.model, "anthropic", windowFor(), parseDiffCharCap(raw))).toBeNull();
+      expect(completeReviewCandidate(source, options, baseline, policyModel, "anthropic", windowFor(), parseDiffCharCap(raw))).toBeNull();
     }
     expect(completeReviewCandidate(source, options, baseline, "claude-fable-5", "anthropic", windowFor())).toBeNull();
-    expect(completeReviewCandidate(source, options, baseline, policy.model, "openrouter", windowFor())).toBeNull();
-    expect(completeReviewCandidate(source, options, baseline, policy.model, "anthropic")).toBeNull();
-    expect(completeReviewCandidate(source, options, baseline, policy.model, "anthropic", windowFor(659999))).toBeNull();
-    expect(completeReviewCandidate(source, options, baseline, policy.model, "anthropic", windowFor(), parseDiffCharCap(undefined), 800000)).toBeNull();
+    expect(completeReviewCandidate(source, options, baseline, policyModel, "openrouter", windowFor())).toBeNull();
+    expect(completeReviewCandidate(source, options, baseline, policyModel, "anthropic")).toBeNull();
+    expect(completeReviewCandidate(source, options, baseline, policyModel, "anthropic", windowFor(659999))).toBeNull();
+    expect(completeReviewCandidate(source, options, baseline, policyModel, "anthropic", windowFor(), parseDiffCharCap(undefined), 800000)).toBeNull();
   });
   it("cannot complete unknown inventory, missing or malformed text, or unverified binary declarations", () => {
     for (const mutate of [
@@ -61,7 +73,7 @@ describe("complete review candidate", () => {
       (source: ReviewInput) => { source.files[130].binaryEvidence!.headSha = "d".repeat(40); },
     ]) {
       const source = input(); mutate(source);
-      expect(completeReviewCandidate(source, options, prepareReviewInput(source, options), policy.model, "anthropic", windowFor()) === null).toBe(true);
+      expect(completeReviewCandidate(source, options, prepareReviewInput(source, options), policyModel, "anthropic", windowFor()) === null).toBe(true);
     }
   });
 });

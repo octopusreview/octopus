@@ -1,6 +1,6 @@
 import "server-only";
 import { AiProviderFailure, providerKeyOwner, providerRouteUnchanged } from "./provider-failure";
-import { CapacityAdmissionError, capacityReceipt, refuseCapacity, withinReviewWindow, COMPLETE_REVIEW_POLICY } from "./review-capacity";
+import { CapacityAdmissionError, capacityReceipt, refuseCapacity, withinReviewWindow, COMPLETE_REVIEW_POLICY, isCompleteReviewModel } from "./review-capacity";
 import { prisma } from "@octopus/db";
 import { decryptStringMaybeLegacy } from "@/lib/crypto";
 import { getProvider } from "./providers";
@@ -124,7 +124,7 @@ export async function createAiMessage(
   const window = admission?.window ?? params.executionWindow;
   const setup = async () => {
     const provider = await resolveProvider(params.model);
-    if (admission && (provider !== "anthropic" || params.model !== COMPLETE_REVIEW_POLICY.model)) {
+    if (admission && (provider !== "anthropic" || !isCompleteReviewModel(params.model))) {
       refuseCapacity(admission, capacityReceipt(admission, params.model), "unsupported-route");
     }
     if (window && provider !== "anthropic") throw new Error("Measured review provider changed before recovery");

@@ -186,6 +186,13 @@ describe("provider-native cache accounting", () => {
     const prices = new Map([["claude-fable-5-1", { input: 10, output: 50 }]]);
     expect(calcCost(prices, "claude-fable-5-1", 1000, 100, 10000, 2000, "anthropic")).toBeCloseTo(.0425 * 1.2, 10);
   });
+  it("gives Fable 5.2 the published $0.20/M cache read, not the ordinary tenth-of-input rate", () => {
+    const prices = new Map([["claude-fable-5-2", { input: 8, output: 40 }], ["claude-fable-5", { input: 10, output: 50 }]]);
+    // 1M cache-read tokens: 5.2 bills 2.5% of $8; Fable 5 keeps the default 10% of $10.
+    expect(calcCost(prices, "claude-fable-5-2", 0, 0, 1_000_000, 0, "anthropic")).toBeCloseTo(0.20 * 1.2, 10);
+    expect(calcCost(prices, "claude-fable-5", 0, 0, 1_000_000, 0, "anthropic")).toBeCloseTo(1.00 * 1.2, 10);
+    expect(calcCost(prices, "claude-fable-5-2", 1_000_000, 1_000_000, 0, 0, "anthropic")).toBeCloseTo(48 * 1.2, 10);
+  });
 });
 
 it("uses published older OpenAI cached-input rates without changing other providers", () => {

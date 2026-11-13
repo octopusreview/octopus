@@ -27,6 +27,7 @@ export type ModelInfo = {
 // FALLBACK_PRICING + seed.ts exactly.
 export const MODELS_BY_PROVIDER: Record<string, ModelInfo[]> = {
   anthropic: [
+    { modelId: "claude-fable-5-2", displayName: "Claude Fable 5.2", inputPrice: 8, outputPrice: 40 },
     { modelId: "claude-fable-5-1", displayName: "Claude Fable 5.1", inputPrice: 10, outputPrice: 50 },
     { modelId: "claude-fable-5", displayName: "Claude Fable 5", inputPrice: 10, outputPrice: 50 },
     { modelId: "claude-opus-5", displayName: "Claude Opus 5", inputPrice: 5, outputPrice: 25, isDefault: true },

@@ -714,6 +714,7 @@ async function main() {
     // Anthropic
     // Claude 5 frontier model; top opt-in "max" tier. sortOrder -1 pins it above
     // the 0-indexed list without a duplicate order value.
+    { modelId: "claude-fable-5-2", displayName: "Claude Fable 5.2", provider: "anthropic", category: "llm", inputPrice: 8, outputPrice: 40, sortOrder: -5 },
     { modelId: "claude-fable-5-1", displayName: "Claude Fable 5.1", provider: "anthropic", category: "llm", inputPrice: 10, outputPrice: 50, sortOrder: -2 },
     { modelId: "claude-fable-5", displayName: "Claude Fable 5", provider: "anthropic", category: "llm", inputPrice: 10, outputPrice: 50, sortOrder: -1 },
     // Opus 5 uses Anthropic's published undated API id ("claude-opus-5"); no dated

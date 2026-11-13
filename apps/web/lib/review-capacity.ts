@@ -5,13 +5,16 @@ import { setTimeout as delay } from "node:timers/promises";
 
 /** Product admission limits, not a claim about a particular review's fit or invoice. */
 export const COMPLETE_REVIEW_POLICY = Object.freeze({
-  id: "anthropic-complete-review-v1" as const, model: "claude-fable-5-1",
+  id: "anthropic-complete-review-v1" as const, models: Object.freeze(["claude-fable-5-1", "claude-fable-5-2"]),
   maxChars: 1_500_000, maxRequestBytes: 4 * 1024 * 1024,
   contextTokens: 1_000_000, maxOutputTokens: 128_000, tokenReserve: 4096,
   tokenReserveFraction: 0.1, maxEstimateUsd: 15, maxEvidenceAgeMs: 60_000,
   metadataTimeoutMs: 5_000, countTimeoutMs: 15_000,
   minGenerationMs: 600_000, maxGenerationMs: 840_000, publicationReserveMs: 60_000,
 });
+
+/** Exact ids only: an alias or a sibling model is never admitted. Limits are still checked per request against live model metadata. */
+export const isCompleteReviewModel = (model: string): boolean => COMPLETE_REVIEW_POLICY.models.includes(model);
 
 export type ReviewExecutionWindow = {
   jobId: string;
@@ -199,7 +202,7 @@ export function completeReviewCandidate(
   window?: ReviewExecutionWindow,
   cap = DIFF_CHAR_CAP, fetchChars = MAX_FETCH_DIFF_CHARS,
 ): ReturnType<typeof prepareReviewInput> | null {
-  if (cap.source !== "default" || model !== COMPLETE_REVIEW_POLICY.model || provider !== "anthropic"
+  if (cap.source !== "default" || !isCompleteReviewModel(model) || provider !== "anthropic"
     || !window || window.signal.aborted || baseline.coverage.complete || !input.headSha || !input.baseSha
     || !baseline.coverage.files.some(file => file.state === "partial" || file.state === "omitted")) return null;
   try { generationTimeout(window, true); } catch { return null; }

@@ -58,7 +58,7 @@ import { getGithubAppConfig } from "@/lib/github-app-config";
 import { parseOctopusIgnore, detectBadCommits } from "@/lib/octopus-ignore";
 import { buildGeneratedMatcher } from "@/lib/generated-files";
 import { MAX_DIFF_CHARS } from "@/lib/diff-truncate";
-import { completeReviewCandidate, reviewCandidateSha256, assertReviewProcessingActive, isReviewCancelled, CapacityAdmissionError, ReviewProcessingExpiredError, type CompleteReviewAdmission, type ReviewExecutionWindow } from "@/lib/review-capacity";
+import { completeReviewCandidate, isCompleteReviewModel, reviewCandidateSha256, assertReviewProcessingActive, isReviewCancelled, CapacityAdmissionError, ReviewProcessingExpiredError, type CompleteReviewAdmission, type ReviewExecutionWindow } from "@/lib/review-capacity";
 import { AiProviderFailure, safeErrorDetails } from "@/lib/provider-failure";
 import { confirmCompleteReviewCurrent, confirmGenerationRetryCurrent } from "@/lib/review-capacity-current";
 import { prepareReviewInput, applyReviewCoverage, coverageSummary, reviewCheckResult, reviewAssessmentComplete, generationFailureCode, type ReviewInput, type ReviewCoverage } from "@/lib/review-coverage";
@@ -1377,7 +1377,7 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
     const baselineInput = prepareReviewInput(reviewInput, preparationOptions);
     // Freeze ordinary routing against the baseline. A larger candidate never selects another model.
     const reviewModel = await resolveReviewModel({ orgId: org.id, repoId: repo.id, diff: baselineInput.diff, coverage: baselineInput.coverage });
-    const resolvedProvider = reviewModel === "claude-fable-5-1" && executionWindow
+    const resolvedProvider = isCompleteReviewModel(reviewModel) && executionWindow
       ? await getProviderForModel(reviewModel) : null;
     const candidate = resolvedProvider ? completeReviewCandidate(reviewInput, preparationOptions, baselineInput,
       reviewModel, resolvedProvider, executionWindow) : null;

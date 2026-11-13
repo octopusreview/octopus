@@ -8,7 +8,7 @@ Octopus is a source-available (Modified MIT) AI code review platform. It connect
 
 - Automated pull request review with codebase context (vector index over the whole repository, not just the diff)
 - Severity-rated findings and a per-PR quality score; re-review on new commits
-- Choice of AI vendor and model per organization or per repository: Anthropic Claude (Fable 5.1, Opus 5, Sonnet 5), OpenAI (GPT-6 Astra, GPT-5.3 Codex), Google Gemini, xAI Grok (Grok 4.6), Alibaba Cloud Qwen (Qwen3.8-Max), and any model on OpenRouter (e.g. Kimi K3). Cloud default: Claude Opus 5.
+- Choice of AI vendor and model per organization or per repository: Anthropic Claude (Fable 5.2, Fable 5.1, Opus 5, Sonnet 5), OpenAI (GPT-6 Astra, GPT-5.3 Codex), Google Gemini, xAI Grok (Grok 4.6), Alibaba Cloud Qwen (Qwen3.8-Max), and any model on OpenRouter (e.g. Kimi K3). Cloud default: Claude Opus 5.
 - Bring your own API keys (Anthropic, OpenAI, Google, xAI, Alibaba Cloud Model Studio, OpenRouter) or pay with Octopus credits
 - Organization knowledge base: custom rules and guidelines the reviewer follows
 - Package analyzer, code chat, issue creation from findings, live review timeline

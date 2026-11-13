@@ -2,7 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { ModelInfo } from "@anthropic-ai/sdk/resources/models";
 import { getModelPricing, estimateCompleteReviewCost } from "../cost";
 import { sha256 } from "../review-coverage";
-import { COMPLETE_REVIEW_POLICY as policy, capacityReceipt, refuseCapacity, generationTimeout,
+import { COMPLETE_REVIEW_POLICY as policy, isCompleteReviewModel, capacityReceipt, refuseCapacity, generationTimeout,
   withinReviewWindow, type CapacityAdmissionReceipt, type CapacityRefusalReason } from "../review-capacity";
 import type { AiCreateParams } from "./index";
 import { CACHE_BREAKPOINT } from "./system-cache";
@@ -24,7 +24,7 @@ export async function admitAnthropicReview(
   const preflight = async <T>(ms: number, work: (signal: AbortSignal) => Promise<T>): Promise<T> =>
     withinReviewWindow(admission.window, Math.min(ms, admission.window.remainingMs() - policy.minGenerationMs - policy.publicationReserveMs), work);
   checkTime();
-  if (params.model !== policy.model || typeof client.baseURL !== "string" || client.baseURL.replace(/\/$/, "") !== "https://api.anthropic.com") reject("unsupported-route");
+  if (!isCompleteReviewModel(params.model) || typeof client.baseURL !== "string" || client.baseURL.replace(/\/$/, "") !== "https://api.anthropic.com") reject("unsupported-route");
   const knownParams = new Set(["model", "maxTokens", "system", "messages", "cacheSystem", "effort", "thinking", "onRequest", "completeReviewAdmission", "executionWindow", "maxRetries"]);
   if (params.responseSchema !== undefined || Object.keys(params).some(key => !knownParams.has(key))) reject("unsupported-payload");
   const countBody = anthropicCountProjection(body);

@@ -24,6 +24,8 @@ const FALLBACK_PRICING: Record<string, ModelPricing> = {
   "claude-fable-5": { input: 10, output: 50 },
   // Fable 5.1 succeeds Fable 5 at the same price; opt-in, never the default.
   "claude-fable-5-1": { input: 10, output: 50 },
+  // Fable 5.2 succeeds 5.1 at a lower price; opt-in, never the default.
+  "claude-fable-5-2": { input: 8, output: 40 },
   // Anthropic's published API id for Opus 5 is undated (no dated canonical id
   // was released); the key must match the id used in calls for exact-key lookup.
   "claude-opus-5": { input: 5, output: 25 },
@@ -94,18 +96,25 @@ if (rawMarkup !== undefined && rawMarkup !== "" && !markupValid) {
 }
 export const PLATFORM_MARKUP = markupValid ? parsedMarkup : 1.2;
 
+// Recorded in complete-review receipts, so an existing identity never changes. Each model's floor is its FALLBACK_PRICING entry.
+const COMPLETE_REVIEW_PRICING_IDENTITY = new Map([
+  ["claude-fable-5-1", "fable-5-1-catalogue-with-published-floor-v1"],
+  ["claude-fable-5-2", "fable-5-2-catalogue-with-published-floor-v1"],
+]);
+
 /** Conservative primary admission estimate; separate from post-hoc usage settlement. */
 export function estimateCompleteReviewCost(
   pricing: Map<string, ModelPricing>, model: string, inputTokens: number, outputTokens: number,
   cacheWriteMultiplier: number, markup = PLATFORM_MARKUP,
 ): { estimateUsd: number; pricing: { identity: string; input: number; output: number; cacheWriteMultiplier: number; markup: number } } | null {
-  if (model !== "claude-fable-5-1") return null;
+  const identity = COMPLETE_REVIEW_PRICING_IDENTITY.get(model);
+  if (!identity) return null;
   const catalogue = pricing.get(model);
   const floor = FALLBACK_PRICING[model];
   if (!catalogue || !floor || ![catalogue.input, catalogue.output].every(rate => Number.isFinite(rate) && rate >= 0)
     || ![inputTokens, outputTokens].every(tokens => Number.isSafeInteger(tokens) && tokens >= 0)
     || ![1, 1.25, 2].includes(cacheWriteMultiplier) || !Number.isFinite(markup) || markup < 1) return null;
-  const rates = { identity: "fable-5-1-catalogue-with-published-floor-v1", input: Math.max(catalogue.input, floor.input),
+  const rates = { identity, input: Math.max(catalogue.input, floor.input),
     output: Math.max(catalogue.output, floor.output), cacheWriteMultiplier, markup };
   const estimateUsd = (inputTokens * rates.input * cacheWriteMultiplier + outputTokens * rates.output) / 1_000_000 * markup;
   return Number.isFinite(estimateUsd) ? { estimateUsd, pricing: rates } : null;
@@ -131,7 +140,7 @@ export function calcCost(
   const cacheWriteMultiplier = provider === "openai" || ttl === "5m" ? 1.25 : 2;
   const openaiReadMultiplier = /^(gpt-4o(-mini)?|gpt-4\.5-preview|o1(-mini|-preview)?|o3-mini)(-\d{4}-\d{2}-\d{2})?$/.test(model) ? 0.5
     : /^(gpt-4\.1(-mini|-nano)?|o3(-deep-research)?|o4-mini(-deep-research)?)(-\d{4}-\d{2}-\d{2})?$/.test(model) ? 0.25 : 0.1;
-  const cacheReadMultiplier = provider === "openai" ? openaiReadMultiplier : provider === "anthropic" && /^(claude-fable-5-1|claude-mythos-5-1)$/.test(model)
+  const cacheReadMultiplier = provider === "openai" ? openaiReadMultiplier : provider === "anthropic" && /^(claude-fable-5-[12]|claude-mythos-5-1)$/.test(model)
     ? 0.025 : model === "claude-opus-5-5" ? 0.05 : 0.1;
   const baseCost =
     (plainInput * p.input +

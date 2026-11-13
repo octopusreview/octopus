@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Connecting GitHub no longer fails with "Install verification unavailable" after a brief internal connection drop. Octopus now retries before giving up.
+
 ## [1.4.14] - 2026-11-13
 
 ### Added

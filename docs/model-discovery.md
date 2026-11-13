@@ -30,6 +30,6 @@ Offline regression coverage lives in [opus55.test.ts](../apps/web/lib/__tests__/
 
 Claude Fable 5.2 (`claude-fable-5-2`) is opt-in like the entries above. Its [additive migration](../packages/db/prisma/migrations/20261113120000_fable52/migration.sql) seeds $8/$40 per million tokens without changing defaults, pins or existing rows, and Fable 5 and 5.1 keep their own rows and prices. Cache reads bill at Anthropic's published $0.20 per million (2.5% of input), the same discount Fable 5.1 gets; [cost.ts](../apps/web/lib/cost.ts) holds both the fallback rate and that multiplier. The existing always-thinking pattern in [thinking.ts](../apps/web/lib/providers/thinking.ts) already covers it, so adaptive thinking, the configured effort and the 64,000-token output floor apply without an adapter change.
 
-Fable 5.2 also joins the [complete review admission](measured-review-capacity.md) policy, which until now accepted only Fable 5.1, so a repository moved from 5.1 to 5.2 keeps full review of very large pull requests.
+Fable 5.2 also joins the [complete review admission](measured-review-capacity.md) policy, which until now accepted only Fable 5.1, so a repository moved from 5.1 to 5.2 keeps the same opportunity for full review of very large pull requests within the policy's limits.
 
 - [Fable overview and pricing](https://www.anthropic.com/claude/fable)

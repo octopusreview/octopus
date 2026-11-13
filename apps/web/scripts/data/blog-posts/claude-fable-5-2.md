@@ -23,7 +23,7 @@ Cached reads are $0.20 per million tokens. Octopus caches the stable part of a r
 
 Nothing changes unless you ask it to. Reviews keep running on the same model at the same cost, and a repository pinned to Fable 5, Fable 5.1 or anything else stays where it is. Fable 5.2 is an option you switch on, per organization or per repository, in Settings.
 
-If you are already on Fable 5.1, 5.2 is the cheaper of the two, and very large pull requests work the same way on both: Octopus can send the complete changed source when it fits the review admission limits. Otherwise, a review may use a bounded diff or be refused admission.
+If you are already on Fable 5.1, 5.2 is the cheaper of the two, and very large pull requests work the same way on both. When a change is too big for the ordinary review, Octopus tries to send the complete changed source instead of a shortened diff. It can do that while the change fits the size, cost and time limits for a single review. Past those limits, a full review is not guaranteed on either model.
 
 If you bring your own Anthropic key, it works there too.
 
@@ -40,7 +40,7 @@ For routine changes, your current default model is the better deal.
 
 ## A few things to know
 
-Reviews on Fable 5.2 can take longer, sometimes noticeably. The model spends more time thinking before it writes, and that is where the quality comes from. Octopus streams these calls, but they can still time out, so expect to wait longer on a big change.
+Reviews on Fable 5.2 can take longer, sometimes noticeably. The model spends more time thinking before it writes, and that is where the quality comes from. Octopus streams these calls and waits, so expect a longer wait on a big change. A very slow review can still run out of time, and when that happens Octopus reports it as a failed review with the reason.
 
 The model also has a safety layer that, in rare cases, may decline a request. If that ever happens to a review, Octopus reports it as a failed review with the reason instead of quietly posting nothing. We expect this to be uncommon for ordinary code.
 

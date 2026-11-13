@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.14] - 2026-11-13
+
 ### Added
 
 - Claude Fable 5.2 is available as a review model, at $8 per million input tokens and $40 per million output tokens. On a very large pull request it can review the complete change, as Fable 5.1 can. Your current model stays selected until you change it.

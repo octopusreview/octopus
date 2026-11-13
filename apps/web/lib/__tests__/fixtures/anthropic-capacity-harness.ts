@@ -17,6 +17,8 @@ let provider = "anthropic";
 let org = { type: "TEAM", anthropicApiKey: "synthetic-byok", creditBalance: 0, freeCreditBalance: 0, monthlySpendLimitUsd: null };
 let saved: { coverage: import("../../review-coverage").ReviewCoverage; reviewBody: string } | undefined;
 let claim = { id: "synthetic-pr", headSha: "a".repeat(40), reviewRequestVersion: 3, status: "reviewing" };
+// The model under test; checked against the real policy list once it is imported below.
+let policyModel = "claude-fable-5-1";
 let paused = false;
 let remote = { headSha: "a".repeat(40), baseSha: "b".repeat(40) };
 let usageRow: { usedOwnKey: boolean } | undefined;
@@ -26,7 +28,7 @@ const db = {
   aiUsage: { create: async ({ data }: { data: { usedOwnKey: boolean } }) => { usageRow = data; return { id: "usage" }; }, update: async () => ({}) },
   availableModel: { findMany: async (query: { select?: { inputPrice?: boolean } }) => {
     if (pricingFailure && query.select?.inputPrice) throw pricingFailure;
-    return [{ modelId: "claude-fable-5-1", provider, inputPrice: 0, outputPrice: 0 }];
+    return [{ modelId: policyModel, provider, inputPrice: 0, outputPrice: 0 }];
   } },
   organization: { findUnique: async () => { if (organizationFailure) throw organizationFailure; return org; } },
   reviewAttempt: { createMany: async ({ data }: { data: NonNullable<typeof saved>[] }) => { saved = structuredClone(data[0]); return { count: 1 }; } },
@@ -50,7 +52,7 @@ let controller = new AbortController();
 const calls: { operation: string; body: unknown; options: Record<string, unknown>; client: unknown }[] = [];
 let generationBody: Record<string, unknown> | undefined;
 function validMetadata() {
-  return { id: "claude-fable-5-1", max_input_tokens: 1_000_000 as number | null, max_tokens: 128_000 as number | null,
+  return { id: policyModel, max_input_tokens: 1_000_000 as number | null, max_tokens: 128_000 as number | null,
     capabilities: { thinking: { supported: true, types: { adaptive: { supported: true } } },
       effort: { supported: true, low: { supported: true }, medium: { supported: true }, high: { supported: true }, xhigh: { supported: true }, max: { supported: true } } } };
 }
@@ -104,8 +106,10 @@ const { admitAnthropicReview } = await import("../../providers/anthropic-capacit
 const { saveReviewAttempt } = await import("../../review-attempt");
 const { confirmCompleteReviewCurrent } = await import("../../review-capacity-current");
 const { GithubRateLimitError } = await import("../../github");
+assert.deepEqual([...policy.models], ["claude-fable-5-1", "claude-fable-5-2"]);
+assert.equal(policyModel, policy.models[0]);
 const currentCheck = (signal: AbortSignal) => confirmCompleteReviewCurrent({ pullRequestId: "synthetic-pr", orgId: "synthetic", repoId: "repo",
-  model: policy.model, headSha: "a".repeat(40), baseSha: "b".repeat(40), reviewRequestVersion: 3,
+  model: policyModel, headSha: "a".repeat(40), baseSha: "b".repeat(40), reviewRequestVersion: 3,
   fetchRevision: async () => { if (revisionFailure) throw revisionFailure; return { ...remote }; },
 }, signal);
 
@@ -124,7 +128,7 @@ function prepared() {
   return result;
 }
 function request(p = prepared()): AiCreateParams {
-  return { model: policy.model, maxTokens: 8192, effort: "max", cacheSystem: true,
+  return { model: policyModel, maxTokens: 8192, effort: "max", cacheSystem: true,
     system: `Rules<!--CACHE_BREAKPOINT-->RAG context ${"x".repeat(40000)}\nRepository config`,
     messages: [{ role: "user", content: p.diff }], completeReviewAdmission: {
       candidateSha256: sha256(JSON.stringify(p)), headSha: p.coverage.headSha!, baseSha: p.coverage.baseSha!, reviewRequestVersion: 3,
@@ -217,9 +221,9 @@ if (process.env.REVIEW_TEST_EVIDENCE_DIR) {
   await Bun.write(`${process.env.REVIEW_TEST_EVIDENCE_DIR}/capacity-admitted.html`, '<!doctype html><meta charset="utf-8"><title>Synthetic admitted review</title>' + Bun.markdown.html(body));
 }
 
-assert.equal(await getOrgSpendLimitStatus("synthetic", "repo", { model: policy.model, provider: "anthropic" }).then(s => s.blocked), false);
+assert.equal(await getOrgSpendLimitStatus("synthetic", "repo", { model: policyModel, provider: "anthropic" }).then(s => s.blocked), false);
 org = { ...org, anthropicApiKey: "" };
-assert.equal(await getOrgSpendLimitStatus("synthetic", "repo", { model: policy.model, provider: "anthropic" }).then(s => s.blocked), true);
+assert.equal(await getOrgSpendLimitStatus("synthetic", "repo", { model: policyModel, provider: "anthropic" }).then(s => s.blocked), true);
 org = { ...org, anthropicApiKey: "synthetic-byok" };
 
 for (const [scenario, reason] of [
@@ -283,7 +287,7 @@ for (const [initialKey, nextKey] of [["", "synthetic-new-byok"], ["synthetic-byo
 // A version or pause change while the remote read is pending must be seen by the later claim read.
 for (const change of [() => { claim.reviewRequestVersion++; }, () => { paused = true; }]) {
   reset();
-  const result = await confirmCompleteReviewCurrent({ pullRequestId: "synthetic-pr", orgId: "synthetic", repoId: "repo", model: policy.model,
+  const result = await confirmCompleteReviewCurrent({ pullRequestId: "synthetic-pr", orgId: "synthetic", repoId: "repo", model: policyModel,
     headSha: "a".repeat(40), baseSha: "b".repeat(40), reviewRequestVersion: 3,
     fetchRevision: async () => { await Promise.resolve(); change(); return remote; },
   }, controller.signal);
@@ -343,18 +347,47 @@ recovery.executionWindow = { jobId: "synthetic", deadlineEpochMs: Date.now() + r
 await assert.rejects(() => createAiMessage(recovery, "synthetic")); assert.equal(calls.length, 0);
 
 // Published floors, worst-case cache writes and markup remain mandatory even with BYOK or cheap catalogue rows.
-const low = new Map([[policy.model, { input: 0, output: 0 }]]);
-assert.equal(estimateCompleteReviewCost(low, policy.model, 330000, 64000, 2)?.estimateUsd, 11.76);
-assert.ok(estimateCompleteReviewCost(low, policy.model, 330000, 64000, 1.25)!.estimateUsd < 11.76);
-for (const bad of [NaN, Infinity, -1]) assert.equal(estimateCompleteReviewCost(new Map([[policy.model, { input: bad, output: 50 }]]), policy.model, 10, 10, 2), null);
-assert.equal(estimateCompleteReviewCost(new Map(), policy.model, 10, 10, 2), null);
+const low = new Map([[policyModel, { input: 0, output: 0 }]]);
+assert.equal(estimateCompleteReviewCost(low, policyModel, 330000, 64000, 2)?.estimateUsd, 11.76);
+assert.ok(estimateCompleteReviewCost(low, policyModel, 330000, 64000, 1.25)!.estimateUsd < 11.76);
+for (const bad of [NaN, Infinity, -1]) assert.equal(estimateCompleteReviewCost(new Map([[policyModel, { input: bad, output: 50 }]]), policyModel, 10, 10, 2), null);
+assert.equal(estimateCompleteReviewCost(new Map(), policyModel, 10, 10, 2), null);
 assert.equal(estimateCompleteReviewCost(low, "other-model", 10, 10, 2), null);
-assert.equal(estimateCompleteReviewCost(low, policy.model, 10, 10, 2, 0.99), null);
-assert.equal(estimateCompleteReviewCost(low, policy.model, 10, 10, 0.1), null);
-assert.equal(estimateCompleteReviewCost(new Map([[policy.model, { input: 20, output: 100 }]]), policy.model, 330000, 64000, 2)?.estimateUsd, 23.52);
+assert.equal(estimateCompleteReviewCost(low, policyModel, 10, 10, 2, 0.99), null);
+assert.equal(estimateCompleteReviewCost(low, policyModel, 10, 10, 0.1), null);
+assert.equal(estimateCompleteReviewCost(new Map([[policyModel, { input: 20, output: 100 }]]), policyModel, 330000, 64000, 2)?.estimateUsd, 23.52);
+// Each policy model keeps its own published floor and its own recorded pricing identity.
+assert.equal(estimateCompleteReviewCost(low, policyModel, 330000, 64000, 2)?.pricing.identity, "fable-5-1-catalogue-with-published-floor-v1");
+const low52 = new Map([["claude-fable-5-2", { input: 0, output: 0 }]]);
+const estimate52 = estimateCompleteReviewCost(low52, "claude-fable-5-2", 330000, 64000, 2);
+assert.equal(estimate52?.estimateUsd, 9.408);
+assert.deepEqual({ ...estimate52!.pricing }, { identity: "fable-5-2-catalogue-with-published-floor-v1", input: 8, output: 40, cacheWriteMultiplier: 2, markup: 1.2 });
+for (const outside of ["claude-fable-5", "claude-fable-5-3", "claude-mythos-5-2"]) {
+  assert.equal(estimateCompleteReviewCost(new Map([[outside, { input: 8, output: 40 }]]), outside, 330000, 64000, 2), null);
+}
 reset(); await refusal("unsupported-route", req => { req.model = "claude-fable-5-1-alias"; });
 
-(await getModelPricing()).set(policy.model, { input: 10, output: 50 });
+// The whole admission runs on Fable 5.2 at its own price, then the harness returns to 5.1.
+policyModel = "claude-fable-5-2";
+reset();
+{
+  const p52 = prepared(), params52 = request(p52);
+  const response52 = await executeCoveredReview(params52, p52.coverage, "template", req => createAiMessage(req, "synthetic"));
+  assert.equal(response52.text, valid);
+  assert.equal(p52.coverage.assessment?.state, "completed");
+  assert.deepEqual(calls.map(call => call.operation), ["metadata", "count", "generation"]);
+  const receipt52 = p52.coverage.assessment!.capacityAdmission!;
+  assert.equal(receipt52.state, "admitted");
+  assert.equal(receipt52.logicalModel, "claude-fable-5-2");
+  assert.equal(receipt52.canonicalModel, "claude-fable-5-2");
+  assert.equal(receipt52.pricing?.identity, "fable-5-2-catalogue-with-published-floor-v1");
+  assert.equal(receipt52.pricing?.input, 8); assert.equal(receipt52.pricing?.output, 40);
+  assert.equal(receipt52.estimatedPrimaryUsd, 9.408);
+  assert.equal(receipt52.primaryDispatch, "started");
+}
+policyModel = "claude-fable-5-1";
+
+(await getModelPricing()).set(policyModel, { input: 10, output: 50 });
 for (const [scenario, initialKey] of [["generation-add", ""], ["generation-remove", "synthetic-byok"], ["generation-rotate", "synthetic-byok"]]) {
   reset(); mode = scenario; org = { ...org, anthropicApiKey: initialKey, creditBalance: 100 };
   const result = await createAiMessage(request(), "synthetic");

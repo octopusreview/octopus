@@ -31,6 +31,14 @@ describe("resolveThinking", () => {
     expect(r.outputConfig).toEqual({ effort: DEFAULT_THINKING_EFFORT });
   });
 
+  it("Fable 5.2 text path: floor + adaptive thinking + effort, and disable is ignored", () => {
+    const r = resolveThinking("claude-fable-5-2", 8192, false);
+    expect(r.maxTokens).toBe(FLOOR);
+    expect(r.thinking).toEqual({ type: "adaptive" });
+    expect(r.outputConfig).toEqual({ effort: DEFAULT_THINKING_EFFORT });
+    expect(resolveThinkingOverride("claude-fable-5-2", "disabled", { type: "adaptive" })).toEqual({ type: "adaptive" });
+  });
+
   it("Opus 5 text path: also gets adaptive thinking (same Claude-5 thinking API)", () => {
     for (const m of ["claude-opus-5", "claude-opus-5-20260115"]) {
       const r = resolveThinking(m, 8192, false);

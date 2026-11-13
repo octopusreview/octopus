@@ -138,6 +138,7 @@ export default function PricingPage() {
             <tbody className="text-[#888]">
               <ModelRow model="Claude Sonnet 5.5" input="$2" output="$10" />
               <ModelRow model="Claude Opus 5.5" input="$4" output="$20" />
+              <ModelRow model="Claude Fable 5.2" input="$8" output="$40" />
               <ModelRow model="Claude Fable 5.1" input="$10" output="$50" />
               <ModelRow model="Claude Fable 5" input="$10" output="$50" />
               <ModelRow model="Claude Opus 5" input="$5" output="$25" />

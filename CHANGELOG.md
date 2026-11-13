@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Octopus now checks the Elasticsearch server's certificate before sending indexing logs over HTTPS. If you self-host Elasticsearch with a private or self-signed certificate, set NODE_EXTRA_CA_CERTS to its CA file, or indexing logs will stop being written.
+
 ## [1.4.15] - 2026-11-13
 
 ### Fixed

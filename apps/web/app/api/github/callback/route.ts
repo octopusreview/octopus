@@ -29,7 +29,7 @@ import {
 
 const baseUrl = process.env.BETTER_AUTH_URL || "http://localhost:3000";
 const callbackUrl = new URL("/api/github/callback", baseUrl).toString();
-// One brief reconnect must not reject a connect; a real outage still fails closed after under a second.
+// Allow a brief reconnect while keeping persistent store failures closed.
 const STATE_STORE_ATTEMPTS = 3;
 
 type FailureActor = { actorId: string; organizationId: string };

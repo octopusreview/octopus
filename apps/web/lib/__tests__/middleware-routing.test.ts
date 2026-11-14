@@ -48,6 +48,10 @@ describe("signed-out visitors", () => {
     }
   });
 
+  it("lets the router handle the 404 rewrite target", () => {
+    expect(visit("/_not-found")).toEqual({ kind: "served" });
+  });
+
   it("are still sent to sign in for pages that need a session, and come back to the same page", () => {
     expect(visit("/settings/models")).toEqual({ kind: "login", callbackUrl: "/settings/models" });
     expect(visit("/repositories?tab=all")).toEqual({ kind: "login", callbackUrl: "/repositories?tab=all" });

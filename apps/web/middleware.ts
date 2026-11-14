@@ -42,7 +42,8 @@ const publicPrefixes = [
   "/api/health",
   "/api/ready",
 ];
-const publicExact = ["/", "/api/marketing/visit"];
+// Let the router render the target of the anonymous 404 rewrite.
+const publicExact = ["/", "/_not-found", "/api/marketing/visit"];
 
 // Public content/marketing + feed paths. Anonymous visitors and crawlers must
 // never be bounced to /login here; paths that aren't built yet then fall

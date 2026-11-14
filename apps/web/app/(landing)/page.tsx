@@ -163,8 +163,8 @@ export default async function LandingPage() {
             Your AI handles the commands and checks when everything is ready.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-6 text-sm lg:justify-start">
-            <a href="#agent-setup" className="text-white underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Get the setup prompt</a>
-            <a href="#cli" className="text-[#a0a0a0] underline underline-offset-4 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Install the CLI yourself</a>
+            <a href="#agent-setup" className="relative text-white underline underline-offset-4 after:absolute after:-inset-x-2 after:-inset-y-3 after:content-[''] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Get the setup prompt</a>
+            <a href="#cli" className="relative text-[#a0a0a0] underline underline-offset-4 after:absolute after:-inset-x-2 after:-inset-y-3 after:content-[''] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Install the CLI yourself</a>
           </div>
          </div>
 

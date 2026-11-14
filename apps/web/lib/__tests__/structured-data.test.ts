@@ -4,6 +4,8 @@ import {
   ORGANIZATION_ENTITY,
   ORGANIZATION_JSON_LD,
   SOCIAL_PROFILES,
+  WEBSITE_JSON_LD,
+  blogAuthorJsonLd,
   blogItemListJsonLd,
   docsPageJsonLd,
   jsonLd,
@@ -21,15 +23,36 @@ describe("Organization entity", () => {
   });
 });
 
+describe("WebSite entity", () => {
+  it("is one addressable entity published by the organization", () => {
+    expect(WEBSITE_JSON_LD["@type"]).toBe("WebSite");
+    expect(WEBSITE_JSON_LD["@id"]).toBe("https://octopus-review.ai/#website");
+    expect(WEBSITE_JSON_LD.url).toBe("https://octopus-review.ai");
+    expect(WEBSITE_JSON_LD.publisher["@id"]).toBe(ORGANIZATION_ENTITY["@id"]);
+  });
+});
+
 describe("docsPageJsonLd", () => {
-  it("emits a WebPage tied to the organization plus a two-level breadcrumb", () => {
-    const g = docsPageJsonLd({ title: "Pricing — Octopus Docs", description: "d", path: "/docs/pricing", crumb: "Pricing" });
+  it("emits a WebPage tied to the site and the organization, plus a breadcrumb from the home page", () => {
+    const g = docsPageJsonLd({ title: "Pricing", description: "d", path: "/docs/pricing", crumb: "Pricing" });
     const [page, crumbs] = g["@graph"] as [Record<string, unknown>, { itemListElement: Array<{ name: string; item: string; position: number }> }];
     expect(page["@type"]).toBe("WebPage");
     expect(page.url).toBe("https://octopus-review.ai/docs/pricing");
+    // The page's own title, with the section name once.
+    expect(page.name).toBe("Pricing | Octopus Docs");
+    // Points at the site-wide WebSite entity instead of describing a second one inline.
+    expect(page.isPartOf).toEqual({ "@id": WEBSITE_JSON_LD["@id"] });
     expect((page.publisher as { "@id": string })["@id"]).toBe(ORGANIZATION_ENTITY["@id"]);
-    expect(crumbs.itemListElement.map((c) => [c.position, c.name])).toEqual([[1, "Docs"], [2, "Pricing"]]);
-    expect(crumbs.itemListElement[1].item).toBe("https://octopus-review.ai/docs/pricing");
+    expect(crumbs.itemListElement.map((c) => [c.position, c.name])).toEqual([[1, "Home"], [2, "Docs"], [3, "Pricing"]]);
+    expect(crumbs.itemListElement[0].item).toBe("https://octopus-review.ai");
+    expect(crumbs.itemListElement[2].item).toBe("https://octopus-review.ai/docs/pricing");
+  });
+});
+
+describe("blogAuthorJsonLd", () => {
+  it("credits team posts to the organization and named posts to a person", () => {
+    expect(blogAuthorJsonLd("Octopus Team")).toEqual({ "@type": "Organization", "@id": ORGANIZATION_ENTITY["@id"], name: "Octopus", url: "https://octopus-review.ai" });
+    expect(blogAuthorJsonLd("Ada Example")).toEqual({ "@type": "Person", name: "Ada Example" });
   });
 });
 

@@ -9,7 +9,7 @@ import { IconCheck } from "@tabler/icons-react";
 import { Cell, type ComparisonRow } from "../compare/_shared";
 
 export const metadata: Metadata = {
-  title: "Octopus vs CodeRabbit — AI Code Review Comparison",
+  title: { absolute: "Octopus vs CodeRabbit — AI Code Review Comparison" },
   description:
     "Compare Octopus and CodeRabbit for AI code review. Pricing, self-hosting, BYO API keys, language support, and more — see which fits your team best.",
   keywords: [

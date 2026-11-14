@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ORGANIZATION_ENTITY } from "@/lib/structured-data";
+import { ORGANIZATION_ENTITY, blogAuthorJsonLd } from "@/lib/structured-data";
 import { notFound } from "next/navigation";
 import Link from "@/components/link";
 import { headers } from "next/headers";
@@ -40,7 +40,7 @@ export async function generateMetadata({
   const canonicalUrl = canonicalUrlFor(slug);
 
   return {
-    title: `${post.title} — Octopus Blog`,
+    title: post.title,
     description: post.excerpt ?? undefined,
     keywords: post.tags.length > 0 ? post.tags : undefined,
     alternates: {
@@ -90,10 +90,7 @@ export default async function BlogPostPage({
     wordCount,
     ...(post.tags.length > 0 ? { keywords: post.tags.join(", ") } : {}),
     ...(post.category ? { articleSection: post.category } : {}),
-    author: {
-      "@type": "Person",
-      name: post.authorName,
-    },
+    author: blogAuthorJsonLd(post.authorName),
     publisher: ORGANIZATION_ENTITY,
     mainEntityOfPage: {
       "@type": "WebPage",

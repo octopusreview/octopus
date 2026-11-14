@@ -14,7 +14,7 @@ import {
 import { CodeBlock } from "../self-hosting/code-block";
 
 export const metadata = {
-  title: "GitHub Action | Octopus Docs",
+  title: "GitHub Action",
   description:
     "Install the Octopus GitHub Action to get AI-powered code reviews on every pull request. Free for public repos. Add octopus-api-key to unlock your team's knowledge base, custom rules, and full review history.",
   alternates: {

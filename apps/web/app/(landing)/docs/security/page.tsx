@@ -1,8 +1,9 @@
 import Link from "@/components/link";
 import { IconBug } from "@tabler/icons-react";
+import { DocsJsonLd } from "../docs-json-ld";
 
 export const metadata = {
-  title: "Security Policy & Bug Bounty — Octopus",
+  title: "Security Policy & Bug Bounty",
   description:
     "Octopus security policy and bug bounty program. Report vulnerabilities responsibly, earn rewards, and join our hall of fame.",
   alternates: {
@@ -13,6 +14,7 @@ export const metadata = {
 export default function SecurityPage() {
   return (
     <article className="max-w-3xl">
+      <DocsJsonLd title={metadata.title} description={metadata.description} path="/docs/security" crumb={metadata.title} />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconBug className="size-4" />

@@ -1,8 +1,9 @@
 import Link from "@/components/link";
 import { IconScale } from "@tabler/icons-react";
+import { DocsJsonLd } from "../docs-json-ld";
 
 export const metadata = {
-  title: "Terms and Conditions — Octopus",
+  title: "Terms and Conditions",
   description:
     "Read the terms and conditions for using Octopus. Covers acceptable use, account responsibilities, billing, liability, and how disputes are handled.",
   alternates: {
@@ -13,6 +14,7 @@ export const metadata = {
 export default function TermsPage() {
   return (
     <article className="max-w-3xl">
+      <DocsJsonLd title={metadata.title} description={metadata.description} path="/docs/terms" crumb={metadata.title} />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconScale className="size-4" />

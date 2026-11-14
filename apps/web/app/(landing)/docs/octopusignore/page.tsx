@@ -1,9 +1,10 @@
 import { IconFileText } from "@tabler/icons-react";
 import { TrackedAnchor } from "@/components/tracked-link";
 import { CodeBlock } from "../self-hosting/code-block";
+import { DocsJsonLd } from "../docs-json-ld";
 
 export const metadata = {
-  title: ".octopusignore — Octopus Docs",
+  title: ".octopusignore",
   description:
     "Control what Octopus reviews. Exclude generated files, vendor folders, and secrets from AI code review and indexing with a simple .octopusignore file.",
   alternates: {
@@ -14,6 +15,7 @@ export const metadata = {
 export default function OctopusIgnorePage() {
   return (
     <article className="max-w-3xl">
+      <DocsJsonLd title={metadata.title} description={metadata.description} path="/docs/octopusignore" crumb={metadata.title} />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconFileText className="size-4" />

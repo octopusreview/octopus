@@ -6,6 +6,7 @@
  */
 export const SITE_URL = "https://octopus-review.ai";
 export const ORGANIZATION_ID = `${SITE_URL}/#organization`;
+export const WEBSITE_ID = `${SITE_URL}/#website`;
 
 export const SOCIAL_PROFILES = [
   "https://github.com/octopusreview",
@@ -40,10 +41,33 @@ export const ORGANIZATION_JSON_LD = {
   ...ORGANIZATION_ENTITY,
 } as const;
 
+/** The site itself, emitted once site-wide; pages point at it with isPartOf. */
+export const WEBSITE_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "@id": WEBSITE_ID,
+  url: SITE_URL,
+  name: "Octopus",
+  alternateName: "Octopus Review",
+  inLanguage: "en",
+  publisher: { "@id": ORGANIZATION_ID },
+} as const;
+
+/**
+ * Author of a blog post. Posts published under the team name are authored by
+ * the organization; a named author is a person.
+ */
+export function blogAuthorJsonLd(authorName: string) {
+  return authorName === "Octopus Team"
+    ? { "@type": "Organization", "@id": ORGANIZATION_ID, name: "Octopus", url: SITE_URL }
+    : { "@type": "Person", name: authorName };
+}
+
 /**
  * WebPage + BreadcrumbList for a documentation page, tied to the Organization
- * entity by @id. `path` is the route ("/docs/pricing"), `crumb` the label shown
- * in the docs breadcrumb.
+ * and WebSite entities by @id. `title` is the page's own title ("Pricing"),
+ * `path` the route ("/docs/pricing"), `crumb` the label shown in the docs
+ * breadcrumb.
  */
 export function docsPageJsonLd(input: {
   title: string;
@@ -59,17 +83,18 @@ export function docsPageJsonLd(input: {
         "@type": "WebPage",
         "@id": url,
         url,
-        name: input.title,
+        name: `${input.title} | Octopus Docs`,
         description: input.description,
-        isPartOf: { "@type": "WebSite", "@id": `${SITE_URL}/#website`, url: SITE_URL, name: "Octopus" },
+        isPartOf: { "@id": WEBSITE_ID },
         publisher: { "@id": ORGANIZATION_ID },
         inLanguage: "en",
       },
       {
         "@type": "BreadcrumbList",
         itemListElement: [
-          { "@type": "ListItem", position: 1, name: "Docs", item: `${SITE_URL}/docs/getting-started` },
-          { "@type": "ListItem", position: 2, name: input.crumb, item: url },
+          { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
+          { "@type": "ListItem", position: 2, name: "Docs", item: `${SITE_URL}/docs/getting-started` },
+          { "@type": "ListItem", position: 3, name: input.crumb, item: url },
         ],
       },
     ],

@@ -8,7 +8,7 @@ import { LandingDesktopNav } from "@/components/landing-desktop-nav";
 import { IconArrowRight } from "@tabler/icons-react";
 
 export const metadata: Metadata = {
-  title: "Compare Octopus — AI Code Review Comparisons",
+  title: { absolute: "Compare Octopus — AI Code Review Comparisons" },
   description:
     "See how Octopus compares to other AI code review tools. Side-by-side looks at features, pricing, architecture, self-hosting, and licensing.",
   keywords: [

@@ -9,7 +9,7 @@ import { IconCheck } from "@tabler/icons-react";
 import { Cell, type ComparisonRow } from "../compare/_shared";
 
 export const metadata: Metadata = {
-  title: "Octopus vs Greptile — AI Code Review Comparison",
+  title: { absolute: "Octopus vs Greptile — AI Code Review Comparison" },
   description:
     "Compare Octopus and Greptile for AI code review and codebase intelligence. Architecture, pricing, self-hosting, and licensing — see which fits your team.",
   keywords: [

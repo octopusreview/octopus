@@ -1,8 +1,9 @@
 import Link from "@/components/link";
 import { IconBook2 } from "@tabler/icons-react";
+import { DocsJsonLd } from "../docs-json-ld";
 
 export const metadata = {
-  title: "Glossary — Octopus Docs",
+  title: "Glossary",
   description:
     "Quick reference for embeddings, vector search, severity levels, BYO keys, and every other technical term used across Octopus. Scan or search in seconds.",
   alternates: {
@@ -91,6 +92,7 @@ const glossary: { term: string; definition: string }[] = [
 export default function GlossaryPage() {
   return (
     <article className="max-w-3xl">
+      <DocsJsonLd title={metadata.title} description={metadata.description} path="/docs/glossary" crumb={metadata.title} />
       <div className="mb-10">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconBook2 className="size-4" />

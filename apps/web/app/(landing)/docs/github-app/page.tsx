@@ -1,7 +1,8 @@
 import { IconBrandGithub, IconShieldCheck } from "@tabler/icons-react";
+import { DocsJsonLd } from "../docs-json-ld";
 
 export const metadata = {
-  title: "GitHub App setup — Octopus Docs",
+  title: "GitHub App setup",
   description:
     "Create the GitHub App that Octopus uses to receive PR webhooks and post review comments. Step-by-step instructions plus the staging vs production recommendation.",
   alternates: {
@@ -12,6 +13,7 @@ export const metadata = {
 export default function GithubAppPage() {
   return (
     <article className="max-w-3xl">
+      <DocsJsonLd title={metadata.title} description={metadata.description} path="/docs/github-app" crumb={metadata.title} />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconBrandGithub className="size-4" />

@@ -1,7 +1,8 @@
 import { IconBuildingBank } from "@tabler/icons-react";
+import { DocsJsonLd } from "../docs-json-ld";
 
 export const metadata = {
-  title: "Sub-processors — Octopus",
+  title: "Sub-processors",
   description:
     "Third-party vendors with potential access to Octopus customer data, what they're used for, and where they store data.",
   alternates: {
@@ -152,6 +153,7 @@ const SUBPROCESSORS: Subprocessor[] = [
 export default function SubprocessorsPage() {
   return (
     <article className="max-w-3xl">
+      <DocsJsonLd title={metadata.title} description={metadata.description} path="/docs/sub-processors" crumb={metadata.title} />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconBuildingBank className="size-4" />

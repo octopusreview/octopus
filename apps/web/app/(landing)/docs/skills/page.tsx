@@ -13,9 +13,10 @@ import {
 } from "@tabler/icons-react";
 import { SkillCodeBlock } from "./skill-code-block";
 import { SkillCard } from "./skill-card";
+import { DocsJsonLd } from "../docs-json-ld";
 
 export const metadata = {
-  title: "Skills | Octopus Docs",
+  title: "Skills",
   description:
     "AI automation skills that ship PRs, auto-fix review findings, and streamline your dev workflow. See every skill available and how to trigger them.",
   alternates: {
@@ -40,6 +41,7 @@ export default function SkillsPage() {
 
   return (
     <article className="max-w-3xl">
+      <DocsJsonLd title={metadata.title} description={metadata.description} path="/docs/skills" crumb={metadata.title} />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconWand className="size-4" />

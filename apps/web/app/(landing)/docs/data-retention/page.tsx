@@ -1,7 +1,8 @@
 import { IconClockHour4 } from "@tabler/icons-react";
+import { DocsJsonLd } from "../docs-json-ld";
 
 export const metadata = {
-  title: "Data Retention — Octopus",
+  title: "Data Retention",
   description:
     "What Octopus stores, for how long, and how to request deletion. Reviews, embeddings, audit logs, and integration tokens have explicit retention windows.",
   alternates: {
@@ -103,6 +104,7 @@ const RETENTION: RetentionRow[] = [
 export default function DataRetentionPage() {
   return (
     <article className="max-w-3xl">
+      <DocsJsonLd title={metadata.title} description={metadata.description} path="/docs/data-retention" crumb={metadata.title} />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconClockHour4 className="size-4" />

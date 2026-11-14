@@ -1,8 +1,9 @@
 import Link from "@/components/link";
 import { IconTrophy } from "@tabler/icons-react";
+import { DocsJsonLd } from "../../docs-json-ld";
 
 export const metadata = {
-  title: "Security Hall of Fame — Octopus",
+  title: "Security Hall of Fame",
   description:
     "Recognition for security researchers who responsibly disclosed vulnerabilities to Octopus.",
   alternates: {
@@ -24,6 +25,7 @@ const researchers: Researcher[] = [];
 export default function HallOfFamePage() {
   return (
     <article className="max-w-3xl">
+      <DocsJsonLd title={metadata.title} description={metadata.description} path="/docs/security/hall-of-fame" crumb={metadata.title} />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconTrophy className="size-4" />

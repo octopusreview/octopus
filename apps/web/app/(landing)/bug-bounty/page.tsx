@@ -21,7 +21,7 @@ import {
 } from "@tabler/icons-react";
 
 export const metadata: Metadata = {
-  title: "Bug Bounty Program — Octopus",
+  title: "Bug Bounty Program",
   description:
     "Help make Octopus more secure. Report vulnerabilities and earn rewards including swag, credits, and cash bounties for critical findings.",
   alternates: {

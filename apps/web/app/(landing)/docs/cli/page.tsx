@@ -4,7 +4,7 @@ import { IconTerminal2 } from "@tabler/icons-react";
 import { CodeBlock } from "../self-hosting/code-block";
 
 export const metadata = {
-  title: "CLI — Octopus Docs",
+  title: "CLI",
   description:
     "Install the Octopus CLI and review pull requests, index repositories, or chat with your codebase from the terminal. Works with GitHub, GitLab, and Bitbucket today.",
   alternates: {

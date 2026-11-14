@@ -3,9 +3,10 @@ import path from "node:path";
 import Link from "@/components/link";
 import { IconTerminal2 } from "@tabler/icons-react";
 import { CodeBlock } from "../../self-hosting/code-block";
+import { DocsJsonLd } from "../../docs-json-ld";
 
 export const metadata = {
-  title: "AI coding agents — Octopus Docs",
+  title: "AI coding agents",
   description:
     "Use Octopus with Claude Code, Codex, OpenCode, Hermes Agent, OpenClaw, or Cursor through the Octopus CLI and a reusable skill.",
   alternates: {
@@ -29,6 +30,7 @@ export default async function AiAgentsPage() {
 
   return (
     <article className="max-w-3xl">
+      <DocsJsonLd title={metadata.title} description={metadata.description} path="/docs/cli/ai-agents" crumb={metadata.title} />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#888]">
           <IconTerminal2 className="size-4" />

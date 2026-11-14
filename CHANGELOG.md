@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.17] - 2026-11-14
+
+### Fixed
+
+- A mistyped or outdated address on the Octopus site now shows a "page not found" page instead of sending you to the sign-in screen. Pages that need you to be signed in still take you to sign-in and bring you back afterwards.
+- The addresses /pricing and /about now take you to the pricing and about pages in the docs.
+- Page titles in the browser tab and in search results no longer show "Octopus" twice.
+
 ## [1.4.16] - 2026-11-13
 
 ### Security

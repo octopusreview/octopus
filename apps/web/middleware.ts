@@ -42,7 +42,8 @@ const publicPrefixes = [
   "/api/health",
   "/api/ready",
 ];
-const publicExact = ["/", "/api/marketing/visit"];
+// Let the router render the target of the anonymous 404 rewrite.
+const publicExact = ["/", "/_not-found", "/api/marketing/visit"];
 
 // Public content/marketing + feed paths. Anonymous visitors and crawlers must
 // never be bounced to /login here; paths that aren't built yet then fall
@@ -51,6 +52,31 @@ const publicExact = ["/", "/api/marketing/visit"];
 // a future "/feedback". Extensioned feeds like /feed.xml already bypass the
 // middleware via the matcher's dot rule.
 const publicContentPrefixes = ["/careers", "/open-positions", "/jobs", "/feed", "/rss"];
+
+// Pages that need a session. A signed-out visitor is sent to sign in for these
+// and for API paths. Any other path is not a page this app serves, so it gets
+// a real 404 instead of a redirect to /login: a mistyped or outdated URL must
+// not look like a page behind a login wall. A page missing from this list
+// fails closed (signed-out visitors see a 404, never its content).
+const sessionPagePrefixes = [
+  "/admin",
+  "/change-password",
+  "/chat",
+  "/cli",
+  "/complete-profile",
+  "/dashboard",
+  "/invitation",
+  "/issues",
+  "/knowledge",
+  "/monitor",
+  "/package-analyzer",
+  "/repositories",
+  "/review-attempts",
+  "/review-logs",
+  "/settings",
+  "/timeline",
+  "/usage",
+];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -84,6 +110,14 @@ export function middleware(request: NextRequest) {
     request.cookies.get("__Secure-better-auth.session_token")?.value;
 
   if (!sessionToken) {
+    const needsSession =
+      pathname.startsWith("/api/") ||
+      sessionPagePrefixes.some((path) => pathname === path || pathname.startsWith(path + "/"));
+    if (!needsSession) {
+      // No route answers this path, so the router renders its 404 page.
+      return NextResponse.rewrite(new URL("/_not-found", request.url));
+    }
+
     // Use configured app URL to prevent redirect poisoning via X-Forwarded-Host
     const appUrl =
       process.env.BETTER_AUTH_URL ||

@@ -38,6 +38,9 @@ const nextConfig: NextConfig = {
     return [
       { source: "/open-source", destination: "/docs/pricing", permanent: true },
       { source: "/docs/open-source", destination: "/docs/pricing", permanent: true },
+      // Common guesses for pages that live under /docs.
+      { source: "/pricing", destination: "/docs/pricing", permanent: true },
+      { source: "/about", destination: "/docs/about", permanent: true },
     ];
   },
 };

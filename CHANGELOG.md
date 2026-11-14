@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.20] - 2026-11-14
+
+### Added
+
+- A new docs page, "Which model should review your code", shows what each review model has cost per review on Octopus Cloud over the last 30 days, when to pick which, and where to switch.
+
 ## [1.4.19] - 2026-11-14
 
 ### Added

@@ -43,7 +43,7 @@ function pageRoutes(dir = join(import.meta.dir, "../../app"), segments: string[]
 
 describe("signed-out visitors", () => {
   it("get a 404, not a sign-in redirect, for a path that is not a page", () => {
-    for (const path of ["/pricing-typo", "/Blog", "/features", "/wp-admin", "/dashboardx", "/settingsfoo/bar"]) {
+    for (const path of ["/pricing-typo", "/Blog", "/features", "/wp-admin", "/dashboardx", "/settingsfoo/bar", "/coupon", "/coupon/anything"]) {
       expect(visit(path), path).toEqual({ kind: "not-found" });
     }
   });

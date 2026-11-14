@@ -63,7 +63,6 @@ const sessionPagePrefixes = [
   "/chat",
   "/cli",
   "/complete-profile",
-  "/coupon",
   "/dashboard",
   "/invitation",
   "/issues",

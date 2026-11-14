@@ -27,7 +27,7 @@
   "devDependencies": {
     "@octopus/tsconfig": "workspace:*",
     "@types/react": "^19",
-    "bun-types": "^1.3.12",
+    "bun-types": "^1.4.4",
     "typescript": "^5"
   }
 }

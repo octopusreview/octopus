@@ -133,7 +133,7 @@ export default async function BlogPostPage({
       <div className="mx-auto max-w-6xl px-6 pt-32 pb-20">
         <Link
           href="/blog"
-          className="mb-8 inline-flex items-center gap-1.5 text-sm text-[#555] transition-colors hover:text-white"
+          className="relative mb-8 inline-flex items-center gap-1.5 text-sm text-[#555] transition-colors after:absolute after:-inset-x-2 after:-inset-y-3 after:content-[''] hover:text-white"
         >
           <IconArrowLeft className="size-3.5" />
           Back to Blog

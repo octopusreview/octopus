@@ -59,7 +59,7 @@ export default async function DocsLayout({
                 href="/dashboard"
                 event="cta_click"
                 eventParams={{ location: "docs_header", label: "dashboard" }}
-                className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-medium text-background transition-colors hover:bg-[#e0e0e0]"
+                className="relative inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-medium text-background transition-colors after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] hover:bg-[#e0e0e0]"
               >
                 Dashboard
                 <IconArrowRight className="size-3.5" />
@@ -69,7 +69,7 @@ export default async function DocsLayout({
                 href="/login"
                 event="cta_click"
                 eventParams={{ location: "docs_header", label: "get_started" }}
-                className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-medium text-background transition-colors hover:bg-[#e0e0e0]"
+                className="relative inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-medium text-background transition-colors after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] hover:bg-[#e0e0e0]"
               >
                 Get Started
                 <IconArrowRight className="size-3.5" />

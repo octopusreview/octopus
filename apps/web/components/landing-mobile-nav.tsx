@@ -12,30 +12,30 @@ export function LandingMobileNav({ isLoggedIn }: { isLoggedIn: boolean }) {
   return (
     <nav className="fixed left-0 right-0 top-9 z-40 border-b border-white/[0.06] bg-background/80 backdrop-blur-xl lg:hidden">
       <div className="flex items-center justify-between px-4 py-3">
-        <Link href="/" className="flex items-center gap-2">
+        <Link href="/" className="relative flex items-center gap-2 after:absolute after:inset-x-0 after:-inset-y-3 after:content-['']">
           <Image src="/brand/octopus-mark.png" alt="Octopus" width={22} height={22} priority />
           <span className="text-sm font-semibold text-white">Octopus</span>
         </Link>
         <div className="flex items-center gap-2">
           <button
             onClick={() => window.dispatchEvent(new Event("ask-octopus-open"))}
-            className="flex items-center gap-1 rounded-full border border-white/[0.08] px-3 py-1.5 text-xs text-[#888] transition-colors hover:border-primary/30 hover:text-white"
+            className="relative flex items-center gap-1 rounded-full border border-white/[0.08] px-3 py-1.5 text-xs text-[#888] transition-colors after:absolute after:inset-x-0 after:-inset-y-2 after:content-[''] hover:border-primary/30 hover:text-white"
           >
             <IconMessageCircle className="size-3 text-primary" />
             Ask AI
           </button>
           {isLoggedIn ? (
-            <Link href="/dashboard" className="rounded-full bg-white px-4 py-1.5 text-xs font-medium text-background">
+            <Link href="/dashboard" className="relative rounded-full bg-white px-4 py-1.5 text-xs font-medium text-background after:absolute after:inset-x-0 after:-inset-y-2 after:content-['']">
               Dashboard
             </Link>
           ) : (
-            <TrackedLink href="/login" event="cta_click" eventParams={{ location: "mobile_nav", label: "get_started" }} className="rounded-full bg-white px-4 py-1.5 text-xs font-medium text-background">
+            <TrackedLink href="/login" event="cta_click" eventParams={{ location: "mobile_nav", label: "get_started" }} className="relative rounded-full bg-white px-4 py-1.5 text-xs font-medium text-background after:absolute after:inset-x-0 after:-inset-y-2 after:content-['']">
               Get Started
             </TrackedLink>
           )}
           <button
             onClick={() => setOpen(!open)}
-            className="flex size-9 items-center justify-center rounded-lg text-white/60 transition-colors hover:bg-white/[0.06] hover:text-white"
+            className="relative flex size-9 items-center justify-center rounded-lg text-white/60 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-white/[0.06] hover:text-white"
             aria-label={open ? "Close menu" : "Open menu"}
           >
             {open ? <IconX className="size-5" /> : <IconMenu2 className="size-5" />}

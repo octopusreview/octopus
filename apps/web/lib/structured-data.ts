@@ -93,8 +93,8 @@ export function docsPageJsonLd(input: {
         "@type": "BreadcrumbList",
         itemListElement: [
           { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
-          { "@type": "ListItem", position: 2, name: "Docs", item: `${SITE_URL}/docs/getting-started` },
-          { "@type": "ListItem", position: 3, name: input.crumb, item: url },
+          ...(input.path === "/docs/getting-started" ? [] : [{ "@type": "ListItem", position: 2, name: "Docs", item: `${SITE_URL}/docs/getting-started` }]),
+          { "@type": "ListItem", position: input.path === "/docs/getting-started" ? 2 : 3, name: input.crumb, item: url },
         ],
       },
     ],

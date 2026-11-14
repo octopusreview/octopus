@@ -47,6 +47,15 @@ describe("docsPageJsonLd", () => {
     expect(crumbs.itemListElement[0].item).toBe("https://octopus-review.ai");
     expect(crumbs.itemListElement[2].item).toBe("https://octopus-review.ai/docs/pricing");
   });
+
+  it("does not list the docs landing page as its own parent", () => {
+    const g = docsPageJsonLd({ title: "Getting Started", description: "d", path: "/docs/getting-started", crumb: "Getting Started" });
+    const [, crumbs] = g["@graph"] as [Record<string, unknown>, { itemListElement: Array<{ position: number; name: string; item: string }> }];
+    expect(crumbs.itemListElement.map(({ position, name, item }) => [position, name, item])).toEqual([
+      [1, "Home", "https://octopus-review.ai"],
+      [2, "Getting Started", "https://octopus-review.ai/docs/getting-started"],
+    ]);
+  });
 });
 
 describe("blogAuthorJsonLd", () => {

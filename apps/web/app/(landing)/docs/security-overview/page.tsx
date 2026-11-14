@@ -1,7 +1,8 @@
 import { IconShieldCheck } from "@tabler/icons-react";
+import { DocsJsonLd } from "../docs-json-ld";
 
 export const metadata = {
-  title: "Security Overview — Octopus",
+  title: "Security Overview",
   description:
     "How Octopus stores, processes, and protects your source code and credentials — data flow, encryption, access controls, audit logging, and incident response.",
   alternates: {
@@ -12,6 +13,7 @@ export const metadata = {
 export default function SecurityOverviewPage() {
   return (
     <article className="max-w-3xl">
+      <DocsJsonLd title={metadata.title} description={metadata.description} path="/docs/security-overview" crumb={metadata.title} />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconShieldCheck className="size-4" />

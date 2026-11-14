@@ -3,7 +3,9 @@ import { Suspense } from "react";
 import { LoginContent } from "./login-content";
 
 export const metadata: Metadata = {
-  title: "Sign in — Octopus",
+  title: "Sign in",
+  // A sign-in form has nothing to rank for; unknown URLs also land here.
+  robots: { index: false, follow: true },
   alternates: {
     canonical: "https://octopus-review.ai/login",
   },

@@ -8,7 +8,7 @@ import { LandingDesktopNav } from "@/components/landing-desktop-nav";
 import { StatusListener } from "./status-listener";
 
 export const metadata: Metadata = {
-  title: "System Status — Octopus",
+  title: "System Status",
   description:
     "Real-time system status and incident history for Octopus Review.",
   alternates: {

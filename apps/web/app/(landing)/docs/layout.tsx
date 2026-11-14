@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
@@ -9,6 +10,11 @@ import { DocsSidebar } from "./docs-sidebar";
 import { DocsToc } from "./docs-toc";
 import { DocsAskAi } from "./docs-ask-ai";
 import { LandingFooter } from "@/components/landing-footer";
+
+// Docs pages give their own title ("Pricing"); the section name is added here, once.
+export const metadata: Metadata = {
+  title: { template: "%s | Octopus Docs", default: "Octopus Docs" },
+};
 
 export default async function DocsLayout({
   children,

@@ -7,7 +7,7 @@ import { LandingMobileNav } from "@/components/landing-mobile-nav";
 import { LandingDesktopNav } from "@/components/landing-desktop-nav";
 
 export const metadata: Metadata = {
-  title: "Brand Guidelines — Octopus",
+  title: "Brand Guidelines",
   description:
     "The Octopus green brand kit: mascot downloads, Geist typography, colors, and usage guidelines.",
   alternates: {

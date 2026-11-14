@@ -10,7 +10,7 @@ import {
 } from "@tabler/icons-react";
 
 export const metadata = {
-  title: "Pricing — Octopus Docs",
+  title: "Pricing",
   description:
     "Transparent credit-based pricing for AI code review. Start with free credits, bring your own API keys, or buy more as you grow. No per-seat fees, ever.",
   alternates: {

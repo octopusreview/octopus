@@ -3,9 +3,10 @@ import Link from "@/components/link";
 import { CodeBlock } from "./code-block";
 import { EnvGenerator } from "./env-generator";
 import { Tabs } from "./tabs";
+import { DocsJsonLd } from "../docs-json-ld";
 
 export const metadata = {
-  title: "Self-Hosting — Octopus Docs",
+  title: "Self-Hosting",
   description:
     "Deploy Octopus on your own infrastructure with Docker. Setup instructions, environment variables, AI services, and private Forgejo network requirements.",
   alternates: {
@@ -193,6 +194,7 @@ bun run start`}</CodeBlock>
 
   return (
     <article className="max-w-3xl">
+      <DocsJsonLd title={metadata.title} description={metadata.description} path="/docs/self-hosting" crumb={metadata.title} />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconServer className="size-4" />

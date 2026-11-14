@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { DocsJsonLd } from "../docs-json-ld";
 import {
   IconHistory,
   IconPlus,
@@ -13,7 +14,7 @@ import {
 } from "@tabler/icons-react";
 
 export const metadata = {
-  title: "Changelog | Octopus Docs",
+  title: "Changelog",
   description:
     "Every new feature, fix, and improvement in Octopus. Stay up to date with the latest AI code review releases and product updates, shipped weekly.",
   alternates: {
@@ -166,6 +167,7 @@ export default function ChangelogPage() {
 
   return (
     <article className="max-w-3xl">
+      <DocsJsonLd title={metadata.title} description={metadata.description} path="/docs/changelog" crumb={metadata.title} />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconHistory className="size-4" />

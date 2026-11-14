@@ -53,7 +53,7 @@ const getBlogTaxonomy = unstable_cache(
 );
 
 export const metadata: Metadata = {
-  title: "Blog — Octopus",
+  title: { absolute: "Octopus Blog: AI Code Review, Engineering and Model Updates" },
   description:
     "Engineering insights, product updates, and lessons learned building AI-powered code review tools.",
   alternates: {

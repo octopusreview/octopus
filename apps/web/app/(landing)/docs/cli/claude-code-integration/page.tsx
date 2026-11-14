@@ -1,8 +1,9 @@
 import Link from "@/components/link";
 import { CodeBlock } from "../../self-hosting/code-block";
+import { DocsJsonLd } from "../../docs-json-ld";
 
 export const metadata = {
-  title: "Claude Code Integration — Octopus Docs",
+  title: "Claude Code Integration",
   description: "Install the Octopus Review plugin from its publisher marketplace, configure your token, and check the connection in Claude Code. A CLI and skill setup is also available.",
   alternates: { canonical: "https://octopus-review.ai/docs/cli/claude-code-integration" },
 };
@@ -12,6 +13,7 @@ const linkClass = "text-cyan-400 underline underline-offset-4";
 export default function ClaudeCodeIntegrationPage() {
   return (
     <article className="max-w-3xl text-sm leading-relaxed text-[#aaa] [&_code]:[overflow-wrap:anywhere]">
+      <DocsJsonLd title={metadata.title} description={metadata.description} path="/docs/cli/claude-code-integration" crumb={metadata.title} />
       <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-[#888]">CLI / AI coding agents</p>
       <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">Claude Code integration</h1>
       <p className="mb-6 mt-3 text-lg">Use the Octopus Review plugin to request reviews from Claude Code. It connects through an MCP server and uses an Octopus organization API token.</p>

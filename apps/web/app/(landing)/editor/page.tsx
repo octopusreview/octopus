@@ -17,7 +17,7 @@ import {
 } from "@tabler/icons-react";
 
 export const metadata: Metadata = {
-  title: "Octopus in your editor — code review for AI coding agents",
+  title: { absolute: "Octopus in your editor — code review for AI coding agents" },
   description:
     "Building with AI? Octopus reviews the code your AI writes for real bugs and security issues, from your coding agent, and explains what it finds in plain English.",
   alternates: {

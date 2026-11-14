@@ -1,9 +1,10 @@
 import Link from "@/components/link";
 import { IconQuestionMark } from "@tabler/icons-react";
 import { FaqAccordion } from "./faq-accordion";
+import { DocsJsonLd } from "../docs-json-ld";
 
 export const metadata = {
-  title: "FAQ — Octopus Docs",
+  title: "FAQ",
   description:
     "Answers to the most common questions about AI code review with Octopus. Pricing, security, language support, self-hosting, integrations, and more.",
   alternates: {
@@ -148,6 +149,7 @@ const faqJsonLd = {
 export default function FaqPage() {
   return (
     <article className="max-w-3xl">
+      <DocsJsonLd title={metadata.title} description={metadata.description} path="/docs/faq" crumb={metadata.title} />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd).replace(/<\/script>/gi, "<\\/script>") }}

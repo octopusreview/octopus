@@ -1,8 +1,9 @@
 import Link from "@/components/link";
 import { IconShield, IconBrandGoogle, IconBrandGithub } from "@tabler/icons-react";
+import { DocsJsonLd } from "../docs-json-ld";
 
 export const metadata = {
-  title: "Google, GitHub & Microsoft login setup — Octopus Docs",
+  title: "Google, GitHub & Microsoft login setup",
   description:
     "Configure Google, GitHub, and Microsoft OAuth sign-in for a self-hosted Octopus instance. Step-by-step: create the OAuth app, copy the client ID/secret, drop them in .env.",
   alternates: {
@@ -13,6 +14,7 @@ export const metadata = {
 export default function OauthSetupPage() {
   return (
     <article className="max-w-3xl">
+      <DocsJsonLd title={metadata.title} description={metadata.description} path="/docs/oauth-setup" crumb={metadata.title} />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconShield className="size-4" />

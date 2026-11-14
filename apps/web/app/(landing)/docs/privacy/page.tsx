@@ -1,7 +1,8 @@
 import { IconShieldLock } from "@tabler/icons-react";
+import { DocsJsonLd } from "../docs-json-ld";
 
 export const metadata = {
-  title: "Privacy Policy — Octopus",
+  title: "Privacy Policy",
   description:
     "Read how Octopus collects, processes, and protects your source code and personal data. GDPR-friendly, with a self-host option to keep code on-prem.",
   alternates: {
@@ -12,6 +13,7 @@ export const metadata = {
 export default function PrivacyPage() {
   return (
     <article className="max-w-3xl">
+      <DocsJsonLd title={metadata.title} description={metadata.description} path="/docs/privacy" crumb={metadata.title} />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconShieldLock className="size-4" />

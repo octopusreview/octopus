@@ -11,7 +11,7 @@ import { GetInTouchModal } from "@/components/get-in-touch-modal";
 import { TrackedAnchor } from "@/components/tracked-link";
 
 export const metadata = {
-  title: "About — Octopus Docs",
+  title: "About",
   description:
     "Learn the story behind Octopus, a source-available AI code review tool built to catch bugs before humans do. Meet the team and see where we are headed.",
   alternates: {

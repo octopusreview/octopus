@@ -16,7 +16,7 @@ import { docsPageJsonLd, jsonLd } from "@/lib/structured-data";
 import { CodeBlock } from "../self-hosting/code-block";
 
 export const metadata = {
-  title: "Integrations — Octopus Docs",
+  title: "Integrations",
   description:
     "Connect Octopus to GitHub, GitLab (including self-hosted), Bitbucket, Forgejo, Linear, Jira, and Slack. Automate AI code review across your team's pull request workflow in a few minutes.",
   alternates: {

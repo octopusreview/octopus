@@ -1,4 +1,5 @@
 import Link from "@/components/link";
+import { DocsJsonLd } from "../docs-json-ld";
 import {
   IconRocket,
   IconBrandGithub,
@@ -21,7 +22,7 @@ import {
 } from "@tabler/icons-react";
 
 export const metadata = {
-  title: "Getting Started | Octopus Docs",
+  title: "Getting Started",
   description:
     "Connect your repository and get AI code reviews on pull requests. Step-by-step setup guide for GitHub, GitLab, Bitbucket, and Forgejo, with examples.",
   alternates: {
@@ -32,6 +33,7 @@ export const metadata = {
 export default function GettingStartedPage() {
   return (
     <article className="max-w-3xl">
+      <DocsJsonLd title={metadata.title} description={metadata.description} path="/docs/getting-started" crumb={metadata.title} />
       <div className="mb-8">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
           <IconRocket className="size-4" />

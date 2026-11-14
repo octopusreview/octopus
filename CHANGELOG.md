@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.18] - 2026-11-14
+
+### Fixed
+
+- On a phone, the buttons in the top navigation, the docs header and the two links under the homepage headline are easier to tap. They look the same as before.
+
 ## [1.4.17] - 2026-11-14
 
 ### Fixed

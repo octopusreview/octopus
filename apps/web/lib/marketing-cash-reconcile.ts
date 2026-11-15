@@ -158,7 +158,7 @@ export async function reconcileCashPeriod(config: MarketingConfig, binding: Cash
     const notCaptured = await readMarketingLedger(tx, config.from, 1, config.sourceId);
     const waiting = await tx.marketingConversion.groupBy({ by: ["status"], where: { ...cash, status: { not: "delivered" }, sourceCreatedAt: { gte: config.from } }, _count: { _all: true } });
     // A ledger row is written after its charge or refund, so an event inside the period was captured at or after `from`; a day covers clock skew.
-    // ponytail: reads every delivered cash row since the period start; page it if one window ever holds tens of thousands.
+    // Known limit: this reads every delivered cash row since the period start in one query. Page it if one window ever holds tens of thousands.
     const rows = await tx.marketingConversion.findMany({ where: { ...cash, status: "delivered", sourceCreatedAt: { gte: new Date(Date.parse(period.from) - DAY_MS) } },
       select: { kind: true, environment: true, payload: true, receiptId: true }, orderBy: { id: "asc" } });
     return { ledgerFactNotCaptured: notCaptured.length > 0, undelivered: Object.fromEntries(waiting.map(w => [w.status, w._count._all])) as Record<string, number>, rows };

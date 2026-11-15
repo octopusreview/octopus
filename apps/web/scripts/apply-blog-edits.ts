@@ -4,11 +4,17 @@
  *
  *     BLOG_API_TOKEN=... bun run apps/web/scripts/apply-blog-edits.ts <edits.json>           # dry run
  *     BLOG_API_TOKEN=... bun run apps/web/scripts/apply-blog-edits.ts <edits.json> --apply
+ *     BLOG_API_TOKEN=... bun run apps/web/scripts/apply-blog-edits.ts <edits.json> --apply --clear-audio
  *
  * <edits.json> is a list of { "slug", "before", "after" }. Each `before` must
  * occur exactly once in its post (title, excerpt or body), or be recognized
  * as already applied by applyBlogEdits. Nothing is saved unless every edit
  * in the file can be placed or recognized as already applied.
+ *
+ * --clear-audio also removes the read-aloud recording of every post named in
+ * the file, whether or not this run changes its text: a recording is not
+ * remade when the text changes, so it keeps speaking the old wording. The
+ * admin console then lists those posts as missing audio.
  *
  * Env: BLOG_API_TOKEN (required, needs blog:read and blog:update),
  *      OCTOPUS_API_URL (default https://octopus-review.ai).
@@ -16,13 +22,14 @@
 import { readFileSync } from "node:fs";
 import { applyBlogEdits, type BlogEdit } from "../lib/blog-edits";
 
-type ApiPost = { id: string; slug: string; title: string; excerpt: string | null; content: string };
+type ApiPost = { id: string; slug: string; title: string; excerpt: string | null; content: string; audioUrl?: string | null };
 
 async function main() {
   const file = process.argv[2];
   const apply = process.argv.includes("--apply");
+  const clearAudio = process.argv.includes("--clear-audio");
   if (!file || file.startsWith("--")) {
-    console.error("Usage: apply-blog-edits.ts <edits.json> [--apply]");
+    console.error("Usage: apply-blog-edits.ts <edits.json> [--apply] [--clear-audio]");
     process.exit(1);
   }
   const TOKEN = process.env.BLOG_API_TOKEN;
@@ -59,7 +66,7 @@ async function main() {
   const posts = await loadPublishedPosts();
 
   // Place every edit first. One edit that cannot be placed stops the whole run.
-  const updates: Array<{ post: ApiPost; changed: Record<string, string> }> = [];
+  const updates: Array<{ post: ApiPost; changed: Record<string, string | null> }> = [];
   let problems = 0;
   for (const [slug, postEdits] of bySlug) {
     const post = posts.get(slug);
@@ -71,9 +78,11 @@ async function main() {
     const result = applyBlogEdits(post, postEdits);
     for (const problem of result.problems) console.error(`✗ ${slug}: ${problem}`);
     problems += result.problems.length;
-    const fields = Object.keys(result.changed);
+    const changed: Record<string, string | null> = { ...result.changed };
+    if (clearAudio && post.audioUrl) changed.audioUrl = null;
+    const fields = Object.keys(changed);
     console.log(`  ${slug}: ${result.applied} to apply, ${result.alreadyApplied} already applied${fields.length ? ` (${fields.join(", ")})` : ""}`);
-    if (fields.length) updates.push({ post, changed: result.changed });
+    if (fields.length) updates.push({ post, changed });
   }
   if (problems) {
     console.error(`${problems} edit(s) could not be placed. Nothing was saved.`);

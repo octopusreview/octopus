@@ -930,6 +930,10 @@ async function due(id: string) {
       const disagreeing = receiver({ agreeing: false, reconciliationId: null, notDeclared: { purchases: 1, refunds: 0 } });
       const disagreed = await reconcile.reconcileCashPeriod(scoped, binding, day, disagreeing.send, now);
       expect(disagreed.observation!.document).toMatchObject({ outcome: "disagreed", sent: true, reconciliationId: null, receiver: { notDeclared: { purchases: 1, refunds: 0 } } });
+      const missing = receiver({ agreeing: false, reconciliationId: null, notReceived: { count: 1, entries: [{ eventType: "purchase", transactionId: conversionId("payment", "pi_fixture"), status: "missing" }] } });
+      const missingResult = await reconcile.reconcileCashPeriod(scoped, binding, day, missing.send, now);
+      expect(missingResult.observation!.document.receiver.notReceived).toEqual({ count: 1 });
+      expect((await observation.getCashObservation(scoped, missingResult.observation!.id)).document.receiver.notReceived).toEqual({ count: 1 });
 
       // A refused period is not an observation; a changed binding sends nothing.
       const count = await observations(); const unused = receiver();
@@ -938,6 +942,21 @@ async function due(id: string) {
       await expect(reconcile.reconcileCashPeriod(scoped, { ...binding, project: { ...binding.project, version: 0 } }, day, unused.send, now)).rejects.toThrow();
       expect(unused.bodies).toEqual([]); expect(await observations()).toBe(count);
       expect(await state()).toEqual(before);
+    });
+
+    it("includes post-activation dependencies with old source timestamps", async () => {
+      const reconcile = await import("../marketing-cash-reconcile");
+      const october = { from: "2026-10-01T00:00:00.000Z", to: "2026-10-02T00:00:00.000Z" };
+      const row = deliveredRow(0);
+      const dependency = await prisma.marketingConversion.create({ data: { ...row, sourceCreatedAt: new Date("2026-09-01T00:00:00Z"), createdAt: new Date("2026-10-01T01:00:00Z"), status: "pending", receiptId: null, deliveredAt: null, httpStatus: null } });
+      const waiting = receiver();
+      const blocked = await reconcile.reconcileCashPeriod(scoped, binding, october, waiting.send, new Date("2026-10-03T00:00:00Z"));
+      expect(blocked.observation!.document).toMatchObject({ outcome: "delivery_pending", undelivered: { pending: 1 } });
+      expect(waiting.bodies).toEqual([]);
+      await prisma.marketingConversion.update({ where: { id: dependency.id }, data: { status: "delivered", receiptId: row.receiptId, deliveredAt: row.deliveredAt, httpStatus: row.httpStatus } });
+      const delivered = receiver();
+      expect((await reconcile.reconcileCashPeriod(scoped, binding, october, delivered.send, new Date("2026-10-03T00:00:00Z"))).outcome).toBe("agreed");
+      expect(JSON.parse(delivered.bodies[0]!).entries).toEqual([{ eventType: "purchase", transactionId: "payment_0000", amountMinor: "100", currency: "USD", occurredAt: october.from }]);
     });
 
     it("refuses with the reason for each kind of gap, without sending", async () => {

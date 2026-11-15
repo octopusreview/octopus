@@ -66,9 +66,9 @@ export async function registerWorkers(pgBoss: PgBoss, config: QueueConfig, regis
   await boss.work("marketing-reconciliation", { localConcurrency: 1 }, async () => {
     try {
       const { runCashReconciliation } = await import("./marketing-cash-reconcile");
-      const { outcome, sent, observation } = await runCashReconciliation();
+      const { outcome, observation } = await runCashReconciliation();
       // Reason code and observation id only: no source references, bearer keys or bodies.
-      console.log("[marketing-reconciliation]", { outcome, sent, observationId: observation?.id ?? null });
+      console.log("[marketing-reconciliation]", { outcome, observationId: observation?.id ?? null });
     } catch {
       throw new Error("Marketing reconciliation failed; no billing state was changed");
     }

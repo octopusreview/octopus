@@ -82,7 +82,7 @@ Every result has one `outcome` code. A period refused before any read is returne
 | `body_too_large` | no | The request would exceed the receiver's byte limit |
 | `receiver_identity_unavailable`, `receiver_identity_mismatch` | no | The receiver did not identify as the expected source and key |
 | `agreed` | yes | The receiver saved the reconciliation; `reconciliationId` names it |
-| `disagreed` | yes | The sets differ; `receiver.notReceived` and `receiver.notDeclared` say how. Nothing was saved |
+| `disagreed` | yes | The sets differ; `receiver.notReceived.count` and `receiver.notDeclared` give the counts. Nothing was saved |
 | `receiver_<code>` | yes | The receiver refused with that error code in lower case, for example `receiver_receipt_set_too_large` |
 | `receiver_http_<status>` | yes | Any other HTTP status |
 | `receiver_reply_invalid`, `receiver_unavailable` | yes | No usable answer. The receiver may have saved a reconciliation; it is not asked again |

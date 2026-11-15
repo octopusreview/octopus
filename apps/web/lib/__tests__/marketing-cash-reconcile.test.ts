@@ -92,7 +92,8 @@ describe("complete-period reconciliation", () => {
     const missing = { count: 1, entries: [{ eventType: "refund", transactionId: "refund_a", status: "missing" }] };
     const disagree = { agreeing: false, reconciliationId: null };
     expect(validateReconciliationReply(reply(entries), binding, period, entries).agreeing).toBe(true);
-    expect(validateReconciliationReply(reply(entries, { ...disagree, notReceived: missing }), binding, period, entries)).toMatchObject({ agreeing: false, reconciliationId: null, notReceived: missing });
+    expect(validateReconciliationReply(reply(entries, { ...disagree, notReceived: missing }), binding, period, entries)).toMatchObject({ agreeing: false, reconciliationId: null, notReceived: { count: 1 } });
+    expect(validateReconciliationReply(reply(entries, { ...disagree, notReceived: missing }), binding, period, entries).notReceived).toEqual({ count: 1 });
     expect(validateReconciliationReply(reply(entries, { ...disagree, notDeclared: { purchases: 2, refunds: 1 } }), binding, period, entries).notDeclared).toEqual({ purchases: 2, refunds: 1 });
     for (const change of [
       { schemaVersion: 1 }, { sourceId: randomUUID() }, { environment: "live" }, { keyId: randomUUID() }, { capabilities: ["purchases"] },
@@ -123,7 +124,7 @@ describe("complete-period reconciliation", () => {
     for (const change of [{ notReceived: mismatch }, { notDeclared: { purchases: 0, refunds: 1 } }]) {
       const t = transport(() => Response.json(reply(entries, { agreeing: false, reconciliationId: null, ...change })));
       const disagreed = await sendCashReconciliation(config, binding, period, entries, t.send);
-      expect(disagreed).toMatchObject({ outcome: "disagreed", sent: true, reply: { reconciliationId: null, ...change } });
+      expect(disagreed).toMatchObject({ outcome: "disagreed", sent: true, reply: { reconciliationId: null, ...(change.notReceived ? { notReceived: { count: 1 } } : change) } });
       expect(t.requests.map(r => r.method)).toEqual(["GET", "POST"]);
     }
     const empty = transport(() => Response.json(reply([])));

@@ -126,7 +126,9 @@ export async function sendCashReconciliation(config: MarketingConfig, expected: 
       const response = await send(new Request(`${MARKETING_RECEIVER}/receipts/compare`, { ...base, method: "POST", headers: { Authorization: `Bearer ${config.serverKey}`, "Content-Type": "application/json" }, body }));
       const result = { sent, receiverStatus: response.status, responseDigest: null as string | null, field: null as string | null, reply: null as Reply | null };
       let raw: string;
-      try { cashAssert(!response.headers.has("set-cookie")); raw = await readBounded(response, MAX_REPLY); } catch { return { ...result, outcome: "receiver_reply_invalid" }; }
+      // A reply that breaks a rule here (a cookie, too many bytes) is invalid. A stream that fails while it is read is a lost answer.
+      try { cashAssert(!response.headers.has("set-cookie")); raw = await readBounded(response, MAX_REPLY); }
+      catch (error) { return { ...result, outcome: error instanceof Error && error.message === "cash_observation_invalid" ? "receiver_reply_invalid" : "receiver_unavailable" }; }
       result.responseDigest = cashDigest(raw);
       if (response.status === 200) {
         try { result.reply = validateReconciliationReply(JSON.parse(raw), expected, period, entries); } catch { return { ...result, outcome: "receiver_reply_invalid" }; }

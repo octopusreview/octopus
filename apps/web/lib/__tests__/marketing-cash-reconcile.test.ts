@@ -153,6 +153,8 @@ describe("complete-period reconciliation", () => {
     expect(await outcome(() => Response.json(reply(entries), { headers: { "set-cookie": "a=b" } }))).toEqual(["receiver_reply_invalid", true, "GET POST", null]);
     expect(await outcome(() => Response.json(reply(entries, { keyId: randomUUID() })))).toEqual(["receiver_reply_invalid", true, "GET POST", null]);
     expect(await outcome(() => { throw new Error("synthetic network failure"); })).toEqual(["receiver_unavailable", true, "GET POST", null]);
+    // Headers arrived, then the connection failed while the body was being read: the answer is lost, not malformed.
+    expect(await outcome(() => new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode("{")); controller.error(new Error("synthetic stream failure")); } })))).toEqual(["receiver_unavailable", true, "GET POST", null]);
     // Nothing is declared to a receiver that does not identify as the expected source and key.
     const never = () => { throw new Error("must not send"); };
     expect(await outcome(never, () => new Response("", { status: 503 }))).toEqual(["receiver_identity_unavailable", false, "GET", null]);

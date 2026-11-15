@@ -148,7 +148,7 @@ describe("complete-period reconciliation", () => {
     expect(await outcome(() => new Response("<html>", { status: 502 }))).toEqual(["receiver_http_502", true, "GET POST", null]);
     // A malformed, oversized, cookie-setting or foreign 200 is not an answer.
     expect(await outcome(() => new Response("not json"))).toEqual(["receiver_reply_invalid", true, "GET POST", null]);
-    expect(await outcome(() => new Response(JSON.stringify({ ...reply(entries), padding: "x".repeat(16384) })))).toEqual(["receiver_reply_invalid", true, "GET POST", null]);
+    expect(await outcome(() => new Response(JSON.stringify(reply(entries)) + " ".repeat(16384)))).toEqual(["receiver_reply_invalid", true, "GET POST", null]);
     expect(await outcome(() => Response.json(reply(entries), { headers: { "set-cookie": "a=b" } }))).toEqual(["receiver_reply_invalid", true, "GET POST", null]);
     expect(await outcome(() => Response.json(reply(entries, { keyId: randomUUID() })))).toEqual(["receiver_reply_invalid", true, "GET POST", null]);
     expect(await outcome(() => { throw new Error("synthetic network failure"); })).toEqual(["receiver_unavailable", true, "GET POST", null]);

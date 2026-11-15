@@ -186,6 +186,26 @@ export function LandingFooter() {
               </li>
               <li>
                 <TrackedLink
+                  href="/coderabbit-alternatives"
+                  event="footer_click"
+                  eventParams={{ label: "coderabbit_alternatives" }}
+                  className="text-sm text-[#666] transition-colors hover:text-white"
+                >
+                  CodeRabbit alternatives
+                </TrackedLink>
+              </li>
+              <li>
+                <TrackedLink
+                  href="/self-hosted-ai-code-review"
+                  event="footer_click"
+                  eventParams={{ label: "self_hosted" }}
+                  className="text-sm text-[#666] transition-colors hover:text-white"
+                >
+                  Self-hosted
+                </TrackedLink>
+              </li>
+              <li>
+                <TrackedLink
                   href="/not-a-rabbit"
                   event="footer_click"
                   eventParams={{ label: "not_a_rabbit" }}

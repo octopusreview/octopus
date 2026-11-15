@@ -24,6 +24,8 @@ const STATIC_PAGES: MetadataRoute.Sitemap = [
   { url: `${SITE_URL}/compare`, changeFrequency: "weekly", priority: 0.8 },
   { url: `${SITE_URL}/vs-coderabbit`, changeFrequency: "weekly", priority: 0.8 },
   { url: `${SITE_URL}/vs-greptile`, changeFrequency: "weekly", priority: 0.8 },
+  { url: `${SITE_URL}/coderabbit-alternatives`, changeFrequency: "weekly", priority: 0.8 },
+  { url: `${SITE_URL}/self-hosted-ai-code-review`, changeFrequency: "monthly", priority: 0.8 },
   { url: `${SITE_URL}/editor`, changeFrequency: "monthly", priority: 0.8 },
   { url: `${SITE_URL}/brand`, changeFrequency: "monthly", priority: 0.5 },
   { url: `${SITE_URL}/bug-bounty`, changeFrequency: "monthly", priority: 0.6 },

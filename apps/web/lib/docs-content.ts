@@ -264,6 +264,20 @@ Usage-Based: Pay only for what you use. Purchase credits as needed or set up aut
         text: `Octopus supports models including Claude Fable 5.2, Claude Sonnet 5.5, Claude Opus 5.5 and GPT-6 Astra. For model pricing, the platform rate and prompt-cache discounts, see the pricing guide: https://octopus-review.ai/docs/pricing.`,
       },
       {
+        heading: "What a review costs",
+        text: `These figures come from real reviews on Octopus Cloud in the 30 days up to 14 November 2026. They are the amounts charged on platform keys, so they already include the 2x platform rate on the provider's list price.
+We split the reviews into thirds by how much the reviewer had to read: the change plus the repository context it pulled in. Each figure is the median charge in that third.
+Model | Smaller third | Middle third | Larger third
+Claude Opus 5.5 (the Cloud default) | $0.52 | $0.76 | $1.13
+Claude Fable 5.2 | $1.03 | $1.49 | $2.40
+Claude Haiku 4.5 | $0.06 | $0.09 | $0.12
+GPT-5.3 Codex | $0.14 | $0.16 | $0.20
+Supporting steps that run with a review, such as re-ranking context and validating findings, add about $0.07 per review on average.
+These are typical amounts. They are not fixed prices. A median is the middle value, so about half the reviews in each third cost more than the figure shown. An unusually large pull request costs more. Prices follow the providers' list prices, so these amounts change when a provider changes its rates.
+Every AI operation is logged, and you can see your own usage breakdown in the billing settings.
+With your own provider API key, Octopus does not bill the model call at all. Your provider bills you directly. Operations that still run on platform providers, such as embeddings, continue to use credits.`,
+      },
+      {
         heading: "Spend Limits & Billing",
         text: `Set monthly spend limits per organization to prevent unexpected costs.
 Track usage in the billing dashboard: see token consumption, credit balance, and cost breakdown by operation (review, chat, indexing, analysis).

@@ -55,6 +55,8 @@ Usage-based. Free credits on signup, no subscription. Octopus Cloud bills AI usa
 - Blog (model launches, product news): https://octopus-review.ai/blog
 - Compared with other AI reviewers: https://octopus-review.ai/compare
 - Compared with CodeRabbit: https://octopus-review.ai/vs-coderabbit
+- CodeRabbit alternatives: https://octopus-review.ai/coderabbit-alternatives
+- Self-hosted AI code review: https://octopus-review.ai/self-hosted-ai-code-review
 - Full documentation text for LLMs: https://octopus-review.ai/llms-full.txt
 - Source: https://github.com/octopusreview/octopus
 - Contact: support@octopus-review.ai

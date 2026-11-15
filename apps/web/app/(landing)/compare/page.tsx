@@ -118,6 +118,15 @@ export default async function ComparePage() {
             </Link>
           ))}
         </div>
+        <div className="mx-auto mt-8 max-w-5xl text-center">
+          <Link
+            href="/coderabbit-alternatives"
+            className="inline-flex items-center gap-2 text-sm font-medium text-white transition-colors hover:text-primary"
+          >
+            CodeRabbit alternatives: eight AI code review tools compared
+            <IconArrowRight className="size-4 shrink-0" />
+          </Link>
+        </div>
       </section>
 
       <section className="relative z-10 px-6 pb-24 md:px-8">

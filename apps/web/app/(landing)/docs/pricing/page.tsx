@@ -10,13 +10,22 @@ import {
 } from "@tabler/icons-react";
 
 export const metadata = {
-  title: "Pricing",
+  title: "AI code review pricing and cost per review",
   description:
-    "Transparent credit-based pricing for AI code review. Start with free credits, bring your own API keys, or buy more as you grow. No per-seat fees, ever.",
+    "Usage-based pricing for AI code review. See median charges per review from real Octopus Cloud usage by model, or bring your own API keys.",
   alternates: {
     canonical: "https://octopus-review.ai/docs/pricing",
   },
 };
+
+// Median amount charged per review on Octopus Cloud (platform keys, 2x rate
+// included) in the 30 days up to 14 November 2026, by thirds of review size.
+const REVIEW_COSTS: Array<[model: string, smaller: string, middle: string, larger: string]> = [
+  ["Claude Opus 5.5 (the Cloud default)", "$0.52", "$0.76", "$1.13"],
+  ["Claude Fable 5.2", "$1.03", "$1.49", "$2.40"],
+  ["Claude Haiku 4.5", "$0.06", "$0.09", "$0.12"],
+  ["GPT-5.3 Codex", "$0.14", "$0.16", "$0.20"],
+];
 
 export default function PricingPage() {
   return (
@@ -175,6 +184,63 @@ export default function PricingPage() {
         </P>
       </Section>
 
+      {/* Cost per review */}
+      <Section id="what-a-review-costs" title="What a review costs">
+        <P>
+          These figures come from real reviews on Octopus Cloud in the 30 days
+          up to 14 November 2026. They are the amounts charged on platform keys,
+          so they already include the 2x platform rate on the provider&apos;s
+          list price.
+        </P>
+        <P>
+          We split the reviews into thirds by how much the reviewer had to read:
+          the change plus the repository context it pulled in. Each figure is
+          the median charge in that third.
+        </P>
+        <div className="mb-4 overflow-x-auto rounded-lg border border-white/[0.06]">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/[0.06] text-left">
+                <th className="px-4 py-2 font-medium text-[#999]">Model</th>
+                <th className="px-4 py-2 text-right font-medium text-[#999]">Smaller third</th>
+                <th className="px-4 py-2 text-right font-medium text-[#999]">Middle third</th>
+                <th className="px-4 py-2 text-right font-medium text-[#999]">Larger third</th>
+              </tr>
+            </thead>
+            <tbody className="text-[#888]">
+              {REVIEW_COSTS.map(([model, smaller, middle, larger], index) => (
+                <tr key={model} className={index === REVIEW_COSTS.length - 1 ? "" : "border-b border-white/[0.04]"}>
+                  <td className="px-4 py-2 text-[#ccc]">{model}</td>
+                  <td className="px-4 py-2 text-right">{smaller}</td>
+                  <td className="px-4 py-2 text-right">{middle}</td>
+                  <td className="px-4 py-2 text-right">{larger}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <P>
+          Supporting steps that run with a review, such as re-ranking context
+          and validating findings, add about $0.07 per review on average.
+        </P>
+        <P>
+          These are typical amounts. They are not fixed prices. A median is the
+          middle value, so about half the reviews in each third cost more than
+          the figure shown. An unusually large pull request costs more. Prices
+          follow the providers&apos; list prices, so these amounts change when a
+          provider changes its rates.
+        </P>
+        <P>
+          Every AI operation is logged, and you can see your own usage breakdown
+          in the billing settings.
+        </P>
+        <P>
+          With your own provider API key, Octopus does not bill the model call
+          at all. Your provider bills you directly. Operations that still run on
+          platform providers, such as embeddings, continue to use credits.
+        </P>
+      </Section>
+
       {/* Credits */}
       <Section title="Credits & Billing">
         <div className="mb-4 grid gap-3 sm:grid-cols-2">
@@ -292,14 +358,16 @@ export default function PricingPage() {
 /* ------------------------------------------------------------------ */
 
 function Section({
+  id,
   title,
   children,
 }: {
+  id?: string;
   title: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="mb-10">
+    <section id={id} className="mb-10 scroll-mt-20">
       <h2 className="mb-4 text-xl font-semibold text-white">{title}</h2>
       {children}
     </section>

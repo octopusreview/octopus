@@ -12,6 +12,8 @@ const publicPrefixes = [
   "/status",
   "/not-a-rabbit",
   "/compare",
+  "/coderabbit-alternatives",
+  "/self-hosted-ai-code-review",
   "/editor",
   "/vs-",
   "/api/auth",

@@ -79,7 +79,7 @@ const rows: ComparisonRow[] = [
   { label: "Inline PR comments", octopus: true, competitor: true },
   { label: "Severity-rated findings", octopus: "Critical, Major, Minor, Suggestion, Tip", competitor: "Review comments" },
   { label: "Licensing", octopus: "Source-available (Modified MIT)", competitor: "Proprietary SaaS" },
-  { label: "Self-hosting option", octopus: true, competitor: false },
+  { label: "Self-hosting option", octopus: true, competitor: "Enterprise plans" },
   { label: "Bring your own LLM API keys", octopus: true, competitor: "Enterprise plans" },
   { label: "Pricing model", octopus: "Usage-based credits", competitor: "Per-developer subscription" },
   { label: "Free tier", octopus: "Free credits + free self-host", competitor: "Free for open source repos" },

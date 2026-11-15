@@ -20,6 +20,10 @@ on:
           - dry
           - apply
         default: dry
+      clear_audio:
+        description: "Also remove the read-aloud audio of every post in the file (it is not remade when text changes)"
+        type: boolean
+        default: false
 
 # Two runs must not edit the same posts at once.
 concurrency:
@@ -49,9 +53,9 @@ jobs:
           # Dispatch inputs go through the environment, never into the shell line.
           EDITS_FILE: ${{ inputs.file }}
           EDIT_MODE: ${{ inputs.mode }}
+          CLEAR_AUDIO: ${{ inputs.clear_audio }}
         run: |
-          if [ "$EDIT_MODE" = apply ]; then
-            bun run apps/web/scripts/apply-blog-edits.ts "$EDITS_FILE" --apply
-          else
-            bun run apps/web/scripts/apply-blog-edits.ts "$EDITS_FILE"
-          fi
+          args=("$EDITS_FILE")
+          if [ "$EDIT_MODE" = apply ]; then args+=(--apply); fi
+          if [ "$CLEAR_AUDIO" = true ]; then args+=(--clear-audio); fi
+          bun run apps/web/scripts/apply-blog-edits.ts "${args[@]}"

@@ -163,6 +163,16 @@ describe("complete-period reconciliation", () => {
     expect(await outcome(never, () => Response.json({ schemaVersion: 1, sourceId: binding.sourceId, environment: "test", keyId, capabilities: ["purchases"] }))).toEqual(["receiver_identity_mismatch", false, "GET", null]);
   });
 
+  it("digests the exact received reply bytes before UTF-8 decoding", async () => {
+    const bytes = Uint8Array.from([0xff, 0xfe, 0x61]);
+    for (const status of [200, 502]) {
+      const t = transport(() => new Response(bytes, { status }));
+      const result = await sendCashReconciliation(config, binding, period, [], t.send);
+      expect(result.outcome).toBe(status === 200 ? "receiver_reply_invalid" : "receiver_http_502");
+      expect(result.responseDigest).toBe(createHash("sha256").update(bytes).digest("hex"));
+    }
+  });
+
   it("schedules the daily job only with its own flag on the hosted application", async () => {
     const on = { UNIFIED_ADS_ENABLED: "true", UNIFIED_ADS_RECONCILIATION_ENABLED: "true" };
     const calls = async (env: Record<string, string | undefined>) => {

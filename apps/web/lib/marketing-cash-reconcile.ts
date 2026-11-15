@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import { prisma, type MarketingConversion } from "@octopus/db";
 import { MARKETING_RECEIVER, resolveMarketingConfig, type MarketingConfig } from "./marketing-conversions";
 import { normalizeMarketingCash } from "./marketing-cash-contract";
@@ -89,7 +90,7 @@ export function validateReconciliationReply(input: unknown, expected: CashBindin
     notDeclared: { purchases: notDeclared.purchases, refunds: notDeclared.refunds } };
 }
 
-async function readBounded(response: Response, max: number): Promise<string> {
+async function readBounded(response: Response, max: number): Promise<Buffer> {
   const reader = response.body?.getReader(); cashAssert(reader);
   const chunks: Uint8Array[] = []; let size = 0;
   for (;;) {
@@ -98,7 +99,7 @@ async function readBounded(response: Response, max: number): Promise<string> {
     if (size > max) { void reader.cancel().catch(() => {}); cashAssert(false); }
     chunks.push(part.value);
   }
-  return Buffer.concat(chunks).toString("utf8");
+  return Buffer.concat(chunks);
 }
 
 type Exchange = { outcome: string; sent: boolean; receiverStatus: number | null; responseDigest: string | null; field: string | null; reply: Reply | null };
@@ -116,7 +117,7 @@ export async function sendCashReconciliation(config: MarketingConfig, expected: 
       const preflight = await send(new Request(`${MARKETING_RECEIVER}/identity`, { ...base, headers: { Authorization: `Bearer ${config.serverKey}` } }));
       if (preflight.status !== 200) { await preflight.body?.cancel().catch(() => {}); return { ...none, outcome: "receiver_identity_unavailable", receiverStatus: preflight.status }; }
       try {
-        const id = cashObject(JSON.parse(await readBounded(preflight, MAX_REPLY)), ["schemaVersion", "sourceId", "environment", "keyId", "capabilities"]);
+        const id = cashObject(JSON.parse((await readBounded(preflight, MAX_REPLY)).toString("utf8")), ["schemaVersion", "sourceId", "environment", "keyId", "capabilities"]);
         cashAssert(id.schemaVersion === 1 && id.sourceId === expected.sourceId && id.environment === expected.environment && id.keyId === expected.keyId);
         cashAssert(Array.isArray(id.capabilities) && id.capabilities.every(c => typeof c === "string") && JSON.stringify([...id.capabilities].sort()) === JSON.stringify(expected.capabilities));
       } catch { return { ...none, outcome: "receiver_identity_mismatch", receiverStatus: 200 }; }
@@ -125,11 +126,12 @@ export async function sendCashReconciliation(config: MarketingConfig, expected: 
       sent = true;
       const response = await send(new Request(`${MARKETING_RECEIVER}/receipts/compare`, { ...base, method: "POST", headers: { Authorization: `Bearer ${config.serverKey}`, "Content-Type": "application/json" }, body }));
       const result = { sent, receiverStatus: response.status, responseDigest: null as string | null, field: null as string | null, reply: null as Reply | null };
-      let raw: string;
+      let bytes: Buffer;
       // A reply that breaks a rule here (a cookie, too many bytes) is invalid. A stream that fails while it is read is a lost answer.
-      try { cashAssert(!response.headers.has("set-cookie")); raw = await readBounded(response, MAX_REPLY); }
+      try { cashAssert(!response.headers.has("set-cookie")); bytes = await readBounded(response, MAX_REPLY); }
       catch (error) { return { ...result, outcome: error instanceof Error && error.message === "cash_observation_invalid" ? "receiver_reply_invalid" : "receiver_unavailable" }; }
-      result.responseDigest = cashDigest(raw);
+      result.responseDigest = createHash("sha256").update(bytes).digest("hex");
+      const raw = bytes.toString("utf8");
       if (response.status === 200) {
         try { result.reply = validateReconciliationReply(JSON.parse(raw), expected, period, entries); } catch { return { ...result, outcome: "receiver_reply_invalid" }; }
         return { ...result, outcome: result.reply.agreeing ? "agreed" : "disagreed" };

@@ -1,8 +1,6 @@
 import "server-only";
 import Link from "@/components/link";
 import { ORGANIZATION_ENTITY } from "@/lib/structured-data";
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { getLandingStats } from "@/lib/landing-stats";
 import { LandingFeatures } from "@/components/landing-features";
@@ -102,9 +100,11 @@ const faqJsonLd = {
   })),
 };
 
+// Reads live figures and the newest posts from the database on each request.
+export const dynamic = "force-dynamic";
+
 export default async function LandingPage() {
-  const [session, blogPosts, landingStats, announcements] = await Promise.all([
-    auth.api.getSession({ headers: await headers() }),
+  const [blogPosts, landingStats, announcements] = await Promise.all([
     prisma.blogPost.findMany({
       where: { status: "published", deletedAt: null },
       orderBy: { publishedAt: "desc" },
@@ -138,10 +138,10 @@ export default async function LandingPage() {
       <LandingAnnouncementBar announcements={announcements} />
 
       {/* Mobile nav — hamburger menu */}
-      <LandingMobileNav isLoggedIn={!!session} />
+      <LandingMobileNav />
 
       {/* Desktop nav — floating pill */}
-      <LandingDesktopNav isLoggedIn={!!session} />
+      <LandingDesktopNav />
 
       {/* Hero — dark bg */}
       <section className="relative z-10 px-6 pb-20 pt-40 md:px-8 md:pb-28 md:pt-52">

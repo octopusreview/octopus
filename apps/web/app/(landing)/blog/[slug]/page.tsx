@@ -2,8 +2,6 @@ import type { Metadata } from "next";
 import { ORGANIZATION_ENTITY, blogAuthorJsonLd } from "@/lib/structured-data";
 import { notFound } from "next/navigation";
 import Link from "@/components/link";
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { LandingFooter } from "@/components/landing-footer";
 import { LandingMobileNav } from "@/components/landing-mobile-nav";
@@ -27,6 +25,12 @@ function getRelatedCandidates() {
     select: { slug: true, title: true, tags: true },
     orderBy: { publishedAt: "desc" },
   });
+}
+
+// No post is rendered at build time (the build has no database). Each post is
+// rendered on its first request and then served from the cache.
+export function generateStaticParams() {
+  return [];
 }
 
 async function getPost(slug: string) {
@@ -86,8 +90,6 @@ export default async function BlogPostPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const session = await auth.api.getSession({ headers: await headers() }).catch(() => null);
-  const isLoggedIn = !!session;
   const post = await getPost(slug);
 
   if (!post) notFound();
@@ -146,8 +148,8 @@ export default async function BlogPostPage({
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: safeJsonLd(breadcrumbJsonLd) }}
       />
-      <LandingDesktopNav isLoggedIn={isLoggedIn} />
-      <LandingMobileNav isLoggedIn={isLoggedIn} />
+      <LandingDesktopNav />
+      <LandingMobileNav />
 
       <div className="mx-auto max-w-6xl px-6 pt-32 pb-20">
         <Link

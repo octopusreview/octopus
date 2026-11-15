@@ -1,6 +1,4 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { LandingFooter } from "@/components/landing-footer";
 import { LandingMobileNav } from "@/components/landing-mobile-nav";
@@ -79,11 +77,10 @@ function statusLabel(status: string) {
 
 // ── Page ────────────────────────────────────────────────────────────────────
 
+// Live status: read from the database on each request.
+export const dynamic = "force-dynamic";
+
 export default async function StatusPage() {
-  const session = await auth.api
-    .getSession({ headers: await headers() })
-    .catch(() => null);
-  const isLoggedIn = !!session;
 
   const [components, activeIncidents, recentResolved] = await Promise.all([
     prisma.statusComponent.findMany({
@@ -129,8 +126,8 @@ export default async function StatusPage() {
   return (
     <div className="min-h-screen bg-background text-white">
       <StatusListener />
-      <LandingDesktopNav isLoggedIn={isLoggedIn} />
-      <LandingMobileNav isLoggedIn={isLoggedIn} />
+      <LandingDesktopNav />
+      <LandingMobileNav />
 
       <main className="mx-auto max-w-3xl px-6 pt-32 pb-20">
         {/* Header */}

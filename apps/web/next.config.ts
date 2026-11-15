@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
   // pdfkit reads its built-in AFM font data from disk at runtime; bundling it
   // breaks those reads, so keep it external (traced into standalone output).
   serverExternalPackages: ["pdfkit"],
+  // Cached public pages are sent with `s-maxage=300`. Without this, a CDN
+  // would also be allowed to serve a stale copy for up to a year.
+  expireTime: 3600,
   experimental: {
     serverActions: {
       allowedOrigins: ["octopus-review.ai", "*.octopus-review.ai"],

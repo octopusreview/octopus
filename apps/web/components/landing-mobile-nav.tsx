@@ -4,9 +4,11 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "@/components/link";
 import { TrackedLink } from "@/components/tracked-link";
+import { useSession } from "@/lib/auth-client";
 import { IconMenu2, IconX, IconBrandGithub, IconBook, IconBug, IconCoin, IconNews, IconMessageCircle, IconPlugConnected } from "@tabler/icons-react";
 
-export function LandingMobileNav({ isLoggedIn }: { isLoggedIn: boolean }) {
+export function LandingMobileNav() {
+  const isLoggedIn = !!useSession().data;
   const [open, setOpen] = useState(false);
 
   return (

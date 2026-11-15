@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
+import { SessionLink } from "@/components/session-aware";
 import Link from "@/components/link";
 import Image from "next/image";
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
 import { CouponCode } from "./coupon-code";
 import { LandingFooter } from "@/components/landing-footer";
 import { LandingMobileNav } from "@/components/landing-mobile-nav";
@@ -46,7 +45,6 @@ const jsonLd = {
 };
 
 export default async function NotARabbitPage() {
-  const session = await auth.api.getSession({ headers: await headers() });
 
   return (
     <div className="dark relative min-h-screen bg-background text-[#a0a0a0] selection:bg-white/20">
@@ -65,10 +63,10 @@ export default async function NotARabbitPage() {
       />
 
       {/* Mobile nav */}
-      <LandingMobileNav isLoggedIn={!!session} />
+      <LandingMobileNav />
 
       {/* Desktop nav */}
-      <LandingDesktopNav isLoggedIn={!!session} />
+      <LandingDesktopNav />
 
       {/* Hero */}
       <section className="relative z-10 flex min-h-[80vh] flex-col items-center justify-center px-6 pb-16 pt-28 md:px-8 md:pb-24 md:pt-40">
@@ -149,12 +147,10 @@ export default async function NotARabbitPage() {
           </div>
 
           <div className="animate-fade-in mt-6 flex flex-col items-center gap-4 sm:flex-row sm:justify-center [animation-delay:500ms]">
-            <Link
-              href={session ? "/dashboard" : "/login"}
+            <SessionLink
+              signedOutLabel="Claim & Get Started"
               className="inline-flex items-center gap-2 rounded-full bg-white px-8 py-3 text-sm font-semibold text-black transition-all hover:bg-[#e0e0e0]"
-            >
-              {session ? "Go to Dashboard" : "Claim & Get Started"}
-            </Link>
+            />
             <Link
               href="/docs/getting-started"
               className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] px-8 py-3 text-sm font-medium text-[#999] transition-all hover:border-white/[0.2] hover:text-white"
@@ -273,12 +269,10 @@ export default async function NotARabbitPage() {
             next pull request.
           </p>
           <div className="mt-8">
-            <Link
-              href={session ? "/dashboard" : "/login"}
+            <SessionLink
+              signedOutLabel="Try Octopus Free"
               className="inline-flex items-center gap-2 rounded-full bg-white px-8 py-3 text-sm font-semibold text-black transition-all hover:bg-[#e0e0e0]"
-            >
-              {session ? "Go to Dashboard" : "Try Octopus Free"}
-            </Link>
+            />
           </div>
         </div>
       </section>

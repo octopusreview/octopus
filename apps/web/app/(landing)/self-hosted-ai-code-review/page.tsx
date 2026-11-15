@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
 import Link from "@/components/link";
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
 import { LandingFooter } from "@/components/landing-footer";
 import { LandingMobileNav } from "@/components/landing-mobile-nav";
 import { LandingDesktopNav } from "@/components/landing-desktop-nav";
@@ -21,13 +19,11 @@ export const metadata: Metadata = {
 const linkClass = "text-white underline decoration-white/30 underline-offset-2 hover:decoration-white";
 const codeClass = "rounded bg-white/[0.06] px-1.5 py-0.5 text-sm text-[#ccc] [overflow-wrap:anywhere]";
 
-export default async function SelfHostedAiCodeReviewPage() {
-  const session = await auth.api.getSession({ headers: await headers() }).catch(() => null);
-
+export default function SelfHostedAiCodeReviewPage() {
   return (
     <div className="dark relative min-h-screen bg-background text-[#a0a0a0] selection:bg-white/20">
-      <LandingMobileNav isLoggedIn={!!session} />
-      <LandingDesktopNav isLoggedIn={!!session} />
+      <LandingMobileNav />
+      <LandingDesktopNav />
 
       <section className="relative z-10 px-6 pt-32 pb-16 md:px-8 md:pt-40 md:pb-20">
         <div className="mx-auto max-w-4xl text-center">

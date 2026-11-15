@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
+import { SessionLink } from "@/components/session-aware";
 import Link from "@/components/link";
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
 import { LandingFooter } from "@/components/landing-footer";
 import { LandingMobileNav } from "@/components/landing-mobile-nav";
 import { LandingDesktopNav } from "@/components/landing-desktop-nav";
@@ -86,7 +85,6 @@ const rows: ComparisonRow[] = [
 ];
 
 export default async function VsCodeRabbitPage() {
-  const session = await auth.api.getSession({ headers: await headers() }).catch(() => null);
 
   return (
     <div className="dark relative min-h-screen bg-background text-[#a0a0a0] selection:bg-white/20">
@@ -95,8 +93,8 @@ export default async function VsCodeRabbitPage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
       />
 
-      <LandingMobileNav isLoggedIn={!!session} />
-      <LandingDesktopNav isLoggedIn={!!session} />
+      <LandingMobileNav />
+      <LandingDesktopNav />
 
       <section className="relative z-10 px-6 pt-32 pb-16 md:px-8 md:pt-40 md:pb-20">
         <div className="mx-auto max-w-4xl text-center">
@@ -237,12 +235,10 @@ export default async function VsCodeRabbitPage() {
             card required.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <Link
-              href={session ? "/dashboard" : "/login"}
+            <SessionLink
+              signedOutLabel="Start free"
               className="inline-flex items-center gap-2 rounded-full bg-white px-8 py-3 text-sm font-semibold text-black transition-all hover:bg-[#e0e0e0]"
-            >
-              {session ? "Go to Dashboard" : "Start free"}
-            </Link>
+            />
             <Link
               href="/docs/pricing"
               className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] px-8 py-3 text-sm font-medium text-[#999] transition-all hover:border-white/[0.2] hover:text-white"

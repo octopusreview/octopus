@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Operators: Octopus can tell Unified Ads that its purchases and refunds for a period are complete, once a day or on request. It is off unless `UNIFIED_ADS_RECONCILIATION_ENABLED=true` and needs the retained-cash observation migration and a verified source and project binding. The statement comes from the billing ledger alone, with no check against Stripe; read [what it does not cover](docs/integrations/retained-cash-observations.md#complete-period-declaration) before enabling.
+
 ## [1.4.22] - 2026-11-15
 
 ### Changed
@@ -24,7 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The CodeRabbit comparison page said CodeRabbit could not be self-hosted. It can, on its Enterprise plans.
-
 ## [1.4.20] - 2026-11-14
 
 ### Added

@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { orgNameSchema } from "@/lib/schemas/settings";
 import { updateOrganizationName } from "../actions";
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -47,6 +48,20 @@ export function OrgNameForm({
   const [currentUrl, setCurrentUrl] = useState(avatarUrl);
   const [uploading, startUpload] = useTransition();
   const [dragActive, setDragActive] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    const formData = new FormData(e.currentTarget);
+    const result = orgNameSchema.safeParse({
+      name: formData.get("name") ?? "",
+    });
+    if (!result.success) {
+      e.preventDefault();
+      setNameError(result.error.issues[0]?.message ?? "Invalid organization name.");
+      return;
+    }
+    setNameError(null);
+  }
 
   async function handleFile(file: File) {
     if (!file.type.startsWith("image/")) {
@@ -198,7 +213,7 @@ export function OrgNameForm({
             />
           </div>
 
-          <form action={formAction} className="flex-1 space-y-2">
+          <form action={formAction} onSubmit={handleSubmit} noValidate className="flex-1 space-y-2">
             <Label htmlFor="name">Organization name</Label>
             <div className="flex max-w-sm gap-3">
               <Input
@@ -211,11 +226,21 @@ export function OrgNameForm({
                 maxLength={100}
                 disabled={!isOwner}
                 className="flex-1"
+                aria-invalid={nameError ? true : undefined}
+                aria-describedby={nameError ? "name-error" : undefined}
+                onChange={() => {
+                  if (nameError) setNameError(null);
+                }}
               />
               <Button type="submit" disabled={pending || !isOwner} size="sm">
                 {pending ? "Saving..." : "Save"}
               </Button>
             </div>
+            {nameError && (
+              <p id="name-error" className="text-sm text-destructive">
+                {nameError}
+              </p>
+            )}
             {state.error && (
               <p className="text-sm text-destructive">{state.error}</p>
             )}

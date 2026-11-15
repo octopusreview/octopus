@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useTransition } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -14,7 +14,20 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { IconX } from "@tabler/icons-react";
+import { apiKeysSchema, type ApiKeyField } from "@/lib/schemas/settings";
 import { updateApiKeys, removeApiKey } from "../actions";
+
+const API_KEY_FIELDS: ApiKeyField[] = [
+  "openaiApiKey",
+  "anthropicApiKey",
+  "googleApiKey",
+  "cohereApiKey",
+  "grokApiKey",
+  "openrouterApiKey",
+  "alibabaApiKey",
+];
+
+type FieldErrors = Partial<Record<ApiKeyField, string>>;
 
 export function ApiKeysForm({
   openaiApiKey,
@@ -39,8 +52,58 @@ export function ApiKeysForm({
 }) {
   const [state, formAction, pending] = useActionState(updateApiKeys, {});
   const [removing, startTransition] = useTransition();
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
-  function handleRemove(keyField: "openaiApiKey" | "anthropicApiKey" | "googleApiKey" | "cohereApiKey" | "grokApiKey" | "openrouterApiKey" | "alibabaApiKey") {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    const formData = new FormData(e.currentTarget);
+    const values = Object.fromEntries(
+      API_KEY_FIELDS.map((field) => [field, formData.get(field) ?? ""]),
+    );
+    const result = apiKeysSchema.safeParse(values);
+    if (!result.success) {
+      e.preventDefault();
+      const errors: FieldErrors = {};
+      for (const issue of result.error.issues) {
+        const field = issue.path[0];
+        if (typeof field === "string" && !errors[field as ApiKeyField]) {
+          errors[field as ApiKeyField] = issue.message;
+        }
+      }
+      setFieldErrors(errors);
+      return;
+    }
+    setFieldErrors({});
+  }
+
+  function clearFieldError(field: ApiKeyField) {
+    if (!fieldErrors[field]) return;
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  }
+
+  function fieldErrorProps(field: ApiKeyField) {
+    const error = fieldErrors[field];
+    return {
+      "aria-invalid": error ? true : undefined,
+      "aria-describedby": error ? `${field}-error` : undefined,
+      onChange: () => clearFieldError(field),
+    };
+  }
+
+  function renderFieldError(field: ApiKeyField) {
+    const error = fieldErrors[field];
+    if (!error) return null;
+    return (
+      <p id={`${field}-error`} className="text-sm text-destructive">
+        {error}
+      </p>
+    );
+  }
+
+  function handleRemove(keyField: ApiKeyField) {
     startTransition(async () => {
       try {
         await removeApiKey(keyField);
@@ -64,7 +127,7 @@ export function ApiKeysForm({
           Optional. Leave blank to use Octopus default keys. Adding your own
           keys removes rate limits and lowers your usage costs.
         </div>
-        <form action={formAction} className="space-y-5">
+        <form action={formAction} onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <Label htmlFor="openaiApiKey">OpenAI</Label>
@@ -95,7 +158,9 @@ export function ApiKeysForm({
               placeholder="sk-..."
               disabled={!isOwner}
               autoComplete="off"
+              {...fieldErrorProps("openaiApiKey")}
             />
+            {renderFieldError("openaiApiKey")}
           </div>
 
           <Separator />
@@ -130,7 +195,9 @@ export function ApiKeysForm({
               placeholder="sk-ant-..."
               disabled={!isOwner}
               autoComplete="off"
+              {...fieldErrorProps("anthropicApiKey")}
             />
+            {renderFieldError("anthropicApiKey")}
           </div>
 
           <Separator />
@@ -165,7 +232,9 @@ export function ApiKeysForm({
               placeholder="AIza..."
               disabled={!isOwner}
               autoComplete="off"
+              {...fieldErrorProps("googleApiKey")}
             />
+            {renderFieldError("googleApiKey")}
             <p className="text-xs text-muted-foreground">
               Required for Gemini models.
             </p>
@@ -203,7 +272,9 @@ export function ApiKeysForm({
               placeholder="co-..."
               disabled={!isOwner}
               autoComplete="off"
+              {...fieldErrorProps("cohereApiKey")}
             />
+            {renderFieldError("cohereApiKey")}
             <p className="text-xs text-muted-foreground">
               Used to improve search relevance with Cohere Rerank.
             </p>
@@ -241,7 +312,9 @@ export function ApiKeysForm({
               placeholder="xai-..."
               disabled={!isOwner}
               autoComplete="off"
+              {...fieldErrorProps("grokApiKey")}
             />
+            {renderFieldError("grokApiKey")}
           </div>
 
           <Separator />
@@ -276,7 +349,9 @@ export function ApiKeysForm({
               placeholder="sk-or-..."
               disabled={!isOwner}
               autoComplete="off"
+              {...fieldErrorProps("openrouterApiKey")}
             />
+            {renderFieldError("openrouterApiKey")}
             <p className="text-xs text-muted-foreground">
               One key for many model vendors.
             </p>
@@ -314,7 +389,9 @@ export function ApiKeysForm({
               placeholder="sk-..."
               disabled={!isOwner}
               autoComplete="off"
+              {...fieldErrorProps("alibabaApiKey")}
             />
+            {renderFieldError("alibabaApiKey")}
             <p className="text-xs text-muted-foreground">
               Required for Qwen models.
             </p>

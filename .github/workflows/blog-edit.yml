@@ -1,0 +1,57 @@
+name: Edit blog posts
+
+# Applies a committed list of exact-text corrections
+# (apps/web/scripts/data/blog-edits/*.json) to published posts via the
+# authenticated blog API (public API, no DB access needed). Manual dispatch;
+# DRY RUN unless `mode` is set to apply. The list is reviewed in a pull request
+# before it can run from the default branch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      file:
+        description: "Path to the edits JSON"
+        type: string
+        required: true
+      mode:
+        description: "dry = show what would change · apply = save the edits"
+        type: choice
+        options:
+          - dry
+          - apply
+        default: dry
+
+# Two runs must not edit the same posts at once.
+concurrency:
+  group: blog-edit
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  edit:
+    runs-on: ubuntu-latest
+    steps:
+      # Pinned to full commit SHAs (see octp-release.yml for rationale).
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      - name: Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.4
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Edit posts
+        env:
+          BLOG_API_TOKEN: ${{ secrets.BLOG_API_TOKEN }}
+          OCTOPUS_API_URL: https://octopus-review.ai
+          # Dispatch inputs go through the environment, never into the shell line.
+          EDITS_FILE: ${{ inputs.file }}
+          EDIT_MODE: ${{ inputs.mode }}
+        run: |
+          if [ "$EDIT_MODE" = apply ]; then
+            bun run apps/web/scripts/apply-blog-edits.ts "$EDITS_FILE" --apply
+          else
+            bun run apps/web/scripts/apply-blog-edits.ts "$EDITS_FILE"
+          fi

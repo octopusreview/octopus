@@ -1,0 +1,462 @@
+[
+  {
+    "slug": "fable-5-rewrites-50m-lines-in-a-day-who-reviews-it",
+    "before": "Octopus Review is open source and self-hostable, so your source never leaves your infrastructure.",
+    "after": "Octopus Review is source-available and self-hostable, so your source can stay on your infrastructure if you also run the models yourself."
+  },
+  {
+    "slug": "four-git-hosts-one-review-blind-spot",
+    "before": "It is open source under a modified MIT license and runs on your own infrastructure, with source code processed in memory and only embeddings persisted:",
+    "after": "It is source-available under a modified MIT license and runs on your own infrastructure, with diffs discarded after each review and embeddings persisted while the repository is connected:"
+  },
+  {
+    "slug": "four-git-hosts-one-review-blind-spot",
+    "before": "If you are in the self-hosted camp running GitLab or Gitea for data ownership, Octopus matches that posture.",
+    "after": "If you are in the self-hosted camp running GitLab or Gitea for data ownership, Octopus can match that posture when you also run the models yourself."
+  },
+  {
+    "slug": "opus-4-8-got-more-honest-your-reviewer-should-too",
+    "before": "Octopus Review is open source and self-hostable, and it is BYOK.",
+    "after": "Octopus Review is source-available and self-hostable, and it is BYOK."
+  },
+  {
+    "slug": "opus-4-8-got-more-honest-your-reviewer-should-too",
+    "before": "Your source code is processed in memory and never stored; only embeddings persist.",
+    "after": "Your diffs are discarded after each review; embeddings persist while the repository is connected."
+  },
+  {
+    "slug": "change-one-util-break-23-packages-diff-hides-it",
+    "before": "Source code is processed in-memory only.",
+    "after": "Diffs are discarded after each review, and the code index is kept while the repository is connected."
+  },
+  {
+    "slug": "change-one-util-break-23-packages-diff-hides-it",
+    "before": "Open source, self-hostable, codebase-aware review is at [octopus-review.",
+    "after": "Source-available, self-hostable, codebase-aware review is at [octopus-review."
+  },
+  {
+    "slug": "change-one-util-break-23-packages-diff-hides-it",
+    "before": "And for teams in regulated industries or with private monorepos that cannot ship code to external services, the entire stack runs on your own infrastructure.",
+    "after": "And for teams in regulated industries or with private monorepos that cannot ship code to external services, the entire stack can run on your own infrastructure."
+  },
+  {
+    "slug": "change-one-util-break-23-packages-diff-hides-it",
+    "before": "The embeddings persist, the source does not.",
+    "after": "The embeddings persist, the diffs do not."
+  },
+  {
+    "slug": "change-one-util-break-23-packages-diff-hides-it",
+    "before": "You bring your own Claude or OpenAI key, or run the whole thing self-hosted with no external calls at all.",
+    "after": "You bring your own Claude or OpenAI key, or run the whole thing self-hosted with no cloud API keys at all."
+  },
+  {
+    "slug": "engineers-pick-smaller-pr-ai-ones-wait-longer",
+    "before": "Octopus Review is open source, self-hostable, and uses your own API keys for Claude or OpenAI.",
+    "after": "Octopus Review is source-available, self-hostable, and uses your own API keys for Claude or OpenAI."
+  },
+  {
+    "slug": "engineers-pick-smaller-pr-ai-ones-wait-longer",
+    "id": "J1",
+    "before": "The repo is already indexed in a Qdrant vector store, with embeddings produced from a self-hosted Qwen3 model that's seen every file in the project.",
+    "after": "The repo is already indexed in a Qdrant vector store, with embeddings produced from every file in the project."
+  },
+  {
+    "slug": "what-adding-gitlab-support-taught-us-about-code-review",
+    "before": "Octopus is open source under a modified MIT license, the entire stack runs from a Docker Compose file, and you can point it at any LLM provider you like, including one you host yourself.",
+    "after": "Octopus is source-available under a modified MIT license, the entire stack runs from a Docker Compose file, and you can point it at any LLM provider you like, including one you host yourself."
+  },
+  {
+    "slug": "what-adding-gitlab-support-taught-us-about-code-review",
+    "id": "J2",
+    "before": "That was always possible, but GitLab support forced us to make sure the documentation reflected it and the defaults pushed people toward the privacy-preserving setup rather than the convenient one.",
+    "after": "That was always possible, but GitLab support forced us to make sure the documentation reflected it."
+  },
+  {
+    "slug": "team-rules-live-in-three-heads-ai-has-none",
+    "before": "Because Octopus Review is open source and self-hostable, the Knowledge Base sits on your infrastructure, not someone else's cloud.",
+    "after": "Because Octopus Review is source-available and self-hostable, the Knowledge Base can sit on your infrastructure, not someone else's cloud."
+  },
+  {
+    "slug": "team-rules-live-in-three-heads-ai-has-none",
+    "before": "Your internal docs stay internal.",
+    "after": "Your internal docs can stay internal."
+  },
+  {
+    "slug": "your-team-is-ignoring-ai-review-comments",
+    "before": "Octopus Review is an open source code review tool, self-hostable, and built to earn that trust one comment at a time.",
+    "after": "Octopus Review is a source-available code review tool, self-hostable, and built to earn that trust one comment at a time."
+  },
+  {
+    "slug": "your-team-is-ignoring-ai-review-comments",
+    "before": "Your code is processed in-memory, never stored.",
+    "after": "Your diffs are discarded after each review, and the code index is kept while the repository is connected."
+  },
+  {
+    "slug": "every-clear-costs-you-tokens-stop-re-exploring",
+    "before": "Octopus Review is open source under a Modified MIT license, self-hostable, and works with both Claude and OpenAI through BYOK.",
+    "after": "Octopus Review is source-available under a Modified MIT license, self-hostable, and works with both Claude and OpenAI through BYOK."
+  },
+  {
+    "slug": "ai-code-review-stack-is-converging",
+    "before": "We set out to build a code reviewer that was open source, self-hostable, and actually understood the codebase it was reviewing.",
+    "after": "We set out to build a code reviewer that was source-available, self-hostable, and actually understood the codebase it was reviewing."
+  },
+  {
+    "slug": "ai-code-review-stack-is-converging",
+    "before": "Octopus Review is open source under a Modified MIT license.",
+    "after": "Octopus Review is source-available under a Modified MIT license."
+  },
+  {
+    "slug": "ai-code-review-stack-is-converging",
+    "before": "The codebase processes source in memory only.",
+    "after": "The codebase discards diffs after each review and keeps the code index while the repository is connected."
+  },
+  {
+    "slug": "ai-code-review-stack-is-converging",
+    "before": "The open-source version is here.",
+    "after": "The source-available version is here."
+  },
+  {
+    "slug": "ai-code-review-stack-is-converging",
+    "before": "Source files do not.",
+    "after": "Diffs do not."
+  },
+  {
+    "slug": "not-a-rabbit-don-t-follow-trails-the-story-behind-our-aws-summit-sticker",
+    "before": "Octopus is an open source, self-hostable, AI code reviewer that indexes your full repository and reviews every pull request with that full context in memory.",
+    "after": "Octopus is a source-available, self-hostable, AI code reviewer that indexes your full repository and reviews every pull request with that full context in memory."
+  },
+  {
+    "slug": "code-review-was-mentorship-ai-broke-the-loop",
+    "before": "Octopus Review is open source and self-hostable.",
+    "after": "Octopus Review is source-available and self-hostable."
+  },
+  {
+    "slug": "forkable-beats-polished-your-reviewer-too-3",
+    "id": "J3",
+    "before": "The future of dev tools is open.",
+    "after": "The future of dev tools is forkable."
+  },
+  {
+    "slug": "anyone-can-find-your-bugs-now-find-yours-first",
+    "before": "For codebases where you would rather not send source to a third party at all, Octopus is open source and self-hostable.",
+    "after": "For codebases where you would rather not send source to a third party at all, Octopus is source-available and self-hostable."
+  },
+  {
+    "slug": "anyone-can-find-your-bugs-now-find-yours-first",
+    "id": "J4",
+    "before": "Spin it up next to your repos, bring your own Claude or OpenAI key, and process code in memory only.",
+    "after": "Spin it up next to your repos, run the models yourself with the optional Ollama setup, and code processing stays on your network."
+  },
+  {
+    "slug": "anyone-can-find-your-bugs-now-find-yours-first",
+    "before": "Source code is never persisted.",
+    "after": "Diffs are discarded after each review."
+  },
+  {
+    "slug": "mythos-hunts-zero-days-who-reviews-your-code",
+    "before": "Your code is processed in-memory only, never stored.",
+    "after": "Your diffs are discarded after each review, and the code index is kept while the repository is connected."
+  },
+  {
+    "slug": "mythos-hunts-zero-days-who-reviews-your-code",
+    "id": "J5",
+    "before": "Octopus runs locally or self-hosted.",
+    "after": "Octopus runs in the cloud or self-hosted."
+  },
+  {
+    "slug": "mythos-hunts-zero-days-who-reviews-your-code",
+    "id": "J6",
+    "before": "That means you get codebase-aware AI review with zero vendor lock-in and full control over your data, exactly the kind of security-first posture that should appeal to any team worried about what Mythos-class models mean for the threat landscape.",
+    "after": "That means you get codebase-aware AI review with zero vendor lock-in and a choice of where your code is processed, exactly the kind of security-first posture that should appeal to any team worried about what Mythos-class models mean for the threat landscape."
+  },
+  {
+    "slug": "rag-indexing-vs-dynamic-discovery-ai-code-review",
+    "id": "J7",
+    "before": "And because Octopus processes code in-memory only (with only embeddings persisted, never source code), the privacy trade-off is minimal.",
+    "after": "And because Octopus discards diffs after each review (with embeddings persisted while the repository is connected), the privacy trade-off is minimal."
+  },
+  {
+    "slug": "rag-indexing-vs-dynamic-discovery-ai-code-review",
+    "before": "Octopus Review is open source, self-hostable, and indexes your entire codebase so every review carries the weight of your full project context.",
+    "after": "Octopus Review is source-available, self-hostable, and indexes your entire codebase so every review carries the weight of your full project context."
+  },
+  {
+    "slug": "rag-indexing-vs-dynamic-discovery-ai-code-review",
+    "before": "No vendor lock-in, no source code leaving your infrastructure if you self-host, and a Knowledge Base that lets you encode your team's standards directly into the review process.",
+    "after": "No vendor lock-in, no source code leaving your infrastructure if you self-host and run the models yourself, and a Knowledge Base that lets you encode your team's standards directly into the review process."
+  },
+  {
+    "slug": "claude-code-close-the-loop-octopus-fix",
+    "before": "Octopus Review is open source under the MIT license.",
+    "after": "Octopus Review is source-available under a Modified MIT license."
+  },
+  {
+    "slug": "devs-think-ai-makes-them-faster-data-says-no",
+    "before": "Octopus Review is open source, self-hostable, and designed for exactly this workflow.",
+    "after": "Octopus Review is source-available, self-hostable, and designed for exactly this workflow."
+  },
+  {
+    "slug": "devs-think-ai-makes-them-faster-data-says-no",
+    "before": "Your code stays on your infrastructure, processed in memory only, with source code never stored.",
+    "after": "Your code can stay on your infrastructure if you also run the models yourself, with diffs discarded after each review."
+  },
+  {
+    "slug": "your-ai-writes-the-same-code-5-times",
+    "before": "Octopus Review is open source (Modified MIT) and self-hostable.",
+    "after": "Octopus Review is source-available (Modified MIT) and self-hostable."
+  },
+  {
+    "slug": "your-ai-writes-the-same-code-5-times",
+    "before": "Your code is processed in-memory only, with embeddings persisted but source code never stored.",
+    "after": "Your diffs are discarded after each review, with embeddings persisted while the repository is connected."
+  },
+  {
+    "slug": "ai-code-that-works-is-the-most-dangerous-kind",
+    "before": "Octopus Review is open source and self-hostable.",
+    "after": "Octopus Review is source-available and self-hostable."
+  },
+  {
+    "slug": "ai-code-that-works-is-the-most-dangerous-kind",
+    "before": "Your code stays on your infrastructure, processed in-memory only, with source code never stored.",
+    "after": "Your code can stay on your infrastructure if you also run the models yourself, with diffs discarded after each review."
+  },
+  {
+    "slug": "ai-doubled-your-prs-now-what",
+    "id": "J8",
+    "before": "## The Open Source Advantage",
+    "after": "## The Source-Available Advantage"
+  },
+  {
+    "slug": "ai-doubled-your-prs-now-what",
+    "before": "Octopus Review is open source under a Modified MIT license.",
+    "after": "Octopus Review is source-available under a Modified MIT license."
+  },
+  {
+    "slug": "ai-doubled-your-prs-now-what",
+    "before": "Source code is processed in-memory only, never stored.",
+    "after": "Diffs are discarded after each review, and the code index is kept while the repository is connected."
+  },
+  {
+    "slug": "ai-doubled-your-prs-now-what",
+    "before": "You can self-host it, bring your own API keys (Claude or OpenAI), and keep your code on your own infrastructure.",
+    "after": "You can self-host it, bring your own API keys (Claude or OpenAI), and keep the code index on your own infrastructure."
+  },
+  {
+    "slug": "ai-doubled-your-prs-now-what",
+    "before": "Embeddings are persisted for the vector search, but your actual code stays yours.",
+    "after": "Embeddings are persisted for the vector search, but the diffs are not."
+  },
+  {
+    "slug": "ai-doubled-your-prs-now-what",
+    "before": "No vendor lock-in, no code leaving your network.",
+    "after": "No vendor lock-in, and no code leaving your network if you also run the models yourself."
+  },
+  {
+    "slug": "google-turboquant-meets-rag-what-6x-compression-means-for-code-review",
+    "before": "That is exactly where Octopus Review is headed: open source, self-hostable, and optimized to run well on infrastructure you already own.",
+    "after": "That is exactly where Octopus Review is headed: source-available, self-hostable, and optimized to run well on infrastructure you already own."
+  },
+  {
+    "slug": "auto-fix-wont-save-you-without-context",
+    "before": "Your source code is processed in-memory only with Octopus, embeddings persisted but code never stored.",
+    "after": "Your diffs are discarded after each review with Octopus, embeddings persisted while the repository is connected."
+  },
+  {
+    "slug": "auto-fix-wont-save-you-without-context",
+    "before": "And because it is open source and self-hostable, your code never leaves your infrastructure.",
+    "after": "And because it is source-available and self-hostable, your code can stay on your infrastructure if you also run the models yourself."
+  },
+  {
+    "slug": "auto-fix-wont-save-you-without-context",
+    "before": "No vendor lock-in, no cloud dependency.",
+    "after": "No vendor lock-in, no required cloud dependency."
+  },
+  {
+    "slug": "what-are-the-key-benefits-of-ai-powered-code-reviews-for-development-teams",
+    "before": "This approach ensures sensitive code never leaves the company's controlled environment while still benefiting from intelligent automated reviews.",
+    "after": "Paired with locally run models, this approach ensures sensitive code never leaves the company's controlled environment while still benefiting from intelligent automated reviews."
+  },
+  {
+    "slug": "what-are-the-key-benefits-of-ai-powered-code-reviews-for-development-teams",
+    "id": "J9",
+    "before": "Open-source tools like Octopus provide transparency, community support, and no vendor lock-in.",
+    "after": "Source-available tools like Octopus provide transparency, community support, and no vendor lock-in."
+  },
+  {
+    "slug": "what-are-the-key-benefits-of-ai-powered-code-reviews-for-development-teams",
+    "id": "J10",
+    "before": "Teams can examine the code, customize it freely, and contribute improvements back to the community.",
+    "after": "Teams can examine the code, customize it under the license terms, and contribute improvements back to the community."
+  },
+  {
+    "slug": "pr-reviews-take-91-percent-longer-heres-why",
+    "before": "Octopus Review is open source, self-hostable, and processes your code in memory only (source code is never stored).",
+    "after": "Octopus Review is source-available, self-hostable, and discards your diffs after each review (the code index is kept while the repository is connected)."
+  },
+  {
+    "slug": "pr-reviews-take-91-percent-longer-heres-why",
+    "before": "That single command triggers the same RAG-powered analysis that runs on your automated PR reviews, but on your local machine, before your teammates ever see the code.",
+    "after": "That single command triggers the same RAG-powered analysis that runs on your automated PR reviews, but from your local machine, before your teammates ever see the code."
+  },
+  {
+    "slug": "ai-reviews-your-code-who-else-sees-it",
+    "before": "This is exactly why Octopus Review was built as an open-source, self-hostable AI code review tool.",
+    "after": "This is exactly why Octopus Review was built as a source-available, self-hostable AI code review tool."
+  },
+  {
+    "slug": "ai-reviews-your-code-who-else-sees-it",
+    "id": "J11",
+    "before": "When you deploy Octopus on your own infrastructure, your code never leaves your servers.",
+    "after": "When you deploy Octopus on your own infrastructure and run the models yourself, your code never leaves your servers."
+  },
+  {
+    "slug": "ai-reviews-your-code-who-else-sees-it",
+    "id": "J12",
+    "before": "**Code processed in-memory only.",
+    "after": "**Diffs discarded after each review."
+  },
+  {
+    "slug": "ai-reviews-your-code-who-else-sees-it",
+    "id": "J13",
+    "before": "## The Privacy Advantage of Open Source",
+    "after": "## The Privacy Advantage of Source-Available Code"
+  },
+  {
+    "slug": "ai-reviews-your-code-who-else-sees-it",
+    "before": "Open-source lets you verify it.",
+    "after": "Source-available lets you verify it."
+  },
+  {
+    "slug": "ai-reviews-your-code-who-else-sees-it",
+    "id": "J14",
+    "before": "Octopus Review keeps your data on YOUR servers - no cloud uploads, full compliance control.",
+    "after": "Octopus Review can keep your data on YOUR servers if you also run the models yourself."
+  },
+  {
+    "slug": "ai-reviews-your-code-who-else-sees-it",
+    "id": "J15",
+    "before": " Period.",
+    "after": ""
+  },
+  {
+    "slug": "ai-reviews-your-code-who-else-sees-it",
+    "before": "Octopus analyzes your diffs and codebase context entirely in memory.",
+    "after": "Octopus analyzes your diffs and codebase context for each review."
+  },
+  {
+    "slug": "ai-reviews-your-code-who-else-sees-it",
+    "before": "Source code is never persisted.",
+    "after": "Diffs are discarded once the review completes."
+  },
+  {
+    "slug": "ai-reviews-your-code-who-else-sees-it",
+    "before": "Only vector embeddings are stored for the RAG (Retrieval-Augmented Generation) search index, and those embeddings can't be reverse-engineered back into source code.",
+    "after": "Vector embeddings are stored for the RAG (Retrieval-Augmented Generation) search index while the repository is connected."
+  },
+  {
+    "slug": "ai-reviews-your-code-who-else-sees-it",
+    "id": "J16",
+    "before": "**Full RAG-powered context without the data leak.**",
+    "after": "**Full RAG-powered context on your own server.**"
+  },
+  {
+    "slug": "ai-reviews-your-code-who-else-sees-it",
+    "before": "Octopus will index your codebase locally and start reviewing PRs with inline comments at five severity levels: Critical, Major, Minor, Suggestion, and Tip.",
+    "after": "Octopus will index your codebase and start reviewing PRs with inline comments at five severity levels: Critical, Major, Minor, Suggestion, and Tip."
+  },
+  {
+    "slug": "ai-reviews-your-code-who-else-sees-it",
+    "id": "J17",
+    "before": "It runs on our infrastructure, code is processed in-memory, and we can show you the source code of the tool itself.",
+    "after": "It runs on our infrastructure, diffs are discarded after each review, and we can show you the source code of the tool itself."
+  },
+  {
+    "slug": "ai-reviews-your-code-who-else-sees-it",
+    "before": "The best AI code review tool is one that gives you full context, actionable feedback, and zero data risk.",
+    "after": "The best AI code review tool is one that gives you full context, actionable feedback, and control over your data."
+  },
+  {
+    "slug": "ai-code-churn-is-up-41-your-reviews-arent-ready",
+    "before": "Octopus Review is open source, self-hostable, and processes code in memory only, so your source code never leaves your infrastructure.",
+    "after": "Octopus Review is source-available, self-hostable, and discards diffs after each review, so your source code can stay on your infrastructure if you also run the models yourself."
+  },
+  {
+    "slug": "why-devs-ignore-ai-code-reviews-and-how-to-fix-it",
+    "id": "J18",
+    "before": "## Open Source, Self-Hosted, Your Data Stays Yours",
+    "after": "## Source-Available, Self-Hosted, Your Data Stays Yours"
+  },
+  {
+    "slug": "why-devs-ignore-ai-code-reviews-and-how-to-fix-it",
+    "before": "Octopus Review is open source under a Modified MIT license and fully self-hostable.",
+    "after": "Octopus Review is source-available under a Modified MIT license and fully self-hostable."
+  },
+  {
+    "slug": "why-devs-ignore-ai-code-reviews-and-how-to-fix-it",
+    "before": "Your code is processed in memory only.",
+    "after": "Your diffs are discarded after each review."
+  },
+  {
+    "slug": "why-devs-ignore-ai-code-reviews-and-how-to-fix-it",
+    "before": "Embeddings are persisted for search, but source code is never stored.",
+    "after": "Embeddings are persisted for search while the repository is connected."
+  },
+  {
+    "slug": "stop-trusting-ai-code-start-measuring-it",
+    "before": "Octopus Review is open source (Modified MIT) and fully self-hostable.",
+    "after": "Octopus Review is source-available (Modified MIT) and fully self-hostable."
+  },
+  {
+    "slug": "stop-trusting-ai-code-start-measuring-it",
+    "before": "Your code is processed in-memory only, embeddings are persisted for search, but source code is never stored.",
+    "after": "Your diffs are discarded after each review, and embeddings are persisted for search while the repository is connected."
+  },
+  {
+    "slug": "stop-trusting-ai-code-start-measuring-it",
+    "before": "Your quality data stays on your servers.",
+    "after": "Your quality data can stay on your servers."
+  },
+  {
+    "slug": "vibe-coding-broke-your-style-guide-now-what",
+    "before": "Octopus is an open source AI code review tool that uses RAG (Retrieval-Augmented Generation) to index your entire repository with Qdrant vector search.",
+    "after": "Octopus is a source-available AI code review tool that uses RAG (Retrieval-Augmented Generation) to index your entire repository with Qdrant vector search."
+  },
+  {
+    "slug": "here-s-what-i-learned-competing-against-funded-startups",
+    "before": "ai/), an open source AI code review tool.",
+    "after": "ai/), a source-available AI code review tool."
+  },
+  {
+    "slug": "here-s-what-i-learned-competing-against-funded-startups",
+    "id": "J19",
+    "before": "That's why I chose to make Octopus open source and free.",
+    "after": "That's why I chose to make Octopus source-available and free."
+  },
+  {
+    "slug": "here-s-what-i-learned-competing-against-funded-startups",
+    "before": "It's free, it's MIT licensed, and if the reviews are off, [open an issue](https://github.",
+    "after": "It's free, it's Modified MIT licensed, and if the reviews are off, [open an issue](https://github."
+  },
+  {
+    "slug": "here-s-what-i-learned-competing-against-funded-startups",
+    "id": "J20",
+    "before": "**Tags:** `ai`, `code-review`, `open-source`, `devtools`, `startup`, `competition`, `lessons-learned`",
+    "after": "**Tags:** `ai`, `code-review`, `source-available`, `devtools`, `startup`, `competition`, `lessons-learned`"
+  },
+  {
+    "slug": "here-s-what-i-learned-competing-against-funded-startups",
+    "before": "Discover how one developer built an open source AI code review tool and tested it against 6 funded competitors in the space.",
+    "after": "Discover how one developer built a source-available AI code review tool and tested it against 6 funded competitors in the space."
+  },
+  {
+    "slug": "building-an-ai-code-review-tool-architecture-and-lessons-learned",
+    "before": "Octopus is open source and [available on GitHub](https://github.",
+    "after": "Octopus is source-available and [available on GitHub](https://github."
+  },
+  {
+    "slug": "building-an-ai-code-review-tool-architecture-and-lessons-learned",
+    "before": "You can also [self-host it](https://octopus-review.ai/docs/self-hosting) if your code can't leave your infrastructure.",
+    "after": "You can also [self-host it](https://octopus-review.ai/docs/self-hosting) and run the models yourself if your code can't leave your infrastructure."
+  }
+]

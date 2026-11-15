@@ -78,7 +78,7 @@ Every result has one `outcome` code. A period refused before any read is returne
 | `delivery_pending` | no | A purchase or refund row is pending or leased |
 | `delivery_blocked` | no | A purchase or refund row is blocked |
 | `payload_invalid`, `alias_conflict`, `source_conflict` | no | Delivered rows cannot be read as one event each |
-| `too_many_entries` | no | More than 1,000 events; `fitsFrom` is the earliest start that fits |
+| `too_many_entries` | no | More than 1,000 events; `fitsFrom` is the earliest start that fits, or null if no shorter non-empty period fits |
 | `body_too_large` | no | The request would exceed the receiver's byte limit |
 | `receiver_identity_unavailable`, `receiver_identity_mismatch` | no | The receiver did not identify as the expected source and key |
 | `agreed` | yes | The receiver saved the reconciliation; `reconciliationId` names it |
@@ -95,9 +95,9 @@ The stored document holds the period, `requestedFrom`, the outcome, the declared
 
 `{"operation":"reconcile","from":"...","to":"..."}` on the operator route declares one period. It answers `201` with the stored observation, or `400` with `{"error":"Period refused","reason":"..."}` for a refused period.
 
-The daily job `marketing-reconciliation` runs at 05:30 UTC on engine replicas when `UNIFIED_ADS_ENABLED=true` and `UNIFIED_ADS_RECONCILIATION_ENABLED=true` on the hosted application. Unset or false removes a stored schedule at engine startup, and the worker rechecks the flag. It needs `UNIFIED_ADS_CASH_EXPECTED_BINDING`. A failed run is not repeated; the next day's run replaces it.
+The daily job `marketing-reconciliation` runs at 05:30 UTC on engine replicas when `UNIFIED_ADS_ENABLED=true` and `UNIFIED_ADS_RECONCILIATION_ENABLED=true` on the hosted application. Unset or false removes a stored schedule at engine startup, and the worker rechecks the flag. It needs `UNIFIED_ADS_CASH_EXPECTED_BINDING`. A failed run is not repeated; the next scheduled run attempts a newer window.
 
-The job declares one trailing window. `to` is the run time minus two hours, so a sale still being delivered does not make the result stale at once. `from` is the later of activation and `to` minus 92 days. When that window holds more than 1,000 events, `from` moves forward to the first instant from which 1,000 or fewer fit; the refusal and the shorter declaration are both stored, and the second keeps the wider start in `requestedFrom`. A purchase or refund that arrives later for a declared period makes the receiver's saved reconciliation stale, and the next run sends a newer one.
+The job declares one trailing window. `to` is the run time minus two hours, so a sale still being delivered does not make the result stale at once. `from` is the later of activation and `to` minus 92 days. When that window holds more than 1,000 events and a shorter non-empty window fits, the job attempts it from the first instant at which 1,000 or fewer fit. Both outcomes are stored, and the second keeps the wider start in `requestedFrom`. Otherwise the refusal stands. A purchase or refund that arrives later for a declared period makes the receiver's saved reconciliation stale; the next run attempts a newer declaration.
 
 Before a first LIVE run: apply `20260922140000_marketing_cash_observations`, set the binding from independently retained owner setup, and accept the declaration against a TEST source. Enabling the flag is a separate, coordinated step.
 

@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.23] - 2026-11-15
+
 ### Added
 
-- Operators: Octopus can tell Unified Ads that its purchases and refunds for a period are complete, once a day or on request. The daily job is off unless `UNIFIED_ADS_RECONCILIATION_ENABLED=true`; manual requests do not require that flag. Both need the retained-cash observation migration and a verified source and project binding. The statement comes from the billing ledger alone, with no check against Stripe; read [what it does not cover](docs/integrations/retained-cash-observations.md#complete-period-declaration) before enabling.
+- Octopus Cloud can now report its completed sales for a period to our own advertising tool. Nothing changes for customers.
 
 ## [1.4.22] - 2026-11-15
 

@@ -44,15 +44,19 @@ async function main() {
   for (const edit of edits) bySlug.set(edit.slug, [...(bySlug.get(edit.slug) ?? []), edit]);
   console.log(`[blog-edits] ${apply ? "APPLY" : "DRY RUN (nothing is saved)"} · ${API_URL} · ${edits.length} edits in ${bySlug.size} posts`);
 
-  const posts = new Map<string, ApiPost>();
-  for (let page = 1; page <= 500; page++) {
-    const res = await fetch(`${API_URL}/api/blog?status=published&includeContent=true&limit=50&page=${page}`, { headers });
-    if (!res.ok) throw new Error(`GET /api/blog failed: ${res.status} ${res.statusText}`);
-    const data = (await res.json()) as { posts?: ApiPost[]; pagination?: { totalPages?: number } };
-    for (const post of data.posts ?? []) posts.set(post.slug, post);
-    const totalPages = Number(data.pagination?.totalPages);
-    if (!Number.isFinite(totalPages) || page >= totalPages) break;
-  }
+  const loadPublishedPosts = async () => {
+    const found = new Map<string, ApiPost>();
+    for (let page = 1; page <= 500; page++) {
+      const res = await fetch(`${API_URL}/api/blog?status=published&includeContent=true&limit=50&page=${page}`, { headers });
+      if (!res.ok) throw new Error(`GET /api/blog failed: ${res.status} ${res.statusText}`);
+      const data = (await res.json()) as { posts?: ApiPost[]; pagination?: { totalPages?: number } };
+      for (const post of data.posts ?? []) found.set(post.slug, post);
+      const totalPages = Number(data.pagination?.totalPages);
+      if (!Number.isFinite(totalPages) || page >= totalPages) break;
+    }
+    return found;
+  };
+  const posts = await loadPublishedPosts();
 
   // Place every edit first. One edit that cannot be placed stops the whole run.
   const updates: Array<{ post: ApiPost; changed: Record<string, string> }> = [];
@@ -79,15 +83,33 @@ async function main() {
     console.log(`Dry run: ${updates.length} post(s) would be updated. Re-run with --apply to save.`);
     return;
   }
+  let saved = 0;
+  const stop = (message: string): never => {
+    console.error(`${message}\n${saved} post(s) were saved before this one and stay saved. Run again to finish: edits already applied are skipped.`);
+    process.exit(1);
+  };
   for (const { post, changed } of updates) {
-    const res = await fetch(`${API_URL}/api/blog`, { method: "PATCH", headers, body: JSON.stringify({ id: post.id, ...changed }) });
-    if (!res.ok) {
-      console.error(`PATCH failed for ${post.slug}: ${res.status} ${res.statusText}\n${await res.text()}\nPosts before this one were saved; run again to finish.`);
-      process.exit(1);
+    // Read the post again just before saving. If someone edited or unpublished
+    // it since the edits were placed, saving would overwrite their change.
+    let current: ApiPost | undefined;
+    try {
+      current = (await loadPublishedPosts()).get(post.slug);
+    } catch (error) {
+      stop(`Could not re-read ${post.slug} before saving: ${error instanceof Error ? error.message : String(error)}`);
     }
+    if (!current || current.title !== post.title || current.excerpt !== post.excerpt || current.content !== post.content) {
+      stop(`${post.slug} was changed or unpublished after the edits were placed; it was not saved.`);
+    }
+    try {
+      const res = await fetch(`${API_URL}/api/blog`, { method: "PATCH", headers, body: JSON.stringify({ id: post.id, ...changed }) });
+      if (!res.ok) stop(`PATCH failed for ${post.slug}: ${res.status} ${res.statusText}\n${await res.text().catch(() => "")}`);
+    } catch (error) {
+      stop(`PATCH did not complete for ${post.slug} (it may or may not have been saved): ${error instanceof Error ? error.message : String(error)}`);
+    }
+    saved++;
     console.log(`✓ updated ${API_URL}/blog/${post.slug}`);
   }
-  console.log(`Done: ${updates.length} post(s) updated.`);
+  console.log(`Done: ${saved} post(s) updated.`);
 }
 
 main().catch((error) => {

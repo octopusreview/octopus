@@ -73,3 +73,24 @@ it("counts a deletion as done when the text to delete is already gone", () => {
   expect(result).toMatchObject({ applied: 1, alreadyApplied: 1, problems: [] });
   expect(result.changed.content).toContain("Your code never leaves your servers.\n");
 });
+
+it("refuses an edit whose new text contains the old text, which a second run would apply again", () => {
+  const result = applyBlogEdits(post, [{ before: "self-hostable", after: "self-hostable and source-available" }]);
+  expect(result.changed).toEqual({});
+  expect(result.problems).toEqual(['new text contains the old text, so a second run would apply it again: "self-hostable"']);
+});
+
+it("refuses two edits where one changes the other's new text, so every accepted list can be run twice", () => {
+  const overlapping = [
+    { before: "Octopus is open source and self-hostable.", after: "Octopus is source-available and can be self-hosted." },
+    { before: "can be self-hosted", after: "runs on your own servers" },
+  ];
+  const result = applyBlogEdits(post, overlapping);
+  expect(result.problems).toEqual(['changed again by another edit in the list; combine them into one: "Octopus is open source and self-hostable."']);
+
+  // The same intent as one edit is accepted, and a second run changes nothing.
+  const combined = [{ before: "Octopus is open source and self-hostable.", after: "Octopus is source-available and runs on your own servers." }];
+  const first = applyBlogEdits(post, combined);
+  expect(first.problems).toEqual([]);
+  expect(applyBlogEdits({ ...post, ...first.changed }, combined)).toEqual({ changed: {}, applied: 0, alreadyApplied: 1, problems: [] });
+});

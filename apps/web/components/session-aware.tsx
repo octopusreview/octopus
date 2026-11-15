@@ -17,17 +17,15 @@ export function SessionSwitch({ signedIn, signedOut }: { signedIn: ReactNode; si
 /** A call-to-action link: to sign-in for a signed-out visitor, to the dashboard for a signed-in one. */
 export function SessionLink({
   signedOutLabel,
-  signedInLabel = "Go to Dashboard",
   className,
 }: {
   signedOutLabel: string;
-  signedInLabel?: string;
   className?: string;
 }) {
   const { data: session } = useSession();
   return (
     <Link href={session ? "/dashboard" : "/login"} className={className}>
-      {session ? signedInLabel : signedOutLabel}
+      {session ? "Go to Dashboard" : signedOutLabel}
     </Link>
   );
 }

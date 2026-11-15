@@ -73,7 +73,7 @@ async function readStored(db: Pick<Prisma.TransactionClient, "$queryRaw">, id: s
   const rows = await db.$queryRaw<Stored[]>`SELECT * FROM marketing_cash_observations WHERE id=${id} AND "sourceId"=${config.sourceId} AND environment=${config.environment}`;
   const row = rows[0]; cashAssert(row && cashDigest(row.body) === row.digest); return row;
 }
-async function append(db: Pick<Prisma.TransactionClient, "$executeRaw">, config: MarketingConfig, kind: string, parentId: string | null, document: unknown) {
+export async function append(db: Pick<Prisma.TransactionClient, "$executeRaw">, config: MarketingConfig, kind: string, parentId: string | null, document: unknown) {
   const id = randomUUID(); const body = JSON.stringify({ id, ...document as object }); cashAssert(Buffer.byteLength(body) <= MAX_DOCUMENT); const digest = cashDigest(body);
   await db.$executeRaw`INSERT INTO marketing_cash_observations (id,"sourceId",environment,kind,"parentId",digest,body) VALUES (${id},${config.sourceId},${config.environment},${kind},${parentId},${digest},${body})`;
   return { id, digest, document: JSON.parse(body) };

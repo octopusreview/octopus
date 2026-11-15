@@ -188,6 +188,8 @@ export async function startQueue(): Promise<PgBoss> {
     retryLimit: 0,
     expireInSeconds: 300,
   });
+  // One declaration a day; a failed run is never repeated, the next day's run replaces it.
+  await boss.createQueue("marketing-reconciliation", { retryLimit: 0, expireInSeconds: 300 });
 
   // Admin-triggered Ollama model downloads (self-hosted). Long expiry — a
   // large model is many GB. No auto-retry: runOllamaPull records failures in

@@ -32,7 +32,13 @@ async function main() {
   const API_URL = (process.env.OCTOPUS_API_URL ?? "https://octopus-review.ai").replace(/\/$/, "");
   const headers = { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" };
 
-  const edits = JSON.parse(readFileSync(file, "utf8")) as Array<BlogEdit & { slug: string }>;
+  const edits: unknown = JSON.parse(readFileSync(file, "utf8"));
+  if (!Array.isArray(edits) || !edits.every((edit) =>
+    edit !== null && typeof edit === "object" &&
+    typeof edit.slug === "string" && edit.slug.length > 0 &&
+    typeof edit.before === "string" && edit.before.length > 0 &&
+    typeof edit.after === "string"
+  )) throw new Error("Edits must be a list of entries with a nonempty slug and before, and a string after.");
   const bySlug = new Map<string, BlogEdit[]>();
   for (const edit of edits) bySlug.set(edit.slug, [...(bySlug.get(edit.slug) ?? []), edit]);
   console.log(`[blog-edits] ${apply ? "APPLY" : "DRY RUN (nothing is saved)"} · ${API_URL} · ${edits.length} edits in ${bySlug.size} posts`);

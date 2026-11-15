@@ -30,6 +30,20 @@ it("refuses an edit whose text is missing or occurs more than once, and names it
   expect(result.problems).toEqual(['not found: "This sentence is not in the post."', 'found 2 times: "open source"']);
 });
 
+it("counts overlapping matches in every post field", () => {
+  for (const field of ["title", "excerpt", "content"] as const) {
+    const result = applyBlogEdits({ title: "", excerpt: null, content: "", [field]: "aaa" }, [
+      { before: "aa", after: "b" },
+    ]);
+    expect(result.changed).toEqual({});
+    expect(result.problems).toEqual(['found 2 times: "aa"']);
+  }
+});
+
+it("rejects an empty search text", () => {
+  expect(applyBlogEdits(post, [{ before: "", after: "x" }]).problems).toEqual(['not found: ""']);
+});
+
 it("treats an edit that was applied before as done, so a second run changes nothing", () => {
   const edits = [{ before: "Octopus is open source and self-hostable.", after: "Octopus is source-available and self-hostable." }];
   const first = applyBlogEdits(post, edits);

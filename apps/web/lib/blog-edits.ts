@@ -10,7 +10,11 @@ export type BlogEditResult = {
 };
 
 const FIELDS = ["title", "excerpt", "content"] as const;
-const occurrences = (text: string, part: string) => text.split(part).length - 1;
+const occurrences = (text: string, part: string) => {
+  let count = 0;
+  for (let index = text.indexOf(part); index !== -1; index = text.indexOf(part, index + 1)) count++;
+  return count;
+};
 const preview = (text: string) => (text.length > 70 ? `${text.slice(0, 70)}…` : text);
 
 /**
@@ -23,6 +27,10 @@ export function applyBlogEdits(post: EditablePost, edits: BlogEdit[]): BlogEditR
   const text = { title: post.title, excerpt: post.excerpt ?? "", content: post.content };
   const result: BlogEditResult = { changed: {}, applied: 0, alreadyApplied: 0, problems: [] };
   for (const edit of edits) {
+    if (!edit.before) {
+      result.problems.push('not found: ""');
+      continue;
+    }
     const found = FIELDS.reduce((sum, field) => sum + occurrences(text[field], edit.before), 0);
     if (found === 1) {
       const field = FIELDS.find((name) => text[name].includes(edit.before))!;

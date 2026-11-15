@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.21] - 2026-11-15
+
+### Added
+
+- A page on self-hosted AI code review: what stays on your own servers, what you need to run it, what it costs, and when Octopus Cloud is the better choice.
+- A comparison of eight AI code review tools, with prices and features read from each vendor's own site.
+- The pricing page now shows what a review typically costs, by model and by review size.
+
+### Fixed
+
+- The CodeRabbit comparison page said CodeRabbit could not be self-hosted. It can, on its Enterprise plans.
+
 ## [1.4.20] - 2026-11-14
 
 ### Added

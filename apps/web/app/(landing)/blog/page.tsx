@@ -4,8 +4,6 @@ import { notFound } from "next/navigation";
 import { isPostgresSafeText } from "@/lib/bounded-json";
 import { ORGANIZATION_ENTITY, SITE_URL, blogItemListJsonLd, jsonLd } from "@/lib/structured-data";
 import Link from "@/components/link";
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { LandingFooter } from "@/components/landing-footer";
 import { LandingMobileNav } from "@/components/landing-mobile-nav";
@@ -96,10 +94,6 @@ export default async function BlogPage({
   const category = categoryParam?.trim() || "";
   const tag = tagParam?.trim() || "";
 
-  const session = await auth.api
-    .getSession({ headers: await headers() })
-    .catch(() => null);
-  const isLoggedIn = !!session;
 
   // Base scope: every published, non-deleted post. The sidebar aggregations
   // use this so they always reflect the full corpus, not the active filter.
@@ -192,8 +186,8 @@ export default async function BlogPage({
   return (
     <div className="min-h-screen bg-background text-white">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(blogJsonLd) }} />
-      <LandingDesktopNav isLoggedIn={isLoggedIn} />
-      <LandingMobileNav isLoggedIn={isLoggedIn} />
+      <LandingDesktopNav />
+      <LandingMobileNav />
 
       <main className="mx-auto max-w-6xl px-6 pt-32 pb-20">
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

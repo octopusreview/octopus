@@ -308,6 +308,8 @@ export async function POST(request: NextRequest) {
     });
 
     revalidatePath("/blog");
+    // The post's own page may have been cached as "not found" before it existed.
+    revalidatePath(`/blog/${post.slug}`);
     revalidatePath("/admin/blog");
 
     console.log(

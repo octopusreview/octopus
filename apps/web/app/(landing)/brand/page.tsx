@@ -1,7 +1,5 @@
 import Image from "next/image";
 import type { Metadata } from "next";
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
 import { LandingFooter } from "@/components/landing-footer";
 import { LandingMobileNav } from "@/components/landing-mobile-nav";
 import { LandingDesktopNav } from "@/components/landing-desktop-nav";
@@ -32,7 +30,6 @@ const brandColors = [
 /* ------------------------------------------------------------------ */
 
 export default async function BrandPage() {
-  const session = await auth.api.getSession({ headers: await headers() });
   return (
     <div className="dark relative min-h-screen bg-background text-[#a0a0a0] selection:bg-white/20">
       {/* Grain overlay */}
@@ -45,10 +42,10 @@ export default async function BrandPage() {
       />
 
       {/* Mobile nav */}
-      <LandingMobileNav isLoggedIn={!!session} />
+      <LandingMobileNav />
 
       {/* Desktop nav */}
-      <LandingDesktopNav isLoggedIn={!!session} />
+      <LandingDesktopNav />
 
       {/* Hero */}
       <section className="relative z-10 px-6 pb-16 pt-28 md:px-8 md:pb-24 md:pt-40">

@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
 import { TrackedLink } from "@/components/tracked-link";
+import { SessionSwitch } from "@/components/session-aware";
 import { IconArrowRight } from "@tabler/icons-react";
 import { DocsBreadcrumb } from "./docs-breadcrumb";
 import { DocsMobileMenu } from "./docs-mobile-menu";
@@ -16,18 +15,11 @@ export const metadata: Metadata = {
   title: { template: "%s | Octopus Docs", default: "Octopus Docs" },
 };
 
-export default async function DocsLayout({
+export default function DocsLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  let session = null;
-  try {
-    session = await auth.api.getSession({ headers: await headers() });
-  } catch {
-    session = null;
-  }
-
   return (
     <div className="dark min-h-screen bg-background text-[#a0a0a0]">
       {/* Top bar */}
@@ -54,27 +46,30 @@ export default async function DocsLayout({
           </TrackedLink>
           <DocsBreadcrumb />
           <div className="ml-auto shrink-0">
-            {session ? (
-              <TrackedLink
-                href="/dashboard"
-                event="cta_click"
-                eventParams={{ location: "docs_header", label: "dashboard" }}
-                className="relative inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-medium text-background transition-colors after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] hover:bg-[#e0e0e0]"
-              >
-                Dashboard
-                <IconArrowRight className="size-3.5" />
-              </TrackedLink>
-            ) : (
-              <TrackedLink
-                href="/login"
-                event="cta_click"
-                eventParams={{ location: "docs_header", label: "get_started" }}
-                className="relative inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-medium text-background transition-colors after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] hover:bg-[#e0e0e0]"
-              >
-                Get Started
-                <IconArrowRight className="size-3.5" />
-              </TrackedLink>
-            )}
+            <SessionSwitch
+              signedIn={
+                <TrackedLink
+                  href="/dashboard"
+                  event="cta_click"
+                  eventParams={{ location: "docs_header", label: "dashboard" }}
+                  className="relative inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-medium text-background transition-colors after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] hover:bg-[#e0e0e0]"
+                >
+                  Dashboard
+                  <IconArrowRight className="size-3.5" />
+                </TrackedLink>
+              }
+              signedOut={
+                <TrackedLink
+                  href="/login"
+                  event="cta_click"
+                  eventParams={{ location: "docs_header", label: "get_started" }}
+                  className="relative inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-medium text-background transition-colors after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] hover:bg-[#e0e0e0]"
+                >
+                  Get Started
+                  <IconArrowRight className="size-3.5" />
+                </TrackedLink>
+              }
+            />
           </div>
         </div>
       </header>

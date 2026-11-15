@@ -1,6 +1,4 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
 import { LandingFooter } from "@/components/landing-footer";
 import { LandingMobileNav } from "@/components/landing-mobile-nav";
 import { LandingDesktopNav } from "@/components/landing-desktop-nav";
@@ -137,13 +135,11 @@ const HOW_TO_CHOOSE = [
 
 const h2Class = "text-2xl font-bold tracking-tight text-white sm:text-3xl";
 
-export default async function CodeRabbitAlternativesPage() {
-  const session = await auth.api.getSession({ headers: await headers() }).catch(() => null);
-
+export default function CodeRabbitAlternativesPage() {
   return (
     <div className="dark relative min-h-screen bg-background text-[#a0a0a0] selection:bg-white/20">
-      <LandingMobileNav isLoggedIn={!!session} />
-      <LandingDesktopNav isLoggedIn={!!session} />
+      <LandingMobileNav />
+      <LandingDesktopNav />
 
       <section className="relative z-10 px-6 pt-32 pb-16 md:px-8 md:pt-40 md:pb-20">
         <div className="mx-auto max-w-4xl text-center">

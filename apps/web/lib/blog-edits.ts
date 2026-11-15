@@ -19,9 +19,9 @@ const preview = (text: string) => (text.length > 70 ? `${text.slice(0, 70)}…` 
 
 /**
  * Applies exact-text replacements to one post. Each `before` must occur
- * exactly once across the title, the excerpt and the body, so an edit can
- * never land in the wrong place. An edit whose `before` is gone while its
- * `after` is present counts as already applied, which makes a second run safe.
+ * exactly once across the title, excerpt and body. An edit whose `before` is
+ * absent while its `after` is present counts as already applied. This also
+ * covers deletions, since an empty `after` is present in every field.
  */
 export function applyBlogEdits(post: EditablePost, edits: BlogEdit[]): BlogEditResult {
   const text = { title: post.title, excerpt: post.excerpt ?? "", content: post.content };

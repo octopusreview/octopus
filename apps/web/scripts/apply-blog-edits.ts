@@ -6,8 +6,9 @@
  *     BLOG_API_TOKEN=... bun run apps/web/scripts/apply-blog-edits.ts <edits.json> --apply
  *
  * <edits.json> is a list of { "slug", "before", "after" }. Each `before` must
- * occur exactly once in its post (title, excerpt or body). Nothing is saved
- * unless every edit in the file can be placed; a second run changes nothing.
+ * occur exactly once in its post (title, excerpt or body), or be recognized
+ * as already applied by applyBlogEdits. Nothing is saved unless every edit
+ * in the file can be placed or recognized as already applied.
  *
  * Env: BLOG_API_TOKEN (required, needs blog:read and blog:update),
  *      OCTOPUS_API_URL (default https://octopus-review.ai).

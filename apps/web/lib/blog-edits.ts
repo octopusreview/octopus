@@ -1,0 +1,41 @@
+export type BlogEdit = { before: string; after: string };
+export type EditablePost = { title: string; excerpt: string | null; content: string };
+export type BlogEditResult = {
+  /** Only the fields that differ from the post as given. */
+  changed: Partial<Record<keyof EditablePost, string>>;
+  applied: number;
+  alreadyApplied: number;
+  /** Non-empty means the post must not be saved. */
+  problems: string[];
+};
+
+const FIELDS = ["title", "excerpt", "content"] as const;
+const occurrences = (text: string, part: string) => text.split(part).length - 1;
+const preview = (text: string) => (text.length > 70 ? `${text.slice(0, 70)}…` : text);
+
+/**
+ * Applies exact-text replacements to one post. Each `before` must occur
+ * exactly once across the title, the excerpt and the body, so an edit can
+ * never land in the wrong place. An edit whose `before` is gone while its
+ * `after` is present counts as already applied, which makes a second run safe.
+ */
+export function applyBlogEdits(post: EditablePost, edits: BlogEdit[]): BlogEditResult {
+  const text = { title: post.title, excerpt: post.excerpt ?? "", content: post.content };
+  const result: BlogEditResult = { changed: {}, applied: 0, alreadyApplied: 0, problems: [] };
+  for (const edit of edits) {
+    const found = FIELDS.reduce((sum, field) => sum + occurrences(text[field], edit.before), 0);
+    if (found === 1) {
+      const field = FIELDS.find((name) => text[name].includes(edit.before))!;
+      text[field] = text[field].replace(edit.before, () => edit.after);
+      result.applied++;
+    } else if (found === 0 && FIELDS.some((field) => text[field].includes(edit.after))) {
+      result.alreadyApplied++;
+    } else {
+      result.problems.push(`${found === 0 ? "not found" : `found ${found} times`}: "${preview(edit.before)}"`);
+    }
+  }
+  for (const field of FIELDS) {
+    if (text[field] !== (post[field] ?? "")) result.changed[field] = text[field];
+  }
+  return result;
+}

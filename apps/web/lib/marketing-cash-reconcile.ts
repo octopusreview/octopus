@@ -5,6 +5,7 @@ import { normalizeMarketingCash } from "./marketing-cash-contract";
 import { readMarketingLedger } from "./marketing-ledger";
 import { cashAssert, cashBinding, cashDigest, cashObject, cashTime, type CashBinding } from "./marketing-cash-compare";
 import { append } from "./marketing-cash-observation";
+import { isSelfHosted } from "./self-hosted";
 
 /** Receiver limits for one complete-period declaration (receipt comparison version 2). */
 export const RECONCILIATION_MAX_ENTRIES = 1000;
@@ -194,9 +195,13 @@ export async function reconcileTrailingCashWindow(config: MarketingConfig, bindi
   return reconcileCashPeriod(config, binding, { from: fitsFrom, to: widest.to }, send, now, widest.from);
 }
 
-/** Off unless delivery and this separate flag are both on for the hosted application. */
-export function cashReconciliationEnabled(env: Record<string, string | undefined>): boolean {
-  return env.UNIFIED_ADS_ENABLED === "true" && env.UNIFIED_ADS_RECONCILIATION_ENABLED === "true"
+/**
+ * Off unless delivery and this separate flag are both on for the hosted application.
+ * `selfHosted` is the shared server-side boundary: it sees the build-time flag of the official self-hosted image,
+ * which a lookup on a passed `env` object cannot.
+ */
+export function cashReconciliationEnabled(env: Record<string, string | undefined>, selfHosted = isSelfHosted()): boolean {
+  return !selfHosted && env.UNIFIED_ADS_ENABLED === "true" && env.UNIFIED_ADS_RECONCILIATION_ENABLED === "true"
     && env.NEXT_PUBLIC_OCTOPUS_SELF_HOSTED !== "true" && env.OCTOPUS_SELF_HOSTED !== "true";
 }
 

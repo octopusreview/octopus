@@ -176,5 +176,17 @@ describe("complete-period reconciliation", () => {
       // The worker rechecks the flag: no configuration, database or receiver is touched.
       expect(await runCashReconciliation(env, new Date(), (async () => { throw new Error("must not send"); }) as unknown as typeof fetch)).toEqual({ outcome: "disabled", sent: false, observation: null });
     }
+    // The official self-hosted image carries its flag from the build, not in the environment the job is handed.
+    expect(cashReconciliationEnabled(on, true)).toBe(false);
+    expect(cashReconciliationEnabled(on, false)).toBe(true);
+    const built = process.env.NEXT_PUBLIC_OCTOPUS_SELF_HOSTED;
+    process.env.NEXT_PUBLIC_OCTOPUS_SELF_HOSTED = "true";
+    try {
+      expect(cashReconciliationEnabled(on)).toBe(false);
+      expect(await calls(on)).toEqual([["unschedule", "marketing-reconciliation"]]);
+      expect(await runCashReconciliation(on, new Date(), (async () => { throw new Error("must not send"); }) as unknown as typeof fetch)).toEqual({ outcome: "disabled", sent: false, observation: null });
+    } finally {
+      if (built === undefined) delete process.env.NEXT_PUBLIC_OCTOPUS_SELF_HOSTED; else process.env.NEXT_PUBLIC_OCTOPUS_SELF_HOSTED = built;
+    }
   });
 });

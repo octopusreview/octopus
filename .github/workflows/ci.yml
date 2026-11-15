@@ -186,7 +186,7 @@ jobs:
           FORGEJO_CONNECTOR_TEST_DATABASE_URL: "postgresql://octopus:octopus@localhost:5432/octopus_agent_task_test"
 
       - name: Test conversion cash facts and transport
-        run: bun test lib/__tests__/marketing-conversions.test.ts lib/__tests__/marketing-stripe.test.ts
+        run: bun test lib/__tests__/marketing-conversions.test.ts lib/__tests__/marketing-stripe.test.ts lib/__tests__/marketing-cash-observation.test.ts lib/__tests__/marketing-cash-reconcile.test.ts
         working-directory: apps/web
 
       - name: Test conversion migration, capture and delivery recovery against PostgreSQL

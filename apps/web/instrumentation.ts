@@ -125,6 +125,10 @@ export async function register() {
         await boss.unschedule("marketing-contexts");
       }
 
+      // Off unless UNIFIED_ADS_RECONCILIATION_ENABLED is also true; an existing schedule is removed on opt-out.
+      const { scheduleCashReconciliation } = await import("./lib/marketing-cash-reconcile");
+      await scheduleCashReconciliation(boss);
+
       // Daily subscription renewals (06:00 UTC — offset from the jobs above).
       // Cloud-only: self-hosted installs have no billing path. Charges due
       // orgs' saved cards and grants the period's credits; failures retry

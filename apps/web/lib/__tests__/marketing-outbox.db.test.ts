@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { Client } from "pg";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { conversionId, type MarketingConfig } from "../marketing-conversions";
 import { trackingIdentity, TRACKING_MODEL, type TrackingConfig } from "../marketing-tracking";
@@ -838,5 +838,239 @@ async function due(id: string) {
     } finally {
       for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
     }
+  });
+
+  describe("complete-period reconciliation", () => {
+    const binding = { sourceId: config.sourceId, environment: "test" as const, keyId: receiptId, capabilities: ["purchases", "refunds"], project: { projectId: randomUUID(), version: 7 } };
+    const scoped = { ...config, serverKey: `uads_${receiptId}_${"a".repeat(43)}` };
+    // The fixture charge is created at 2026-09-14T00:00:00Z and its refund a minute later.
+    const day = { from: "2026-09-14T00:00:00.000Z", to: "2026-09-15T00:00:00.000Z" };
+    const now = new Date("2026-09-20T00:00:00.000Z");
+    const purchaseEntry = `{"eventType":"purchase","transactionId":"${conversionId("payment", "pi_fixture")}","amountMinor":"14800","currency":"USD","occurredAt":"2026-09-14T00:00:00.000Z"}`;
+    const refundEntry = `{"eventType":"refund","transactionId":"${conversionId("refund", "re_fixture")}","amountMinor":"1000","currency":"USD","occurredAt":"2026-09-14T00:01:00.000Z"}`;
+    const bodyOf = (period: { from: string; to: string }, entries: string[]) => `{"schemaVersion":2,"period":{"from":"${period.from}","to":"${period.to}"},"complete":true,"entries":[${entries.join(",")}]}`;
+    /** Synthetic receiver: agrees unless told otherwise, and records what it was sent. */
+    function receiver(change: Record<string, unknown> = {}) {
+      const bodies: string[] = []; const reconciliationId = randomUUID();
+      const send = (async (input: RequestInfo | URL) => {
+        const request = input as Request;
+        expect(request.url.startsWith("https://ads.weezboo.com/api/conversion-events/")).toBe(true);
+        if (request.method === "GET") return Response.json({ schemaVersion: 1, sourceId: config.sourceId, environment: "test", keyId: receiptId, capabilities: binding.capabilities });
+        const text = await request.text(); bodies.push(text);
+        const sent = JSON.parse(text) as { period: object; entries: { eventType: string }[] };
+        return Response.json({ schemaVersion: 2, ...binding, period: sent.period, observation: { startedAt: now.toISOString(), completedAt: now.toISOString() }, agreeing: true,
+          declared: { purchases: sent.entries.filter(e => e.eventType === "purchase").length, refunds: sent.entries.filter(e => e.eventType === "refund").length },
+          notReceived: { count: 0, entries: [] }, notDeclared: { purchases: 0, refunds: 0 }, reconciliationId, ...change });
+      }) as typeof fetch;
+      return { send, bodies, reconciliationId };
+    }
+    const state = async () => ({
+      outbox: await prisma.marketingConversion.findMany({ orderBy: { id: "asc" } }),
+      ledger: (await db.query("SELECT * FROM credit_transactions ORDER BY id")).rows,
+      organizations: (await db.query("SELECT * FROM organizations ORDER BY id")).rows,
+      attributions: (await db.query("SELECT * FROM marketing_payment_attributions ORDER BY id")).rows,
+    });
+    const observations = async () => Number((await db.query("SELECT count(*) FROM marketing_cash_observations")).rows[0].count);
+    /** Real capture and dispatch of every due row; returns the bytes the receiver was sent. */
+    async function deliver(f = fixture()) {
+      const sent: string[] = [];
+      await outbox.captureMarketingConversions(config);
+      for (;;) {
+        const row = await outbox.claimMarketingConversion(config);
+        if (!row) return sent;
+        expect(await outbox.processMarketingConversion(row, config, f.reader, withIdentity(async request => { const text = await request.text(); const duplicate = sent.includes(text); sent.push(text); return received(duplicate); }))).toBe("delivered");
+      }
+    }
+    const deliveredRow = (i: number) => {
+      const occurredAt = new Date(Date.parse("2026-10-01T00:00:00.000Z") + i * 1000); const id = `payment_${String(i).padStart(4, "0")}`;
+      return { sourceId: config.sourceId, environment: "test", originKey: `payment:pi_${i}`, kind: "purchase", reference: `pi_${i}`, organizationId: "org_fixture", sourceCreatedAt: occurredAt,
+        payload: JSON.stringify({ schemaVersion: 1, eventId: id, eventType: "purchase", transactionId: id, customerId: "organization_a", occurredAt: occurredAt.toISOString(), amountMinor: "100", currency: "USD", purchaseKind: "top_up" }),
+        status: "delivered", receiptId: randomUUID(), httpStatus: 201, deliveredAt: occurredAt };
+    };
+
+    it("declares exactly the delivered in-period rows from the bytes that were sent, and changes nothing else", async () => {
+      const reconcile = await import("../marketing-cash-reconcile"); const observation = await import("../marketing-cash-observation");
+      await ledger("refund", "usage", null, "re_fixture");
+      await ledger("cs_purchase", "subscription", "cs_fixture");
+      await ledger("pi_purchase", "subscription", "pi_fixture");
+      const f = fixture(); f.payment.metadata = {};
+      const dispatched = [...new Set(await deliver(f))].map(text => JSON.parse(text));
+      expect(dispatched).toHaveLength(2);
+      expect(await prisma.marketingConversion.count({ where: { kind: "purchase", status: "delivered" } })).toBeGreaterThanOrEqual(2);
+      const before = await state();
+
+      const agreeing = receiver();
+      const result = await reconcile.reconcileCashPeriod(scoped, binding, day, agreeing.send, now);
+      expect(result).toMatchObject({ outcome: "agreed", sent: true });
+      // Aliases are declared once, and each value is the one in the delivered bytes.
+      expect(agreeing.bodies).toEqual([bodyOf(day, [purchaseEntry, refundEntry])]);
+      for (const entry of JSON.parse(agreeing.bodies[0]!).entries) {
+        expect(dispatched.find(event => event.transactionId === entry.transactionId)).toMatchObject({ eventType: entry.eventType, amountMinor: entry.amountMinor, currency: entry.currency, occurredAt: entry.occurredAt });
+      }
+      expect(result.observation!.document).toMatchObject({ contract: "receipt-reconciliation/v2", period: day, requestedFrom: null, outcome: "agreed", sent: true, declared: { purchases: 1, refunds: 1 },
+        requestDigest: createHash("sha256").update(agreeing.bodies[0]!).digest("hex"), reconciliationId: agreeing.reconciliationId, receiverStatus: 200, ledgerFactNotCaptured: false, undelivered: {}, upstreamCompleteness: "unknown" });
+      expect(result.observation!.document.responseDigest).toMatch(/^[0-9a-f]{64}$/);
+
+      // The observation is immutable and readable through the existing operator read.
+      const stored = (await db.query("SELECT kind, \"parentId\" FROM marketing_cash_observations WHERE id=$1", [result.observation!.id])).rows;
+      expect(stored).toEqual([{ kind: "comparison", parentId: null }]);
+      await expect(db.query("UPDATE marketing_cash_observations SET body=$1 WHERE id=$2", ["{}", result.observation!.id])).rejects.toThrow();
+      await expect(db.query("DELETE FROM marketing_cash_observations WHERE id=$1", [result.observation!.id])).rejects.toThrow();
+      expect(await observation.getCashObservation(scoped, result.observation!.id)).toEqual(result.observation!);
+
+      // A refund inside the period whose original payment is before it: the original is not declared.
+      const afterCharge = { from: "2026-09-14T00:00:30.000Z", to: day.to }; const refundOnly = receiver();
+      expect((await reconcile.reconcileCashPeriod(scoped, binding, afterCharge, refundOnly.send, now)).outcome).toBe("agreed");
+      expect(refundOnly.bodies).toEqual([bodyOf(afterCharge, [refundEntry])]);
+      // A period with nothing in it is declared empty.
+      const quiet = { from: "2026-09-15T00:00:00.000Z", to: "2026-09-16T00:00:00.000Z" }; const none = receiver();
+      expect((await reconcile.reconcileCashPeriod(scoped, binding, quiet, none.send, now)).observation!.document).toMatchObject({ outcome: "agreed", declared: { purchases: 0, refunds: 0 } });
+      expect(none.bodies).toEqual([bodyOf(quiet, [])]);
+      // A receiver that holds an undeclared purchase disagrees; nothing is saved there and the reason is stored here.
+      const disagreeing = receiver({ agreeing: false, reconciliationId: null, notDeclared: { purchases: 1, refunds: 0 } });
+      const disagreed = await reconcile.reconcileCashPeriod(scoped, binding, day, disagreeing.send, now);
+      expect(disagreed.observation!.document).toMatchObject({ outcome: "disagreed", sent: true, reconciliationId: null, receiver: { notDeclared: { purchases: 1, refunds: 0 } } });
+      const missing = receiver({ agreeing: false, reconciliationId: null, notReceived: { count: 1, entries: [{ eventType: "purchase", transactionId: conversionId("payment", "pi_fixture"), status: "missing" }] } });
+      const missingResult = await reconcile.reconcileCashPeriod(scoped, binding, day, missing.send, now);
+      expect(missingResult.observation!.document.receiver.notReceived).toEqual({ count: 1 });
+      expect((await observation.getCashObservation(scoped, missingResult.observation!.id)).document.receiver.notReceived).toEqual({ count: 1 });
+
+      // A refused period is not an observation; a changed binding sends nothing.
+      const count = await observations(); const unused = receiver();
+      expect(await reconcile.reconcileCashPeriod(scoped, binding, { from: "2026-09-08T00:00:00.000Z", to: day.to }, unused.send, now)).toEqual({ outcome: "period_before_activation", sent: false, observation: null });
+      expect(await reconcile.reconcileCashPeriod(scoped, binding, { from: day.from, to: "2026-09-21T00:00:00.000Z" }, unused.send, now)).toEqual({ outcome: "period_in_future", sent: false, observation: null });
+      await expect(reconcile.reconcileCashPeriod(scoped, { ...binding, project: { ...binding.project, version: 0 } }, day, unused.send, now)).rejects.toThrow();
+      expect(unused.bodies).toEqual([]); expect(await observations()).toBe(count);
+      expect(await state()).toEqual(before);
+    });
+
+    it("includes post-activation dependencies with old source timestamps", async () => {
+      const reconcile = await import("../marketing-cash-reconcile");
+      const october = { from: "2026-10-01T00:00:00.000Z", to: "2026-10-02T00:00:00.000Z" };
+      const row = deliveredRow(0);
+      const dependency = await prisma.marketingConversion.create({ data: { ...row, sourceCreatedAt: new Date("2026-09-01T00:00:00Z"), createdAt: new Date("2026-10-01T01:00:00Z"), status: "pending", receiptId: null, deliveredAt: null, httpStatus: null } });
+      const waiting = receiver();
+      const blocked = await reconcile.reconcileCashPeriod(scoped, binding, october, waiting.send, new Date("2026-10-03T00:00:00Z"));
+      expect(blocked.observation!.document).toMatchObject({ outcome: "delivery_pending", undelivered: { pending: 1 } });
+      expect(waiting.bodies).toEqual([]);
+      await prisma.marketingConversion.update({ where: { id: dependency.id }, data: { status: "delivered", receiptId: row.receiptId, deliveredAt: row.deliveredAt, httpStatus: row.httpStatus } });
+      const delivered = receiver();
+      expect((await reconcile.reconcileCashPeriod(scoped, binding, october, delivered.send, new Date("2026-10-03T00:00:00Z"))).outcome).toBe("agreed");
+      expect(JSON.parse(delivered.bodies[0]!).entries).toEqual([{ eventType: "purchase", transactionId: "payment_0000", amountMinor: "100", currency: "USD", occurredAt: october.from }]);
+    });
+
+    it("refuses with the reason for each kind of gap, without sending", async () => {
+      const reconcile = await import("../marketing-cash-reconcile");
+      const unused = receiver();
+      const refused = async (reason: string, undelivered: Record<string, number>, ledgerFactNotCaptured = false) => {
+        const before = await state(); const count = await observations();
+        const result = await reconcile.reconcileCashPeriod(scoped, binding, day, unused.send, now);
+        expect(result).toMatchObject({ outcome: reason, sent: false });
+        expect(result.observation!.document).toMatchObject({ outcome: reason, sent: false, declared: null, requestDigest: null, reconciliationId: null, undelivered, ledgerFactNotCaptured });
+        expect(unused.bodies).toEqual([]); expect(await observations()).toBe(count + 1); expect(await state()).toEqual(before);
+      };
+      // An eligible ledger fact that capture has not seen.
+      await ledger("gap_cash", "purchase", "pi_fixture");
+      await refused("ledger_fact_not_captured", {}, true);
+      // Captured, payload unresolved.
+      await outbox.captureMarketingConversions(config);
+      await refused("delivery_pending", { pending: 1 });
+      // Leased by a worker.
+      const claimed = (await outbox.claimMarketingConversion(config))!;
+      await refused("delivery_pending", { processing: 1 });
+      // Bytes saved, acknowledgement lost.
+      expect(await outbox.processMarketingConversion(claimed, config, fixture().reader, withIdentity(async () => { throw new Error("synthetic lost acknowledgement"); }))).toBe("retry");
+      expect((await prisma.marketingConversion.findUniqueOrThrow({ where: { id: claimed.id } })).payload).not.toBeNull();
+      await refused("delivery_pending", { pending: 1 });
+      // Held by the receiver or the resolver.
+      await due(claimed.id);
+      await outbox.finishMarketingConversion((await outbox.claimMarketingConversion(config))!, { kind: "blocked", code: "receiver_conflict" });
+      await refused("delivery_blocked", { blocked: 1 });
+      // One blocked row anywhere refuses a period it may not even belong to.
+      const before = await observations();
+      expect((await reconcile.reconcileCashPeriod(scoped, binding, { from: "2026-09-16T00:00:00.000Z", to: "2026-09-17T00:00:00.000Z" }, unused.send, now)).outcome).toBe("delivery_blocked");
+      expect(await observations()).toBe(before + 1);
+
+      // Delivered rows that cannot be declared as one event.
+      await db.query("TRUNCATE marketing_conversions, credit_transactions");
+      await prisma.marketingConversion.createMany({ data: [deliveredRow(0), { ...deliveredRow(0), originKey: "payment:pi_alias", payload: deliveredRow(0).payload.replace('"100"', '"101"') }] });
+      const october = { from: "2026-10-01T00:00:00.000Z", to: "2026-10-02T00:00:00.000Z" };
+      expect((await reconcile.reconcileCashPeriod(scoped, binding, october, unused.send, new Date("2026-10-03T00:00:00.000Z"))).outcome).toBe("alias_conflict");
+      await db.query("TRUNCATE marketing_conversions");
+      await prisma.marketingConversion.create({ data: { ...deliveredRow(0), payload: "{}" } });
+      expect((await reconcile.reconcileCashPeriod(scoped, binding, october, unused.send, new Date("2026-10-03T00:00:00.000Z"))).outcome).toBe("payload_invalid");
+      expect(unused.bodies).toEqual([]);
+    });
+
+    it("declares exactly 1,000 entries, refuses 1,001, and the trailing window moves forward to the largest that fits", async () => {
+      const reconcile = await import("../marketing-cash-reconcile");
+      const week = { from: "2026-10-01T00:00:00.000Z", to: "2026-10-08T00:00:00.000Z" }; const at = new Date("2026-10-08T02:00:00.000Z");
+      await prisma.marketingConversion.createMany({ data: Array.from({ length: 1000 }, (_, i) => deliveredRow(i)) });
+      const full = receiver();
+      expect((await reconcile.reconcileCashPeriod(scoped, binding, week, full.send, at)).observation!.document).toMatchObject({ outcome: "agreed", declared: { purchases: 1000, refunds: 0 }, fitsFrom: null });
+      // The same frozen vector as the contract test, through the real read.
+      expect(Buffer.byteLength(full.bodies[0]!)).toBe(133124);
+      expect(createHash("sha256").update(full.bodies[0]!).digest("hex")).toBe("cc5d05e6ee4f8bac5a109d79c7d9d64a4c37e31cd88f72005d5555d06fb16475");
+
+      await prisma.marketingConversion.create({ data: deliveredRow(1000) });
+      const over = receiver();
+      const refused = await reconcile.reconcileCashPeriod(scoped, binding, week, over.send, at);
+      expect(refused.observation!.document).toMatchObject({ outcome: "too_many_entries", sent: false, declared: null, requestDigest: null, fitsFrom: "2026-10-01T00:00:00.001Z" });
+      expect(over.bodies).toEqual([]);
+
+      // Two hours before the run, back to activation; then forward to the first start that holds 1,000.
+      const count = await observations(); const trailing = receiver();
+      const result = await reconcile.reconcileTrailingCashWindow(scoped, binding, at, trailing.send);
+      expect(result.observation!.document).toMatchObject({ outcome: "agreed", period: { from: "2026-10-01T00:00:00.001Z", to: week.to }, requestedFrom: "2026-09-09T00:00:00.000Z", declared: { purchases: 1000, refunds: 0 } });
+      expect(trailing.bodies).toHaveLength(1); expect(JSON.parse(trailing.bodies[0]!).entries).toHaveLength(1000);
+      expect(JSON.parse(trailing.bodies[0]!).entries[0].transactionId).toBe("payment_0001");
+      expect(await observations()).toBe(count + 2);
+      // No more than 92 days, even long after activation.
+      const later = new Date("2027-03-01T02:00:00.000Z"); const wide = receiver();
+      expect((await reconcile.reconcileTrailingCashWindow(scoped, binding, later, wide.send)).observation!.document.period).toEqual({ from: "2026-11-29T00:00:00.000Z", to: "2027-03-01T00:00:00.000Z" });
+      expect(await reconcile.reconcileTrailingCashWindow({ ...scoped, from: later }, binding, later, wide.send)).toEqual({ outcome: "period_before_activation", sent: false, observation: null });
+    });
+
+    it("runs the scheduled job only with its flag and binding, and the operator route only for an authorized strict request", async () => {
+      const reconcile = await import("../marketing-cash-reconcile");
+      await ledger("job_cash", "purchase", "pi_fixture");
+      await deliver();
+      const env = { UNIFIED_ADS_ENABLED: "true", UNIFIED_ADS_RECONCILIATION_ENABLED: "true", UNIFIED_ADS_SOURCE_ID: config.sourceId, UNIFIED_ADS_ENVIRONMENT: "test",
+        UNIFIED_ADS_SERVER_KEY: scoped.serverKey, UNIFIED_ADS_FROM: config.from.toISOString(), UNIFIED_ADS_CASH_EXPECTED_BINDING: JSON.stringify(binding), NODE_ENV: "test" };
+      const count = await observations(); const unused = receiver();
+      for (const [change, outcome] of [[{ UNIFIED_ADS_RECONCILIATION_ENABLED: undefined }, "disabled"], [{ UNIFIED_ADS_RECONCILIATION_ENABLED: "false" }, "disabled"], [{ UNIFIED_ADS_ENABLED: "false" }, "disabled"],
+        [{ NODE_ENV: "production" }, "production_requires_live_source"], [{ UNIFIED_ADS_CASH_EXPECTED_BINDING: undefined }, "binding_invalid"]] as const) {
+        expect(await reconcile.runCashReconciliation({ ...env, ...change }, now, unused.send)).toEqual({ outcome, sent: false, observation: null });
+      }
+      expect(unused.bodies).toEqual([]); expect(await observations()).toBe(count);
+      const job = receiver();
+      const ran = await reconcile.runCashReconciliation(env, now, job.send);
+      expect(ran.observation!.document).toMatchObject({ outcome: "agreed", period: { from: "2026-09-09T00:00:00.000Z", to: "2026-09-19T22:00:00.000Z" }, declared: { purchases: 1, refunds: 0 } });
+
+      const { NextRequest } = await import("next/server");
+      const route = await import("../../app/api/admin/marketing/cash-observations/route");
+      const routeEnv = { ...env, ADMIN_API_SECRET: "fixture-admin-secret", OCTOPUS_SELF_HOSTED: "false", NEXT_PUBLIC_OCTOPUS_SELF_HOSTED: "false" };
+      const previous = Object.fromEntries(Object.keys(routeEnv).map(key => [key, process.env[key]]));
+      const post = (body: unknown, authorized = true) => route.POST(new NextRequest("http://localhost/api/admin/marketing/cash-observations", {
+        method: "POST", headers: { "content-type": "application/json", ...(authorized ? { authorization: `Bearer ${routeEnv.ADMIN_API_SECRET}` } : {}) }, body: JSON.stringify(body) }));
+      try {
+        Object.assign(process.env, routeEnv);
+        expect((await post({ operation: "reconcile", ...day }, false)).status).toBe(401);
+        for (const body of [{ operation: "reconcile", from: day.from }, { operation: "reconcile", ...day, predecessor: null }, { operation: "reconcile", from: 1, to: day.to }, { operation: "reconcile", id: "x" }]) {
+          expect((await post(body)).status).toBe(400);
+        }
+        const future = await post({ operation: "reconcile", from: day.from, to: "2999-01-01T00:00:00.000Z" });
+        expect(future.status).toBe(400); expect(await future.json()).toEqual({ error: "Period refused", reason: "period_in_future" });
+        expect(future.headers.get("cache-control")).toBe("no-store");
+        // A gap answers from the stored observation; the route's real transport is never reached.
+        await ledger("route_gap", "purchase", "pi_route_gap");
+        const gap = await post({ operation: "reconcile", ...day });
+        expect(gap.status).toBe(201); expect((await gap.json()).document).toMatchObject({ outcome: "ledger_fact_not_captured", sent: false });
+        delete process.env.UNIFIED_ADS_CASH_EXPECTED_BINDING;
+        expect((await post({ operation: "reconcile", ...day })).status).toBe(503);
+      } finally {
+        for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+      }
+    });
   });
 });

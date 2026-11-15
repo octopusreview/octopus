@@ -1,10 +1,9 @@
 import { AskOctopus } from "@/components/ask-octopus";
 import { ORGANIZATION_JSON_LD, WEBSITE_JSON_LD, jsonLd } from "@/lib/structured-data";
 
-// Public pages look the same to every visitor (the session is read in the
-// browser, see components/session-aware.tsx), so they are rendered once and
-// reused for five minutes. Pages that read live data opt out with
-// `dynamic = "force-dynamic"`.
+// Public pages do not read the visitor's session on the server, so cacheable
+// pages can be reused for five minutes. The homepage and status page opt out;
+// the blog index is dynamic because it reads search parameters.
 export const revalidate = 300;
 
 export default function LandingLayout({

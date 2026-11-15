@@ -4,9 +4,9 @@ import type { ReactNode } from "react";
 import Link from "@/components/link";
 import { useSession } from "@/lib/auth-client";
 
-// Public pages are rendered once and cached, so the server never knows who is
-// looking at them. It always renders the signed-out version; these components
-// switch to the signed-in version in the browser once the session has loaded.
+// Public pages can be cached, so the server does not read the visitor's session.
+// It renders the signed-out version; these components switch to the signed-in
+// version in the browser once the session has loaded.
 
 /** Shows one of two server-rendered pieces, depending on whether the visitor is signed in. */
 export function SessionSwitch({ signedIn, signedOut }: { signedIn: ReactNode; signedOut: ReactNode }) {

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.22] - 2026-11-15
+
+### Changed
+
+- Docs, comparison pages and blog posts are now served from a short-lived cache, so the server no longer rebuilds them for every visit. If you are signed in, the Dashboard button on these pages appears a moment after the page loads.
+
 ## [1.4.21] - 2026-11-15
 
 ### Added

@@ -329,11 +329,13 @@ work. Use one authoritative producer per outcome. Replays reuse the same ID.
 | `provider_connection_completed` / `provider_connection_failed` | Server authoritative result | provider, attempt ID, bounded failure category |
 | `repository_enabled` | Server after persisted enablement | repository ID, provider |
 | `repository_index_completed` / `repository_index_failed` | Server final result | repository ID, attempt ID, bounded failure category |
-| `review_requested` | Server accepted request | PR/repository/attempt IDs, provider |
-| `review_published` / `review_failed` | Server confirmed final outcome | PR/repository/attempt IDs, coverage/assessment enums, substantive flag |
+| `review_requested` | Server, when a request reaches Octopus and its organisation is known, before the admission checks; one record per request, accepted or refused | PR/repository IDs, attempt ID when accepted, provider, admission (accepted/refused), bounded refusal reason, entry path (PR event, mention, CLI); user ID only for CLI requests |
+| `review_published` | Optional, later: server, after the review is published (a published outcome never changes) | PR/repository/attempt IDs, kind |
 | `review_viewed` | Only where an actual view is measurable | PR/repository ID, surface; no claim of views on an external forge |
 | `checkout_started` | Browser explicit checkout attempt | attempt ID; never treated as payment |
 | `payment_succeeded` / `payment_refunded` | Existing authoritative billing event | canonical opaque event ID, minor-unit amount, currency |
+
+Review outcomes for analysis come from `octopus_analytics.review_attempt_outcomes_v1` (#1082), a view of the `review_attempt_outcomes` table, not from events. Only `published` is final in that table; other outcomes can still change after a retry, so a `review_failed` event would never be a confirmed final outcome.
 
 Respect existing analytics permission/consent rules. Keep replay, broad
 autocapture, free text and automatic exception capture disabled. This document

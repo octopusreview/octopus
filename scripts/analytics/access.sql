@@ -74,6 +74,22 @@ SELECT 'octopus:pr:' || p.id AS pull_request_id,
   'substantive_classification_unavailable'::text AS activation_evidence
 FROM public.pull_requests p JOIN public.repositories r ON r.id = p."repositoryId";
 
+CREATE VIEW octopus_analytics.review_attempt_outcomes_v1
+WITH (security_barrier = true) AS
+SELECT 'octopus:pr:' || "pullRequestId" AS pull_request_id,
+  'octopus:repo:' || "repositoryId" AS repository_id,
+  'octopus:org:' || "organizationId" AS organization_id,
+  "requestVersion" AS request_version,
+  CASE WHEN kind IN ('substantive','partial','incomplete','not_required','empty','not_assessed','unknown')
+    THEN kind ELSE 'other' END AS kind,
+  CASE WHEN outcome IN ('published','partially_published','uncertain','failed','superseded')
+    THEN outcome WHEN outcome IS NULL THEN 'no_outcome' ELSE 'other' END AS outcome,
+  "firstTriedAt" AS first_tried_at, "finishedAt" AS finished_at,
+  "publishedAt" AS published_at, tries AS try_count
+FROM public.review_attempt_outcomes;
+
+REVOKE ALL ON octopus_analytics.review_attempt_outcomes_v1 FROM PUBLIC;
+
 CREATE VIEW octopus_analytics.cash_events_v1 WITH (security_barrier = true) AS
 WITH parsed AS (
   SELECT "organizationId", CASE WHEN payload IS JSON OBJECT AND pg_input_is_valid(payload, 'jsonb')
@@ -188,6 +204,7 @@ GRANT USAGE ON SCHEMA octopus_analytics TO octopus_analytics_reader;
 GRANT SELECT ON octopus_analytics.organizations_v1,
   octopus_analytics.repositories_v1, octopus_analytics.review_milestones_v1,
   octopus_analytics.cash_events_v1, octopus_analytics.organization_provenance_v1,
-  octopus_analytics.organization_signup_method_v1 TO octopus_analytics_reader;
+  octopus_analytics.organization_signup_method_v1,
+  octopus_analytics.review_attempt_outcomes_v1 TO octopus_analytics_reader;
 -- No future-object grants, source-table grants, password or LOGIN here.
 COMMIT;

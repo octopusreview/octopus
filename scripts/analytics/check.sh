@@ -52,6 +52,23 @@ CREATE INDEX organization_members_userId_idx ON organization_members ("userId");
 CREATE TABLE accounts (id text PRIMARY KEY,"userId" text NOT NULL,"providerId" text NOT NULL,"createdAt" timestamp NOT NULL DEFAULT now());
 CREATE TABLE repositories (id text PRIMARY KEY,"organizationId" text,provider text,"createdAt" timestamp,"isActive" boolean,"autoReview" boolean,"indexStatus" text,"indexedAt" timestamp,"firstIndexedAt" timestamp);
 CREATE TABLE pull_requests (id text PRIMARY KEY,"repositoryId" text,"createdAt" timestamp,"firstReviewCompletedAt" timestamp,status text,"reviewBody" text);
+CREATE TABLE "review_attempt_outcomes" (
+  "organizationId" TEXT NOT NULL,
+  "repositoryId" TEXT NOT NULL,
+  "pullRequestId" TEXT NOT NULL,
+  "requestVersion" INTEGER NOT NULL,
+  "kind" TEXT NOT NULL CHECK ("kind" IN ('substantive', 'partial', 'incomplete', 'not_required', 'empty', 'not_assessed', 'unknown')),
+  "outcome" TEXT CHECK ("outcome" IN ('published', 'partially_published', 'uncertain', 'failed', 'superseded')),
+  "tries" INTEGER NOT NULL CHECK ("tries" >= 0),
+  "firstTriedAt" TIMESTAMP(3) NOT NULL,
+  "finishedAt" TIMESTAMP(3),
+  "publishedAt" TIMESTAMP(3),
+  "resultArchiveId" TEXT,
+  CONSTRAINT "review_attempt_outcomes_pkey" PRIMARY KEY ("pullRequestId", "requestVersion"),
+  CONSTRAINT "review_attempt_outcomes_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+CREATE INDEX "review_attempt_outcomes_organizationId_publishedAt_idx" ON "review_attempt_outcomes"("organizationId", "publishedAt");
+ALTER TABLE "review_attempt_outcomes" ADD COLUMN "generationAttempts" INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE marketing_conversions ("organizationId" text,environment text,status text,kind text,payload text);
 INSERT INTO organizations (id,"createdAt",type,"bannedAt","deletedAt","anthropicApiKey") VALUES ('one','2026-09-01',1,null,null,'DO-NOT-EXPORT'),('banned','2026-09-01',1,now(),null,'PRIVATE');
 INSERT INTO repositories VALUES ('repo','one','github','2026-09-02',true,true,'indexed','2026-09-09','2026-09-09');
@@ -731,3 +748,231 @@ END $$;
 DROP TABLE signup_fresh, signup_cases;
 SQL
 printf '%s\n' 'PASS: signup rules, privacy allowlists, source denials, missing prerequisites, fresh/update parity, repeated update and scaled plan'
+
+
+# Outcome fixtures are synthetic. Missing live PR/repository rows must not hide them.
+psql_fixture <<'SQL'
+CREATE TABLE outcome_cases AS
+SELECT row_number() OVER (ORDER BY k.kind, o.outcome NULLS FIRST)::int AS version,
+  k.kind, o.outcome
+FROM (VALUES ('substantive'),('partial'),('incomplete'),('not_required'),
+  ('empty'),('not_assessed'),('unknown')) k(kind)
+CROSS JOIN (VALUES ('published'),('partially_published'),('uncertain'),('failed'),
+  ('superseded'),(NULL::text)) o(outcome);
+INSERT INTO review_attempt_outcomes
+  ("organizationId","repositoryId","pullRequestId","requestVersion",kind,outcome,
+   tries,"firstTriedAt","finishedAt","publishedAt","resultArchiveId")
+SELECT 'one','outcomes-missing-repo','outcomes-missing-pr',version,kind,outcome,
+  version-1,timestamp '2026-10-17 01:02:03.456',
+  CASE WHEN outcome IS NOT NULL THEN timestamp '2026-10-18 02:03:04.567' END,
+  CASE WHEN outcome='published' THEN timestamp '2026-10-18 03:04:05.678' END,
+  'synthetic-archive-not-exported'
+FROM outcome_cases;
+CREATE TABLE outcomes_fresh AS
+SELECT pg_get_viewdef(c.oid) AS definition,c.relowner,c.relacl,c.reloptions,
+  (SELECT jsonb_agg(jsonb_build_array(a.attname,a.atttypid,a.atttypmod,a.attcollation) ORDER BY a.attnum)
+   FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped) AS columns
+FROM pg_class c WHERE c.oid='octopus_analytics.review_attempt_outcomes_v1'::regclass;
+-- Expected results may be read; the source itself must remain denied.
+GRANT SELECT ON outcome_cases TO octopus_analytics_reader;
+DO $$ BEGIN
+  BEGIN
+    INSERT INTO review_attempt_outcomes ("organizationId","repositoryId","pullRequestId","requestVersion",kind,tries,"firstTriedAt")
+    VALUES ('one','synthetic','constraint-probe',1,NULL,0,now());
+    RAISE EXCEPTION 'NULL kind accepted';
+  EXCEPTION WHEN not_null_violation THEN NULL; END;
+  BEGIN
+    UPDATE review_attempt_outcomes SET kind='unexpected' WHERE "requestVersion"=1;
+    RAISE EXCEPTION 'unexpected kind accepted';
+  EXCEPTION WHEN check_violation THEN NULL; END;
+  BEGIN
+    UPDATE review_attempt_outcomes SET outcome='unexpected' WHERE "requestVersion"=1;
+    RAISE EXCEPTION 'unexpected outcome accepted';
+  EXCEPTION WHEN check_violation THEN NULL; END;
+END $$;
+SQL
+check_outcomes() {
+  psql_fixture <<'SQL'
+SET ROLE octopus_analytics_reader;
+DO $$ BEGIN
+  IF (SELECT array_agg(column_name::text ORDER BY ordinal_position)
+    FROM information_schema.columns WHERE table_schema='octopus_analytics'
+      AND table_name='review_attempt_outcomes_v1') IS DISTINCT FROM
+    ARRAY['pull_request_id','repository_id','organization_id','request_version','kind','outcome',
+      'first_tried_at','finished_at','published_at','try_count']
+    THEN RAISE EXCEPTION 'outcomes column order'; END IF;
+  IF EXISTS (
+    SELECT FROM public.outcome_cases c LEFT JOIN octopus_analytics.review_attempt_outcomes_v1 v
+      ON v.pull_request_id='octopus:pr:outcomes-missing-pr' AND v.request_version=c.version
+    WHERE v.repository_id IS DISTINCT FROM 'octopus:repo:outcomes-missing-repo'
+      OR v.organization_id IS DISTINCT FROM 'octopus:org:one'
+      OR v.kind IS DISTINCT FROM c.kind OR v.outcome IS DISTINCT FROM COALESCE(c.outcome,'no_outcome')
+      OR v.try_count IS DISTINCT FROM c.version-1
+      OR v.first_tried_at IS DISTINCT FROM timestamp '2026-10-17 01:02:03.456'
+      OR v.finished_at IS DISTINCT FROM CASE WHEN c.outcome IS NOT NULL THEN timestamp '2026-10-18 02:03:04.567' END
+      OR v.published_at IS DISTINCT FROM CASE WHEN c.outcome='published' THEN timestamp '2026-10-18 03:04:05.678' END
+  ) THEN RAISE EXCEPTION 'outcomes projection or labels'; END IF;
+  IF EXISTS (SELECT FROM octopus_analytics.review_attempt_outcomes_v1
+    WHERE kind IS NULL OR kind NOT IN ('substantive','partial','incomplete','not_required','empty','not_assessed','unknown','other')
+      OR outcome IS NULL OR outcome NOT IN ('published','partially_published','uncertain','failed','superseded','no_outcome','other'))
+    THEN RAISE EXCEPTION 'outcomes label allowlists'; END IF;
+  BEGIN PERFORM "pullRequestId" FROM public.review_attempt_outcomes; RAISE EXCEPTION 'outcomes source readable'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  BEGIN UPDATE public.review_attempt_outcomes SET tries=0; RAISE EXCEPTION 'outcomes source writable'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  BEGIN UPDATE octopus_analytics.review_attempt_outcomes_v1 SET try_count=0; RAISE EXCEPTION 'outcomes view writable'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END $$;
+RESET ROLE;
+DO $$ BEGIN
+  IF (SELECT count(*) FROM octopus_analytics.review_attempt_outcomes_v1) <> (SELECT count(*) FROM public.review_attempt_outcomes)
+    OR (SELECT count(DISTINCT (pull_request_id,request_version)) FROM octopus_analytics.review_attempt_outcomes_v1) <> (SELECT count(*) FROM public.review_attempt_outcomes)
+    THEN RAISE EXCEPTION 'outcomes all-row cardinality or key'; END IF;
+  IF (SELECT array_agg(format_type(a.atttypid,a.atttypmod) ORDER BY a.attnum)
+    FROM pg_attribute a WHERE a.attrelid='octopus_analytics.review_attempt_outcomes_v1'::regclass
+      AND a.attnum>0 AND NOT a.attisdropped) IS DISTINCT FROM
+    ARRAY['text','text','text','integer','text','text','timestamp(3) without time zone',
+      'timestamp(3) without time zone','timestamp(3) without time zone','integer']
+    THEN RAISE EXCEPTION 'outcomes SQL types'; END IF;
+  IF EXISTS (SELECT FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a
+    WHERE c.oid IN ('octopus_analytics.review_attempt_outcomes_v1'::regclass,'public.review_attempt_outcomes'::regclass) AND a.grantee=0)
+    OR EXISTS (SELECT FROM pg_attribute att CROSS JOIN LATERAL aclexplode(att.attacl) a
+      WHERE att.attrelid IN ('octopus_analytics.review_attempt_outcomes_v1'::regclass,'public.review_attempt_outcomes'::regclass) AND a.grantee=0)
+    OR EXISTS (SELECT FROM pg_namespace n CROSS JOIN LATERAL aclexplode(n.nspacl) a
+      WHERE n.nspname='octopus_analytics' AND a.grantee=0)
+    THEN RAISE EXCEPTION 'outcomes PUBLIC access'; END IF;
+END $$;
+SQL
+}
+check_outcomes
+printf '%s\n' 'PASS: outcomes fresh labels, ten-column contract/types, all-row cardinality and privileges'
+# Only this disposable fixture is relaxed, within a transaction that always rolls back.
+psql_fixture <<'SQL'
+BEGIN;
+ALTER TABLE review_attempt_outcomes ALTER COLUMN kind DROP NOT NULL;
+ALTER TABLE review_attempt_outcomes DROP CONSTRAINT review_attempt_outcomes_kind_check;
+ALTER TABLE review_attempt_outcomes DROP CONSTRAINT review_attempt_outcomes_outcome_check;
+INSERT INTO review_attempt_outcomes ("organizationId","repositoryId","pullRequestId","requestVersion",kind,outcome,tries,"firstTriedAt")
+VALUES ('one','synthetic','outcomes-relaxed',1,NULL,NULL,0,'2026-10-17'),
+  ('one','synthetic','outcomes-relaxed',2,'','',0,'2026-10-17'),
+  ('one','synthetic','outcomes-relaxed',3,'unexpected','unexpected',0,'2026-10-17');
+SET LOCAL ROLE octopus_analytics_reader;
+DO $$ BEGIN
+  IF (SELECT count(*) FROM octopus_analytics.review_attempt_outcomes_v1
+    WHERE pull_request_id='octopus:pr:outcomes-relaxed' AND kind='other'
+      AND outcome=CASE WHEN request_version=1 THEN 'no_outcome' ELSE 'other' END) <> 3
+    THEN RAISE EXCEPTION 'outcomes defensive labels'; END IF;
+END $$;
+ROLLBACK;
+DO $$ BEGIN
+  IF EXISTS (SELECT FROM review_attempt_outcomes WHERE "pullRequestId"='outcomes-relaxed')
+    OR NOT EXISTS (SELECT FROM pg_attribute WHERE attrelid='review_attempt_outcomes'::regclass AND attname='kind' AND attnotnull)
+    OR (SELECT count(*) FROM pg_constraint WHERE conrelid='review_attempt_outcomes'::regclass
+      AND conname IN ('review_attempt_outcomes_kind_check','review_attempt_outcomes_outcome_check')) <> 2
+    THEN RAISE EXCEPTION 'relaxed outcomes fixture not restored'; END IF;
+END $$;
+SQL
+printf '%s\n' 'PASS: outcomes NULL/empty/unexpected defensive labels and restored source constraints'
+psql_fixture <<'SQL'
+DROP VIEW octopus_analytics.review_attempt_outcomes_v1;
+CREATE TABLE outcomes_baseline AS
+SELECT c.oid,c.relname,c.relowner,c.relacl,c.reloptions,pg_get_viewdef(c.oid) AS definition
+FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+WHERE n.nspname='octopus_analytics' AND c.relkind='v';
+CREATE TABLE outcomes_source_baseline AS
+SELECT a.attnum,a.attname,a.atttypid,a.atttypmod,a.attnotnull
+FROM pg_attribute a WHERE a.attrelid='public.review_attempt_outcomes'::regclass AND a.attnum>0 AND NOT a.attisdropped;
+SQL
+for prerequisite in schema role view table source_kind pullRequestId repositoryId organizationId requestVersion kind outcome firstTriedAt finishedAt publishedAt tries target; do
+  case "$prerequisite" in
+    schema) setup='ALTER SCHEMA octopus_analytics RENAME TO outcomes_saved_schema;'; message='Analytics schema missing;' ;;
+    role) setup='ALTER ROLE octopus_analytics_reader RENAME TO outcomes_saved_role;'; message='Analytics reader role missing;' ;;
+    view) setup='ALTER VIEW octopus_analytics.organizations_v1 RENAME TO outcomes_saved_view;'; message='Analytics organizations_v1 view missing;' ;;
+    table) setup='ALTER TABLE public.review_attempt_outcomes RENAME TO outcomes_saved_table;'; message='Source table public.review_attempt_outcomes missing;' ;;
+    source_kind) setup='ALTER TABLE public.review_attempt_outcomes RENAME TO outcomes_saved_table; CREATE VIEW public.review_attempt_outcomes AS SELECT * FROM public.outcomes_saved_table;'; message='Source table public.review_attempt_outcomes missing;' ;;
+    target) setup='CREATE TABLE octopus_analytics.review_attempt_outcomes_v1 (id int);'; message='Analytics review_attempt_outcomes_v1 already exists and is not a view;' ;;
+    *) setup="ALTER TABLE public.review_attempt_outcomes RENAME COLUMN \"$prerequisite\" TO outcomes_saved_column;"
+       message="Source column public.review_attempt_outcomes.\"$prerequisite\" missing;" ;;
+  esac
+  if output=$({ printf 'BEGIN;\n%s\n' "$setup"; cat update-review-attempt-outcomes.sql; } | psql_fixture 2>&1); then
+    echo "Outcomes update unexpectedly accepted missing/invalid $prerequisite" >&2; exit 1
+  fi
+  [[ "$output" == *"$message"* ]] || { echo 'Expected outcomes refusal message not found' >&2; exit 1; }
+  psql_fixture <<'SQL'
+DO $$ BEGIN
+  IF to_regclass('octopus_analytics.review_attempt_outcomes_v1') IS NOT NULL
+    OR to_regnamespace('octopus_analytics') IS NULL
+    OR NOT EXISTS (SELECT FROM pg_roles WHERE rolname='octopus_analytics_reader')
+    OR EXISTS (SELECT FROM outcomes_baseline b LEFT JOIN pg_class c ON c.oid=b.oid
+      WHERE c.oid IS NULL OR c.relname IS DISTINCT FROM b.relname OR c.relowner IS DISTINCT FROM b.relowner
+        OR c.relacl IS DISTINCT FROM b.relacl OR c.reloptions IS DISTINCT FROM b.reloptions
+        OR pg_get_viewdef(c.oid) IS DISTINCT FROM b.definition)
+    OR EXISTS (SELECT FROM outcomes_source_baseline b LEFT JOIN pg_attribute a
+      ON a.attrelid='public.review_attempt_outcomes'::regclass AND a.attnum=b.attnum
+      WHERE a.attname IS DISTINCT FROM b.attname OR a.atttypid IS DISTINCT FROM b.atttypid
+        OR a.atttypmod IS DISTINCT FROM b.atttypmod OR a.attnotnull IS DISTINCT FROM b.attnotnull)
+    THEN RAISE EXCEPTION 'failed outcomes update changed installed objects'; END IF;
+END $$;
+SQL
+  printf 'PASS: outcomes missing/invalid %s stops and rolls back\n' "$prerequisite"
+done
+for iteration in 1 2; do
+  if [[ "$iteration" == 2 ]]; then
+    psql_fixture -c "CREATE TABLE outcomes_previous AS SELECT oid,relowner,relacl,reloptions FROM pg_class WHERE oid='octopus_analytics.review_attempt_outcomes_v1'::regclass"
+    psql_fixture -c 'GRANT SELECT ON octopus_analytics.review_attempt_outcomes_v1 TO PUBLIC'
+  fi
+  psql_fixture < update-review-attempt-outcomes.sql
+  psql_fixture <<'SQL'
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_class c CROSS JOIN outcomes_fresh f
+    WHERE c.oid='octopus_analytics.review_attempt_outcomes_v1'::regclass
+      AND c.relowner=f.relowner AND c.relacl IS NOT DISTINCT FROM f.relacl
+      AND c.reloptions IS NOT DISTINCT FROM f.reloptions AND 'security_barrier=true'=ANY(c.reloptions)
+      AND pg_get_viewdef(c.oid)=f.definition
+      AND (SELECT jsonb_agg(jsonb_build_array(a.attname,a.atttypid,a.atttypmod,a.attcollation) ORDER BY a.attnum)
+        FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped)=f.columns)
+    THEN RAISE EXCEPTION 'outcomes fresh/update definition, columns, owner, grants or barrier'; END IF;
+  IF to_regclass('outcomes_previous') IS NOT NULL THEN
+    IF NOT EXISTS (SELECT FROM pg_class c CROSS JOIN outcomes_previous p
+      WHERE c.oid='octopus_analytics.review_attempt_outcomes_v1'::regclass AND c.oid=p.oid
+        AND c.relowner=p.relowner AND c.relacl IS NOT DISTINCT FROM p.relacl
+        AND c.reloptions IS NOT DISTINCT FROM p.reloptions)
+      THEN RAISE EXCEPTION 'repeat outcomes update changed identity or privileges'; END IF;
+  END IF;
+END $$;
+SQL
+  check_outcomes
+  printf 'PASS: outcomes update %s matches fresh install, retains contract/privileges and removes PUBLIC grants\n' "$iteration"
+done
+# Excluded columns must not be prerequisites, even when neither exists.
+psql_fixture -c 'ALTER TABLE review_attempt_outcomes DROP COLUMN "generationAttempts", DROP COLUMN "resultArchiveId"'
+psql_fixture < update-review-attempt-outcomes.sql
+check_outcomes
+psql_fixture <<'SQL'
+ALTER TABLE review_attempt_outcomes ADD COLUMN "generationAttempts" integer NOT NULL DEFAULT 0, ADD COLUMN "resultArchiveId" text;
+INSERT INTO review_attempt_outcomes
+  ("organizationId","repositoryId","pullRequestId","requestVersion",kind,outcome,tries,"firstTriedAt")
+SELECT 'one','outcomes-scale-missing-repo','outcomes-scale-pr-'||i,j,
+  'substantive',CASE WHEN j=1 THEN 'published' END,j,timestamp '2026-10-17'
+FROM generate_series(1,10000) i CROSS JOIN generate_series(1,10) j;
+ANALYZE review_attempt_outcomes;
+SQL
+printf '%s\n' 'PASS: outcomes excluded columns are not prerequisites'
+check_outcomes
+outcomes_plan=$(psql_fixture -qAt -c "SET ROLE octopus_analytics_reader; SET statement_timeout = '15s'" -c 'EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT * FROM octopus_analytics.review_attempt_outcomes_v1')
+ANALYTICS_TEST_PLAN="$outcomes_plan" python3 - <<'PYTEST'
+import json, os
+p = json.loads(os.environ['ANALYTICS_TEST_PLAN'])[0]
+assert p['Plan']['Actual Rows'] == 100042, p['Plan']['Actual Rows']
+scans = []
+def visit(n):
+    if n.get('Relation Name') == 'review_attempt_outcomes':
+        scans.append(n)
+        assert n['Actual Loops'] == 1, 'repeated outcomes source scan'
+    for child in n.get('Plans', []): visit(child)
+visit(p['Plan'])
+assert len(scans) == 1, 'expected one outcomes source scan'
+assert p['Execution Time'] < 15000, p['Execution Time']
+print(f"PASS: synthetic outcomes plan, 100042 rows, execution {p['Execution Time']} ms / 15000 ms timeout")
+PYTEST
+psql_fixture <<'SQL'
+REVOKE SELECT ON outcome_cases FROM octopus_analytics_reader;
+DROP TABLE outcome_cases,outcomes_fresh,outcomes_previous,outcomes_baseline,outcomes_source_baseline;
+SQL

@@ -112,7 +112,7 @@ the new column into an existing PostHog source requires the operator step below.
 
 ## Restricted source dataset
 
-`scripts/analytics/access.sql` installs six security-barrier views and a
+`scripts/analytics/access.sql` installs seven security-barrier views and a
 dedicated `octopus_analytics_reader` role in one transaction. The views export
 opaque namespaced identifiers, bounded states, timestamps and validated cash
 fields. They exclude credentials, names, emails, IPs, PR titles/URLs, source
@@ -122,6 +122,7 @@ content, full audit metadata and payment-provider objects.
 | --- | --- | --- |
 | `octopus_analytics.organizations_v1` | `organization_id` | Organisation cohort and current eligibility flags. |
 | `octopus_analytics.repositories_v1` | `repository_id` | Provider, repository setup, latest index state and `first_index_at`. |
+| `octopus_analytics.review_attempt_outcomes_v1` | `(pull_request_id, request_version)` | Retained review-attempt outcomes, classification, timestamps and try count. |
 | `octopus_analytics.review_milestones_v1` | `pull_request_id` | First recorded PR/publication; strict activation explicitly unknown. |
 | `octopus_analytics.organization_provenance_v1` | `organization_id` | Creation provenance and creator arrival labels. |
 | `octopus_analytics.organization_signup_method_v1` | `organization_id` | Creator signup method, evidence and independent timing inference. |
@@ -141,11 +142,42 @@ rather than selected arbitrarily. Reconcile excluded counts during ingestion.
 
 The installer refuses an existing role/schema and unsafe inherited PUBLIC
 privileges; it never changes other principals' grants. It grants SELECT only on
-these six views, no future-object privileges. The role starts **NOLOGIN**, with
+these seven views, no future-object privileges. The role starts **NOLOGIN**, with
 no password, a two-connection limit and bounded query/idle timeouts. Read-only
 defaults supplement the actual privilege restrictions; they are not the access
 control themselves. PostgreSQL system metadata and permitted temporary objects
 are outside the business-table allowlist.
+
+### Review attempt outcomes
+
+`review_attempt_outcomes_v1` has one row per attempt (one PR plus one request
+version) that has a row in `review_attempt_outcomes`. It is not a history of every
+try. Its columns, in order, are `pull_request_id`, `repository_id`,
+`organization_id`, `request_version`, `kind`, `outcome`, `first_tried_at`,
+`finished_at`, `published_at`, `try_count`. IDs use the existing `octopus:pr:`,
+`octopus:repo:` and `octopus:org:` prefixes on the stored IDs, without joins.
+Timestamps keep the source type (timestamp without time zone, millisecond
+precision); `try_count` is `tries`. Generation attempts and archive IDs are not exposed.
+
+`kind` passes through `substantive`, `partial`, `incomplete`, `not_required`,
+`empty`, `not_assessed` and `unknown`. `outcome` passes through `published`,
+`partially_published`, `uncertain`, `failed` and `superseded`. A NULL outcome
+becomes `no_outcome` (a row with no outcome yet). Unexpected values, including
+empty text and NULL kind, become `other`. “Not recorded” (no row at all) is
+resolved in queries, not in the view. Unresolved (no outcome 24 hours after
+`first_tried_at`) is also resolved in queries against a fixed cutoff.
+
+`first_tried_at` is the first start that was not postponed. A start postponed
+because indexing is still running, the concurrency limit is reached, or the
+repository is not ready deletes its row if it leaves zero tries, no outcome and
+no generation attempts. The next real start creates a new row with a new first
+start timestamp. An attempt that has only waited so far therefore has no row.
+
+Only `published` is final; other outcomes can still change. Writes are best
+effort, so a failed write can leave no row or no outcome. Rows exist only from
+#940's release; earlier periods are “not recorded”, never zero. A user's cancel
+writes nothing to this table today. Recovery: drop only
+`octopus_analytics.review_attempt_outcomes_v1`; nothing else changes.
 
 ### Organisation creation provenance
 
@@ -231,6 +263,17 @@ plan and reassess indexing if the account table grows substantially.
 
 ## Operator setup
 
+For the review-attempt outcomes view on an existing installation, first apply
+migration `20261016120000_review_attempt_outcomes`, then run
+`scripts/analytics/update-review-attempt-outcomes.sql` through the existing
+operator connection. Add `octopus_analytics.review_attempt_outcomes_v1` as a new
+table in the PostHog source. The script checks the analytics schema, reader role,
+`organizations_v1`, source table and required source columns, and refuses a target
+name occupied by anything other than a view. It is safe to repeat. Fresh installs
+must apply the application migrations before `access.sql`, which installs the
+same view definition and grants. Neither `generationAttempts` nor
+`resultArchiveId` is a prerequisite.
+
 For the provenance view on an existing installation, run
 `scripts/analytics/update-organization-provenance.sql` once through the existing
 operator connection, then add `octopus_analytics.organization_provenance_v1` to
@@ -266,17 +309,17 @@ schema or view. It is safe to repeat. Fresh installations use `access.sql` below
    Without Docker, use `ANALYTICS_TEST_BACKEND=local bash scripts/analytics/check.sh`
    with PostgreSQL 17 or newer tools on PATH. This creates and removes a disposable
    socket-only cluster; it never reuses a server or accepts a connection URL.
-   It checks both provenance and signup-method feature suites, including their
+   It checks outcomes, provenance and signup-method feature suites, including their
    separate scale plans, plus privileges, cash validation and synthetic funnel
    aggregates at scale. Review the SQL through the repository's normal PR gates.
 3. Apply the reviewed `access.sql` using the application's existing DB operator
    connection. Record its exact checksum and aggregate acceptance privately.
-4. Verify the six projections and deny checks using the restricted role. Then
+4. Verify the seven projections and deny checks using the restricted role. Then
    generate a unique credential through the existing secret channel and enable
    LOGIN only for the approved connection. Never put a password in shell
    arguments, a committed file, an issue or a handover message. Do not share an
    operator credential with the analytics lead.
-5. Configure only this schema and these six views in the existing PostHog
+5. Configure only this schema and these seven views in the existing PostHog
    project. Verify that the actual connector discovers views and can read them
    with these permissions. If it cannot, keep the source unconfigured and choose
    a separately reviewed projection/export path; do not broaden table grants.
@@ -289,7 +332,7 @@ schema or view. It is safe to repeat. Fresh installations use `access.sql` below
 
 Revoke login first with `ALTER ROLE octopus_analytics_reader NOLOGIN`, then
 terminate only that role's sessions when immediate revocation is required.
-Pause/remove its PostHog source before retiring the views. Remove only the six
+Pause/remove its PostHog source before retiring the views. Remove only the seven
 named views, schema and principal after checking dependencies; do not use CASCADE.
 Rotation changes the dedicated credential and source config, never app DB secrets.
 

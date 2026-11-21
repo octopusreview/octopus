@@ -247,10 +247,11 @@ describe("incrementalIndex", () => {
   });
 
   it("stops before touching the index when .octopusignore cannot be read", async () => {
-    mockGhGetFileContent = mock((_installationId: number, _owner: string, _repo: string, _branch: string, filePath: string) => {
-      if (filePath === ".octopusignore") return Promise.reject(new Error("Failed to get GitHub file content: 500"));
-      if (filePath === "src/secret.ts") return Promise.resolve("const key = 'hush';\n");
-      return Promise.resolve(null);
+    mockGhGetFileContent = mock(async (...args: Parameters<typeof import("../github").getFileContent>) => {
+      const [, , , , filePath, , , , options] = args;
+      if (filePath === ".octopusignore" && options?.failOnError) throw new Error("Failed to get GitHub file content: 500");
+      if (filePath === "src/secret.ts") return "const key = 'hush';\n";
+      return null;
     });
 
     await expect(

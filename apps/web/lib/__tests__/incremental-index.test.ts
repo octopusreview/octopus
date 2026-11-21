@@ -290,6 +290,26 @@ describe("incrementalIndex", () => {
     expect(mockUpsertChunks).not.toHaveBeenCalled();
   });
 
+  it("stops before touching the index when the default branch was renamed", async () => {
+    // GitHub still answers for the pull request, but every read on the old branch name is a 404.
+    mockGhGetFileContent = mock(() => Promise.resolve(null));
+
+    await expect(
+      incrementalIndex(indexOwner, "owner/repo", "main", 12345, [{ filename: "src/utils.ts", status: "modified" }], "github", undefined, "trunk"),
+    ).rejects.toThrow("default branch changed");
+
+    expect(mockGhGetFileContent).not.toHaveBeenCalled();
+    expect(mockDeleteRepoFileChunks).not.toHaveBeenCalled();
+    expect(mockUpsertChunks).not.toHaveBeenCalled();
+  });
+
+  it("indexes as before when the reported default branch matches the stored one", async () => {
+    const result = await incrementalIndex(indexOwner, "owner/repo", "main", 12345, [{ filename: "src/utils.ts", status: "modified" }], "github", undefined, "main");
+
+    expect(result.updatedFiles).toBe(1);
+    expect(mockUpsertChunks).toHaveBeenCalledTimes(1);
+  });
+
   it("honours .octopusignore from the default branch", async () => {
     mockGhGetFileContent = mock((_installationId: number, _owner: string, _repo: string, _branch: string, filePath: string) => {
       if (filePath === ".octopusignore") return Promise.resolve("src/secret.ts\n");

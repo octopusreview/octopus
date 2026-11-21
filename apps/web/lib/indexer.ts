@@ -662,8 +662,16 @@ export async function incrementalIndex(
   changedFiles: { filename: string; status: string }[],
   provider: string = "github",
   organizationId?: string,
+  /** The default branch the provider reports now (webhook payload), when known. */
+  currentDefaultBranch?: string,
 ): Promise<{ updatedFiles: number; removedFiles: number; newVectors: number }> {
   const { repoId } = owner;
+  // After a rename every read on the stored branch is a 404, which would delete
+  // the changed files' chunks and replace them with nothing. Stop instead; the
+  // caller marks the repository stale and the full index resolves the new name.
+  if (currentDefaultBranch && currentDefaultBranch !== defaultBranch) {
+    throw new Error("Indexing incomplete: the default branch changed");
+  }
   const removed = changedFiles
     .filter((f) => f.status === "removed")
     .map((f) => f.filename);

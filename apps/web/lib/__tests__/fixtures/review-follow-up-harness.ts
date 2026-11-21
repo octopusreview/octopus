@@ -56,7 +56,7 @@ const localClassification = process.argv.includes("--local-classification");
 let localFailure: { message: string; provider: "local" | "ollama" | "openai"; status?: number; code?: string; name?: string; keyOwner?: "platform" | "organization" | "unknown"; unwrapped?: boolean; throwValue?: boolean } | null = null;
 if (refusalFlow) process.env.ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 let refusalCalls = 0;
-let preparationFetchFailure: "review_input" | "repository_tree" | "large_pr" | null = null;
+let preparationFetchFailure: "review_input" | "repository_tree" | "large_pr" | "ignore_rules" | null = null;
 const queuedJobs: string[] = [];
 class FixtureLargePrError extends Error { meta = { reason: "diff_too_large" }; }
 let indexPreparation: "normal" | "fail" | "replace" | "replace-success" = "normal";
@@ -388,8 +388,11 @@ mock.module("@/lib/github", () => ({
     checkConclusions.push(conclusion);
     checkOutputs.push(_output);
   },
-  getRepositoryTree: async () => { if (preparationFetchFailure === "repository_tree") throw Object.assign(new Error("synthetic private tree"), { status: 503, request_id: "req_syntheticprivate123" }); return ["src/check.ts"]; },
-  getFileContent: async () => "return value.name;",
+  getRepositoryTree: async () => { if (preparationFetchFailure === "repository_tree") throw Object.assign(new Error("synthetic private tree"), { status: 503, request_id: "req_syntheticprivate123" }); return preparationFetchFailure === "ignore_rules" ? [".octopusignore", "src/check.ts"] : ["src/check.ts"]; },
+  getFileContent: async (_installation: number, _owner: string, _repo: string, _ref: string, file: string) => {
+    if (preparationFetchFailure === "ignore_rules" && file === ".octopusignore") throw Object.assign(new Error("synthetic private ignore"), { status: 503, request_id: "req_syntheticprivate123" });
+    return "return value.name;";
+  },
   listReviewComments: async () => { if (bestEffortPrivacy && failureSite === "match-ids") throw privateFailure(); return []; },
   listPullRequestReviewComments: async () => (feedbackMode === "reply" || feedbackMode === "classifier-reply") ? [{ id: 6, user: "fixture", body: feedbackMode === "reply" ? "👎" : "Please reconsider this finding", inReplyToId: 5 }] : [{ id: 5, user: "fixture[bot]", path: "src/check.ts", line: 1, body: "🟠 Previous unrelated partial-review issue", inReplyToId: null }],
   listPullRequestIssueComments: async () => feedbackMode === "per-finding" ? [{ user: "fixture", createdAt: new Date().toISOString(), body: "**Missing null check** — 👎" }] : (feedbackMode === "bulk" || feedbackMode === "classifier-bulk") ? [{ user: "fixture", createdAt: new Date().toISOString(), body: feedbackMode === "bulk" ? "👎" : "Please reconsider these findings" }] : [],
@@ -1014,6 +1017,18 @@ if (preparationDiagnostic) {
       assert.ok(events.some(event => event.status === "failed" && event.error === "Review failed during preparation"));
       assert.doesNotMatch(inspect({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }, { depth: 20 }), /synthetic private|req_syntheticprivate123/);
     }
+    // A listed .octopusignore that cannot be read fails the review before any code reaches the model.
+    preparationFetchFailure = "ignore_rules";
+    pr.status = "pending";
+    summaries.length = 0; checkOutputs.length = 0; reviewUpdates.length = 0; events.length = 0; errors.length = 0;
+    const dispatchesBeforeIgnoreFailure = generationDispatches, usageBeforeIgnoreFailure = usageCount, publishedBeforeIgnoreFailure = published.length;
+    await processReview("pr");
+    assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "Review failed during preparation"; }), "an unreadable .octopusignore fails the review");
+    assert.equal(generationDispatches, dispatchesBeforeIgnoreFailure, "nothing is sent to the review model without the ignore rules");
+    assert.equal(usageCount, usageBeforeIgnoreFailure);
+    assert.equal(published.length, publishedBeforeIgnoreFailure);
+    assert.ok(checkOutputs.length || summaries.length, "failure remains visible to the provider");
+    assert.doesNotMatch(inspect({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }, { depth: 20 }), /synthetic private|req_syntheticprivate123/);
     preparationFetchFailure = null;
     repo.provider = "gitlab";
     failureSite = "initial-comment";

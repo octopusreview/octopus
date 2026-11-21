@@ -371,6 +371,7 @@ export async function POST(request: NextRequest) {
               files,
               "github",
               repo.organizationId,
+              payload.repository?.default_branch,
             );
             await prisma.repository.updateMany({
               where: { id: repo.id, indexStatus: "indexed", activeIndexGeneration: repo.activeIndexGeneration, indexedAt: { not: null } },

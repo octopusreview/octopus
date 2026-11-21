@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.24] - 2026-11-21
+
 ### Fixed
 
 - The comparison pages still described CodeRabbit as a SaaS-only product in three places. It also offers self-hosting on its Enterprise plans, and the pages now say so.

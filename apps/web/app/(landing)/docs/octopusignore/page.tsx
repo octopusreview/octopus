@@ -245,7 +245,7 @@ models/**/*.bin`}
         </Paragraph>
         <div className="mb-4 grid gap-3 sm:grid-cols-3">
           <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
-            <h4 className="text-sm font-medium text-white">GitHub</h4>
+            <h4 className="text-sm font-medium text-white">GitHub and Forgejo</h4>
             <p className="mt-1 text-xs text-[#666]">
               Fetched via Contents API from the PR&apos;s base branch.
             </p>
@@ -265,10 +265,10 @@ models/**/*.bin`}
           </div>
         </div>
         <Paragraph>
-          If the base branch has no <Mono>.octopusignore</Mono>, the review
-          proceeds without custom rules. If Octopus finds the file in the
-          repository tree but gets an error reading it while preparing the
-          diff, the review stops before the diff reaches the model.
+          If <Mono>.octopusignore</Mono> is absent from the base branch or
+          reads as an empty file, the review proceeds without custom rules.
+          If the repository tree lists the file and Octopus can&apos;t read it,
+          Octopus stops the review before sending the diff to the model.
           You&apos;ll see &ldquo;Review failed during preparation&rdquo; and
           can request the review again.
         </Paragraph>

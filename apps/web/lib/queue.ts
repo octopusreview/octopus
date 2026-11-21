@@ -40,7 +40,9 @@ function getBoss(): PgBoss {
     throw new Error("DATABASE_URL is required for pg-boss");
   }
 
-  const instance = new PgBoss(databaseUrl);
+  // No handler here is transactional, so the pool only serves polls and completions;
+  // the default of 10 was held open by every worker. Budget: packages/db/src/index.ts.
+  const instance = new PgBoss({ connectionString: databaseUrl, max: 4 });
   installQueueShutdown(instance, undefined, retireQueueDrainWorker);
   globalForQueue.pgBoss = instance;
   return instance;

@@ -14,7 +14,7 @@ url.searchParams.set("options", `-c timezone=${scenario === "timezone-berlin" ? 
 process.env.DATABASE_URL = url.toString();
 mock.module("server-only", () => ({}));
 const dbModule = await import("@octopus/db");
-const { prisma } = dbModule;
+const { prisma, DATABASE_POOL_MAX } = dbModule;
 const activityModule = await import("../../external-review-activity");
 const { startExternalReviewActivity: start, finishExternalReviewActivity: finish, withExternalReviewActivity: record } = activityModule;
 const id = randomUUID();
@@ -111,8 +111,8 @@ try {
     let ready = 0;
     let allReady!: () => void;
     const acquired = new Promise<void>(resolve => { allReady = resolve; });
-    const holders = Array.from({ length: 10 }, () => prisma.$transaction(async () => {
-      if (++ready === 10) allReady();
+    const holders = Array.from({ length: DATABASE_POOL_MAX }, () => prisma.$transaction(async () => {
+      if (++ready === DATABASE_POOL_MAX) allReady();
       await blocked;
     }, { maxWait: 10_000, timeout: 10_000 }));
     await acquired;
@@ -214,7 +214,7 @@ try {
         let acquired = 0;
         let allAcquired!: () => void;
         const ready = new Promise<void>(resolve => { allAcquired = resolve; });
-        const holderCount = mode === "latency-pool" ? 10 : mode === "latency-lock" ? 1 : 0;
+        const holderCount = mode === "latency-pool" ? DATABASE_POOL_MAX : mode === "latency-lock" ? 1 : 0;
         try {
           for (let index = 0; index < holderCount; index++) holders.push(prisma.$transaction(async tx => {
             if (mode === "latency-lock") await tx.$executeRawUnsafe("LOCK TABLE external_review_activity IN ACCESS EXCLUSIVE MODE");

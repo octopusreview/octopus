@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Octopus Cloud could briefly refuse database connections at busy moments or during an update, which failed a few page loads. Each service now keeps fewer connections open, so the limit is no longer reached.
+
 ## [1.4.28] - 2026-11-21
 
 ### Fixed

@@ -40,8 +40,10 @@ mock.module("@/lib/github", () => ({
   getRepositoryDetails: () => Promise.resolve(null),
 }));
 
+let mockBbGetFileContent = mock((_org: string, _workspace: string, _slug: string, _branch: string, _filePath: string): Promise<string | null> => Promise.resolve(null));
+
 mock.module("@/lib/bitbucket", () => ({
-  getFileContent: () => Promise.resolve(null),
+  getFileContent: (...args: unknown[]) => mockBbGetFileContent(...(args as Parameters<typeof mockBbGetFileContent>)),
   getAccessToken: () => Promise.resolve("bb-token"),
 }));
 
@@ -66,6 +68,7 @@ describe("incrementalIndex", () => {
     mockEnsureCollection = mock(() => Promise.resolve());
     mockUpsertChunks = mock(() => Promise.resolve());
     mockGetInstallationToken = mock(() => Promise.resolve("test-token"));
+    mockBbGetFileContent = mock(() => Promise.resolve(null));
     mockGhGetFileContent = mock((_installationId: number, _owner: string, _repo: string, _branch: string, filePath: string) => {
       if (filePath === "src/index.ts") return Promise.resolve("export const hello = 'world';\n");
       if (filePath === "src/utils.ts") return Promise.resolve("export function add(a: number, b: number) { return a + b; }\n");
@@ -241,6 +244,50 @@ describe("incrementalIndex", () => {
 
     expect(mockUpsertChunks).not.toHaveBeenCalled();
     expect(result.newVectors).toBe(0);
+  });
+
+  it("stops before touching the index when .octopusignore cannot be read", async () => {
+    mockGhGetFileContent = mock(async (...args: Parameters<typeof import("../github").getFileContent>) => {
+      const [, , , , filePath, , , , options] = args;
+      if (filePath === ".octopusignore" && options?.failOnError) throw new Error("Failed to get GitHub file content: 500");
+      if (filePath === "src/secret.ts") return "const key = 'hush';\n";
+      return null;
+    });
+
+    await expect(
+      incrementalIndex(indexOwner, "owner/repo", "main", 12345, [{ filename: "src/secret.ts", status: "modified" }], "github"),
+    ).rejects.toThrow("could not read .octopusignore");
+
+    // Nothing is fetched, deleted or embedded without the rules
+    expect(mockGhGetFileContent.mock.calls.map((c) => c[4])).toEqual([".octopusignore"]);
+    expect(mockDeleteRepoFileChunks).not.toHaveBeenCalled();
+    expect(mockUpsertChunks).not.toHaveBeenCalled();
+  });
+
+  it("treats a provider's 404 for .octopusignore as a repository without rules", async () => {
+    mockBbGetFileContent = mock((_org: string, _workspace: string, _slug: string, _branch: string, filePath: string) =>
+      filePath === ".octopusignore"
+        ? Promise.reject(Object.assign(new Error("Failed to get Bitbucket file content: 404"), { status: 404 }))
+        : Promise.resolve("export const x = 1;\n"),
+    );
+
+    const result = await incrementalIndex(indexOwner, "workspace/repo", "main", 0, [{ filename: "src/utils.ts", status: "modified" }], "bitbucket", "org-1");
+
+    expect(result.updatedFiles).toBe(1);
+    expect(mockUpsertChunks).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops when a provider fails to return .octopusignore for any other reason", async () => {
+    mockBbGetFileContent = mock((_org: string, _workspace: string, _slug: string, _branch: string, filePath: string) =>
+      filePath === ".octopusignore"
+        ? Promise.reject(Object.assign(new Error("Failed to get Bitbucket file content: 500"), { status: 500 }))
+        : Promise.resolve("export const x = 1;\n"),
+    );
+
+    await expect(
+      incrementalIndex(indexOwner, "workspace/repo", "main", 0, [{ filename: "src/utils.ts", status: "modified" }], "bitbucket", "org-1"),
+    ).rejects.toThrow("could not read .octopusignore");
+    expect(mockUpsertChunks).not.toHaveBeenCalled();
   });
 
   it("honours .octopusignore from the default branch", async () => {

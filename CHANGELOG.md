@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- If Octopus can't read your `.octopusignore` rules after a GitHub pull request merges, it now stops the update, preserves the existing index and marks it stale for the next full re-index.
+
 ## [1.4.27] - 2026-11-21
 
 ### Changed

@@ -34,7 +34,7 @@ const comparisons = [
     slug: "vs-coderabbit",
     competitor: "CodeRabbit",
     gradient: "from-[#FFD4A8] via-[#FF8A3D] to-[#F15A24]",
-    tagline: "Managed SaaS with Dynamic Discovery",
+    tagline: "Dynamic Discovery, per-developer pricing",
     description:
       "Both tools review PRs with LLMs, but take different approaches to codebase context. Compare pricing, self-hosting, and more.",
   },

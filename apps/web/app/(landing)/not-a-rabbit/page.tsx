@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { SessionLink } from "@/components/session-aware";
 import Link from "@/components/link";
 import Image from "next/image";
-import { CouponCode } from "./coupon-code";
 import { LandingFooter } from "@/components/landing-footer";
 import { LandingMobileNav } from "@/components/landing-mobile-nav";
 import { LandingDesktopNav } from "@/components/landing-desktop-nav";
@@ -135,20 +134,9 @@ export default async function NotARabbitPage() {
             AI-powered code review that sees what single-track reviewers miss.
           </p>
 
-          {/* Coupon */}
-          <div className="animate-fade-in mx-auto mt-10 max-w-sm rounded-2xl border border-white/[0.06] bg-white/[0.02] px-8 py-6 text-center [animation-delay:400ms]">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#555]">
-              You found the sticker
-            </p>
-            <CouponCode />
-            <p className="mt-3 text-sm text-[#888]">
-              Claim <span className="font-semibold text-white">$50 free credits</span> after signing up.
-            </p>
-          </div>
-
-          <div className="animate-fade-in mt-6 flex flex-col items-center gap-4 sm:flex-row sm:justify-center [animation-delay:500ms]">
+          <div className="animate-fade-in mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center [animation-delay:400ms]">
             <SessionLink
-              signedOutLabel="Claim & Get Started"
+              signedOutLabel="Get started"
               className="inline-flex items-center gap-2 rounded-full bg-white px-8 py-3 text-sm font-semibold text-black transition-all hover:bg-[#e0e0e0]"
             />
             <Link

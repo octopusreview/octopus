@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The Greptile comparison page had Greptile's pricing and self-hosting wrong. It now matches Greptile's own site: credits with no seat fees, a free Starter plan, and self-hosting on its Enterprise plan.
 
+## [1.4.25] - 2026-11-21
+
+### Fixed
+
+- The Not a Rabbit page still showed a coupon code that is no longer active. The coupon box has been removed.
+
 ## [1.4.24] - 2026-11-21
 
 ### Fixed

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.30] - 2026-11-21
+
 ### Fixed
 
 - When your repository lists a `.octopusignore` file and Octopus can't read it while preparing a review, the review now stops before any diff is sent to the model. You'll see "Review failed during preparation" and can request the review again.

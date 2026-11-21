@@ -128,8 +128,11 @@ vendor/**
           review context.
         </Paragraph>
         <Paragraph>
-          After a GitHub pull request merges, Octopus reads the rules from the
-          default branch before indexing changed files. If GitHub returns 404 for{" "}
+          After a GitHub pull request merges, Octopus checks whether GitHub
+          reports a different default branch. If so, Octopus leaves the indexed
+          files in place and marks the index stale for a full re-index.
+          Otherwise, it reads the rules from the stored default branch before
+          indexing changed files. If GitHub returns 404 for{" "}
           <Mono>.octopusignore</Mono>, the update proceeds without custom rules.
           If the read fails for any other reason, Octopus stops the update and
           marks the existing index stale for a full re-index.
@@ -150,6 +153,13 @@ vendor/**
           When reviewing a PR, Octopus filters out diff sections for ignored
           files. The AI reviewer never sees changes to those files, so it
           won&apos;t comment on them.
+        </Paragraph>
+        <Paragraph>
+          If the base branch has no <Mono>.octopusignore</Mono>, the review
+          proceeds without custom rules. If Octopus finds the file in the
+          repository tree but gets an error reading it, the review stops before
+          the diff reaches the model. You’ll see “Review failed during preparation” and can
+          request the review again.
         </Paragraph>
         <FlowDiagram
           steps={[
@@ -264,10 +274,6 @@ models/**/*.bin`}
             </p>
           </div>
         </div>
-        <Paragraph>
-          If the file doesn&apos;t exist or can&apos;t be fetched, Octopus
-          continues normally without any ignore rules.
-        </Paragraph>
       </Section>
     </article>
   );

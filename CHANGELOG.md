@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.26] - 2026-11-21
+
 ### Fixed
 
 - The Greptile comparison page had Greptile's pricing and self-hosting wrong. It now matches Greptile's own site: credits with no seat fees, a free Starter plan, and self-hosting on its Enterprise plan.

@@ -1033,7 +1033,7 @@ if (preparationDiagnostic) {
       assert.equal(sentryEvents.at(-1)?.tags?.preparation_operation, operation);
       assert.equal(sentryEvents.at(-1)?.tags?.failure_code, "http_503");
       assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "Review failed during preparation"; }));
-      assert.ok(checkOutputs.length || summaries.length, "failure remains visible to the provider");
+      assert.ok(summaries.some(body => body.includes("Review failed during preparation")), `GitHub reports the ${operation} failure`);
       assert.ok(events.some(event => event.status === "failed" && event.error === "Review failed during preparation"));
       assert.doesNotMatch(inspect({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }, { depth: 20 }), /synthetic private|req_syntheticprivate123/);
     }
@@ -1049,8 +1049,9 @@ if (preparationDiagnostic) {
       assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "Review failed during preparation"; }), `${provider} ${failure}: an unreadable .octopusignore fails the review`);
       assert.equal(aiMessageRequests, requestsBefore, `${provider} ${failure}: nothing is sent to a model without the ignore rules`);
       assert.equal(published.length, publishedBefore);
-      assert.ok(checkOutputs.length || summaries.length || forgejoPublications.length, "failure remains visible to the provider");
-      assert.doesNotMatch(inspect({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }, { depth: 20 }), /synthetic private|req_syntheticprivate123/);
+      const publications = provider === "forgejo" ? forgejoPublications : summaries;
+      assert.ok(publications.some(body => body.includes("Review failed during preparation")), `${provider} ${failure}: the PR comment reports the failure`);
+      assert.doesNotMatch(inspect({ summaries, checkOutputs, forgejoPublications, reviewUpdates, events, errors, sentryEvents }, { depth: 20 }), /synthetic private|req_syntheticprivate123/);
     }
     // Control: with readable rules the same review does reach the model, so the counter above is a live oracle.
     preparationFetchFailure = "ignore_rules_ok";

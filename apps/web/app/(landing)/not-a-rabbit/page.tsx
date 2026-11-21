@@ -95,11 +95,11 @@ const faqs = [
   },
   {
     q: "Does Octopus send my whole repository to a model?",
-    a: "During indexing, Octopus sends code to the embedding service in chunks. If an index update after a merge cannot read .octopusignore, those chunks can include code your rules would normally exclude. During a review, the diff and the chunks found for it go to the AI service you configured. Self-hosted Octopus with local AI services keeps that processing on your infrastructure.",
+    a: "Not in one request. During indexing, Octopus sends your code to the embedding service in chunks. During a review, the diff and the chunks found for it go to the AI service you configured. Self-hosted Octopus with local AI services keeps that processing on your infrastructure.",
   },
   {
     q: "What does Octopus index?",
-    a: "Octopus indexes supported files and skips folders such as node_modules, dist and build. It applies your .octopusignore rules when it can read the file. Each chunk has a target size of 1,500 characters. For multiline code, the next chunk carries over up to three lines. When Octopus splits a single long line, the pieces overlap by 200 characters.",
+    a: "Octopus indexes supported code files and skips folders such as node_modules, dist and build. Each chunk has a target size of 1,500 characters. For multiline code, the next chunk carries over up to three lines. When Octopus splits a single long line, the pieces overlap by 200 characters.",
   },
   {
     q: "Does full-codebase review cost more?",

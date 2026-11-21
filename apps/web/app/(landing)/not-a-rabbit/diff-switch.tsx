@@ -59,21 +59,19 @@ export function DiffSwitch() {
         </ul>
       </div>
 
-      <p aria-live="polite" className="mt-4 text-center text-sm text-[#999]">
-        {whole ? (
-          <>
-            <span className="font-semibold text-white">Reads 4 files.</span> The review can point at{" "}
-            <code className="text-[#ccc]">workers/refund.ts</code>, which still passes two arguments to{" "}
-            <code className="text-[#ccc]">charge()</code>.
-          </>
-        ) : (
-          <>
-            <span className="font-semibold text-white">Reads 3 files.</span> The diff leaves out the refund
-            worker, so the reviewer cannot check which arguments it passes to{" "}
-            <code className="text-[#ccc]">charge()</code>.
-          </>
-        )}
-      </p>
+      {/* Both captions are in the HTML; the switch only chooses which one shows. */}
+      <div aria-live="polite" className="mt-4 text-center text-sm text-[#999]">
+        <p hidden={whole}>
+          <span className="font-semibold text-white">Reads 3 files.</span> The diff leaves out the refund
+          worker, so the reviewer cannot check which arguments it passes to{" "}
+          <code className="text-[#ccc]">charge()</code>.
+        </p>
+        <p hidden={!whole}>
+          <span className="font-semibold text-white">Reads 4 files.</span> The review can point at{" "}
+          <code className="text-[#ccc]">workers/refund.ts</code>, which still passes two arguments to{" "}
+          <code className="text-[#ccc]">charge()</code>.
+        </p>
+      </div>
       <p className="mt-1 text-center text-xs text-[#555]">An illustration, not a real review.</p>
     </div>
   );

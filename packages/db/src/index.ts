@@ -3,6 +3,10 @@ import { PrismaPg } from "@prisma/adapter-pg";
 
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL,
+  // Cloud runs seven containers at once during a rolling update against max_connections=100;
+  // 8 here plus 4 for pg-boss (lib/queue.ts) keeps the worst case near 80.
+  // shortcut: fixed numbers, make them env settings when a deployment needs others.
+  max: 8,
 });
 
 const globalForPrisma = globalThis as unknown as {

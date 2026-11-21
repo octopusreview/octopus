@@ -265,8 +265,12 @@ models/**/*.bin`}
           </div>
         </div>
         <Paragraph>
-          If the file doesn&apos;t exist or can&apos;t be fetched, Octopus
-          continues normally without any ignore rules.
+          If the base branch has no <Mono>.octopusignore</Mono>, the review
+          proceeds without custom rules. If Octopus finds the file in the
+          repository tree but gets an error reading it while preparing the
+          diff, the review stops before the diff reaches the model.
+          You&apos;ll see &ldquo;Review failed during preparation&rdquo; and
+          can request the review again.
         </Paragraph>
       </Section>
     </article>

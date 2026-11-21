@@ -1365,8 +1365,16 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
     if (repoTree.includes(".gitattributes")) {
       gitattributes = await fetchBaseConfig(".gitattributes").catch(() => null);
     }
+    // .octopusignore is the exception: it keeps code away from the model, so a
+    // listed file that cannot be read fails the review instead.
     if (repoTree.includes(".octopusignore")) {
-      const content = await fetchBaseConfig(".octopusignore").catch(() => null);
+      const content = isGitHub && installationId
+        ? await ghGetFileContent(installationId, owner, repoName, inputBaseRef, ".octopusignore", undefined, undefined, undefined, { failOnError: true })
+        : isForgejo
+          // Without strict, Forgejo's helper turns a 404 into an empty file.
+          ? await forgejo.getFileContent(org.id, projectPath, inputBaseRef, ".octopusignore", { strict: true })
+          : await fetchBaseConfig(".octopusignore");
+      if (content === null) throw new Error("Review stopped: could not read .octopusignore");
       if (content) octopusIg = parseOctopusIgnore(content);
     }
     const preparationOptions = {

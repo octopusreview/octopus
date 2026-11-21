@@ -45,7 +45,7 @@ const faqs = [
   },
   {
     q: "Is Octopus open source or source-available?",
-    a: "Octopus is source-available under a Modified MIT License and free to self-host on your own infrastructure. Greptile is a proprietary SaaS. If audit, customization, or running fully on-prem matters for your team, Octopus is the only option of the two.",
+    a: "Octopus is source-available under a Modified MIT License and free to self-host on your own infrastructure. Greptile offers self-hosting on its Enterprise plan, under a licence from its sales team. If self-hosting at no charge matters for your team, Octopus is the one of the two that offers it.",
   },
   {
     q: "Which is better for codebase chat or Q&A?",
@@ -81,11 +81,11 @@ const rows: ComparisonRow[] = [
   { label: "Codebase Q&A API for developers", octopus: true, competitor: true },
   { label: "Inline PR comments", octopus: true, competitor: true },
   { label: "Severity-rated findings", octopus: "Critical, Major, Minor, Suggestion, Tip", competitor: "Review comments" },
-  { label: "Licensing", octopus: "Source-available (Modified MIT)", competitor: "Proprietary SaaS" },
-  { label: "Self-hosting option", octopus: true, competitor: "Enterprise plans" },
-  { label: "Bring your own LLM API keys", octopus: true, competitor: "Enterprise plans" },
-  { label: "Pricing model", octopus: "Usage-based credits", competitor: "Per-developer subscription" },
-  { label: "Free tier", octopus: "Free credits + free self-host", competitor: "Free trial" },
+  { label: "Licensing", octopus: "Source-available (Modified MIT)", competitor: "Commercial licence" },
+  { label: "Self-hosting option", octopus: true, competitor: "Enterprise plan" },
+  { label: "Bring your own LLM API keys", octopus: true, competitor: "Self-hosted only" },
+  { label: "Pricing model", octopus: "Usage-based credits", competitor: "Usage-based credits, no seat fees" },
+  { label: "Free tier", octopus: "Free credits + free self-host", competitor: "Free Starter plan (1 developer, 50 credits a month)" },
 ];
 
 export default async function VsGreptilePage() {
@@ -176,10 +176,6 @@ export default async function VsGreptilePage() {
               </li>
               <li className="flex gap-3">
                 <IconCheck className="mt-0.5 size-4 shrink-0 text-primary" />
-                You prefer usage-based credits over per-developer seats.
-              </li>
-              <li className="flex gap-3">
-                <IconCheck className="mt-0.5 size-4 shrink-0 text-primary" />
                 You want to bring your own Claude, OpenAI, or Gemini API keys.
               </li>
               <li className="flex gap-3">
@@ -203,11 +199,6 @@ export default async function VsGreptilePage() {
                 <IconCheck className="mt-0.5 size-4 shrink-0 text-[#cfcfcf]" />
                 You prefer a fully managed SaaS so your team can stay focused
                 on product work.
-              </li>
-              <li className="flex gap-3">
-                <IconCheck className="mt-0.5 size-4 shrink-0 text-[#cfcfcf]" />
-                Per-developer pricing is a better fit for your budgeting
-                process.
               </li>
             </ul>
           </div>

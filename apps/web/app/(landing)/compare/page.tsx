@@ -42,7 +42,7 @@ const comparisons = [
     slug: "vs-greptile",
     competitor: "Greptile",
     gradient: "from-primary to-primary/80",
-    tagline: "RAG-based codebase intelligence SaaS",
+    tagline: "RAG-based codebase intelligence",
     description:
       "Both use RAG for deep codebase context. Compare product focus, licensing, deployment, and pricing models.",
   },

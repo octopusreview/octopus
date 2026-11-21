@@ -127,6 +127,13 @@ vendor/**
           embedded — they won&apos;t appear in code search results or be used as
           review context.
         </Paragraph>
+        <Paragraph>
+          After a GitHub pull request merges, Octopus reads the rules from the
+          default branch before indexing changed files. If GitHub returns 404 for{" "}
+          <Mono>.octopusignore</Mono>, the update proceeds without custom rules.
+          If the read fails for any other reason, Octopus stops the update and
+          marks the existing index stale for a full re-index.
+        </Paragraph>
         <FlowDiagram
           steps={[
             "Repository tree fetched",

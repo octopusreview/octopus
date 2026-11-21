@@ -56,7 +56,8 @@ const localClassification = process.argv.includes("--local-classification");
 let localFailure: { message: string; provider: "local" | "ollama" | "openai"; status?: number; code?: string; name?: string; keyOwner?: "platform" | "organization" | "unknown"; unwrapped?: boolean; throwValue?: boolean } | null = null;
 if (refusalFlow) process.env.ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 let refusalCalls = 0;
-let preparationFetchFailure: "review_input" | "repository_tree" | "large_pr" | "ignore_rules" | null = null;
+let preparationFetchFailure: "review_input" | "repository_tree" | "large_pr" | "ignore_rules" | "ignore_rules_null" | "ignore_rules_ok" | null = null;
+let aiMessageRequests = 0;
 const queuedJobs: string[] = [];
 class FixtureLargePrError extends Error { meta = { reason: "diff_too_large" }; }
 let indexPreparation: "normal" | "fail" | "replace" | "replace-success" = "normal";
@@ -232,6 +233,7 @@ mock.module("@/lib/ai-usage", () => ({ logAiUsage: async (usage: { operation: st
 mock.module("@/lib/ai-router", () => ({ credentialRouteUnchanged: async () => { if (retryBlock === "key-cancelled") retryAbort.abort(); return retryBlock !== "key"; }, getProviderForModel: async () => {
   assert.ok(adaptiveStage, "Legacy fixture must not resolve adaptive capacity"); return "anthropic";
 }, createAiMessage: async (params: AiCreateParams) => {
+  aiMessageRequests++;
   if (generationSetupErrorPrivacy) throw privateFailure();
   if (bestEffortPrivacy && failureSite === "followup" && ++privacyGenerationCalls > 1) throw privateFailure();
   if (bestEffortPrivacy && failureSite === "classifier" && params.model === "claude-sonnet-5") return { provider: "openai", usedOwnKey: false, text: '["synthetic-secret req_syntheticprivate123",]', usage: { inputTokens: 1, outputTokens: 1 } };
@@ -388,9 +390,11 @@ mock.module("@/lib/github", () => ({
     checkConclusions.push(conclusion);
     checkOutputs.push(_output);
   },
-  getRepositoryTree: async () => { if (preparationFetchFailure === "repository_tree") throw Object.assign(new Error("synthetic private tree"), { status: 503, request_id: "req_syntheticprivate123" }); return preparationFetchFailure === "ignore_rules" ? [".octopusignore", "src/check.ts"] : ["src/check.ts"]; },
+  getRepositoryTree: async () => { if (preparationFetchFailure === "repository_tree") throw Object.assign(new Error("synthetic private tree"), { status: 503, request_id: "req_syntheticprivate123" }); return preparationFetchFailure?.startsWith("ignore_rules") ? [".octopusignore", "src/check.ts"] : ["src/check.ts"]; },
   getFileContent: async (_installation: number, _owner: string, _repo: string, _ref: string, file: string) => {
-    if (preparationFetchFailure === "ignore_rules" && file === ".octopusignore") throw Object.assign(new Error("synthetic private ignore"), { status: 503, request_id: "req_syntheticprivate123" });
+    if (file === ".octopusignore" && preparationFetchFailure === "ignore_rules") throw Object.assign(new Error("synthetic private ignore"), { status: 503, request_id: "req_syntheticprivate123" });
+    if (file === ".octopusignore" && preparationFetchFailure === "ignore_rules_null") return null;
+    if (file === ".octopusignore" && preparationFetchFailure === "ignore_rules_ok") return "docs/\n";
     return "return value.name;";
   },
   listReviewComments: async () => { if (bestEffortPrivacy && failureSite === "match-ids") throw privateFailure(); return []; },
@@ -408,7 +412,23 @@ mock.module("@/lib/forgejo", () => ({
     return 123;
   },
   updatePullRequestComment: async (_org: string, _project: string, _number: number, _id: number, body: string) => { forgejoPublications.push(body); },
-  getPullRequestReviewInput: async () => { throw new Error("Fixture stops after preparation"); },
+  getPullRequestReviewInput: async () => {
+    if (!preparationFetchFailure?.startsWith("ignore_rules")) throw new Error("Fixture stops after preparation");
+    return { rawDiff: diff, input: {
+      provider: "forgejo", headSha: pr.headSha, baseSha: "b".repeat(40), inventoryComplete: true, expectedFiles: 1, limitations: [],
+      files: [{ path: "src/check.ts", change: "modified", patch: "@@ -1 +1 @@\n-return value;\n+return value.name;\n", additions: 1, deletions: 1 }],
+    } };
+  },
+  getPullRequestDetails: async () => ({ body: "Handle missing values" }),
+  getBranchHead: async () => null,
+  getRepositoryTree: async () => [".octopusignore", "src/check.ts"],
+  // Mirrors the real helper: a 404 is an empty string unless the caller asks for a strict read.
+  getFileContent: async (_org: string, _project: string, _ref: string, file: string, options: { strict?: boolean } = {}) => {
+    if (file !== ".octopusignore") return "return value.name;";
+    if (options.strict) throw Object.assign(new Error("synthetic private ignore"), { status: 404, request_id: "req_syntheticprivate123" });
+    return "";
+  },
+  listPullRequestComments: async () => [],
   setCommitStatus: async (_org: string, _project: string, _sha: string, state: string) => {
     forgejoPublications.push(state);
     if (state === "running") throw new Error("Forgejo API returned 500");
@@ -1017,18 +1037,29 @@ if (preparationDiagnostic) {
       assert.ok(events.some(event => event.status === "failed" && event.error === "Review failed during preparation"));
       assert.doesNotMatch(inspect({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }, { depth: 20 }), /synthetic private|req_syntheticprivate123/);
     }
-    // A listed .octopusignore that cannot be read fails the review before any code reaches the model.
-    preparationFetchFailure = "ignore_rules";
+    // A listed .octopusignore that cannot be read fails the review before any code reaches the model:
+    // a failed read, a "not found" for a file the tree lists, and Forgejo's 404 (an empty string unless strict).
+    for (const [failure, provider] of [["ignore_rules", "github"], ["ignore_rules_null", "github"], ["ignore_rules", "forgejo"]] as const) {
+      preparationFetchFailure = failure;
+      repo.provider = provider;
+      pr.status = "pending";
+      summaries.length = 0; checkOutputs.length = 0; reviewUpdates.length = 0; events.length = 0; errors.length = 0; forgejoPublications.length = 0;
+      const requestsBefore = aiMessageRequests, publishedBefore = published.length;
+      await processReview("pr");
+      assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "Review failed during preparation"; }), `${provider} ${failure}: an unreadable .octopusignore fails the review`);
+      assert.equal(aiMessageRequests, requestsBefore, `${provider} ${failure}: nothing is sent to a model without the ignore rules`);
+      assert.equal(published.length, publishedBefore);
+      assert.ok(checkOutputs.length || summaries.length || forgejoPublications.length, "failure remains visible to the provider");
+      assert.doesNotMatch(inspect({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }, { depth: 20 }), /synthetic private|req_syntheticprivate123/);
+    }
+    // Control: with readable rules the same review does reach the model, so the counter above is a live oracle.
+    preparationFetchFailure = "ignore_rules_ok";
+    repo.provider = "github";
     pr.status = "pending";
     summaries.length = 0; checkOutputs.length = 0; reviewUpdates.length = 0; events.length = 0; errors.length = 0;
-    const dispatchesBeforeIgnoreFailure = generationDispatches, usageBeforeIgnoreFailure = usageCount, publishedBeforeIgnoreFailure = published.length;
+    const requestsBeforeControl = aiMessageRequests;
     await processReview("pr");
-    assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "Review failed during preparation"; }), "an unreadable .octopusignore fails the review");
-    assert.equal(generationDispatches, dispatchesBeforeIgnoreFailure, "nothing is sent to the review model without the ignore rules");
-    assert.equal(usageCount, usageBeforeIgnoreFailure);
-    assert.equal(published.length, publishedBeforeIgnoreFailure);
-    assert.ok(checkOutputs.length || summaries.length, "failure remains visible to the provider");
-    assert.doesNotMatch(inspect({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }, { depth: 20 }), /synthetic private|req_syntheticprivate123/);
+    assert.ok(aiMessageRequests > requestsBeforeControl, "a readable .octopusignore lets the review reach the model");
     preparationFetchFailure = null;
     repo.provider = "gitlab";
     failureSite = "initial-comment";

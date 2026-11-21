@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - When the repository tree lists `.octopusignore` and the file read reports an error, the review stops before sending the diff to the model. Re-request the review to try again.
-- If a repository's default branch was renamed, the index update after a merged GitHub pull request no longer removes the changed files from the index. It stops, and the next full re-index picks up the new branch name.
+- When GitHub reports a different default branch than the one your index was built from (renamed or switched), the index update after a merged pull request no longer removes the changed files from the index. Octopus records the new branch name and re-indexes the repository in full.
 
 ## [1.4.28] - 2026-11-21
 

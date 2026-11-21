@@ -344,6 +344,16 @@ export async function POST(request: NextRequest) {
       // Incremental index: only re-index files changed in this PR
       if (repo.indexStatus === "indexed" && installationId) {
         try {
+          // The index was built from the stored default branch. When GitHub
+          // reports another one (renamed or switched), an incremental update
+          // would read the wrong branch or nothing at all. Keep the stored
+          // name current and take the stale fallback below, so the full
+          // re-index reads the branch GitHub names.
+          const reportedDefaultBranch: string | undefined = payload.repository?.default_branch;
+          if (reportedDefaultBranch && reportedDefaultBranch !== repo.defaultBranch) {
+            await prisma.repository.updateMany({ where: { id: repo.id }, data: { defaultBranch: reportedDefaultBranch } });
+            throw new Error("Indexing incomplete: the default branch changed");
+          }
           const { getInstallationToken } = await import("@/lib/github");
           const token = await getInstallationToken(installationId);
           const headers = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" };
@@ -371,7 +381,7 @@ export async function POST(request: NextRequest) {
               files,
               "github",
               repo.organizationId,
-              payload.repository?.default_branch,
+              reportedDefaultBranch,
             );
             await prisma.repository.updateMany({
               where: { id: repo.id, indexStatus: "indexed", activeIndexGeneration: repo.activeIndexGeneration, indexedAt: { not: null } },

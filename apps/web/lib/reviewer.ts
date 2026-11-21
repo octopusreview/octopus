@@ -1370,7 +1370,10 @@ async function processReviewInternal(pullRequestId: string, executionWindow?: Re
     if (repoTree.includes(".octopusignore")) {
       const content = isGitHub && installationId
         ? await ghGetFileContent(installationId, owner, repoName, inputBaseRef, ".octopusignore", undefined, undefined, undefined, { failOnError: true })
-        : await fetchBaseConfig(".octopusignore");
+        : isForgejo
+          // Without strict, Forgejo's helper turns a 404 into an empty file.
+          ? await forgejo.getFileContent(org.id, projectPath, inputBaseRef, ".octopusignore", { strict: true })
+          : await fetchBaseConfig(".octopusignore");
       if (content === null) throw new Error("Review stopped: could not read .octopusignore");
       if (content) octopusIg = parseOctopusIgnore(content);
     }

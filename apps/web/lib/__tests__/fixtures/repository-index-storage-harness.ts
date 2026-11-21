@@ -206,7 +206,7 @@ export async function exerciseStorageRace(scenario: string, repo: Repository) {
       assert.ok((await getRepoChunks(repo.id)).every(text => text.includes("local")));
       return;
     }
-    if (scenario === "storage-concurrent-incremental" || scenario === "storage-incremental-cleanup") {
+    if (scenario === "storage-concurrent-incremental" || scenario === "storage-incremental-cleanup" || scenario === "storage-renamed-branch") {
       mock.module("next/server", () => ({ after: () => {}, NextRequest: Request, NextResponse: { json: Response.json } }));
       mock.module("next/cache", () => ({ revalidatePath: () => {} }));
       mock.module("@/lib/github-app-config", () => ({ getGithubAppConfig: async () => ({ webhookSecret: "fixture-secret" }) }));
@@ -217,12 +217,26 @@ export async function exerciseStorageRace(scenario: string, repo: Repository) {
         observeGithubWebhookDeliveryBestEffort: async () => {},
       }));
       const { POST } = await import("@/app/api/github/webhook/route");
-      const webhook = (number: number) => {
-        const body = JSON.stringify({ action: "closed", installation: { id: 1 }, repository: { id: repo.externalId }, pull_request: { number, merged: true } });
+      const webhook = (number: number, defaultBranch?: string) => {
+        const body = JSON.stringify({ action: "closed", installation: { id: 1 }, repository: { id: repo.externalId, ...(defaultBranch ? { default_branch: defaultBranch } : {}) }, pull_request: { number, merged: true } });
         return POST(new Request("https://fixture.invalid/api/github/webhook", { method: "POST", body, headers: {
           "x-github-event": "pull_request", "x-hub-signature-256": "sha256=" + createHmac("sha256", "fixture-secret").update(body).digest("hex"),
         } }) as never);
       };
+      if (scenario === "storage-renamed-branch") {
+        // GitHub now reports "trunk" while the index was built from "main": no incremental update,
+        // the stored name follows GitHub, and a full re-index is requested.
+        const before = await getRepoChunks(repo.id);
+        assert.ok(before.length > 0);
+        content = "incremental";
+        assert.equal((await webhook(1, "trunk")).status, 200);
+        const after = await snapshot();
+        assert.equal(after.defaultBranch, "trunk", "the stored default branch follows the one GitHub reports");
+        assert.equal(after.indexStatus, "stale", "a full re-index is requested instead of an incremental update");
+        assert.deepEqual(await getRepoChunks(repo.id), before, "no chunk is removed or replaced");
+        assert.equal(after.activeIndexGeneration, baselineGeneration);
+        return;
+      }
       content = "incremental";
       delay = "upsert";
       timeoutRequest = scenario === "storage-incremental-cleanup";

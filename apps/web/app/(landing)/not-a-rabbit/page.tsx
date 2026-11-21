@@ -95,7 +95,7 @@ const faqs = [
   },
   {
     q: "Does Octopus send my whole repository to a model?",
-    a: "Not in one request. During indexing, Octopus sends your code to the embedding service in chunks. During a review, the diff and the chunks found for it go to the AI service you configured. Self-hosted Octopus with local AI services keeps that processing on your infrastructure.",
+    a: "During indexing, Octopus sends your code to the embedding service in chunks. During a review, the diff and the chunks found for it go to the AI service you configured. Self-hosted Octopus with local AI services keeps that processing on your infrastructure.",
   },
   {
     q: "What does Octopus index?",

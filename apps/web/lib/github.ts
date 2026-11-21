@@ -1257,6 +1257,12 @@ export async function getFileContent(
   providedToken?: string,
   signal?: AbortSignal,
   request?: GitHubRequest,
+  /**
+   * failOnError: for a file whose absence carries meaning (.octopusignore).
+   * Null then means GitHub answered 404; any other failed read throws, so an
+   * outage or a permission error is never mistaken for "no such file".
+   */
+  options: { failOnError?: boolean } = {},
 ): Promise<string | null> {
   const token = providedToken ?? await getInstallationToken(installationId, signal);
   const res = await fetchWithRetry(
@@ -1270,6 +1276,11 @@ export async function getFileContent(
     }, false, request,
   );
 
-  if (!res.ok) return null;
+  if (!res.ok) {
+    if (options.failOnError && res.status !== 404) {
+      throw Object.assign(new Error(`Failed to get GitHub file content: ${res.status}`), { status: res.status });
+    }
+    return null;
+  }
   return res.text();
 }

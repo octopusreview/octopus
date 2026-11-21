@@ -29,6 +29,11 @@ export const metadata: Metadata = {
     url: PAGE_URL,
     type: "website",
   },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+  },
   alternates: {
     canonical: PAGE_URL,
   },
@@ -72,7 +77,7 @@ const steps = [
 
 const glance = [
   ["Reads", "The changed lines", "The changed lines, plus related code elsewhere in the repository"],
-  ["Catches", "Bugs inside the diff", "Also bugs the diff causes outside it"],
+  ["Can flag", "Bugs visible in the diff", "Also bugs visible in related code"],
   ["Speed and cost", "Faster and cheaper", "Needs an index first, and each review carries more context"],
   ["Best when", "The change is small and self-contained", "The change touches shared code"],
 ];
@@ -86,15 +91,15 @@ const compare = [
 const faqs = [
   {
     q: "Is full-codebase review always better than diff-only review?",
-    a: "No. For a small, self-contained change, a diff-only pass is faster and cheaper and finds the same things. Full-codebase review earns its cost when a change touches code that other parts of the repository depend on.",
+    a: "No. If the diff shows everything you need to check a small change, a diff-only review is faster and cheaper. More context helps when you need to check an unchanged caller or even an earlier line in the same function.",
   },
   {
     q: "Does Octopus send my whole repository to a model?",
-    a: "Not in one request. During indexing, each code file that is not ignored is split into chunks, and each chunk goes to the embedding service. During a review, the diff and the chunks found for it go to the AI service you configured. Self-hosted Octopus with local AI services keeps that processing on your infrastructure.",
+    a: "During indexing, Octopus sends code to the embedding service in chunks. If an index update after a merge cannot read .octopusignore, those chunks can include code your rules would normally exclude. During a review, the diff and the chunks found for it go to the AI service you configured. Self-hosted Octopus with local AI services keeps that processing on your infrastructure.",
   },
   {
     q: "What does Octopus index?",
-    a: "The code files in the repository, split into 1,500-character chunks with 200 characters of overlap. Files matching your .octopusignore patterns are skipped, and so are common build folders such as node_modules, dist and build.",
+    a: "Octopus indexes supported files and skips folders such as node_modules, dist and build. It applies your .octopusignore rules when it can read the file. Each chunk has a target size of 1,500 characters. For multiline code, the next chunk carries over up to three lines. When Octopus splits a single long line, the pieces overlap by 200 characters.",
   },
   {
     q: "Does full-codebase review cost more?",
@@ -211,10 +216,6 @@ export default async function NotARabbitPage() {
               </div>
             ))}
           </div>
-          <p className="mt-6 text-[#888]">
-            Each of these is caught only by reading code the pull request did
-            not touch.
-          </p>
         </div>
       </section>
 
@@ -261,8 +262,8 @@ export default async function NotARabbitPage() {
             </table>
           </div>
           <p className="mt-6 max-w-2xl text-[#888]">
-            Diff-only review is not wrong. It is faster and cheaper, and for a
-            small change that stands on its own it finds the same things.
+            Diff-only review is faster and cheaper. Even a one-line change
+            can be worth a wider look if other code relies on it.
           </p>
         </div>
       </section>

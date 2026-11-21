@@ -68,8 +68,9 @@ export function DiffSwitch() {
           </>
         ) : (
           <>
-            <span className="font-semibold text-white">Reads 3 files.</span> The refund worker still calls{" "}
-            <code className="text-[#ccc]">charge()</code> the old way, and nobody sees it until a refund fails.
+            <span className="font-semibold text-white">Reads 3 files.</span> The diff leaves out the refund
+            worker, so the reviewer cannot check which arguments it passes to{" "}
+            <code className="text-[#ccc]">charge()</code>.
           </>
         )}
       </p>

@@ -4,7 +4,7 @@ import type { Schemas } from "@qdrant/js-client-rest";
 import { SupersededIndexError } from "@/lib/repository-index-completion";
 
 export type RepositoryIndexOwner = { repoId: string; signal?: AbortSignal } & (
-  { indexAttemptId: string; uploadId?: string } | { activeIndexGeneration: string | null }
+  { indexAttemptId: string; uploadId?: string } | { activeIndexGeneration: string | null; organizationId?: string; defaultBranch?: string }
 );
 
 export async function getRepositoryIndexGeneration(owner: RepositoryIndexOwner): Promise<string | null> {
@@ -15,7 +15,10 @@ export async function getRepositoryIndexGeneration(owner: RepositoryIndexOwner):
       ...("indexAttemptId" in owner ? {
         indexStatus: "indexing", indexAttemptId: owner.indexAttemptId,
         ...(owner.uploadId === undefined ? {} : { localIndexUpload: { path: ["id"], equals: owner.uploadId } }),
-      } : { indexStatus: "indexed", activeIndexGeneration: owner.activeIndexGeneration }),
+      } : {
+        indexStatus: "indexed", activeIndexGeneration: owner.activeIndexGeneration,
+        organizationId: owner.organizationId, defaultBranch: owner.defaultBranch,
+      }),
     },
     select: { id: true },
   });

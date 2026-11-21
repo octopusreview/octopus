@@ -429,8 +429,9 @@ mock.module("@/lib/forgejo", () => ({
     return "";
   },
   listPullRequestComments: async () => [],
-  setCommitStatus: async (_org: string, _project: string, _sha: string, state: string) => {
+  setCommitStatus: async (_org: string, _project: string, _sha: string, state: string, _context: string, description: string) => {
     forgejoPublications.push(state);
+    checkOutputs.push(description);
     if (state === "running") throw new Error("Forgejo API returned 500");
   },
 }));
@@ -1033,7 +1034,7 @@ if (preparationDiagnostic) {
       assert.equal(sentryEvents.at(-1)?.tags?.preparation_operation, operation);
       assert.equal(sentryEvents.at(-1)?.tags?.failure_code, "http_503");
       assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "Review failed during preparation"; }));
-      assert.ok(checkOutputs.length || summaries.length, "failure remains visible to the provider");
+      assert.match(JSON.stringify({ summaries, checkOutputs }), /Review failed during preparation/);
       assert.ok(events.some(event => event.status === "failed" && event.error === "Review failed during preparation"));
       assert.doesNotMatch(inspect({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }, { depth: 20 }), /synthetic private|req_syntheticprivate123/);
     }
@@ -1049,8 +1050,9 @@ if (preparationDiagnostic) {
       assert.ok(reviewUpdates.some((query) => { const data = (query as { data: { status?: string; errorMessage?: string } }).data; return data.status === "failed" && data.errorMessage === "Review failed during preparation"; }), `${provider} ${failure}: an unreadable .octopusignore fails the review`);
       assert.equal(aiMessageRequests, requestsBefore, `${provider} ${failure}: nothing is sent to a model without the ignore rules`);
       assert.equal(published.length, publishedBefore);
-      assert.ok(checkOutputs.length || summaries.length || forgejoPublications.length, "failure remains visible to the provider");
-      assert.doesNotMatch(inspect({ summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }, { depth: 20 }), /synthetic private|req_syntheticprivate123/);
+      const publications = provider === "forgejo" ? forgejoPublications : [...summaries, ...checkOutputs];
+      assert.match(JSON.stringify(publications), /Review failed during preparation/);
+      assert.doesNotMatch(inspect({ forgejoPublications, summaries, checkOutputs, reviewUpdates, events, errors, sentryEvents }, { depth: 20 }), /synthetic private|req_syntheticprivate123/);
     }
     // Control: with readable rules the same review does reach the model, so the counter above is a live oracle.
     preparationFetchFailure = "ignore_rules_ok";

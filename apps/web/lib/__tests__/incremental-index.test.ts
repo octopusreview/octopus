@@ -89,12 +89,13 @@ describe("incrementalIndex", () => {
         { filename: "src/utils.ts", status: "added" },
       ],
       "github",
+      "org-1",
     );
 
     // Should delete chunks for changed files
     expect(mockDeleteRepoFileChunks).toHaveBeenCalledTimes(1);
     const deleteArgs = mockDeleteRepoFileChunks.mock.calls[0];
-    expect(deleteArgs[0]).toEqual(indexOwner);
+    expect(deleteArgs[0]).toEqual({ ...indexOwner, organizationId: "org-1", defaultBranch: "main" });
     expect(deleteArgs[1]).toEqual(["src/index.ts", "src/utils.ts"]);
 
     // Should upsert new chunks

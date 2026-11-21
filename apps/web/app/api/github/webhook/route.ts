@@ -337,23 +337,29 @@ export async function POST(request: NextRequest) {
 
     if (repo && repo.organizationId === resolvedRepositoryTenant.organizationId) {
       await prisma.pullRequest.updateMany({
-        where: { repositoryId: repo.id, number: prNumber },
+        where: { repositoryId: repo.id, number: prNumber, repository: { organizationId: repo.organizationId } },
         data: { mergedAt: new Date() },
       });
+
+      const indexedRepository = {
+        id: repo.id,
+        organizationId: repo.organizationId,
+        defaultBranch: repo.defaultBranch,
+        activeIndexGeneration: repo.activeIndexGeneration,
+        indexStatus: "indexed",
+      };
+      const reportedDefaultBranch: string | undefined = payload.repository?.default_branch;
+      if (repo.indexStatus === "indexed" && reportedDefaultBranch && reportedDefaultBranch !== repo.defaultBranch) {
+        await prisma.repository.updateMany({
+          where: indexedRepository,
+          data: { defaultBranch: reportedDefaultBranch, indexStatus: "stale" },
+        });
+        return NextResponse.json({ ok: true });
+      }
 
       // Incremental index: only re-index files changed in this PR
       if (repo.indexStatus === "indexed" && installationId) {
         try {
-          // The index was built from the stored default branch. When GitHub
-          // reports another one (renamed or switched), an incremental update
-          // would read the wrong branch or nothing at all. Keep the stored
-          // name current and take the stale fallback below, so the full
-          // re-index reads the branch GitHub names.
-          const reportedDefaultBranch: string | undefined = payload.repository?.default_branch;
-          if (reportedDefaultBranch && reportedDefaultBranch !== repo.defaultBranch) {
-            await prisma.repository.updateMany({ where: { id: repo.id }, data: { defaultBranch: reportedDefaultBranch } });
-            throw new Error("Indexing incomplete: the default branch changed");
-          }
           const { getInstallationToken } = await import("@/lib/github");
           const token = await getInstallationToken(installationId);
           const headers = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" };
@@ -384,18 +390,18 @@ export async function POST(request: NextRequest) {
               reportedDefaultBranch,
             );
             await prisma.repository.updateMany({
-              where: { id: repo.id, indexStatus: "indexed", activeIndexGeneration: repo.activeIndexGeneration, indexedAt: { not: null } },
+              where: { ...indexedRepository, indexedAt: { not: null } },
               data: { indexedAt: new Date() },
             });
             console.log(`[webhook] PR #${prNumber} merged — incremental index: ${result.updatedFiles} updated, ${result.removedFiles} removed, ${result.newVectors} vectors`);
           } else {
             // Fallback: mark as stale if we can't get file list
-            await prisma.repository.updateMany({ where: { id: repo.id, indexStatus: "indexed", activeIndexGeneration: repo.activeIndexGeneration }, data: { indexStatus: "stale" } });
+            await prisma.repository.updateMany({ where: indexedRepository, data: { indexStatus: "stale" } });
             console.log(`[webhook] PR #${prNumber} merged, no changed files found via API, marked as stale`);
           }
         } catch (err) {
           // Fallback: mark as stale on any error
-          await prisma.repository.updateMany({ where: { id: repo.id, indexStatus: "indexed", activeIndexGeneration: repo.activeIndexGeneration }, data: { indexStatus: "stale" } });
+          await prisma.repository.updateMany({ where: indexedRepository, data: { indexStatus: "stale" } });
           console.warn(`[webhook] PR #${prNumber} incremental index failed, marked as stale:`, err);
         }
       } else {
@@ -403,7 +409,7 @@ export async function POST(request: NextRequest) {
         if (repo.indexStatus !== "indexed") {
           console.log(`[webhook] PR #${prNumber} merged, repo not yet indexed (${repo.indexStatus}), skipping incremental`);
         } else {
-          await prisma.repository.updateMany({ where: { id: repo.id, indexStatus: "indexed", activeIndexGeneration: repo.activeIndexGeneration }, data: { indexStatus: "stale" } });
+          await prisma.repository.updateMany({ where: indexedRepository, data: { indexStatus: "stale" } });
           console.log(`[webhook] PR #${prNumber} merged, no installationId, marked as stale`);
         }
       }

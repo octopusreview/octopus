@@ -226,14 +226,43 @@ export async function exerciseStorageRace(scenario: string, repo: Repository) {
       if (scenario === "storage-renamed-branch") {
         // GitHub now reports "trunk" while the index was built from "main": no incremental update,
         // the stored name follows GitHub, and a full re-index is requested.
-        const before = await getRepoChunks(repo.id);
-        assert.ok(before.length > 0);
+        const before = new Map(stored);
+        assert.deepEqual([...before.values()].map(point => point.payload.filePath).sort(), files().map(file => file.path).sort());
         content = "incremental";
-        assert.equal((await webhook(1, "trunk")).status, 200);
+        const db = prisma;
+        const recipient = await db.organization.create({ data: { name: "Transferred repository", slug: randomUUID() } });
+        let transfer = true;
+        const visibleBranches: { defaultBranch: string; indexStatus: string }[] = [];
+        const observedDb = db.$extends({ query: {
+          pullRequest: { async updateMany({ args, query }) {
+            const result = await query(args);
+            if (transfer) await db.repository.update({ where: { id: repo.id }, data: { organizationId: recipient.id } });
+            return result;
+          } },
+          repository: { async updateMany({ args, query }) {
+            const result = await query(args);
+            visibleBranches.push(await snapshot());
+            return result;
+          } },
+        } });
+        mock.module("@octopus/db", () => ({ prisma: observedDb }));
+        try {
+          assert.equal((await webhook(1, "trunk")).status, 200);
+          const transferred = await snapshot();
+          assert.equal(transferred.organizationId, recipient.id);
+          assert.equal(transferred.defaultBranch, "main");
+          assert.equal(transferred.indexStatus, "indexed");
+          transfer = false;
+          await db.repository.update({ where: { id: repo.id }, data: { organizationId: repo.organizationId } });
+          assert.equal((await webhook(1, "trunk")).status, 200);
+          assert.ok(visibleBranches.every(row => row.defaultBranch !== "trunk" || row.indexStatus === "stale"), "the new branch and stale status become visible together");
+        } finally {
+          await db.organization.delete({ where: { id: recipient.id } });
+        }
         const after = await snapshot();
         assert.equal(after.defaultBranch, "trunk", "the stored default branch follows the one GitHub reports");
         assert.equal(after.indexStatus, "stale", "a full re-index is requested instead of an incremental update");
-        assert.deepEqual(await getRepoChunks(repo.id), before, "no chunk is removed or replaced");
+        assert.deepEqual(stored, before, "no chunk is removed or replaced");
         assert.equal(after.activeIndexGeneration, baselineGeneration);
         return;
       }

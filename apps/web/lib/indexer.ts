@@ -655,7 +655,7 @@ async function loadIncrementalIgnore(
  * The repo stays "indexed" throughout — no downtime window.
  */
 export async function incrementalIndex(
-  owner: { repoId: string; activeIndexGeneration: string | null },
+  generation: { repoId: string; activeIndexGeneration: string | null },
   fullName: string,
   defaultBranch: string,
   installationId: number,
@@ -665,7 +665,8 @@ export async function incrementalIndex(
   /** The default branch the provider reports now (webhook payload), when known. */
   currentDefaultBranch?: string,
 ): Promise<{ updatedFiles: number; removedFiles: number; newVectors: number }> {
-  const { repoId } = owner;
+  const { repoId } = generation;
+  const owner = { ...generation, organizationId, defaultBranch };
   // After a rename every read on the stored branch is a 404, which would delete
   // the changed files' chunks and replace them with nothing. Stop instead; the
   // caller marks the repository stale and the full index resolves the new name.

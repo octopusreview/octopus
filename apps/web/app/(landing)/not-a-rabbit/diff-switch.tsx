@@ -45,7 +45,7 @@ export function DiffSwitch() {
             <li
               key={d.file}
               className={`rounded-xl border px-4 py-3 transition-all ${
-                !whole
+                !whole && d.broken
                   ? "border-dashed border-white/[0.12] opacity-40"
                   : d.broken
                     ? "border-amber-400/70 bg-amber-400/10"
@@ -53,7 +53,7 @@ export function DiffSwitch() {
               }`}
             >
               <p className="font-mono text-sm text-white">{d.file}</p>
-              <p className="mt-1 text-xs text-[#999]">{whole ? d.note : "not read"}</p>
+              <p className="mt-1 text-xs text-[#999]">{whole || !d.broken ? d.note : "not read"}</p>
             </li>
           ))}
         </ul>
@@ -68,7 +68,7 @@ export function DiffSwitch() {
           </>
         ) : (
           <>
-            <span className="font-semibold text-white">Reads 1 file.</span> The refund worker still calls{" "}
+            <span className="font-semibold text-white">Reads 3 files.</span> The refund worker still calls{" "}
             <code className="text-[#ccc]">charge()</code> the old way, and nobody sees it until a refund fails.
           </>
         )}

@@ -39,7 +39,7 @@ const misses = [
     title: "A changed signature",
     inDiff: "charge() gains an argument",
     outside: "the refund worker",
-    text: "The pull request updates two callers. A third caller, in the refund worker, is not in the diff and still passes the old arguments.",
+    text: "The pull request updates one caller and a test. Another caller, in the refund worker, is not in the diff and still passes the old arguments.",
   },
   {
     title: "A shared helper",
@@ -98,7 +98,7 @@ const faqs = [
   },
   {
     q: "Does full-codebase review cost more?",
-    a: "Somewhat. Indexing uses embedding calls, and each review sends more context to the model than the diff alone. On Octopus Cloud these are billed as usage-based credits, unless you bring your own provider key for the review model.",
+    a: "Somewhat. Indexing uses embedding calls, and each review sends more context to the model than the diff alone. On Octopus Cloud these use credits. If you bring your own provider key, the review-model call is billed by your provider instead; platform embeddings still use credits.",
   },
 ];
 

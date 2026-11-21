@@ -618,7 +618,12 @@ export async function indexRepository(
   };
 }
 
-/** Load .octopusignore from the default branch for the incremental path; absence or fetch errors mean "no ignore". */
+/**
+ * Load .octopusignore from the default branch for the incremental path. Only a
+ * confirmed absence (the provider answers 404) means "no rules". Any other
+ * failed read throws, so nothing is indexed without the rules; the webhook
+ * then marks the repository stale for a full re-index.
+ */
 async function loadIncrementalIgnore(
   provider: string,
   fullName: string,
@@ -626,21 +631,22 @@ async function loadIncrementalIgnore(
   installationId: number,
   organizationId?: string,
 ): Promise<Ignore | undefined> {
+  let content: string | null = null;
   try {
-    let content: string | null = null;
     if (provider === "github") {
       const [owner, repoName] = fullName.split("/");
-      content = await ghGetFileContent(installationId, owner, repoName, defaultBranch, ".octopusignore");
+      content = await ghGetFileContent(installationId, owner, repoName, defaultBranch, ".octopusignore", undefined, undefined, undefined, { failOnError: true });
     } else if (provider === "bitbucket" && organizationId) {
       const [workspace, repoSlug] = fullName.split("/");
       content = await bitbucketLib.getFileContent(organizationId, workspace, repoSlug, defaultBranch, ".octopusignore");
     } else if (provider === "gitlab" && organizationId) {
       content = await gitlabLib.getFileContent(organizationId, fullName, defaultBranch, ".octopusignore");
     }
-    return content ? parseOctopusIgnore(content) : undefined;
-  } catch {
-    return undefined;
+  } catch (error) {
+    if ((error as { status?: number }).status === 404) return undefined;
+    throw new Error("Indexing incomplete: could not read .octopusignore", { cause: error });
   }
+  return content ? parseOctopusIgnore(content) : undefined;
 }
 
 /**

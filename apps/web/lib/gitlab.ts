@@ -554,7 +554,7 @@ export async function getFileContent(
   );
 
   if (!res.ok) {
-    throw new Error(`Failed to get GitLab file content: ${res.status}`);
+    throw Object.assign(new Error(`Failed to get GitLab file content: ${res.status}`), { status: res.status });
   }
 
   return res.text();

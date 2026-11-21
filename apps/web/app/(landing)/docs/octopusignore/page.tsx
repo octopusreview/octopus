@@ -155,11 +155,11 @@ vendor/**
           won&apos;t comment on them.
         </Paragraph>
         <Paragraph>
-          If the base branch has no <Mono>.octopusignore</Mono>, the review
-          proceeds without custom rules. If Octopus finds the file in the
-          repository tree but gets an error reading it, the review stops before
-          the diff reaches the model. You’ll see “Review failed during preparation” and can
-          request the review again.
+          If <Mono>.octopusignore</Mono> is absent from the base branch or the
+          file is empty, the review proceeds without custom rules. If the
+          repository tree lists the file and Octopus cannot read it, the review
+          stops before the diff reaches the model. You’ll see “Review failed
+          during preparation” and can request the review again.
         </Paragraph>
         <FlowDiagram
           steps={[

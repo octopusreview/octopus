@@ -79,8 +79,9 @@ milestones; staged, failed and cancelled runs remain invisible to search. A late
 remote mutation after a client timeout can only affect its original generation.
 Existing rows start with a null active generation and read only legacy untagged
 data until a full replacement completes; there is no backfill.
-Incremental updates bind the stable active generation, so
-metadata edits and other merges do not invalidate their writes or failure cleanup.
+Before updating chunks, the GitHub merge webhook checks that the repository is
+still indexed under the same organization, default branch and active generation.
+The same conditions guard updates to `indexedAt` and the stale status on failure.
 Previous and abandoned generations remain stored; this change adds no cleanup job.
 Generated indexes also use a generation-qualified storage repository key, while
 search results retain the logical repository ID. Pre-generation binaries only

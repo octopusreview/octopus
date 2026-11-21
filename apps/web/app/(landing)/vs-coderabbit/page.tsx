@@ -45,7 +45,7 @@ const faqs = [
   },
   {
     q: "What are the main differences in approach?",
-    a: "Under the hood, Octopus uses RAG: it pre-indexes your codebase into vector embeddings and retrieves the most relevant chunks during review. CodeRabbit uses Dynamic Discovery, fetching context on demand while it reviews the diff. Both are valid strategies with different tradeoffs: RAG is consistent and fast at review time; Dynamic Discovery avoids index maintenance. Beyond the technical approach, Octopus is source-available with self-hosting and usage-based pricing, while CodeRabbit is a managed SaaS with per-developer pricing.",
+    a: "Under the hood, Octopus uses RAG: it pre-indexes your codebase into vector embeddings and retrieves the most relevant chunks during review. CodeRabbit uses Dynamic Discovery, fetching context on demand while it reviews the diff. Both are valid strategies with different tradeoffs: RAG is consistent and fast at review time; Dynamic Discovery avoids index maintenance. Beyond the technical approach, Octopus is source-available with self-hosting and usage-based pricing, while CodeRabbit is proprietary with per-developer pricing, and offers self-hosting on its Enterprise plans.",
   },
   {
     q: "How does pricing work with Octopus?",
@@ -77,7 +77,7 @@ const rows: ComparisonRow[] = [
   { label: "Codebase Q&A API for developers", octopus: true, competitor: false },
   { label: "Inline PR comments", octopus: true, competitor: true },
   { label: "Severity-rated findings", octopus: "Critical, Major, Minor, Suggestion, Tip", competitor: "Review comments" },
-  { label: "Licensing", octopus: "Source-available (Modified MIT)", competitor: "Proprietary SaaS" },
+  { label: "Licensing", octopus: "Source-available (Modified MIT)", competitor: "Proprietary" },
   { label: "Self-hosting option", octopus: true, competitor: "Enterprise plans" },
   { label: "Bring your own LLM API keys", octopus: true, competitor: "Enterprise plans" },
   { label: "Pricing model", octopus: "Usage-based credits", competitor: "Per-developer subscription" },

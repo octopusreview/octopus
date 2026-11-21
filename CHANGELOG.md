@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.27] - 2026-11-21
+
 ### Changed
 
 - The Not a Rabbit page is now a short explainer on reviewing beyond the diff: what a diff-only review misses, what a full-codebase review does instead, and where each one fits.

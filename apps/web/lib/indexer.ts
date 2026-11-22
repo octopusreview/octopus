@@ -676,25 +676,18 @@ export async function incrementalIndex(
     .filter((f) => shouldIndex(f.filename, undefined, ig))
     .map((f) => f.filename);
 
-  // 1. Delete chunks for all changed files (removed + modified + added that had old version)
+  // 1. Fetch and chunk the added/modified files. Nothing is deleted until we
+  // know what the reads returned.
   const allChangedPaths = [...new Set([...removed, ...addedOrModified])];
-  if (allChangedPaths.length > 0) {
-    await ensureCollection();
-    await deleteRepoFileChunks(owner, allChangedPaths);
-  }
-
-  // 2. Fetch and chunk only added/modified files
-  if (addedOrModified.length === 0) {
-    return { updatedFiles: 0, removedFiles: removed.length, newVectors: 0 };
-  }
-
   const allChunks: { text: string; filePath: string; startLine: number; endLine: number }[] = [];
+  let readableFiles = 0;
 
   if (provider === "github") {
     for (const filePath of addedOrModified) {
       try {
         const [owner, repoName] = fullName.split("/");
         const content = await ghGetFileContent(installationId, owner, repoName, defaultBranch, filePath);
+        if (content !== null) readableFiles++;
         if (!content || content.includes("\0")) continue;
         if (exceedsMaxFileSize(content)) {
           console.warn(`[indexer:incremental] Skipping ${filePath}: exceeds ${MAX_FILE_SIZE} bytes`);
@@ -743,6 +736,24 @@ export async function incrementalIndex(
         console.warn(`[indexer:incremental] Failed to fetch ${filePath}, skipping`);
       }
     }
+  }
+
+  // After a default-branch rename every read above comes back empty. Deleting
+  // now would drop the changed files from the index with nothing to replace
+  // them, so ask GitHub once and stop: the caller marks the repository stale
+  // and the full index resolves the new name.
+  if (provider === "github" && addedOrModified.length > 0 && readableFiles === 0) {
+    const [ownerName, repoName] = fullName.split("/");
+    const details = await getRepositoryDetails(installationId, ownerName, repoName);
+    if (details && details.default_branch !== defaultBranch) {
+      throw new Error("Indexing incomplete: the default branch changed");
+    }
+  }
+
+  // 2. Delete chunks for all changed files (removed + modified + added that had old version)
+  if (allChangedPaths.length > 0) {
+    await ensureCollection();
+    await deleteRepoFileChunks(owner, allChangedPaths);
   }
 
   if (allChunks.length === 0) {

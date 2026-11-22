@@ -27,6 +27,7 @@ mock.module("@/lib/sparse-vector", () => ({
 }));
 
 let mockGetInstallationToken = mock(() => Promise.resolve("test-token"));
+let mockGetRepositoryDetails = mock((..._args: unknown[]): Promise<{ default_branch: string } | null> => Promise.resolve(null));
 let mockGhGetFileContent = mock((_installationId: number, _owner: string, _repo: string, _branch: string, filePath: string) => {
   if (filePath === "src/index.ts") return Promise.resolve("export const hello = 'world';\n");
   if (filePath === "src/utils.ts") return Promise.resolve("export function add(a: number, b: number) { return a + b; }\n");
@@ -37,7 +38,7 @@ let mockGhGetFileContent = mock((_installationId: number, _owner: string, _repo:
 mock.module("@/lib/github", () => ({
   getInstallationToken: (...args: unknown[]) => mockGetInstallationToken(...args),
   getFileContent: (...args: unknown[]) => mockGhGetFileContent(...(args as Parameters<typeof mockGhGetFileContent>)),
-  getRepositoryDetails: () => Promise.resolve(null),
+  getRepositoryDetails: (...args: unknown[]) => mockGetRepositoryDetails(...args),
 }));
 
 let mockBbGetFileContent = mock((_org: string, _workspace: string, _slug: string, _branch: string, _filePath: string): Promise<string | null> => Promise.resolve(null));
@@ -68,6 +69,7 @@ describe("incrementalIndex", () => {
     mockEnsureCollection = mock(() => Promise.resolve());
     mockUpsertChunks = mock(() => Promise.resolve());
     mockGetInstallationToken = mock(() => Promise.resolve("test-token"));
+    mockGetRepositoryDetails = mock(() => Promise.resolve(null));
     mockBbGetFileContent = mock(() => Promise.resolve(null));
     mockGhGetFileContent = mock((_installationId: number, _owner: string, _repo: string, _branch: string, filePath: string) => {
       if (filePath === "src/index.ts") return Promise.resolve("export const hello = 'world';\n");
@@ -288,6 +290,46 @@ describe("incrementalIndex", () => {
       incrementalIndex(indexOwner, "workspace/repo", "main", 0, [{ filename: "src/utils.ts", status: "modified" }], "bitbucket", "org-1"),
     ).rejects.toThrow("could not read .octopusignore");
     expect(mockUpsertChunks).not.toHaveBeenCalled();
+  });
+
+  it("stops before deleting when no changed file can be read and GitHub reports another default branch", async () => {
+    // After a rename every read on the stored branch name comes back empty.
+    mockGhGetFileContent = mock(() => Promise.resolve(null));
+    mockGetRepositoryDetails = mock(() => Promise.resolve({ default_branch: "trunk" }));
+
+    await expect(
+      incrementalIndex(indexOwner, "owner/repo", "main", 12345, [
+        { filename: "src/index.ts", status: "modified" },
+        { filename: "src/utils.ts", status: "modified" },
+      ], "github"),
+    ).rejects.toThrow("default branch changed");
+
+    expect(mockDeleteRepoFileChunks).not.toHaveBeenCalled();
+    expect(mockUpsertChunks).not.toHaveBeenCalled();
+  });
+
+  it("still removes entries for unreadable files when the default branch is unchanged", async () => {
+    // For example a pull request merged into another branch: its files are not on the default branch.
+    mockGhGetFileContent = mock(() => Promise.resolve(null));
+    mockGetRepositoryDetails = mock(() => Promise.resolve({ default_branch: "main" }));
+
+    const result = await incrementalIndex(indexOwner, "owner/repo", "main", 12345, [{ filename: "src/gone.ts", status: "modified" }], "github");
+
+    expect(result.newVectors).toBe(0);
+    expect(mockDeleteRepoFileChunks).toHaveBeenCalledTimes(1);
+    expect((mockDeleteRepoFileChunks.mock.calls[0] as unknown[])[1]).toEqual(["src/gone.ts"]);
+  });
+
+  it("does not ask GitHub about the branch when a changed file is readable", async () => {
+    mockGetRepositoryDetails = mock(() => Promise.resolve({ default_branch: "trunk" }));
+
+    const result = await incrementalIndex(indexOwner, "owner/repo", "main", 12345, [
+      { filename: "src/utils.ts", status: "modified" },
+      { filename: "src/missing.ts", status: "modified" },
+    ], "github");
+
+    expect(mockGetRepositoryDetails).not.toHaveBeenCalled();
+    expect(result.newVectors).toBeGreaterThan(0);
   });
 
   it("honours .octopusignore from the default branch", async () => {

@@ -316,11 +316,13 @@ Every event also carries `product` (octopus), `environment`, `schema_version`, `
 | `provider_connection_completed` / `provider_connection_failed` | Server, with the final result | Provider, attempt ID, failure category |
 | `repository_enabled` | Server, after the enablement is saved | Repository ID, provider |
 | `repository_index_completed` / `repository_index_failed` | Server, with the final result | Repository ID, attempt ID, failure category |
-| `review_requested` | Server, when a request is accepted | PR, repository and attempt IDs, provider |
-| `review_published` / `review_failed` | Server, with the confirmed final outcome | PR, repository and attempt IDs, coverage and assessment values, substantive flag |
+| `review_requested` | Server, when a request reaches Octopus and its organisation is known, before the admission checks; one record per request, accepted or refused | PR and repository IDs, attempt ID when accepted, provider, admission (accepted or refused), refusal reason, entry path (PR event, mention or CLI); user ID only for CLI requests |
+| `review_published` | Optional, later: server, after the review is published; a published outcome never changes | PR, repository and attempt IDs, kind |
 | `review_viewed` | Only where a view can really be measured | PR or repository ID, surface; never claims views on GitHub, GitLab or Bitbucket |
 | `checkout_started` | Browser, when a user explicitly starts checkout | Attempt ID; never counted as a payment |
 | `payment_succeeded` / `payment_refunded` | The existing billing record | Event ID, amount in minor units, currency |
+
+Review outcomes for analysis come from `octopus_analytics.review_attempt_outcomes_v1` (#1082), a view of the `review_attempt_outcomes` table, not from events. Only `published` is final in that table; other outcomes can still change after a retry, so a `review_failed` event would never be a confirmed final outcome.
 
 ## Reference queries
 

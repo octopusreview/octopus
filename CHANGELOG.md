@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- After a repository's default branch was renamed, the index update that follows a merged GitHub pull request could remove the changed files from the index and put nothing back. Octopus now notices that the branch changed, leaves the index as it is, and re-indexes the repository in full from the new branch.
+- After a pull request merges, if Octopus cannot read any files it needs to update and GitHub confirms the default branch changed, Octopus preserves the index and marks the repository for a full re-index.
 
 ## [1.4.30] - 2026-11-21
 

@@ -650,9 +650,7 @@ async function loadIncrementalIgnore(
 }
 
 /**
- * Incrementally re-index only the changed files from a merged PR.
- * Deletes old chunks for changed/removed files, fetches & indexes added/modified files.
- * The repo stays "indexed" throughout — no downtime window.
+ * Update the active index generation with the changed files from a merged PR.
  */
 export async function incrementalIndex(
   owner: { repoId: string; activeIndexGeneration: string | null },
@@ -738,10 +736,8 @@ export async function incrementalIndex(
     }
   }
 
-  // After a default-branch rename every read above comes back empty. Deleting
-  // now would drop the changed files from the index with nothing to replace
-  // them, so ask GitHub once and stop: the caller marks the repository stale
-  // and the full index resolves the new name.
+  // A renamed branch and a PR merged into another branch can both leave every
+  // file unreadable. Only a confirmed branch change requires a full re-index.
   if (provider === "github" && addedOrModified.length > 0 && readableFiles === 0) {
     const [ownerName, repoName] = fullName.split("/");
     const details = await getRepositoryDetails(installationId, ownerName, repoName);

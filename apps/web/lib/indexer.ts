@@ -685,7 +685,10 @@ export async function incrementalIndex(
   if (provider === "github" && addedOrModified.length > 0) {
     const [ownerName, repoName] = fullName.split("/");
     for (const filePath of addedOrModified) {
-      const content = await ghGetFileContent(installationId, ownerName, repoName, defaultBranch, filePath).catch(() => null);
+      const content = await ghGetFileContent(installationId, ownerName, repoName, defaultBranch, filePath).catch(() => {
+        console.warn(`[indexer:incremental] Failed to fetch ${filePath}, skipping`);
+        return null;
+      });
       readAhead.set(filePath, content);
       if (content !== null) break;
     }

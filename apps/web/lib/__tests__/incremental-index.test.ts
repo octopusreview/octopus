@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { describe, it, expect, mock, beforeEach, spyOn } from "bun:test";
 
 // ── Mock external dependencies before importing ──
 
@@ -205,6 +205,7 @@ describe("incrementalIndex", () => {
   });
 
   it("continues indexing when one file fetch fails", async () => {
+    using warning = spyOn(console, "warn").mockImplementation(() => {});
     // Override getFileContent to fail for one file
     mockGhGetFileContent = mock((_installationId: number, _owner: string, _repo: string, _branch: string, filePath: string) => {
       if (filePath === "src/broken.ts") return Promise.reject(new Error("404 Not Found"));
@@ -225,6 +226,8 @@ describe("incrementalIndex", () => {
     );
 
     // Should still index the successful file
+    expect(warning.mock.calls).toEqual([["[indexer:incremental] Failed to fetch src/broken.ts, skipping"]]);
+    expect(mockGhGetFileContent.mock.calls.map((call) => call[4])).toEqual([".octopusignore", "src/broken.ts", "src/utils.ts"]);
     expect(mockUpsertChunks).toHaveBeenCalledTimes(1);
     expect(result.newVectors).toBeGreaterThan(0);
   });
@@ -329,6 +332,12 @@ describe("incrementalIndex", () => {
     ], "github");
 
     expect(mockGetRepositoryDetails).not.toHaveBeenCalled();
+    expect(mockGhGetFileContent.mock.calls.map((call) => call[4])).toEqual([".octopusignore", "src/utils.ts", "src/missing.ts"]);
+    expect(mockDeleteRepoFileChunks).toHaveBeenCalledTimes(1);
+    const [, readableFileRead, missingFileRead] = mockGhGetFileContent.mock.invocationCallOrder;
+    const [deletion] = mockDeleteRepoFileChunks.mock.invocationCallOrder;
+    expect(readableFileRead).toBeLessThan(deletion);
+    expect(deletion).toBeLessThan(missingFileRead);
     expect(result.newVectors).toBeGreaterThan(0);
   });
 

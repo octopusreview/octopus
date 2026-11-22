@@ -650,9 +650,7 @@ async function loadIncrementalIgnore(
 }
 
 /**
- * Incrementally re-index only the changed files from a merged PR.
- * Deletes old chunks for changed/removed files, fetches & indexes added/modified files.
- * The repo stays "indexed" throughout — no downtime window.
+ * Update the active index generation in place for files changed by a merged PR.
  */
 export async function incrementalIndex(
   owner: { repoId: string; activeIndexGeneration: string | null },

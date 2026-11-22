@@ -1265,8 +1265,11 @@ export async function getFileContent(
   options: { failOnError?: boolean } = {},
 ): Promise<string | null> {
   const token = providedToken ?? await getInstallationToken(installationId, signal);
+  const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
+  const url = new URL(`${GITHUB_API}/repos/${owner}/${repo}/contents/${encodedPath}`);
+  url.searchParams.set("ref", branch);
   const res = await fetchWithRetry(
-    `${GITHUB_API}/repos/${owner}/${repo}/contents/${filePath}?ref=${encodeURIComponent(branch)}`,
+    url.toString(),
     {
       headers: {
         Authorization: `Bearer ${token}`,

@@ -650,9 +650,7 @@ async function loadIncrementalIgnore(
 }
 
 /**
- * Incrementally re-index only the changed files from a merged PR.
- * Deletes old chunks for changed/removed files, fetches & indexes added/modified files.
- * The repo stays "indexed" throughout — no downtime window.
+ * Update the active index generation in place for files changed by a merged PR.
  */
 export async function incrementalIndex(
   owner: { repoId: string; activeIndexGeneration: string | null },
@@ -676,6 +674,30 @@ export async function incrementalIndex(
     .filter((f) => shouldIndex(f.filename, undefined, ig))
     .map((f) => f.filename);
 
+  // GitHub: read ahead until one changed file is readable, normally a single
+  // read. A renamed branch and a PR merged into another branch can both leave
+  // every file unreadable; only a confirmed branch change stops the update,
+  // before anything is deleted. The caller then marks the repository stale and
+  // the full index resolves the new name.
+  const readAhead = new Map<string, string | null>();
+  if (provider === "github" && addedOrModified.length > 0) {
+    const [ownerName, repoName] = fullName.split("/");
+    for (const filePath of addedOrModified) {
+      const content = await ghGetFileContent(installationId, ownerName, repoName, defaultBranch, filePath).catch(() => {
+        console.warn(`[indexer:incremental] Failed to fetch ${filePath}, skipping`);
+        return null;
+      });
+      readAhead.set(filePath, content);
+      if (content !== null) break;
+    }
+    if (![...readAhead.values()].some((content) => content !== null)) {
+      const details = await getRepositoryDetails(installationId, ownerName, repoName);
+      if (details && details.default_branch !== defaultBranch) {
+        throw new Error("Indexing incomplete: the default branch changed");
+      }
+    }
+  }
+
   // 1. Delete chunks for all changed files (removed + modified + added that had old version)
   const allChangedPaths = [...new Set([...removed, ...addedOrModified])];
   if (allChangedPaths.length > 0) {
@@ -694,7 +716,9 @@ export async function incrementalIndex(
     for (const filePath of addedOrModified) {
       try {
         const [owner, repoName] = fullName.split("/");
-        const content = await ghGetFileContent(installationId, owner, repoName, defaultBranch, filePath);
+        const content = readAhead.has(filePath)
+          ? readAhead.get(filePath)!
+          : await ghGetFileContent(installationId, owner, repoName, defaultBranch, filePath);
         if (!content || content.includes("\0")) continue;
         if (exceedsMaxFileSize(content)) {
           console.warn(`[indexer:incremental] Skipping ${filePath}: exceeds ${MAX_FILE_SIZE} bytes`);

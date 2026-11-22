@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- After a pull request merges, if Octopus cannot read any files it needs to update and GitHub confirms the default branch changed, Octopus preserves the index and marks the repository for a full re-index.
+
 ## [1.4.30] - 2026-11-21
 
 ### Fixed

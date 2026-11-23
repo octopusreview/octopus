@@ -316,13 +316,17 @@ Every event also carries `product` (octopus), `environment`, `schema_version`, `
 | `provider_connection_completed` / `provider_connection_failed` | Server, with the final result | Provider, attempt ID, failure category |
 | `repository_enabled` | Server, after the enablement is saved | Repository ID, provider |
 | `repository_index_completed` / `repository_index_failed` | Server, with the final result | Repository ID, attempt ID, failure category |
-| `review_requested` | Server, when a request reaches Octopus and its organisation is known, before the admission checks; one record per request, accepted or refused | PR and repository IDs, attempt ID when accepted, provider, admission (accepted or refused), refusal reason, entry path (PR event, mention or CLI); user ID only for CLI requests |
+| `review_requested` | Server, when a request reaches Octopus and its organisation is known, before the admission checks; one record per request, accepted or refused | PR and repository IDs, attempt ID when accepted, provider, admission (accepted or refused), refusal reason, entry path (`pr_event`, `mention`, `cli`, `admin_retry`, or `other` for any unexpected path); user ID: CLI requests only, an opaque namespaced ID (`octopus:user:<id>`), never an email, name or login |
 | `review_published` | Optional, later: server, after the review is published; a published outcome never changes | PR, repository and attempt IDs, kind |
 | `review_viewed` | Only where a view can really be measured | PR or repository ID, surface; never claims views on GitHub, GitLab or Bitbucket |
 | `checkout_started` | Browser, when a user explicitly starts checkout | Attempt ID; never counted as a payment |
 | `payment_succeeded` / `payment_refunded` | The existing billing record | Event ID, amount in minor units, currency |
 
 Review outcomes for analysis come from `octopus_analytics.review_attempt_outcomes_v1` (#1082), a view of the `review_attempt_outcomes` table, not from events. Only `published` is final in that table; other outcomes can still change after a retry, so a `review_failed` event would never be a confirmed final outcome.
+
+GitHub Action and OSS bot reviews are outside `review_requested`, because they skip the admission checks. Customer Action reviews (with an organisation API token) are recorded in `external_review_activity` (#952) when accepted; community reviews (the OSS bot, and the Action without a token) serve community organisations, which are outside eligibility. Admin retries run through the normal review path and are recorded with entry path `admin_retry` and no user ID, fired at the retry route; their own check for a review still pending or running and updated in the last three minutes is recorded as `already_in_progress`. Report admin retries separately from customer requests.
+
+Redelivered webhooks: a provider may send the same webhook again. A redelivery that reaches Octopus is recorded like any other request, and its event ID follows the rule that replays reuse the same ID. A refused webhook request has no attempt ID, so its event ID is a SHA-256 fingerprint of provider, organisation and request body; a refused redelivery therefore gets the same ID as the first refusal and counts once when counted by event ID. An accepted redelivery starts a new attempt and takes that attempt's ID. Forgejo drops exact redeliveries before admission (integration ID plus payload SHA-256), so they get no record.
 
 ## Reference queries
 

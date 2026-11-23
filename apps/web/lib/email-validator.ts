@@ -12,10 +12,8 @@ const EXTRA_BLOCKED_DOMAINS = [
   "firegameplay.com",
 ];
 
-// Parses SIGNUP_BLOCKED_DOMAINS (comma-separated registrable domains) into a
-// normalized, de-duplicated list. Entries without a dot (a bare TLD such as
-// "com") are ignored: the suffix match below would otherwise refuse every
-// address under that TLD. Exported for tests.
+// Ignore single-label entries so a bare TLD such as "com" cannot block
+// every signup domain or mail host under that TLD.
 export function parseBlockedDomainsEnv(value: string | undefined): string[] {
   if (!value) return [];
   const seen = new Set<string>();
@@ -118,9 +116,14 @@ export function isDisposableDomain(domain: string): boolean {
   return DISPOSABLE_LIST.some((d) => normalized.endsWith("." + d));
 }
 
-function isDisposableMxHost(host: string): boolean {
+// SIGNUP_BLOCKED_MX_HOSTS uses the SIGNUP_BLOCKED_DOMAINS format. It is read
+// per call, which only happens on an MX cache miss.
+export function isDisposableMxHost(host: string): boolean {
   const normalized = host.toLowerCase().replace(/\.$/, "");
-  return DISPOSABLE_MX_SUFFIXES.some(
+  return [
+    ...DISPOSABLE_MX_SUFFIXES,
+    ...parseBlockedDomainsEnv(process.env.SIGNUP_BLOCKED_MX_HOSTS),
+  ].some(
     (suffix) => normalized === suffix || normalized.endsWith("." + suffix),
   );
 }

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Operators can refuse sign-ups from domains that share a mail server. See `SIGNUP_BLOCKED_MX_HOSTS` in [.env.example](.env.example).
+
 ## [1.4.31] - 2026-11-22
 
 ### Fixed

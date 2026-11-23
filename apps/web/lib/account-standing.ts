@@ -88,9 +88,9 @@ export const COUPON_HOLD_MESSAGE =
   "Connect a repository before redeeming a coupon, or contact support.";
 
 /**
- * Coupon credit lands in the paid balance, so redeeming needs a positive
- * signal, not just the absence of a hold: an OAuth sign-in (same test as the
- * welcome-credit deferral in org-create.ts) or a product signal on the org.
+ * Coupon credit lands in the paid balance, so redemption requires an account
+ * row for the user (the welcome-credit check in org-create.ts) or a product
+ * signal on the organization.
  */
 export async function canRedeemCoupon(args: {
   userId: string;

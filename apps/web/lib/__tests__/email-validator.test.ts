@@ -6,15 +6,12 @@ import {
 } from "@/lib/email-validator";
 
 describe("isDisposableMxHost", () => {
-  it("matches the built-in mail hosts and their subdomains", () => {
-    expect(isDisposableMxHost("mx.mailinator.com.")).toBe(true);
-    expect(isDisposableMxHost("aspmx.l.google.com")).toBe(false);
-  });
-
-  it("also refuses the mail hosts listed in SIGNUP_BLOCKED_MX_HOSTS", () => {
+  it("matches built-in and configured mail hosts and their subdomains", () => {
     const previous = process.env.SIGNUP_BLOCKED_MX_HOSTS;
     try {
       delete process.env.SIGNUP_BLOCKED_MX_HOSTS;
+      expect(isDisposableMxHost("mx.mailinator.com.")).toBe(true);
+      expect(isDisposableMxHost("aspmx.l.google.com")).toBe(false);
       expect(isDisposableMxHost("mail.blocked-mx.example")).toBe(false);
       process.env.SIGNUP_BLOCKED_MX_HOSTS = " Blocked-MX.example , other.example";
       expect(isDisposableMxHost("mail.blocked-mx.example.")).toBe(true);

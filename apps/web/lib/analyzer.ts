@@ -1,6 +1,6 @@
 import { getRepoChunks, getKnowledgeChunksByOrg } from "@/lib/qdrant";
 import { logAiUsage } from "@/lib/ai-usage";
-import { getReviewModel } from "@/lib/ai-client";
+import { getReviewModel, HARDCODED_REVIEW_MODEL } from "@/lib/ai-client";
 import { createAiMessage } from "@/lib/ai-router";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import fs from "node:fs";
@@ -62,7 +62,7 @@ export async function analyzeRepository(
   }
 
   if (signal?.aborted) throw new Error("Analysis cancelled");
-  const analyzeModel = orgId ? await getReviewModel(orgId, repoId) : "claude-sonnet-4-20250514";
+  const analyzeModel = orgId ? await getReviewModel(orgId, repoId) : HARDCODED_REVIEW_MODEL;
   if (signal?.aborted) throw new Error("Analysis cancelled");
   log(`Running AI analysis with ${analyzeModel}...`);
 

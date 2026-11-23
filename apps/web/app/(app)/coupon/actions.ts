@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@octopus/db";
 import { addCredits } from "@/lib/credits";
 import { writeAuditLog } from "@/lib/audit";
+import { canRedeemCoupon, COUPON_HOLD_MESSAGE } from "@/lib/account-standing";
 
 export async function redeemCoupon(code: string) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -22,6 +23,11 @@ export async function redeemCoupon(code: string) {
   const normalizedCode = code.trim().toUpperCase();
   if (!normalizedCode) {
     return { error: "Please enter a coupon code" };
+  }
+
+  // Before the code lookup, so an account without a signal cannot probe codes.
+  if (!(await canRedeemCoupon({ userId: session.user.id, orgId }))) {
+    return { error: COUPON_HOLD_MESSAGE };
   }
 
   const coupon = await prisma.coupon.findFirst({

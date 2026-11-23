@@ -33,8 +33,10 @@ let purchaseRow: { id: string } | null;
 let deviceRows: { fingerprint: string }[];
 let sharedGroups: { fingerprint: string; _count: { fingerprint: number } }[];
 let apiTokenRow: Record<string, unknown> | null;
+let oauthAccounts: number;
 
 const client = {
+  account: { count: mock(() => Promise.resolve(oauthAccounts)) },
   organization: { findUnique: mock(() => Promise.resolve(orgRow)) },
   repository: {
     // Honors the one filter under test: NOT externalId startsWith "cli:".
@@ -59,9 +61,11 @@ const client = {
   },
 };
 
+// api-auth.ts imports "server-only", which throws outside a server bundle.
+mock.module("server-only", () => ({}));
 mock.module("@octopus/db", () => ({ prisma: client }));
 
-const { getAccountStanding, ACCOUNT_HOLD_MESSAGE } = await import(
+const { getAccountStanding, canRedeemCoupon, ACCOUNT_HOLD_MESSAGE } = await import(
   "@/lib/account-standing"
 );
 const { authenticateApiToken } = await import("@/lib/api-auth");
@@ -76,6 +80,40 @@ beforeEach(() => {
   deviceRows = [];
   sharedGroups = [];
   apiTokenRow = null;
+  oauthAccounts = 0;
+});
+
+describe("canRedeemCoupon", () => {
+  const args = { userId: "u1", orgId: "org1" };
+
+  it("refuses a magic-link account whose org has no product signal", async () => {
+    expect(await canRedeemCoupon(args)).toBe(false);
+  });
+
+  it("allows an account that signed in with OAuth", async () => {
+    oauthAccounts = 1;
+    expect(await canRedeemCoupon(args)).toBe(true);
+  });
+
+  it("allows an org with a connected repository", async () => {
+    repoRow = { id: "r1", externalId: "123" };
+    expect(await canRedeemCoupon(args)).toBe(true);
+  });
+
+  it("does NOT count a CLI-created repo as a signal", async () => {
+    repoRow = { id: "r1", externalId: "cli:github:acme/app" };
+    expect(await canRedeemCoupon(args)).toBe(false);
+  });
+
+  it("allows an org with a purchase", async () => {
+    purchaseRow = { id: "t1" };
+    expect(await canRedeemCoupon(args)).toBe(true);
+  });
+
+  it("refuses when the org does not exist", async () => {
+    orgRow = null;
+    expect(await canRedeemCoupon(args)).toBe(false);
+  });
 });
 
 describe("getAccountStanding", () => {

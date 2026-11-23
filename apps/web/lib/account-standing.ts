@@ -69,6 +69,43 @@ export async function orgHasProductSignal(org: ProductSignalOrg): Promise<boolea
   return purchase !== null;
 }
 
+const PRODUCT_SIGNAL_SELECT = {
+  id: true,
+  stripeCustomerId: true,
+  type: true,
+  planTier: true,
+  anthropicApiKey: true,
+  openaiApiKey: true,
+  googleApiKey: true,
+  cohereApiKey: true,
+  grokApiKey: true,
+  openrouterApiKey: true,
+  alibabaApiKey: true,
+  claudeCodeApiKey: true,
+} as const;
+
+export const COUPON_HOLD_MESSAGE =
+  "Connect a repository before redeeming a coupon, or contact support.";
+
+/**
+ * Coupon credit lands in the paid balance, so redeeming needs a positive
+ * signal, not just the absence of a hold: an OAuth sign-in (same test as the
+ * welcome-credit deferral in org-create.ts) or a product signal on the org.
+ */
+export async function canRedeemCoupon(args: {
+  userId: string;
+  orgId: string;
+}): Promise<boolean> {
+  if ((await prisma.account.count({ where: { userId: args.userId } })) > 0) {
+    return true;
+  }
+  const org = await prisma.organization.findUnique({
+    where: { id: args.orgId },
+    select: PRODUCT_SIGNAL_SELECT,
+  });
+  return org !== null && (await orgHasProductSignal(org));
+}
+
 export async function getAccountStanding(args: {
   userId: string;
   orgId: string;
@@ -77,21 +114,7 @@ export async function getAccountStanding(args: {
 
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
-    select: {
-      id: true,
-      stripeCustomerId: true,
-      welcomeRiskScore: true,
-      type: true,
-      planTier: true,
-      anthropicApiKey: true,
-      openaiApiKey: true,
-      googleApiKey: true,
-      cohereApiKey: true,
-      grokApiKey: true,
-      openrouterApiKey: true,
-      alibabaApiKey: true,
-      claudeCodeApiKey: true,
-    },
+    select: { ...PRODUCT_SIGNAL_SELECT, welcomeRiskScore: true },
   });
   // Callers verify org membership before this gate; a missing org is theirs
   // to reject, not a hold.

@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Operators can refuse sign-ups by mail server: set `SIGNUP_BLOCKED_MX_HOSTS` to a comma-separated list of mail hosts, and addresses on any domain that receives mail there are turned away. It complements `SIGNUP_BLOCKED_DOMAINS` when a throwaway-mail service keeps adding domains.
+- Operators can refuse sign-ups from domains that share a mail server. See `SIGNUP_BLOCKED_MX_HOSTS` in [.env.example](.env.example).
 
 ## [1.4.31] - 2026-11-22
 

@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.32] - 2026-11-23
+
 ### Added
 
 - Operators can refuse sign-ups from domains that share a mail server. See `SIGNUP_BLOCKED_MX_HOSTS` in [.env.example](.env.example).
+
+### Changed
+
+- Redeeming a coupon now needs an account that signed in with Google, GitHub or Microsoft (or with a password on a self-hosted install), or an organisation that has connected a repository or made a purchase. Other accounts are asked to connect a repository first.
 
 ## [1.4.31] - 2026-11-22
 

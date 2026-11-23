@@ -176,7 +176,10 @@ start timestamp. An attempt that has only waited so far therefore has no row.
 Only `published` is final; other outcomes can still change. Writes are best
 effort, so a failed write can leave no row or no outcome. Rows exist only from
 #940's release; earlier periods are “not recorded”, never zero. A user's cancel
-writes nothing to this table today. Recovery: drop only
+writes nothing to this table today. Until a `cancelled` outcome exists, a
+cancelled attempt is recorded with whatever outcome its run ends with (for
+example `failed`), so cancellations cannot be told apart from other outcomes in
+this view. Recovery: drop only
 `octopus_analytics.review_attempt_outcomes_v1`; nothing else changes.
 
 ### Organisation creation provenance

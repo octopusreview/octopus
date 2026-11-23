@@ -33,8 +33,11 @@ let purchaseRow: { id: string } | null;
 let deviceRows: { fingerprint: string }[];
 let sharedGroups: { fingerprint: string; _count: { fingerprint: number } }[];
 let apiTokenRow: Record<string, unknown> | null;
+let oauthAccounts: number;
 
 const client = {
+  coupon: { findFirst: mock(async () => null) },
+  account: { count: mock(() => Promise.resolve(oauthAccounts)) },
   organization: { findUnique: mock(() => Promise.resolve(orgRow)) },
   repository: {
     // Honors the one filter under test: NOT externalId startsWith "cli:".
@@ -59,9 +62,21 @@ const client = {
   },
 };
 
+// api-auth.ts imports "server-only", which throws outside a server bundle.
+mock.module("server-only", () => ({}));
 mock.module("@octopus/db", () => ({ prisma: client }));
+mock.module("@/lib/auth", () => ({
+  auth: { api: { getSession: async () => ({ user: { id: "u1" } }) } },
+}));
+mock.module("next/headers", () => ({
+  headers: async () => new Headers(),
+  cookies: async () => new Map([["current_org_id", { value: "org1" }]]),
+}));
+mock.module("next/cache", () => ({ revalidatePath: mock() }));
+mock.module("@/lib/credits", () => ({ addCredits: mock() }));
 
-const { getAccountStanding, ACCOUNT_HOLD_MESSAGE } = await import(
+const { redeemCoupon } = await import("@/app/(app)/coupon/actions");
+const { getAccountStanding, canRedeemCoupon, ACCOUNT_HOLD_MESSAGE } = await import(
   "@/lib/account-standing"
 );
 const { authenticateApiToken } = await import("@/lib/api-auth");
@@ -76,6 +91,46 @@ beforeEach(() => {
   deviceRows = [];
   sharedGroups = [];
   apiTokenRow = null;
+  oauthAccounts = 0;
+});
+
+describe("redeemCoupon", () => {
+  it("refuses a magic-link account without an org signal before looking up the code", async () => {
+    client.coupon.findFirst.mockClear();
+    expect(await redeemCoupon("EXAMPLE")).toEqual({
+      error: "Connect a repository before redeeming a coupon, or contact support.",
+    });
+    expect(client.coupon.findFirst).not.toHaveBeenCalled();
+  });
+});
+
+describe("canRedeemCoupon", () => {
+  const args = { userId: "u1", orgId: "org1" };
+
+  it("allows an account that signed in with OAuth", async () => {
+    oauthAccounts = 1;
+    expect(await canRedeemCoupon(args)).toBe(true);
+  });
+
+  it("allows an org with a connected repository", async () => {
+    repoRow = { id: "r1", externalId: "123" };
+    expect(await canRedeemCoupon(args)).toBe(true);
+  });
+
+  it("does NOT count a CLI-created repo as a signal", async () => {
+    repoRow = { id: "r1", externalId: "cli:github:acme/app" };
+    expect(await canRedeemCoupon(args)).toBe(false);
+  });
+
+  it("allows an org with a purchase", async () => {
+    purchaseRow = { id: "t1" };
+    expect(await canRedeemCoupon(args)).toBe(true);
+  });
+
+  it("refuses when the org does not exist", async () => {
+    orgRow = null;
+    expect(await canRedeemCoupon(args)).toBe(false);
+  });
 });
 
 describe("getAccountStanding", () => {

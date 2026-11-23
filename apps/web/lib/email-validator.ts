@@ -118,9 +118,14 @@ export function isDisposableDomain(domain: string): boolean {
   return DISPOSABLE_LIST.some((d) => normalized.endsWith("." + d));
 }
 
-function isDisposableMxHost(host: string): boolean {
+// SIGNUP_BLOCKED_MX_HOSTS uses the SIGNUP_BLOCKED_DOMAINS format. It is read
+// per call, which only happens on an MX cache miss.
+export function isDisposableMxHost(host: string): boolean {
   const normalized = host.toLowerCase().replace(/\.$/, "");
-  return DISPOSABLE_MX_SUFFIXES.some(
+  return [
+    ...DISPOSABLE_MX_SUFFIXES,
+    ...parseBlockedDomainsEnv(process.env.SIGNUP_BLOCKED_MX_HOSTS),
+  ].some(
     (suffix) => normalized === suffix || normalized.endsWith("." + suffix),
   );
 }

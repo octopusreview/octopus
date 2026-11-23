@@ -1,8 +1,31 @@
 import { describe, it, expect } from "bun:test";
 import {
   isDisposableDomain,
+  isDisposableMxHost,
   parseBlockedDomainsEnv,
 } from "@/lib/email-validator";
+
+describe("isDisposableMxHost", () => {
+  it("matches the built-in mail hosts and their subdomains", () => {
+    expect(isDisposableMxHost("mx.mailinator.com.")).toBe(true);
+    expect(isDisposableMxHost("aspmx.l.google.com")).toBe(false);
+  });
+
+  it("also refuses the mail hosts listed in SIGNUP_BLOCKED_MX_HOSTS", () => {
+    const previous = process.env.SIGNUP_BLOCKED_MX_HOSTS;
+    try {
+      delete process.env.SIGNUP_BLOCKED_MX_HOSTS;
+      expect(isDisposableMxHost("mail.blocked-mx.example")).toBe(false);
+      process.env.SIGNUP_BLOCKED_MX_HOSTS = " Blocked-MX.example , other.example";
+      expect(isDisposableMxHost("mail.blocked-mx.example.")).toBe(true);
+      expect(isDisposableMxHost("blocked-mx.example")).toBe(true);
+      expect(isDisposableMxHost("notblocked-mx.example")).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.SIGNUP_BLOCKED_MX_HOSTS;
+      else process.env.SIGNUP_BLOCKED_MX_HOSTS = previous;
+    }
+  });
+});
 
 describe("isDisposableDomain", () => {
   it("flags a known disposable root domain", () => {

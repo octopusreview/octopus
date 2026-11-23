@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.32] - 2026-11-23
+
 ### Added
 
 - Operators can refuse sign-ups from domains that share a mail server. See `SIGNUP_BLOCKED_MX_HOSTS` in [.env.example](.env.example).
+
+### Changed
+
+- Coupon redemption now checks for a qualifying signal from your account or organisation. Signing in with Google, GitHub or Microsoft counts, as does signing in with a password on a self-hosted install. Organisation signals include a connected repository, a purchase or your organisation’s own AI provider key. If neither your account nor your organisation has a qualifying signal, you’ll be asked to connect a repository first.
 
 ## [1.4.31] - 2026-11-22
 

@@ -53,7 +53,6 @@ export function registrationEvent(userId: string, createdAt: Date): ConversionEv
   };
 }
 
-/** Tells the receiver that a registration sent earlier no longer counts. occurredAt is the ban time. */
 export function registrationVoidEvent(userId: string, bannedAt: Date): ConversionEvent {
   return {
     schemaVersion: 1,

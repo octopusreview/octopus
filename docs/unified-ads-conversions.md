@@ -1,7 +1,7 @@
 # Unified Ads business events
 
-The hosted Octopus backend can send registrations, successful cash payments and
-successful individual refunds to `https://ads.weezboo.com/api/conversion-events`.
+The hosted Octopus backend can send the business events listed below to
+`https://ads.weezboo.com/api/conversion-events`.
 Delivery is disabled by default and refused on self-hosted installations.
 Business-event delivery uses only a backend key and does not alter Stripe charge
 parameters or forward sales to ad networks. Optional visitor collection and
@@ -12,14 +12,15 @@ checkout associations are described in [visitor and sales attribution](unified-a
 | Signal | Committed source | Event meaning |
 | --- | --- | --- |
 | Registration | `User.id` and `createdAt` | A new product user, not a login, organisation or completed onboarding |
-| Registration status | `User.bannedAt` of a user whose registration is in the outbox | That registration no longer counts (`status: "void"`), with the same hashed subject as the registration and the ban time. One per account; an un-ban is not reported |
+| Registration status | `User.bannedAt` and a registration row for the same user and source, in any delivery state | `registration_status` with `status: "void"` removes the sign-up from registration totals. It carries the registration's hashed `subjectId` and uses the ban time as `occurredAt`. Lifting the ban sends no update. |
 | Purchase | Stripe-linked purchase, subscription or auto-reload credit transaction | Verify the succeeded PaymentIntent and automatically captured Charge; report `amount_received` in the original GBP/USD minor units |
 | Refund | Any credit transaction with an individual `stripeRefundId`, including existing `usage` rows | Verify that refund succeeded and matches its original charge; report its own amount, never the cumulative refunded balance |
 
 Stripe Checkout and PaymentIntent aliases normalize to the same hashed payment
 identity and charge timestamp. Source metadata must agree with the retained
-billing organisation. Payment and refund IDs, organisation IDs and user IDs are
-hashed before delivery; no name, email, processor object, URL or click ID is sent.
+billing organisation. Octopus hashes payment, refund, organisation and user IDs
+before delivery. It omits names, emails, ban reasons, processor objects, URLs
+and click IDs.
 The registration's customer is not inferred later from current membership.
 
 Credit allocation is not cash: a plan granting 169 credits after a $148 charge
@@ -40,8 +41,11 @@ For webhook-to-ledger processing and its activation boundary, see the
 ## Durable delivery
 
 The existing engine schedules `marketing-conversions` every minute when enabled.
-Each sweep captures at most 100 registrations, 100 registration statuses and 100 financial rows using an
-indexed anti-join against the source's outbox. Repeated sweeps revisit retained
+Each sweep checks the source's outbox by indexed origin key and captures at most
+100 registrations, 100 registration statuses and 100 financial rows. The sweep
+includes accounts already banned at deployment and saves the void payload once
+per account for that source. The receiver accepts the void even if it arrives
+before the registration. Repeated sweeps revisit retained
 facts, so an older transaction that commits late is not lost behind a timestamp
 cursor. The partial financial index excludes ordinary usage. Result size is
 bounded; query work still grows with retained eligible history and must be
@@ -107,7 +111,8 @@ and refund/net totals may remain unavailable; no substitute payment is invented.
    scheduled worker refuses TEST configuration. Verify receiver receipts and
    producer outbox acknowledgement before LIVE activation.
 4. Configure `UNIFIED_ADS_SOURCE_ID`, `UNIFIED_ADS_ENVIRONMENT=live`,
-   `UNIFIED_ADS_SERVER_KEY`, and an explicit UTC `UNIFIED_ADS_FROM` capture cutoff.
+   `UNIFIED_ADS_SERVER_KEY`, and an explicit UTC `UNIFIED_ADS_FROM` cutoff for
+   capturing registrations and billing ledger rows.
    Use the actual activation time for new events. A historical cutoff is a
    separately recorded backfill decision, not a default. Finally set
    `UNIFIED_ADS_ENABLED=true` on the hosted engines. All replicas must use the
@@ -120,9 +125,11 @@ and refund/net totals may remain unavailable; no substitute payment is invented.
 Unset or false disables capture/delivery, and engine startup removes a stored
 schedule. Configuration errors fail the isolated job rather than a customer's
 billing flow. Persisted rows remain available across opt-out/re-enable; changing
-the capture cutoff does not rewrite or discard them. Rolling back to the prior
-application requires disabling the schedule first; keep the outbox migrations
-and retained outbox evidence.
+the capture cutoff does not rewrite or discard them. When rolling back
+the registration status change, keep the outbox migrations and rows. The previous
+worker can deliver queued voids from their saved payloads. Capturing further
+bans requires the updated worker. Disable the schedule before rolling back to
+a version that predates the business-event worker.
 
 ## Operations and limits
 
@@ -188,9 +195,8 @@ For the separate audit and explicitly invoked transport candidate, see the
 [isolated upstream cash audit](integrations/upstream-cash-audit.md).
 Alerts remain a follow-up.
 
-Business events report observed registrations, gross payments and individual
-refunds; they are not forwarded to Google, Reddit, Meta or X. Business events
-alone do not establish campaign attribution. The separate
+Octopus does not forward these events to Google, Reddit, Meta or X. Business
+events alone do not establish campaign attribution. The separate
 [visitor and sales attribution integration](unified-ads-tracking.md) supplies
 consented context. Signup-to-paid cohorts, ROI, completed onboarding and credit
 balances are not established by this business-event contract.

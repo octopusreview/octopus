@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.33] - 2026-11-26
+
+### Changed
+
+- On the hosted product, a sign-up from an account that is later banned no longer counts in Octopus's own sign-up reporting. Nothing changes for your account or your data.
+
 ## [1.4.32] - 2026-11-23
 
 ### Added

@@ -12,6 +12,7 @@ checkout associations are described in [visitor and sales attribution](unified-a
 | Signal | Committed source | Event meaning |
 | --- | --- | --- |
 | Registration | `User.id` and `createdAt` | A new product user, not a login, organisation or completed onboarding |
+| Registration status | `User.bannedAt` of a user whose registration is in the outbox | That registration no longer counts (`status: "void"`), with the same hashed subject as the registration and the ban time. One per account; an un-ban is not reported |
 | Purchase | Stripe-linked purchase, subscription or auto-reload credit transaction | Verify the succeeded PaymentIntent and automatically captured Charge; report `amount_received` in the original GBP/USD minor units |
 | Refund | Any credit transaction with an individual `stripeRefundId`, including existing `usage` rows | Verify that refund succeeded and matches its original charge; report its own amount, never the cumulative refunded balance |
 
@@ -39,7 +40,7 @@ For webhook-to-ledger processing and its activation boundary, see the
 ## Durable delivery
 
 The existing engine schedules `marketing-conversions` every minute when enabled.
-Each sweep captures at most 100 registrations and 100 financial rows using an
+Each sweep captures at most 100 registrations, 100 registration statuses and 100 financial rows using an
 indexed anti-join against the source's outbox. Repeated sweeps revisit retained
 facts, so an older transaction that commits late is not lost behind a timestamp
 cursor. The partial financial index excludes ordinary usage. Result size is

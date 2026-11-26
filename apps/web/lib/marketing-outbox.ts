@@ -7,6 +7,7 @@ import { getStripe } from "./stripe";
 import {
   deliverConversion,
   registrationEvent,
+  registrationVoidEvent,
   resolveMarketingConfig,
   retryDelayMs,
   serializeConversion,
@@ -44,17 +45,29 @@ export async function enqueueMarketingTracking(config: TrackingConfig, payload: 
 export async function captureMarketingConversions(config: MarketingConfig): Promise<number> {
   const mismatched = await prisma.marketingConversion.findFirst({ where: { sourceId: config.sourceId, environment: { not: config.environment } }, select: { id: true } });
   if (mismatched) throw new MarketingSourceError("source_environment_mismatch");
-  const [users, financial] = await Promise.all([
+  const [users, banned, financial] = await Promise.all([
     prisma.$queryRaw<Array<{ id: string; createdAt: Date }>>`
       SELECT u.id, u."createdAt" FROM users u
       WHERE u."createdAt" >= ${config.from}
         AND NOT EXISTS (SELECT 1 FROM marketing_conversions o
           WHERE o."sourceId" = ${config.sourceId} AND o."originKey" = 'registration:' || u.id)
       ORDER BY u."createdAt", u.id LIMIT ${CAPTURE_BATCH}`,
+    // Bans are set outside the application, so they are found here, not in a hook.
+    // shortcut: one void per account and an un-ban is not reported; add a "valid"
+    // event (and the ban time in the origin key) once accounts get un-banned.
+    prisma.$queryRaw<Array<{ id: string; bannedAt: Date }>>`
+      SELECT u.id, u."bannedAt" FROM users u
+      WHERE u."bannedAt" IS NOT NULL
+        AND EXISTS (SELECT 1 FROM marketing_conversions o
+          WHERE o."sourceId" = ${config.sourceId} AND o."originKey" = 'registration:' || u.id)
+        AND NOT EXISTS (SELECT 1 FROM marketing_conversions o
+          WHERE o."sourceId" = ${config.sourceId} AND o."originKey" = 'registration_void:' || u.id)
+      ORDER BY u."bannedAt", u.id LIMIT ${CAPTURE_BATCH}`,
     readMarketingLedger(prisma, config.from, CAPTURE_BATCH, config.sourceId),
   ]);
   const rows = [
     ...users.map(user => ({ sourceId: config.sourceId, environment: config.environment, originKey: `registration:${user.id}`, kind: "registration", reference: user.id, sourceCreatedAt: user.createdAt, organizationId: null, payload: serializeConversion(registrationEvent(user.id, user.createdAt)) })),
+    ...banned.map(user => ({ sourceId: config.sourceId, environment: config.environment, originKey: `registration_void:${user.id}`, kind: "registration_status", reference: user.id, sourceCreatedAt: user.bannedAt, organizationId: null, payload: serializeConversion(registrationVoidEvent(user.id, user.bannedAt)) })),
     ...financial.map(row => ({ sourceId: config.sourceId, environment: config.environment, originKey: `ledger:${row.id}`, kind: row.stripeRefundId ? "refund" : "purchase", reference: (row.stripeRefundId ?? row.stripeSessionId)!, organizationId: row.organizationId, sourceCreatedAt: row.createdAt, payload: null })),
   ];
   if (!rows.length) return 0;

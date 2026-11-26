@@ -25,6 +25,10 @@ export type ConversionEvent = PurchaseEvent | (EventBase & {
   eventType: "registration";
   subjectId: string;
 }) | (EventBase & {
+  eventType: "registration_status";
+  subjectId: string;
+  status: "void";
+}) | (EventBase & {
   eventType: "refund";
   transactionId: string;
   originalTransactionId: string;
@@ -46,6 +50,18 @@ export function registrationEvent(userId: string, createdAt: Date): ConversionEv
     eventType: "registration",
     subjectId: conversionId("user", userId),
     occurredAt: createdAt.toISOString(),
+  };
+}
+
+/** Tells the receiver that a registration sent earlier no longer counts. occurredAt is the ban time. */
+export function registrationVoidEvent(userId: string, bannedAt: Date): ConversionEvent {
+  return {
+    schemaVersion: 1,
+    eventId: conversionId("registration_status", `${userId}\nvoid\n${bannedAt.toISOString()}`),
+    eventType: "registration_status",
+    subjectId: conversionId("user", userId),
+    occurredAt: bannedAt.toISOString(),
+    status: "void",
   };
 }
 

@@ -176,7 +176,10 @@ start timestamp. An attempt that has only waited so far therefore has no row.
 Only `published` is final; other outcomes can still change. Writes are best
 effort, so a failed write can leave no row or no outcome. Rows exist only from
 #940's release; earlier periods are “not recorded”, never zero. A user's cancel
-writes nothing to this table today. Recovery: drop only
+writes nothing to this table today. Until a `cancelled` outcome exists, a
+cancelled attempt is recorded with whatever outcome its run ends with (for
+example `failed`), so cancellations cannot be told apart from other outcomes in
+this view. Recovery: drop only
 `octopus_analytics.review_attempt_outcomes_v1`; nothing else changes.
 
 ### Organisation creation provenance
@@ -372,13 +375,17 @@ work. Use one authoritative producer per outcome. Replays reuse the same ID.
 | `provider_connection_completed` / `provider_connection_failed` | Server authoritative result | provider, attempt ID, bounded failure category |
 | `repository_enabled` | Server after persisted enablement | repository ID, provider |
 | `repository_index_completed` / `repository_index_failed` | Server final result | repository ID, attempt ID, bounded failure category |
-| `review_requested` | Server, when a request reaches Octopus and its organisation is known, before the admission checks; one record per request, accepted or refused | PR/repository IDs, attempt ID when accepted, provider, admission (accepted/refused), bounded refusal reason, entry path (PR event, mention, CLI); user ID only for CLI requests |
+| `review_requested` | Server, when a request reaches Octopus and its organisation is known, before the admission checks; one record per request, accepted or refused | PR/repository IDs, attempt ID when accepted, provider, admission (accepted/refused), bounded refusal reason, entry path (bounded: `pr_event`, `mention`, `cli`, `admin_retry`, `other`); user ID: CLI requests only, an opaque namespaced ID (`octopus:user:<id>`), never an email, name or login |
 | `review_published` | Optional, later: server, after the review is published (a published outcome never changes) | PR/repository/attempt IDs, kind |
 | `review_viewed` | Only where an actual view is measurable | PR/repository ID, surface; no claim of views on an external forge |
 | `checkout_started` | Browser explicit checkout attempt | attempt ID; never treated as payment |
 | `payment_succeeded` / `payment_refunded` | Existing authoritative billing event | canonical opaque event ID, minor-unit amount, currency |
 
 Review outcomes for analysis come from `octopus_analytics.review_attempt_outcomes_v1` (#1082), a view of the `review_attempt_outcomes` table, not from events. Only `published` is final in that table; other outcomes can still change after a retry, so a `review_failed` event would never be a confirmed final outcome.
+
+GitHub Action and OSS bot reviews are outside `review_requested`, because they skip the admission checks. Customer Action reviews (with an organisation API token) are recorded in `external_review_activity` (#952) when accepted; community reviews (the OSS bot, and the Action without a token) serve community organisations, which are outside eligibility. Admin retries run through the normal review path and are recorded with entry path `admin_retry` and no user ID, fired at the retry route; their own check for a review still pending or running and updated in the last three minutes is recorded as `already_in_progress`. Report admin retries separately from customer requests.
+
+Redelivered webhooks: a provider may send the same webhook again. A redelivery that reaches Octopus is recorded like any other request, and its event ID follows the rule that replays reuse the same ID. A refused webhook request has no attempt ID, so its event ID is a SHA-256 fingerprint of provider, organisation and request body; a refused redelivery therefore gets the same ID as the first refusal and counts once when counted by event ID. An accepted redelivery starts a new attempt and takes that attempt's ID. Forgejo drops exact redeliveries before admission (integration ID plus payload SHA-256), so they get no record.
 
 Respect existing analytics permission/consent rules. Keep replay, broad
 autocapture, free text and automatic exception capture disabled. This document

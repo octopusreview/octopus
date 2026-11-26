@@ -90,10 +90,13 @@ and refund/net totals may remain unavailable; no substitute payment is invented.
 
 ## Configuration and activation
 
-1. Apply `20260915140000_marketing_conversion_outbox` through the usual fresh
-   backup, migration and application deployment gates. It adds the outbox, source
-   indexes and an immutable-payload trigger. It does not change billing tables'
-   write behavior. Index creation needs normal release-owner lock/size review.
+1. Take a fresh backup and apply all pending migrations through
+   `20261126120000_marketing_registration_status` before deploying the updated
+   worker. The original `20260915140000_marketing_conversion_outbox` migration
+   adds the outbox, source indexes and an immutable-payload trigger. It does not
+   change billing tables' write behavior. Index creation needs normal release-owner
+   lock/size review. The registration status migration allows the worker to
+   insert outbox rows of kind `registration_status`.
 2. The Unified Ads owner creates dedicated TEST and LIVE sources with capabilities
    `registrations`, `purchases`, `refunds`, and no credit unit. Source capabilities,
    origin and environment are immutable. Put each one-time server key directly
@@ -118,7 +121,7 @@ Unset or false disables capture/delivery, and engine startup removes a stored
 schedule. Configuration errors fail the isolated job rather than a customer's
 billing flow. Persisted rows remain available across opt-out/re-enable; changing
 the capture cutoff does not rewrite or discard them. Rolling back to the prior
-application requires disabling the schedule first; keep the additive migration
+application requires disabling the schedule first; keep the outbox migrations
 and retained outbox evidence.
 
 ## Operations and limits

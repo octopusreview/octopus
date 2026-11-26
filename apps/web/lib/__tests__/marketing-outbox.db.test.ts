@@ -49,11 +49,12 @@ async function due(id: string) {
     await db.connect();
     // Minimal pre-migration source tables. All outbox DDL and constraints come
     // from the shipped SQL, rather than db push or a test copy of that schema.
-    await db.query('CREATE TABLE users (id TEXT PRIMARY KEY, "createdAt" TIMESTAMP(3) NOT NULL); CREATE TABLE credit_transactions (id TEXT PRIMARY KEY, "createdAt" TIMESTAMP(3) NOT NULL, "organizationId" TEXT NOT NULL, type TEXT NOT NULL, "stripeSessionId" TEXT, "stripeRefundId" TEXT)');
+    await db.query('CREATE TABLE users (id TEXT PRIMARY KEY, "createdAt" TIMESTAMP(3) NOT NULL, "bannedAt" TIMESTAMP(3)); CREATE TABLE credit_transactions (id TEXT PRIMARY KEY, "createdAt" TIMESTAMP(3) NOT NULL, "organizationId" TEXT NOT NULL, type TEXT NOT NULL, "stripeSessionId" TEXT, "stripeRefundId" TEXT)');
     await db.query(await readFile(new URL("../../../../packages/db/prisma/migrations/20260915140000_marketing_conversion_outbox/migration.sql", import.meta.url), "utf8"));
     await db.query(await readFile(new URL("../../../../packages/db/prisma/migrations/20260917100000_marketing_tracking_outbox/migration.sql", import.meta.url), "utf8"));
     await db.query(await readFile(new URL("../../../../packages/db/prisma/migrations/20260917110000_marketing_capture/migration.sql", import.meta.url), "utf8"));
     await db.query(await readFile(new URL("../../../../packages/db/prisma/migrations/20260922140000_marketing_cash_observations/migration.sql", import.meta.url), "utf8"));
+    await db.query(await readFile(new URL("../../../../packages/db/prisma/migrations/20261126120000_marketing_registration_status/migration.sql", import.meta.url), "utf8"));
     await db.query('CREATE TABLE organizations (id TEXT PRIMARY KEY, "stripeCustomerId" TEXT, name TEXT, "billingEmail" TEXT, slug TEXT)');
     process.env.DATABASE_URL = testUrl;
     mock.module("server-only", () => ({}));
@@ -434,6 +435,41 @@ async function due(id: string) {
     expect(rows.filter(row => row.kind === "refund")).toHaveLength(1);
     expect(rows.find(row => row.kind === "registration")?.payload).toContain(conversionId("user", "test_user"));
     expect(await outbox.captureMarketingConversions(config)).toBe(0);
+  });
+
+  it("reports a banned account's registration as void once, with the registration's subject and the ban time", async () => {
+    await user("banned_user");
+    await user("clean_user");
+    // Created before the collection cutoff: no registration was ever sent for it.
+    await user("never_sent", new Date("2026-09-08T00:00:00Z"));
+    expect(await outbox.captureMarketingConversions(config)).toBe(2);
+    await db.query('UPDATE users SET "bannedAt" = NOW() WHERE id IN ($1, $2)', ["banned_user", "never_sent"]);
+    const [{ bannedAt }] = await prisma.$queryRaw<Array<{ bannedAt: Date }>>`SELECT "bannedAt" FROM users WHERE id = 'banned_user'`;
+    const captures = await Promise.all([outbox.captureMarketingConversions(config), outbox.captureMarketingConversions(config)]);
+    expect(captures[0]! + captures[1]!).toBe(1);
+    expect(await outbox.captureMarketingConversions(config)).toBe(0);
+
+    const rows = await prisma.marketingConversion.findMany();
+    const voids = rows.filter(row => row.kind === "registration_status");
+    expect(voids).toHaveLength(1);
+    expect(voids[0]).toMatchObject({ reference: "banned_user", sourceCreatedAt: bannedAt, status: "pending" });
+    const registration = JSON.parse(rows.find(row => row.originKey === "registration:banned_user")!.payload!);
+    const sent = JSON.parse(voids[0]!.payload!);
+    expect(sent).toEqual({
+      schemaVersion: 1, eventId: expect.stringMatching(/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/), eventType: "registration_status",
+      occurredAt: bannedAt.toISOString(), subjectId: registration.subjectId, status: "void",
+    });
+    expect(sent.eventId).not.toBe(registration.eventId);
+
+    const bodies: string[] = [];
+    for (let row = await outbox.claimMarketingConversion(config); row; row = await outbox.claimMarketingConversion(config)) {
+      await outbox.processMarketingConversion(row, config, undefined, withIdentity(async request => {
+        bodies.push(await request.text());
+        return received();
+      }));
+    }
+    expect(bodies).toContain(voids[0]!.payload!);
+    expect(await prisma.marketingConversion.findUniqueOrThrow({ where: { id: voids[0]!.id } })).toMatchObject({ status: "delivered", receiptId, payload: voids[0]!.payload });
   });
 
   it("delivers registrations and replays persisted cash without Stripe credentials in the scheduled worker", async () => {

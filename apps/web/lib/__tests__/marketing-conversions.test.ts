@@ -3,6 +3,7 @@ import {
   conversionId,
   deliverConversion as deliverWithIdentity,
   registrationEvent,
+  registrationVoidEvent,
   resolveMarketingConfig,
   retryDelayMs,
   serializeConversion,
@@ -26,6 +27,20 @@ describe("Unified Ads business events", () => {
     expect(event).toEqual({ schemaVersion: 1, eventId: conversionId("registration", "opaque-user"), eventType: "registration", subjectId: conversionId("user", "opaque-user"), occurredAt: "2026-09-15T12:00:00.000Z" });
     expect(JSON.stringify(event)).not.toContain("opaque-user");
     expect(registrationEvent("opaque-user", new Date(event.occurredAt))).toEqual(event);
+  });
+
+  it("reports a void registration with the registration's subject, the ban time and no other field", () => {
+    const bannedAt = new Date("2026-11-23T22:30:00.123Z");
+    const status = registrationVoidEvent("opaque-user", bannedAt);
+    // Receiver contract: exactly these six fields, ids matching its id pattern.
+    expect(Object.keys(status).sort()).toEqual(["eventId", "eventType", "occurredAt", "schemaVersion", "status", "subjectId"]);
+    expect(status).toMatchObject({ schemaVersion: 1, eventType: "registration_status", status: "void", subjectId: event.subjectId, occurredAt: "2026-11-23T22:30:00.123Z" });
+    expect(status.eventId).toMatch(/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/);
+    expect(status.eventId).not.toBe(event.eventId);
+    expect(JSON.stringify(status)).not.toContain("opaque-user");
+    // A retry reuses the id; a later ban of the same account gets a new one.
+    expect(registrationVoidEvent("opaque-user", bannedAt)).toEqual(status);
+    expect(registrationVoidEvent("opaque-user", new Date(bannedAt.getTime() + 1)).eventId).not.toBe(status.eventId);
   });
 
   it("is opt-in and refuses self-hosted collection", () => {

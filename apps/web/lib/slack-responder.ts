@@ -11,6 +11,7 @@ import {
   upsertChatChunk,
 } from "@/lib/qdrant";
 import { logAiUsage } from "@/lib/ai-usage";
+import { HARDCODED_REVIEW_MODEL } from "@/lib/ai-client";
 import { generateSparseVector } from "@/lib/sparse-vector";
 
 let anthropicClient: Anthropic | null = null;
@@ -230,7 +231,7 @@ ${chatHistoryContext || "No relevant previous conversations found."}
     // 6. Call Claude (non-streaming)
     const client = getAnthropicClient();
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: HARDCODED_REVIEW_MODEL,
       max_tokens: 2048,
       system: systemPrompt,
       messages: [{ role: "user", content: question }],
@@ -241,7 +242,7 @@ ${chatHistoryContext || "No relevant previous conversations found."}
     // 9. Log AI usage
     await logAiUsage({
       provider: "anthropic",
-      model: "claude-sonnet-4-20250514",
+      model: HARDCODED_REVIEW_MODEL,
       operation: "slack-command",
       inputTokens: response.usage.input_tokens,
       outputTokens: response.usage.output_tokens,

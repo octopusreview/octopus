@@ -1,6 +1,6 @@
 import { getRepoChunks } from "@/lib/qdrant";
 import { logAiUsage } from "@/lib/ai-usage";
-import { getReviewModel } from "@/lib/ai-client";
+import { getReviewModel, HARDCODED_REVIEW_MODEL } from "@/lib/ai-client";
 import { createAiMessage } from "@/lib/ai-router";
 import { isOrgOverSpendLimit } from "@/lib/cost";
 import { extractJsonObject } from "@/lib/extract-json";
@@ -26,7 +26,7 @@ export async function summarizeRepository(
 
   const codeContext = chunks.join("\n\n---\n\n");
 
-  const model = organizationId ? await getReviewModel(organizationId, repoId) : "claude-sonnet-4-20250514";
+  const model = organizationId ? await getReviewModel(organizationId, repoId) : HARDCODED_REVIEW_MODEL;
 
   const response = await createAiMessage(
     {
@@ -107,7 +107,7 @@ export async function summarizeDailyReviews(
     })
     .join("\n\n---\n\n");
 
-  const dailyModel = organizationId ? await getReviewModel(organizationId) : "claude-sonnet-4-20250514";
+  const dailyModel = organizationId ? await getReviewModel(organizationId) : HARDCODED_REVIEW_MODEL;
 
   const response = await createAiMessage(
     {

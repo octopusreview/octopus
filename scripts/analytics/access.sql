@@ -90,6 +90,23 @@ FROM public.review_attempt_outcomes;
 
 REVOKE ALL ON octopus_analytics.review_attempt_outcomes_v1 FROM PUBLIC;
 
+CREATE VIEW octopus_analytics.external_review_activity_v1
+WITH (security_barrier = true) AS
+SELECT 'octopus:external_review:' || id AS external_review_id,
+  'octopus:org:' || "organizationId" AS organization_id,
+  'octopus:repo:' || "repositoryId" AS repository_id,
+  CASE WHEN source IS NULL THEN 'not_recorded'
+       WHEN source IN ('github_action','cli_local','cli_repo') THEN source
+       ELSE 'other' END AS source,
+  CASE WHEN outcome IS NULL THEN 'no_outcome'
+       WHEN outcome IN ('generated','failed') THEN outcome
+       ELSE 'other' END AS outcome,
+  "acceptedAt" AS accepted_at,
+  "finishedAt" AS finished_at
+FROM public.external_review_activity;
+
+REVOKE ALL ON octopus_analytics.external_review_activity_v1 FROM PUBLIC;
+
 CREATE VIEW octopus_analytics.cash_events_v1 WITH (security_barrier = true) AS
 WITH parsed AS (
   SELECT "organizationId", CASE WHEN payload IS JSON OBJECT AND pg_input_is_valid(payload, 'jsonb')
@@ -205,6 +222,7 @@ GRANT SELECT ON octopus_analytics.organizations_v1,
   octopus_analytics.repositories_v1, octopus_analytics.review_milestones_v1,
   octopus_analytics.cash_events_v1, octopus_analytics.organization_provenance_v1,
   octopus_analytics.organization_signup_method_v1,
-  octopus_analytics.review_attempt_outcomes_v1 TO octopus_analytics_reader;
+  octopus_analytics.review_attempt_outcomes_v1,
+  octopus_analytics.external_review_activity_v1 TO octopus_analytics_reader;
 -- No future-object grants, source-table grants, password or LOGIN here.
 COMMIT;

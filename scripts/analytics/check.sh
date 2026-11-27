@@ -69,6 +69,32 @@ CREATE TABLE "review_attempt_outcomes" (
 );
 CREATE INDEX "review_attempt_outcomes_organizationId_publishedAt_idx" ON "review_attempt_outcomes"("organizationId", "publishedAt");
 ALTER TABLE "review_attempt_outcomes" ADD COLUMN "generationAttempts" INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE "external_review_activity" (
+  "id" TEXT NOT NULL,
+  "source" TEXT NOT NULL CHECK ("source" IN ('github_action', 'cli_local', 'cli_repo')),
+  "organizationId" TEXT NOT NULL,
+  "repositoryId" TEXT,
+  "reportedPrNumber" INTEGER,
+  "acceptedAt" TIMESTAMP(3) NOT NULL,
+  "outcome" TEXT CHECK ("outcome" IN ('generated', 'failed')),
+  "finishedAt" TIMESTAMP(3),
+  CONSTRAINT "external_review_activity_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "external_review_activity_repository_check" CHECK (
+    ("source" = 'cli_local' AND "repositoryId" IS NULL) OR
+    ("source" IN ('github_action', 'cli_repo') AND "repositoryId" IS NOT NULL)
+  ),
+  CONSTRAINT "external_review_activity_pr_check" CHECK (
+    "reportedPrNumber" IS NULL OR ("source" = 'github_action' AND "reportedPrNumber" > 0)
+  ),
+  CONSTRAINT "external_review_activity_finish_check" CHECK (
+    ("outcome" IS NULL AND "finishedAt" IS NULL) OR
+    ("outcome" IS NOT NULL AND "finishedAt" IS NOT NULL AND "finishedAt" >= "acceptedAt")
+  ),
+  CONSTRAINT "external_review_activity_organizationId_fkey" FOREIGN KEY ("organizationId")
+    REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+CREATE INDEX "external_review_activity_organizationId_acceptedAt_idx"
+  ON "external_review_activity"("organizationId", "acceptedAt");
 CREATE TABLE marketing_conversions ("organizationId" text,environment text,status text,kind text,payload text);
 INSERT INTO organizations (id,"createdAt",type,"bannedAt","deletedAt","anthropicApiKey") VALUES ('one','2026-09-01',1,null,null,'DO-NOT-EXPORT'),('banned','2026-09-01',1,now(),null,'PRIVATE');
 INSERT INTO repositories VALUES ('repo','one','github','2026-09-02',true,true,'indexed','2026-09-09','2026-09-09');
@@ -975,4 +1001,221 @@ PYTEST
 psql_fixture <<'SQL'
 REVOKE SELECT ON outcome_cases FROM octopus_analytics_reader;
 DROP TABLE outcome_cases,outcomes_fresh,outcomes_previous,outcomes_baseline,outcomes_source_baseline;
+SQL
+
+# External activity fixtures are synthetic and retain missing live repository IDs.
+psql_fixture <<'SQL'
+CREATE TABLE external_cases AS
+SELECT row_number() OVER (ORDER BY s.source, o.outcome NULLS FIRST)::int AS version,
+  s.source, o.outcome
+FROM (VALUES ('github_action'),('cli_local'),('cli_repo')) s(source)
+CROSS JOIN (VALUES ('generated'),('failed'),(NULL::text)) o(outcome);
+INSERT INTO external_review_activity
+  (id,source,"organizationId","repositoryId","reportedPrNumber","acceptedAt",outcome,"finishedAt")
+SELECT 'external-case-'||version,source,'one',
+  CASE WHEN source <> 'cli_local' THEN 'external-missing-repo' END,
+  CASE WHEN source = 'github_action' THEN 123 END,
+  timestamp '2026-10-23 01:02:03.456',outcome,
+  CASE WHEN outcome IS NOT NULL THEN timestamp '2026-10-23 02:03:04.567' END
+FROM external_cases;
+CREATE TABLE external_fresh AS
+SELECT pg_get_viewdef(c.oid) AS definition,c.relowner,c.relacl,c.reloptions,
+  (SELECT jsonb_agg(jsonb_build_array(a.attname,a.atttypid,a.atttypmod,a.attcollation) ORDER BY a.attnum)
+   FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped) AS columns
+FROM pg_class c WHERE c.oid='octopus_analytics.external_review_activity_v1'::regclass;
+GRANT SELECT ON external_cases TO octopus_analytics_reader;
+SQL
+check_external() {
+  psql_fixture <<'SQL'
+SET ROLE octopus_analytics_reader;
+DO $$ BEGIN
+  IF (SELECT array_agg(column_name::text ORDER BY ordinal_position)
+    FROM information_schema.columns WHERE table_schema='octopus_analytics'
+      AND table_name='external_review_activity_v1') IS DISTINCT FROM
+    ARRAY['external_review_id','organization_id','repository_id','source','outcome','accepted_at','finished_at']
+    THEN RAISE EXCEPTION 'external seven-column contract'; END IF;
+  IF EXISTS (
+    SELECT FROM public.external_cases c LEFT JOIN octopus_analytics.external_review_activity_v1 v
+      ON v.external_review_id='octopus:external_review:external-case-'||c.version
+    WHERE v.external_review_id IS NULL
+      OR v.organization_id IS DISTINCT FROM 'octopus:org:one'
+      OR v.repository_id IS DISTINCT FROM CASE WHEN c.source <> 'cli_local' THEN 'octopus:repo:external-missing-repo' END
+      OR v.source IS DISTINCT FROM c.source OR v.outcome IS DISTINCT FROM COALESCE(c.outcome,'no_outcome')
+      OR v.accepted_at IS DISTINCT FROM timestamp '2026-10-23 01:02:03.456'
+      OR v.finished_at IS DISTINCT FROM CASE WHEN c.outcome IS NOT NULL THEN timestamp '2026-10-23 02:03:04.567' END
+  ) THEN RAISE EXCEPTION 'external projection or labels'; END IF;
+  IF EXISTS (SELECT FROM octopus_analytics.external_review_activity_v1
+    WHERE (repository_id IS NULL) IS DISTINCT FROM (source='cli_local')
+      OR external_review_id NOT LIKE 'octopus:external_review:%'
+      OR organization_id NOT LIKE 'octopus:org:%'
+      OR (repository_id IS NOT NULL AND repository_id NOT LIKE 'octopus:repo:%')
+      OR source IS NULL OR source NOT IN ('github_action','cli_local','cli_repo')
+      OR outcome IS NULL OR outcome NOT IN ('generated','failed','no_outcome'))
+    THEN RAISE EXCEPTION 'external IDs, repository nullability or labels'; END IF;
+  BEGIN PERFORM id FROM public.external_review_activity; RAISE EXCEPTION 'external source readable'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  BEGIN UPDATE public.external_review_activity SET outcome=outcome; RAISE EXCEPTION 'external source writable'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  BEGIN UPDATE octopus_analytics.external_review_activity_v1 SET accepted_at=accepted_at; RAISE EXCEPTION 'external view writable'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END $$;
+RESET ROLE;
+DO $$ BEGIN
+  IF (SELECT count(*) FROM octopus_analytics.external_review_activity_v1) <> (SELECT count(*) FROM public.external_review_activity)
+    OR (SELECT count(DISTINCT external_review_id) FROM octopus_analytics.external_review_activity_v1) <> (SELECT count(*) FROM public.external_review_activity)
+    THEN RAISE EXCEPTION 'external all-row cardinality or key'; END IF;
+  IF (SELECT array_agg(format_type(a.atttypid,a.atttypmod) ORDER BY a.attnum)
+    FROM pg_attribute a WHERE a.attrelid='octopus_analytics.external_review_activity_v1'::regclass
+      AND a.attnum>0 AND NOT a.attisdropped) IS DISTINCT FROM
+    ARRAY['text','text','text','text','text','timestamp(3) without time zone','timestamp(3) without time zone']
+    THEN RAISE EXCEPTION 'external SQL types'; END IF;
+  IF EXISTS (SELECT FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a
+    WHERE c.oid IN ('octopus_analytics.external_review_activity_v1'::regclass,'public.external_review_activity'::regclass) AND a.grantee=0)
+    OR EXISTS (SELECT FROM pg_attribute att CROSS JOIN LATERAL aclexplode(att.attacl) a
+      WHERE att.attrelid IN ('octopus_analytics.external_review_activity_v1'::regclass,'public.external_review_activity'::regclass) AND a.grantee=0)
+    OR EXISTS (SELECT FROM pg_namespace n CROSS JOIN LATERAL aclexplode(n.nspacl) a
+      WHERE n.nspname='octopus_analytics' AND a.grantee=0)
+    THEN RAISE EXCEPTION 'external PUBLIC access'; END IF;
+END $$;
+SQL
+}
+check_external
+printf '%s\n' 'PASS: external fresh seven-column contract/types, nine source/outcome combinations, IDs, cardinality and privileges'
+# Only this disposable fixture is relaxed, within a transaction that always rolls back.
+psql_fixture <<'SQL'
+BEGIN;
+ALTER TABLE external_review_activity ALTER COLUMN source DROP NOT NULL;
+ALTER TABLE external_review_activity DROP CONSTRAINT external_review_activity_source_check;
+ALTER TABLE external_review_activity DROP CONSTRAINT external_review_activity_outcome_check;
+ALTER TABLE external_review_activity DROP CONSTRAINT external_review_activity_repository_check;
+ALTER TABLE external_review_activity DROP CONSTRAINT external_review_activity_finish_check;
+INSERT INTO external_review_activity (id,source,"organizationId","acceptedAt",outcome)
+VALUES ('external-relaxed-null',NULL,'one','2026-10-23',NULL),
+  ('external-relaxed-empty','','one','2026-10-23',''),
+  ('external-relaxed-unexpected','unexpected','one','2026-10-23','unexpected');
+SET LOCAL ROLE octopus_analytics_reader;
+DO $$ BEGIN
+  IF (SELECT count(*) FROM octopus_analytics.external_review_activity_v1
+    WHERE (external_review_id='octopus:external_review:external-relaxed-null' AND source='not_recorded' AND outcome='no_outcome')
+      OR (external_review_id IN ('octopus:external_review:external-relaxed-empty','octopus:external_review:external-relaxed-unexpected')
+        AND source='other' AND outcome='other')) <> 3
+    THEN RAISE EXCEPTION 'external defensive labels'; END IF;
+END $$;
+ROLLBACK;
+DO $$ BEGIN
+  IF EXISTS (SELECT FROM external_review_activity WHERE id LIKE 'external-relaxed-%')
+    OR NOT EXISTS (SELECT FROM pg_attribute WHERE attrelid='external_review_activity'::regclass AND attname='source' AND attnotnull)
+    OR (SELECT count(*) FROM pg_constraint WHERE conrelid='external_review_activity'::regclass
+      AND conname IN ('external_review_activity_source_check','external_review_activity_outcome_check',
+        'external_review_activity_repository_check','external_review_activity_finish_check')) <> 4
+    THEN RAISE EXCEPTION 'relaxed external fixture not restored'; END IF;
+END $$;
+SQL
+printf '%s\n' 'PASS: external NULL/empty/unexpected defensive labels and restored source constraints'
+psql_fixture <<'SQL'
+DROP VIEW octopus_analytics.external_review_activity_v1;
+CREATE TABLE external_baseline AS
+SELECT c.oid,c.relname,c.relowner,c.relacl,c.reloptions,pg_get_viewdef(c.oid) AS definition
+FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+WHERE n.nspname='octopus_analytics' AND c.relkind='v';
+CREATE TABLE external_source_baseline AS
+SELECT a.attnum,a.attname,a.atttypid,a.atttypmod,a.attnotnull
+FROM pg_attribute a WHERE a.attrelid='public.external_review_activity'::regclass AND a.attnum>0 AND NOT a.attisdropped;
+SQL
+for prerequisite in schema role view table source_kind id source organizationId repositoryId acceptedAt outcome finishedAt target; do
+  case "$prerequisite" in
+    schema) setup='ALTER SCHEMA octopus_analytics RENAME TO external_saved_schema;'; message='Analytics schema missing;' ;;
+    role) setup='ALTER ROLE octopus_analytics_reader RENAME TO external_saved_role;'; message='Analytics reader role missing;' ;;
+    view) setup='ALTER VIEW octopus_analytics.organizations_v1 RENAME TO external_saved_view;'; message='Analytics organizations_v1 view missing;' ;;
+    table) setup='ALTER TABLE public.external_review_activity RENAME TO external_saved_table;'; message='Source table public.external_review_activity missing;' ;;
+    source_kind) setup='ALTER TABLE public.external_review_activity RENAME TO external_saved_table; CREATE VIEW public.external_review_activity AS SELECT * FROM public.external_saved_table;'; message='Source table public.external_review_activity missing;' ;;
+    target) setup='CREATE TABLE octopus_analytics.external_review_activity_v1 (id int);'; message='Analytics external_review_activity_v1 already exists and is not a view;' ;;
+    *) setup="ALTER TABLE public.external_review_activity RENAME COLUMN \"$prerequisite\" TO external_saved_column;"
+       message="Source column public.external_review_activity.\"$prerequisite\" missing;" ;;
+  esac
+  if output=$({ printf 'BEGIN;\n%s\n' "$setup"; cat update-external-review-activity.sql; } | psql_fixture 2>&1); then
+    echo "External update unexpectedly accepted missing/invalid $prerequisite" >&2; exit 1
+  fi
+  [[ "$output" == *"$message"* ]] || { echo 'Expected external refusal message not found' >&2; exit 1; }
+  psql_fixture <<'SQL'
+DO $$ BEGIN
+  IF to_regclass('octopus_analytics.external_review_activity_v1') IS NOT NULL
+    OR to_regnamespace('octopus_analytics') IS NULL
+    OR NOT EXISTS (SELECT FROM pg_roles WHERE rolname='octopus_analytics_reader')
+    OR EXISTS (SELECT FROM external_baseline b LEFT JOIN pg_class c ON c.oid=b.oid
+      WHERE c.oid IS NULL OR c.relname IS DISTINCT FROM b.relname OR c.relowner IS DISTINCT FROM b.relowner
+        OR c.relacl IS DISTINCT FROM b.relacl OR c.reloptions IS DISTINCT FROM b.reloptions
+        OR pg_get_viewdef(c.oid) IS DISTINCT FROM b.definition)
+    OR EXISTS (SELECT FROM external_source_baseline b LEFT JOIN pg_attribute a
+      ON a.attrelid='public.external_review_activity'::regclass AND a.attnum=b.attnum
+      WHERE a.attname IS DISTINCT FROM b.attname OR a.atttypid IS DISTINCT FROM b.atttypid
+        OR a.atttypmod IS DISTINCT FROM b.atttypmod OR a.attnotnull IS DISTINCT FROM b.attnotnull)
+    THEN RAISE EXCEPTION 'failed external update changed installed objects'; END IF;
+END $$;
+SQL
+done
+printf '%s\n' 'PASS: external missing/invalid prerequisites stop and roll back'
+for iteration in 1 2; do
+  if [[ "$iteration" == 2 ]]; then
+    psql_fixture -c "CREATE TABLE external_previous AS SELECT oid,relowner,relacl,reloptions FROM pg_class WHERE oid='octopus_analytics.external_review_activity_v1'::regclass"
+    psql_fixture -c 'GRANT SELECT ON octopus_analytics.external_review_activity_v1 TO PUBLIC'
+  fi
+  psql_fixture < update-external-review-activity.sql
+  psql_fixture <<'SQL'
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_class c CROSS JOIN external_fresh f
+    WHERE c.oid='octopus_analytics.external_review_activity_v1'::regclass
+      AND c.relowner=f.relowner AND c.relacl IS NOT DISTINCT FROM f.relacl
+      AND c.reloptions IS NOT DISTINCT FROM f.reloptions AND 'security_barrier=true'=ANY(c.reloptions)
+      AND pg_get_viewdef(c.oid)=f.definition
+      AND (SELECT jsonb_agg(jsonb_build_array(a.attname,a.atttypid,a.atttypmod,a.attcollation) ORDER BY a.attnum)
+        FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped)=f.columns)
+    THEN RAISE EXCEPTION 'external fresh/update definition, columns, owner, grants or barrier'; END IF;
+  IF to_regclass('external_previous') IS NOT NULL THEN
+    IF NOT EXISTS (SELECT FROM pg_class c CROSS JOIN external_previous p
+      WHERE c.oid='octopus_analytics.external_review_activity_v1'::regclass AND c.oid=p.oid
+        AND c.relowner=p.relowner AND c.relacl IS NOT DISTINCT FROM p.relacl
+        AND c.reloptions IS NOT DISTINCT FROM p.reloptions)
+      THEN RAISE EXCEPTION 'repeat external update changed identity or privileges'; END IF;
+  END IF;
+END $$;
+SQL
+  check_external
+done
+printf '%s\n' 'PASS: external update twice matches fresh install, retains contract/privileges and removes PUBLIC grants'
+# The caller-reported PR number is deliberately excluded and is not a prerequisite.
+psql_fixture -c 'ALTER TABLE external_review_activity DROP COLUMN "reportedPrNumber"'
+psql_fixture < update-external-review-activity.sql
+check_external
+printf '%s\n' 'PASS: external reportedPrNumber is not a prerequisite'
+psql_fixture <<'SQL'
+ALTER TABLE external_review_activity ADD COLUMN "reportedPrNumber" integer;
+ALTER TABLE external_review_activity ADD CONSTRAINT external_review_activity_pr_check CHECK (
+  "reportedPrNumber" IS NULL OR ("source" = 'github_action' AND "reportedPrNumber" > 0)
+);
+INSERT INTO external_review_activity
+  (id,source,"organizationId","repositoryId","acceptedAt",outcome,"finishedAt")
+SELECT 'external-scale-'||i,'cli_repo','one','external-scale-missing-repo',
+  timestamp '2026-10-23',CASE WHEN i%2=0 THEN 'generated' END,
+  CASE WHEN i%2=0 THEN timestamp '2026-10-23 01:00:00' END
+FROM generate_series(1,100000) i;
+ANALYZE external_review_activity;
+SQL
+check_external
+external_plan=$(psql_fixture -qAt -c "SET ROLE octopus_analytics_reader; SET statement_timeout = '15s'" -c 'EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT * FROM octopus_analytics.external_review_activity_v1')
+ANALYTICS_TEST_PLAN="$external_plan" python3 - <<'PYTEST'
+import json, os
+p = json.loads(os.environ['ANALYTICS_TEST_PLAN'])[0]
+assert p['Plan']['Actual Rows'] == 100009, p['Plan']['Actual Rows']
+scans = []
+def visit(n):
+    if n.get('Relation Name') == 'external_review_activity':
+        scans.append(n)
+        assert n['Actual Loops'] == 1, 'repeated external source scan'
+    for child in n.get('Plans', []): visit(child)
+visit(p['Plan'])
+assert len(scans) == 1, 'expected one external source scan'
+assert p['Execution Time'] < 15000, p['Execution Time']
+print(f"PASS: synthetic external plan, 100009 rows, execution {p['Execution Time']} ms / 15000 ms timeout")
+PYTEST
+psql_fixture <<'SQL'
+REVOKE SELECT ON external_cases FROM octopus_analytics_reader;
+DROP TABLE external_cases,external_fresh,external_previous,external_baseline,external_source_baseline;
 SQL

@@ -5,7 +5,7 @@ import { createHmac } from "node:crypto";
 
 mock.module("server-only", () => ({}));
 const secret = "fixture-secret";
-const integration = { organizationId: "org-a", forgejoHost: "https://forge.example", username: "review-bot", webhookSecret: secret };
+const integration = { connectorTokenHash: null as string | null, organizationId: "org-a", forgejoHost: "https://forge.example", username: "review-bot", webhookSecret: secret };
 let active = true, dismissed = false, draft = false, state = "open", merged = false;
 let deliveries = new Set<string>();
 let reviews: Record<string, unknown>[] = [];
@@ -67,6 +67,7 @@ mock.module("@/lib/webhook-shared", () => ({ startReviewFlow: async (params: Rec
   if (admissionFailure) throw new Error("enqueue failed");
   reviews.push(params); return { started: true, pullRequestId: "pr-a" };
 } }));
+mock.module("@/lib/review-attempt-outcome", () => ({ recordReviewAdmissionAfterCommit: () => {} }));
 const { POST } = await import("../../../app/api/forgejo/webhook/[integrationId]/route");
 const payload = { action: "opened", repository: { id: 42, full_name: "team/repo" }, pull_request: { number: 7, head: { sha } } };
 async function deliver(body: unknown = payload, options: { event?: string; signature?: string; integrationId?: string } = {}) {
@@ -174,4 +175,65 @@ for (const body of ["@octopus", "please @octopus review", "/octopus review", "@o
   await deliver(comment, { event: "issue_comment" }); assert.equal(reviews.length, 1, body);
 }
 
-await sql?.close();
+const previousHosted = process.env.OCTOPUS_SELF_HOSTED;
+const previousBuildHosted = process.env.NEXT_PUBLIC_OCTOPUS_SELF_HOSTED;
+const previousOrigins = process.env.GITEA_COMPATIBLE_ORIGINS;
+delete process.env.NEXT_PUBLIC_OCTOPUS_SELF_HOSTED;
+async function giteaDelivery(body: unknown = payload, options: { event?: string; signature?: string; mixed?: boolean } = {}) {
+  const raw = JSON.stringify(body);
+  const valid = createHmac("sha256", secret).update(raw).digest("hex");
+  return POST(new Request("https://octopus.example/api/forgejo/webhook/integration-a", {
+    method: "POST", body: raw, headers: {
+      "x-gitea-signature": options.signature ?? valid,
+      "x-gitea-event": options.event ?? "pull_request",
+      ...(options.mixed ? { "x-forgejo-signature": valid } : {}),
+    },
+  }), { params: Promise.resolve({ integrationId: "integration-a" }) });
+}
+try {
+  deliveries.clear(); reviews = [];
+  const baselineReads = reads;
+  const success = async (response: Response) => {
+    assert.equal(response.status, 200);
+    return await response.json();
+  };
+  process.env.GITEA_COMPATIBLE_ORIGINS = "https://forge.example";
+  delete process.env.OCTOPUS_SELF_HOSTED;
+  assert.equal((await giteaDelivery()).status, 401, "Gitea is self-hosted only");
+  process.env.OCTOPUS_SELF_HOSTED = "true";
+  process.env.GITEA_COMPATIBLE_ORIGINS = "https://forge.example.evil.example";
+  assert.equal((await giteaDelivery()).status, 401, "origin matching is exact");
+  assert.equal((await deliver(payload, { signature: "bad" })).status, 401);
+  process.env.GITEA_COMPATIBLE_ORIGINS = "https://other.example, https://forge.example ";
+  integration.connectorTokenHash = "fixture-connector";
+  assert.equal((await giteaDelivery()).status, 401, "direct Gitea mode cannot claim a connector integration");
+  integration.connectorTokenHash = null;
+  assert.equal((await deliver()).status, 401, "Gitea mode does not accept Forgejo signatures");
+  assert.equal((await giteaDelivery(payload, { mixed: true })).status, 401);
+  assert.equal((await giteaDelivery(payload, { signature: "0".repeat(64) })).status, 401);
+  assert.equal(reads, baselineReads, "rejected hooks never fetch PR metadata");
+  assert.equal((await success(await giteaDelivery({ ...payload, repository: { id: 43, full_name: "team/repo" } }))).ignored, true);
+  assert.equal((await success(await giteaDelivery(payload, { event: "push" }))).ignored, true);
+  assert.equal(reviews.length, 0);
+  assert.deepEqual(await success(await giteaDelivery()), { ok: true });
+  assert.equal(reviews.length, 1);
+  assert.equal(reviews[0].headSha, sha);
+  assert.equal((await success(await giteaDelivery())).duplicate, true);
+  assert.equal(reviews.length, 1);
+  assert.equal((await success(await giteaDelivery({ ...payload, action: "synchronized" }))).ok, true);
+  assert.equal(reviews.length, 2);
+  comment.comment.body = "/octopus review";
+  assert.equal((await success(await giteaDelivery(comment, { event: "issue_comment" }))).ok, true);
+  assert.equal(reviews.length, 3);
+  assert.equal(reviews[2].triggerCommentId, 3);
+  console.log("Gitea opt-in, authentication, sync, comments and replay checks passed");
+} finally {
+  for (const [key, value] of [
+    ["OCTOPUS_SELF_HOSTED", previousHosted],
+    ["NEXT_PUBLIC_OCTOPUS_SELF_HOSTED", previousBuildHosted],
+    ["GITEA_COMPATIBLE_ORIGINS", previousOrigins],
+  ]) {
+    if (value === undefined) delete process.env[key!]; else process.env[key!] = value;
+  }
+  await sql?.close();
+}

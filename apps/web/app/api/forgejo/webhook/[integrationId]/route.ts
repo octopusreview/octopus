@@ -6,6 +6,7 @@ import { prisma, type Prisma } from "@octopus/db";
 import { z } from "zod";
 import { getPullRequestDetails, runWithForgejoRepository } from "@/lib/forgejo";
 import { startReviewFlow } from "@/lib/webhook-shared";
+import { isSelfHosted } from "@/lib/self-hosted";
 
 const id = z.number().int().positive().safe();
 const payloadSchema = z.object({
@@ -37,17 +38,30 @@ async function readBody(request: Request): Promise<Buffer> {
   }
 }
 
+function usesGiteaWebhooks(integration: { forgejoHost: string; connectorTokenHash: string | null }): boolean {
+  // Use the configured direct integration origin, never a host or a provider
+  // claimed by the request. This does not change the outbound URL allowlist.
+  return isSelfHosted() && !integration.connectorTokenHash
+    && (process.env.GITEA_COMPATIBLE_ORIGINS ?? "").split(",")
+      .some(origin => origin.trim() === integration.forgejoHost);
+}
+
 export async function POST(request: Request, { params }: { params: Promise<{ integrationId: string }> }) {
   const { integrationId } = await params;
-  const signature = request.headers.get("x-forgejo-signature") ?? "";
-  if (integrationId.length > 128 || !/^[a-f0-9]{64}$/i.test(signature)) {
+  const forgejoSignature = request.headers.get("x-forgejo-signature");
+  const giteaSignature = request.headers.get("x-gitea-signature");
+  const signature = forgejoSignature ?? giteaSignature ?? "";
+  if (integrationId.length > 128 || (forgejoSignature !== null && giteaSignature !== null)
+    || !/^[a-f0-9]{64}$/i.test(signature)) {
     return Response.json({ error: "Invalid webhook signature" }, { status: 401 });
   }
   const integration = await prisma.forgejoIntegration.findUnique({
     where: { id: integrationId },
-    select: { organizationId: true, forgejoHost: true, username: true, webhookSecret: true },
+    select: { organizationId: true, forgejoHost: true, username: true, webhookSecret: true, connectorTokenHash: true },
   });
-  if (!integration) return Response.json({ error: "Invalid webhook signature" }, { status: 401 });
+  if (!integration || usesGiteaWebhooks(integration) !== (giteaSignature !== null)) {
+    return Response.json({ error: "Invalid webhook signature" }, { status: 401 });
+  }
 
   let raw: Buffer;
   try { raw = await readBody(request); }
@@ -71,7 +85,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ int
     return Response.json({ ok: true, ignored: true });
   }
 
-  const event = request.headers.get("x-forgejo-event");
+  const event = request.headers.get(giteaSignature === null ? "x-forgejo-event" : "x-gitea-event");
   const titleChanged = event === "pull_request" && payload.action === "edited" && payload.changes?.title !== undefined;
   const automatic = event === "pull_request" && (["opened", "reopened", "synchronized"].includes(payload.action ?? "") || titleChanged);
   const merged = event === "pull_request" && payload.action === "closed";
